@@ -49,40 +49,40 @@ import { Dumbbell, UserCheck, AlertOctagon, HelpCircle, Flame, ShieldAlert, Spar
 export default function App() {
   // --- Global Application State ---
   const [settings, setSettings] = useState<SystemSettings>(() =>
-    getLocalStorageData('gym_settings_v6', INITIAL_SETTINGS)
+    getLocalStorageData('gym_settings_v7', INITIAL_SETTINGS)
   );
   const [users, setUsers] = useState<User[]>(() =>
-    getLocalStorageData('gym_users_v6', INITIAL_USERS)
+    getLocalStorageData('gym_users_v7', INITIAL_USERS)
   );
   const [sessions, setSessions] = useState<TrainingSession[]>(() =>
-    getLocalStorageData('gym_sessions_v6', INITIAL_SESSIONS)
+    getLocalStorageData('gym_sessions_v7', INITIAL_SESSIONS)
   );
   const [openGymSessions, setOpenGymSessions] = useState<OpenGymSession[]>(() =>
-    getLocalStorageData('gym_opengym_v6', INITIAL_OPEN_GYM_SESSIONS)
+    getLocalStorageData('gym_opengym_v7', INITIAL_OPEN_GYM_SESSIONS)
   );
   const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>(() =>
-    getLocalStorageData('gym_workouts_v6', INITIAL_WORKOUT_PLANS)
+    getLocalStorageData('gym_workouts_v7', INITIAL_WORKOUT_PLANS)
   );
   const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>(() =>
-    getLocalStorageData('gym_nutrition_v6', INITIAL_NUTRITION_PLANS)
+    getLocalStorageData('gym_nutrition_v7', INITIAL_NUTRITION_PLANS)
   );
   const [blackPoints, setBlackPoints] = useState<BlackPoint[]>(() =>
-    getLocalStorageData('gym_blackpoints_v6', INITIAL_BLACK_POINTS)
+    getLocalStorageData('gym_blackpoints_v7', INITIAL_BLACK_POINTS)
   );
   const [announcements, setAnnouncements] = useState<Announcement[]>(() =>
-    getLocalStorageData('gym_announcements_v6', INITIAL_ANNOUNCEMENTS)
+    getLocalStorageData('gym_announcements_v7', INITIAL_ANNOUNCEMENTS)
   );
   const [payments, setPayments] = useState<Payment[]>(() =>
-    getLocalStorageData('gym_payments_v6', INITIAL_PAYMENTS)
+    getLocalStorageData('gym_payments_v7', INITIAL_PAYMENTS)
   );
   const [messages, setMessages] = useState<Message[]>(() =>
-    getLocalStorageData('gym_messages_v6', INITIAL_MESSAGES)
+    getLocalStorageData('gym_messages_v7', INITIAL_MESSAGES)
   );
   const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>(() =>
-    getLocalStorageData('gym_attendance_v6', INITIAL_ATTENDANCE)
+    getLocalStorageData('gym_attendance_v7', INITIAL_ATTENDANCE)
   );
   const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>(() =>
-    getLocalStorageData('gym_discounts_v6', INITIAL_DISCOUNT_CODES)
+    getLocalStorageData('gym_discounts_v7', INITIAL_DISCOUNT_CODES)
   );
 
   // Modals state
@@ -93,9 +93,11 @@ export default function App() {
 
   // Active Simulated User
   const [activeUser, setActiveUser] = useState<User>(() => {
-    const loadedUsers = getLocalStorageData('gym_users_v6', INITIAL_USERS);
-    // Default to the Manager to showcase the main panel on first load
-    return loadedUsers.find(u => u.role === UserRole.MANAGER) || loadedUsers[0];
+    const loadedUsers = getLocalStorageData('gym_users_v7', INITIAL_USERS);
+    // Open on the mobile trainee experience shown in the product mockup.
+    return loadedUsers.find(u => u.id === 'trainee-meni')
+      || loadedUsers.find(u => u.role === UserRole.TRAINEE)
+      || loadedUsers[0];
   });
 
   // State synchronization helper when switching user (so user details like debt, priority score are up to date)
@@ -108,51 +110,51 @@ export default function App() {
 
   // --- Auto-Save States on changes ---
   useEffect(() => {
-    saveLocalStorageData('gym_settings_v6', settings);
+    saveLocalStorageData('gym_settings_v7', settings);
   }, [settings]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_users_v6', users);
+    saveLocalStorageData('gym_users_v7', users);
   }, [users]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_sessions_v6', sessions);
+    saveLocalStorageData('gym_sessions_v7', sessions);
   }, [sessions]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_opengym_v6', openGymSessions);
+    saveLocalStorageData('gym_opengym_v7', openGymSessions);
   }, [openGymSessions]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_workouts_v6', workoutPlans);
+    saveLocalStorageData('gym_workouts_v7', workoutPlans);
   }, [workoutPlans]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_nutrition_v6', nutritionPlans);
+    saveLocalStorageData('gym_nutrition_v7', nutritionPlans);
   }, [nutritionPlans]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_blackpoints_v6', blackPoints);
+    saveLocalStorageData('gym_blackpoints_v7', blackPoints);
   }, [blackPoints]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_announcements_v6', announcements);
+    saveLocalStorageData('gym_announcements_v7', announcements);
   }, [announcements]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_payments_v6', payments);
+    saveLocalStorageData('gym_payments_v7', payments);
   }, [payments]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_messages_v6', messages);
+    saveLocalStorageData('gym_messages_v7', messages);
   }, [messages]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_attendance_v6', attendanceLogs);
+    saveLocalStorageData('gym_attendance_v7', attendanceLogs);
   }, [attendanceLogs]);
 
   useEffect(() => {
-    saveLocalStorageData('gym_discounts_v6', discountCodes);
+    saveLocalStorageData('gym_discounts_v7', discountCodes);
   }, [discountCodes]);
 
 
@@ -307,7 +309,7 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell min-h-screen flex flex-col font-sans antialiased" dir="rtl">
+    <div className={`app-shell role-${activeUser.role.toLowerCase()} min-h-screen flex flex-col font-sans antialiased`} dir="rtl">
       {/* Visual Header */}
       <header className="app-header bg-gradient-to-r from-zinc-950 via-zinc-900 to-amber-950 text-white shadow-md border-b border-amber-500/20">
         <div className="app-header-inner max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">

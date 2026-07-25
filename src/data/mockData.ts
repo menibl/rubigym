@@ -19,7 +19,8 @@ import {
   Payment,
   AttendanceLog,
   DiscountCode,
-  SystemSettings
+  SystemSettings,
+  MuscleGroup
 } from '../types';
 
 export const INITIAL_SETTINGS: SystemSettings = {
@@ -140,12 +141,122 @@ export const INITIAL_USERS: User[] = [
   }
 ];
 
-export const INITIAL_SESSIONS: TrainingSession[] = [];
-export const INITIAL_OPEN_GYM_SESSIONS: OpenGymSession[] = [];
-export const INITIAL_WORKOUT_PLANS: WorkoutPlan[] = [];
+const dateFromToday = (days: number): string => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split('T')[0];
+};
+
+export const INITIAL_SESSIONS: TrainingSession[] = [
+  {
+    id: 'session-lower-body',
+    title: 'כוח תחתון',
+    date: dateFromToday(0),
+    time: '06:00',
+    durationMinutes: 60,
+    coachId: 'user-robi',
+    coachName: 'רובי',
+    muscleGroup: MuscleGroup.LEGS,
+    maxParticipants: 12,
+    genderRestriction: Gender.ALL,
+    allowedMemberships: Object.values(MembershipType),
+    registeredUsers: ['trainee-liraz', 'trainee-roni', 'trainee-oren', 'trainee-gilad'],
+    waitlistUsers: []
+  },
+  {
+    id: 'session-upper-body',
+    title: 'כוח עליון — פלג גוף עליון',
+    date: dateFromToday(0),
+    time: '18:00',
+    durationMinutes: 60,
+    coachId: 'user-robi',
+    coachName: 'רובי',
+    muscleGroup: MuscleGroup.UPPER,
+    maxParticipants: 12,
+    genderRestriction: Gender.ALL,
+    allowedMemberships: Object.values(MembershipType),
+    registeredUsers: ['trainee-liraz', 'trainee-roni', 'trainee-oren', 'trainee-gilad', 'trainee-meni'],
+    waitlistUsers: []
+  },
+  {
+    id: 'session-hiit',
+    title: 'HIIT קבוצתי',
+    date: dateFromToday(0),
+    time: '19:30',
+    durationMinutes: 60,
+    coachId: 'user-robi',
+    coachName: 'רובי',
+    muscleGroup: MuscleGroup.FUNCTIONAL,
+    maxParticipants: 6,
+    genderRestriction: Gender.ALL,
+    allowedMemberships: Object.values(MembershipType),
+    registeredUsers: ['trainee-meni', 'trainee-liraz', 'trainee-roni', 'trainee-oren', 'trainee-gilad'],
+    waitlistUsers: []
+  },
+  {
+    id: 'session-core',
+    title: 'ליבה ויציבה',
+    date: dateFromToday(1),
+    time: '09:00',
+    durationMinutes: 50,
+    coachId: 'user-robi',
+    coachName: 'רובי',
+    muscleGroup: MuscleGroup.CORE,
+    maxParticipants: 10,
+    genderRestriction: Gender.ALL,
+    allowedMemberships: Object.values(MembershipType),
+    registeredUsers: ['trainee-liraz', 'trainee-roni'],
+    waitlistUsers: []
+  }
+];
+export const INITIAL_OPEN_GYM_SESSIONS: OpenGymSession[] = [
+  {
+    id: 'open-gym-evening',
+    date: dateFromToday(0),
+    timeSlot: '21:00 - 22:00',
+    maxParticipants: 20,
+    registeredUsers: ['trainee-liraz', 'trainee-oren', 'trainee-gilad'],
+    waitlistUsers: []
+  }
+];
+export const INITIAL_WORKOUT_PLANS: WorkoutPlan[] = [
+  {
+    id: 'workout-meni',
+    traineeId: 'trainee-meni',
+    coachId: 'user-robi',
+    coachName: 'רובי',
+    lastUpdated: dateFromToday(-2),
+    status: 'APPROVED_ASSIGNED',
+    exercises: [
+      { id: 'ex-1', name: 'לחיצת חזה', category: 'כוח', muscleGroup: MuscleGroup.UPPER, sets: 4, reps: '8-10', weight: '60 ק״ג' },
+      { id: 'ex-2', name: 'סקוואט', category: 'כוח', muscleGroup: MuscleGroup.LEGS, sets: 4, reps: '10', weight: '70 ק״ג' },
+      { id: 'ex-3', name: 'חתירה', category: 'כוח', muscleGroup: MuscleGroup.BACK, sets: 3, reps: '12', weight: '45 ק״ג' },
+      { id: 'ex-4', name: 'לחיצת כתפיים', category: 'כוח', muscleGroup: MuscleGroup.SHOULDERS, sets: 3, reps: '10', weight: '22 ק״ג' }
+    ]
+  }
+];
 export const INITIAL_NUTRITION_PLANS: NutritionPlan[] = [];
 export const INITIAL_BLACK_POINTS: BlackPoint[] = [];
-export const INITIAL_ANNOUNCEMENTS: Announcement[] = [];
+export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
+  {
+    id: 'announcement-friday',
+    title: 'שינוי בשעות יום שישי',
+    content: 'האימון של 08:00 עובר ל־09:00 השבוע בלבד. הרישום הקיים נשמר אוטומטית.',
+    createdBy: 'רובי',
+    creatorRole: UserRole.MANAGER,
+    date: dateFromToday(0),
+    targetGender: Gender.ALL
+  },
+  {
+    id: 'announcement-weekend',
+    title: 'Open Gym בסוף השבוע',
+    content: 'שעות האימון הפתוח בשבת עודכנו ל־09:00–13:00, בהתאם לתפוסה.',
+    createdBy: 'הנהלת המועדון',
+    creatorRole: UserRole.MANAGER,
+    date: dateFromToday(-1),
+    targetGender: Gender.ALL
+  }
+];
 export const INITIAL_PAYMENTS: Payment[] = [];
 export const INITIAL_MESSAGES: Message[] = [];
 export const INITIAL_ATTENDANCE: AttendanceLog[] = [];

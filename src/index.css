@@ -677,6 +677,14 @@ option {
   max-width: 100%;
 }
 
+.mobile-booking-header {
+  display: none;
+}
+
+.mobile-card-capacity {
+  display: none;
+}
+
 /* Modal treatment */
 .fixed.inset-0 {
   backdrop-filter: blur(8px);
@@ -688,47 +696,257 @@ option {
 
 /* Mobile turns the trainee experience into the supplied phone-like app. */
 @media (max-width: 720px) {
-  .app-header {
-    position: static;
+  .role-trainee {
+    min-height: 100dvh;
+    background: var(--app-bg);
   }
 
-  .app-header-inner {
-    align-items: stretch !important;
-    padding: 14px 16px !important;
+  .role-trainee .app-header,
+  .role-trainee #role-switcher-container,
+  .role-trainee .app-footer,
+  .role-trainee .trainee-profile-panel {
+    display: none !important;
   }
 
-  .app-header-inner > div:first-child {
-    justify-content: center;
+  .role-trainee .app-main {
+    width: 100%;
+    max-width: 430px !important;
+    padding: 0 12px 92px !important;
   }
 
-  .app-header-inner > div:last-child {
-    justify-content: center;
+  .role-trainee .dashboard-stage {
+    width: 100%;
   }
 
-  .app-main {
-    padding: 12px 12px 96px !important;
-  }
-
-  #role-switcher-container {
-    margin-bottom: 14px;
-  }
-
-  .trainee-app > div:nth-of-type(2) {
-    padding: 16px !important;
+  .role-trainee .trainee-app {
+    width: 100%;
+    margin: 0 auto;
+    gap: 0 !important;
+    border: 1px solid var(--app-line);
+    border-radius: 32px;
+    background: var(--app-bg);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.38);
+    overflow: hidden;
   }
 
   .trainee-content {
-    padding: 18px !important;
-    border-radius: 22px !important;
+    min-height: calc(100dvh - 26px);
+    padding: 20px 20px 112px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: var(--app-bg) !important;
+    box-shadow: none !important;
+  }
+
+  .home-greeting {
+    margin: 4px 0 18px;
+  }
+
+  .home-greeting img {
+    width: 44px;
+    height: 44px;
+  }
+
+  .home-greeting h2 {
+    font-size: 24px;
+  }
+
+  .next-session-card {
+    padding: 20px;
+  }
+
+  .next-session-card h3 {
+    font-size: 25px;
+  }
+
+  .next-session-bottom {
+    align-items: center;
+    flex-direction: row;
+    direction: ltr;
+  }
+
+  .next-session-bottom > * {
+    direction: rtl;
+  }
+
+  .next-session-bottom > button {
+    white-space: nowrap;
+  }
+
+  .capacity-block {
+    min-width: 132px;
+  }
+
+  .home-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-stats > div {
+    min-width: 0;
+  }
+
+  .mobile-booking-header {
+    display: block;
+  }
+
+  .mobile-booking-header h2 {
+    margin: 2px 0 4px;
+    font-family: "Rubik", sans-serif;
+    font-size: 22px;
+    font-weight: 900;
+  }
+
+  .mobile-booking-header > p {
+    color: var(--app-muted);
+    font-size: 13px;
+  }
+
+  .mobile-day-picker {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    padding-bottom: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .mobile-day-picker::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-day-picker button {
+    display: flex;
+    flex: 0 0 46px;
+    height: 60px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    border: 1px solid var(--app-line);
+    border-radius: 14px;
+    background: var(--app-surface);
+    color: var(--app-text);
+  }
+
+  .mobile-day-picker button span {
+    color: var(--app-muted);
+    font-size: 11px;
+  }
+
+  .mobile-day-picker button strong {
+    font-family: "Rubik", sans-serif;
+    font-size: 15px;
+  }
+
+  .mobile-day-picker button.active {
+    border-color: var(--app-gold);
+    background: var(--app-gold);
+    color: #171810;
+  }
+
+  .mobile-day-picker button.active span {
+    color: #171810;
+  }
+
+  .desktop-weekly-calendar,
+  .mobile-session-hidden {
+    display: none !important;
+  }
+
+  #trainee-dashboard [id^="booking-card-"] {
+    display: block;
+    margin-bottom: 12px;
+    padding: 16px !important;
+    border: 1px solid var(--app-line) !important;
+    border-radius: 18px !important;
+    background: var(--app-surface) !important;
+    box-shadow: none !important;
+  }
+
+  #trainee-dashboard [id^="booking-card-"] h4 {
+    font-family: "Rubik", sans-serif;
+    font-size: 16px !important;
+  }
+
+  #trainee-dashboard [id^="booking-card-"] > div:first-child > div:nth-child(2) {
+    margin-top: 12px;
+    padding: 9px !important;
+    border-color: var(--app-line) !important;
+    background: var(--app-surface-2) !important;
+  }
+
+  #trainee-dashboard [id^="booking-card-"] > div:last-child {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(112px, auto);
+    align-items: end;
+    gap: 12px;
+    margin-top: 13px !important;
+    padding-top: 12px !important;
+    border-color: var(--app-line) !important;
+  }
+
+  #trainee-dashboard [id^="booking-card-"] > div:last-child > div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  #trainee-dashboard [id^="booking-card-"] > div:last-child > div:first-child > div:last-child {
+    display: none !important;
+  }
+
+  .mobile-card-capacity {
+    display: block;
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .mobile-card-capacity > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: 142px;
+  }
+
+  .mobile-card-capacity i {
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    background: var(--app-line);
+  }
+
+  .mobile-card-capacity i.filled {
+    background: var(--app-gold);
+  }
+
+  .mobile-card-capacity i.warning {
+    background: var(--app-copper);
+  }
+
+  .mobile-card-capacity > span {
+    display: block;
+    margin-top: 6px;
+    color: var(--app-muted);
+    font-size: 11px;
+  }
+
+  #trainee-dashboard [id^="booking-card-"] > div:last-child > button {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: 42px;
+    border-radius: 12px !important;
+  }
+
+  #trainee-dashboard [id^="booking-card-"] > div:last-child > span {
+    grid-column: 1 / -1;
   }
 
   #trainee-tabs {
     position: fixed;
-    right: 10px;
+    right: max(12px, calc((100vw - 406px) / 2));
     bottom: 10px;
-    left: 10px;
+    left: max(12px, calc((100vw - 406px) / 2));
     z-index: 35;
-    padding: 8px !important;
+    justify-content: space-around;
+    padding: 8px 10px 12px !important;
     border-radius: 20px !important;
     background: rgba(20, 22, 28, 0.94) !important;
     backdrop-filter: blur(16px);
@@ -736,17 +954,37 @@ option {
   }
 
   #trainee-tabs button {
-    min-width: 72px;
+    min-width: 0;
     min-height: 54px;
+    flex: 1 1 20%;
     flex-direction: column;
     gap: 3px;
     padding: 7px 8px !important;
     font-size: 10px !important;
+    background: transparent !important;
+    color: var(--app-muted) !important;
   }
 
-  .next-session-bottom {
-    align-items: flex-start;
-    flex-direction: column-reverse;
+  #trainee-tabs button:nth-child(3),
+  #trainee-tabs button:nth-child(4),
+  #trainee-tabs button:nth-child(7) {
+    display: none !important;
+  }
+
+  #trainee-tabs button.bg-emerald-600 {
+    position: relative;
+    color: var(--app-text) !important;
+    box-shadow: none !important;
+  }
+
+  #trainee-tabs button.bg-emerald-600::after {
+    position: absolute;
+    bottom: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--app-gold);
+    content: "";
   }
 
   .home-stats {
@@ -757,9 +995,6 @@ option {
     padding-inline: 6px;
   }
 
-  .app-footer {
-    display: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

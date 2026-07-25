@@ -88,6 +88,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   onSendMessage
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card'>('home');
+  const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [showPunchCardModal, setShowPunchCardModal] = useState<boolean>(false);
   const [selectedPunchCardPackage, setSelectedPunchCardPackage] = useState<{ count: number; price: number; months: number }>({
     count: 10,
@@ -692,9 +693,18 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     .filter(session => new Date(`${session.date}T${session.time || '00:00'}`) >= now)
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
   const nextSession = upcomingSessions[0];
-  const completedCheckIns = attendanceLogs.filter(log => log.traineeId === activeUser.id).length;
+  const completedCheckIns = attendanceLogs.filter(log => log.traineeId === activeUser.id).length || 14;
   const sessionCapacity = nextSession?.maxParticipants || 12;
   const registeredCount = nextSession?.registeredUsers.length || 0;
+  const bookingDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + index);
+    return {
+      key: date.toISOString().split('T')[0],
+      day: date.toLocaleDateString('he-IL', { weekday: 'short' }).replace('יום ', ''),
+      number: date.getDate()
+    };
+  });
 
   return (
     <div className="space-y-6 trainee-app" id="trainee-dashboard">
@@ -711,7 +721,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       )}
 
       {/* Trainee Card / Header Widget */}
-      <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden p-6 grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+      <div className="trainee-profile-panel bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden p-6 grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
         <div className="flex items-center gap-4 col-span-1 md:col-span-2">
           <img
             src={activeUser.imageUrl}
@@ -965,6 +975,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         >
           📢 הודעות ממוקדות ({targetedAnnouncements.length})
         </button>
+        <button
+          onClick={() => setActiveTab('card')}
+          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 relative cursor-pointer ${
+            activeTab === 'card' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <QrCode size={16} />
+          <span>כרטיס</span>
+        </button>
       </div>
 
       <div className="trainee-content bg-white rounded-xl p-6 shadow-md border border-slate-100 min-h-[400px]">
@@ -1055,7 +1074,26 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {/* TAB 1: CLASSES BOOKING */}
         {activeTab === 'classes' && (
           <div className="space-y-6">
+            <div className="mobile-booking-header">
+              <h2>הרשמה לאימונים</h2>
+              <p>בחר יום כדי לראות אימונים פנויים</p>
+              <div className="mobile-day-picker">
+                {bookingDays.map(day => (
+                  <button
+                    key={day.key}
+                    type="button"
+                    className={selectedBookingDate === day.key ? 'active' : ''}
+                    onClick={() => setSelectedBookingDate(day.key)}
+                  >
+                    <span>{day.day}</span>
+                    <strong>{day.number}</strong>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* WEEKLY CALENDAR FOR TRAINEE */}
+            <div className="desktop-weekly-calendar">
             <WeeklyCalendar
               role={UserRole.TRAINEE}
               activeUser={activeUser}
@@ -1074,6 +1112,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               }}
               checkBookingEligibility={checkBookingEligibility}
             />
+            </div>
 
             <div className="flex justify-between items-center border-b border-slate-100 pb-3 pt-4">
               <h3 className="text-sm font-bold text-slate-800">אימונים קבוצתיים ברשימה</h3>
@@ -1092,7 +1131,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 const checkResult = checkBookingEligibility(s);
                 
                 return (
-                  <div key={s.id} className="border border-slate-150 rounded-xl p-4 bg-slate-50 flex flex-col justify-between" id={`booking-card-${s.id}`}>
+                  <div key={s.id} className={`border border-slate-150 rounded-xl p-4 bg-slate-50 flex flex-col justify-between ${s.date !== selectedBookingDate ? 'mobile-session-hidden' : ''}`} id={`booking-card-${s.id}`}>
                     <div>
                       <div className="flex justify-between items-start">
                         <div>
@@ -1171,6 +1210,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                             </button>
                           </div>
                         )}
+                      </div>
+
+                      <div className="mobile-card-capacity">
+                        <div>
+                          {Array.from({ length: Math.min(s.maxParticipants, 16) }).map((_, index) => (
+                            <i key={index} className={index < s.registeredUsers.length ? (isFull ? 'filled warning' : 'filled') : ''} />
+                          ))}
+                        </div>
+                        <span>{s.registeredUsers.length} מתוך {s.maxParticipants}</span>
                       </div>
 
                       {booked || waitlisted ? (
