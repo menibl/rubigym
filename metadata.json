@@ -1,0 +1,6 @@
+{
+  "name": "RUBIS - מועדון כושר ובודיבילדינג",
+  "description": "מערכת PWA יוקרתית ומעוצבת עבור מועדון הכושר והבודיבילדינג RUBIS. כוללת רישום לאימונים, ניהול מנויים, מעקב צ'ק-אין, מערכת עונשים ונקודות שחורות, תוכניות אימון ותזונה יוקרתיות ותקשורת ישירה.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
