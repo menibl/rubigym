@@ -1,0 +1,1924 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState } from 'react';
+import { WeeklyCalendar } from './WeeklyCalendar';
+import { CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
+import { EditSessionModal } from './EditSessionModal';
+import {
+  User,
+  TrainingSession,
+  OpenGymSession,
+  BlackPoint,
+  Announcement,
+  Payment,
+  SystemSettings,
+  MuscleGroup,
+  Gender,
+  MembershipType,
+  MEMBERSHIP_TYPE_LABELS,
+  MembershipStatus,
+  UserRole,
+  DiscountCode
+} from '../types';
+import {
+  Calendar,
+  Settings,
+  Users,
+  CreditCard,
+  Bell,
+  Trash2,
+  Edit3,
+  Plus,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Search,
+  Filter,
+  DollarSign,
+  Tag,
+  Percent
+} from 'lucide-react';
+
+interface AdminDashboardProps {
+  users: User[];
+  sessions: TrainingSession[];
+  openGymSessions: OpenGymSession[];
+  blackPoints: BlackPoint[];
+  announcements: Announcement[];
+  payments: Payment[];
+  settings: SystemSettings;
+  discountCodes?: DiscountCode[];
+  onUpdateSessions: (sessions: TrainingSession[]) => void;
+  onUpdateOpenGym: (openGyms: OpenGymSession[]) => void;
+  onUpdateBlackPoints: (blackPoints: BlackPoint[]) => void;
+  onUpdateUsers: (users: User[]) => void;
+  onUpdateAnnouncements: (announcements: Announcement[]) => void;
+  onUpdatePayments: (payments: Payment[]) => void;
+  onUpdateSettings: (settings: SystemSettings) => void;
+  onUpdateDiscountCodes?: (discountCodes: DiscountCode[]) => void;
+  activeUser: User;
+}
+
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  users,
+  sessions,
+  openGymSessions,
+  blackPoints,
+  announcements,
+  payments,
+  settings,
+  discountCodes = [],
+  onUpdateSessions,
+  onUpdateOpenGym,
+  onUpdateBlackPoints,
+  onUpdateUsers,
+  onUpdateAnnouncements,
+  onUpdatePayments,
+  onUpdateSettings,
+  onUpdateDiscountCodes,
+  activeUser
+}) => {
+  const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
+
+  // Discount Codes form state
+  const [newDiscountCode, setNewDiscountCode] = useState({
+    code: '',
+    discountPercent: 15,
+    discountAmount: 0,
+    type: 'PERCENT' as 'PERCENT' | 'AMOUNT',
+    isSingleUse: true
+  });
+
+  const handleCreateDiscountCode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDiscountCode.code.trim()) return;
+
+    const codeStr = newDiscountCode.code.trim().toUpperCase();
+    if (discountCodes.some(c => c.code === codeStr)) {
+      alert('קוד הנחה זה כבר קיים במערכת');
+      return;
+    }
+
+    const created: DiscountCode = {
+      id: `disc-${Date.now()}`,
+      code: codeStr,
+      discountPercent: newDiscountCode.type === 'PERCENT' ? Number(newDiscountCode.discountPercent) || 0 : 0,
+      discountAmount: newDiscountCode.type === 'AMOUNT' ? Number(newDiscountCode.discountAmount) || 0 : undefined,
+      isSingleUse: newDiscountCode.isSingleUse,
+      createdBy: activeUser.name || 'רובי באלי (מאמן ראשי)',
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+
+    if (onUpdateDiscountCodes) {
+      onUpdateDiscountCodes([created, ...discountCodes]);
+    }
+    setNewDiscountCode({
+      code: '',
+      discountPercent: 15,
+      discountAmount: 0,
+      type: 'PERCENT',
+      isSingleUse: true
+    });
+  };
+
+  const handleDeleteDiscountCode = (id: string) => {
+    if (onUpdateDiscountCodes) {
+      onUpdateDiscountCodes(discountCodes.filter(c => c.id !== id));
+    }
+  };
+
+  // Search & Filters
+  const [userSearch, setUserSearch] = useState('');
+  const [sessionSearch, setSessionSearch] = useState('');
+  const [sessionViewMode, setSessionViewMode] = useState<'CALENDAR' | 'TABLE'>('CALENDAR');
+  const [penaltySearch, setPenaltySearch] = useState('');
+
+  // New CreateSessionModal state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [modalInitialDate, setModalInitialDate] = useState<string | undefined>();
+  const [modalInitialTime, setModalInitialTime] = useState<string | undefined>();
+
+  // Edit Session Modal state
+  const [editingSession, setEditingSession] = useState<TrainingSession | null>(null);
+  const [editingOpenGym, setEditingOpenGym] = useState<OpenGymSession | null>(null);
+
+  const handleOpenCreateModal = (initialDate?: string, initialTime?: string) => {
+    setModalInitialDate(initialDate);
+    setModalInitialTime(initialTime);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleModalCreateSession = (data: CreateSessionData) => {
+    const { newSessions, newOpenGym } = createSessionsFromData(data, users, activeUser);
+    if (newSessions.length > 0) {
+      onUpdateSessions([...newSessions, ...sessions]);
+    }
+    if (newOpenGym.length > 0) {
+      onUpdateOpenGym([...newOpenGym, ...openGymSessions]);
+    }
+  };
+
+  const handleDeleteSession = (id: string, deleteSeries?: boolean) => {
+    let target = sessions.find(s => s.id === id);
+    if (!target) {
+      target = sessions.find(s => (s.seriesId && id.startsWith(s.seriesId)) || id.startsWith(s.id));
+    }
+    if (!target) return;
+
+    if (deleteSeries) {
+      const targetSeriesId = target.seriesId;
+      if (targetSeriesId) {
+        onUpdateSessions(sessions.filter(s => s.seriesId !== targetSeriesId && s.id !== target!.id));
+      } else {
+        onUpdateSessions(sessions.filter(s => s.id !== target!.id && !id.startsWith(s.id)));
+      }
+    } else {
+      let dateKey = target.date;
+      const dateMatch = id.match(/\d{4}-\d{2}-\d{2}$/);
+      if (dateMatch) dateKey = dateMatch[0];
+
+      if (target.id === id && (!target.recurringType || target.recurringType === 'NONE')) {
+        onUpdateSessions(sessions.filter(s => s.id !== id));
+      } else {
+        const updated = sessions.map(s => {
+          if (s.id === target!.id || (target!.seriesId && s.seriesId === target!.seriesId)) {
+            const currentExcluded = s.excludedDates || [];
+            if (!currentExcluded.includes(dateKey)) {
+              return { ...s, excludedDates: [...currentExcluded, dateKey] };
+            }
+          }
+          return s;
+        });
+        onUpdateSessions(updated);
+      }
+    }
+  };
+
+  const handleDeleteOpenGym = (id: string, deleteSeries?: boolean) => {
+    let target = openGymSessions.find(g => g.id === id);
+    if (!target) {
+      target = openGymSessions.find(g => (g.seriesId && id.startsWith(g.seriesId)) || id.startsWith(g.id));
+    }
+    if (!target) return;
+
+    if (deleteSeries) {
+      const targetSeriesId = target.seriesId;
+      if (targetSeriesId) {
+        onUpdateOpenGym(openGymSessions.filter(g => g.seriesId !== targetSeriesId && g.id !== target!.id));
+      } else {
+        onUpdateOpenGym(openGymSessions.filter(g => g.id !== target!.id && !id.startsWith(g.id)));
+      }
+    } else {
+      let dateKey = target.date;
+      const dateMatch = id.match(/\d{4}-\d{2}-\d{2}$/);
+      if (dateMatch) dateKey = dateMatch[0];
+
+      if (target.id === id && (!target.recurringType || target.recurringType === 'NONE')) {
+        onUpdateOpenGym(openGymSessions.filter(g => g.id !== id));
+      } else {
+        const updated = openGymSessions.map(g => {
+          if (g.id === target!.id || (target!.seriesId && g.seriesId === target!.seriesId)) {
+            const currentExcluded = g.excludedDates || [];
+            if (!currentExcluded.includes(dateKey)) {
+              return { ...g, excludedDates: [...currentExcluded, dateKey] };
+            }
+          }
+          return g;
+        });
+        onUpdateOpenGym(updated);
+      }
+    }
+  };
+
+  const handleSaveEditSession = (updatedSession: TrainingSession, updateSeries: boolean, originalDateKey?: string) => {
+    if (updateSeries) {
+      const updated = sessions.map(s => {
+        if ((updatedSession.seriesId && s.seriesId === updatedSession.seriesId) || s.id === updatedSession.id) {
+          return {
+            ...s,
+            title: updatedSession.title,
+            time: updatedSession.time,
+            durationMinutes: updatedSession.durationMinutes,
+            coachId: updatedSession.coachId,
+            coachName: updatedSession.coachName,
+            muscleGroup: updatedSession.muscleGroup,
+            maxParticipants: updatedSession.maxParticipants,
+            ageMin: updatedSession.ageMin,
+            ageMax: updatedSession.ageMax,
+            genderRestriction: updatedSession.genderRestriction,
+            allowedMemberships: updatedSession.allowedMemberships,
+            isPersonalTraining: updatedSession.isPersonalTraining
+          };
+        }
+        return s;
+      });
+      onUpdateSessions(updated);
+    } else {
+      const isBaseMatch = sessions.some(s => s.id === updatedSession.id && (!s.recurringType || s.recurringType === 'NONE'));
+      if (isBaseMatch) {
+        onUpdateSessions(sessions.map(s => s.id === updatedSession.id ? updatedSession : s));
+      } else {
+        const targetDate = originalDateKey || updatedSession.date;
+        const updatedSessions = sessions.map(s => {
+          if ((updatedSession.seriesId && s.seriesId === updatedSession.seriesId) || updatedSession.id.startsWith(s.id)) {
+            const currentExcluded = s.excludedDates || [];
+            if (!currentExcluded.includes(targetDate)) {
+              return { ...s, excludedDates: [...currentExcluded, targetDate] };
+            }
+          }
+          return s;
+        });
+        const standaloneSession: TrainingSession = {
+          ...updatedSession,
+          id: `session-override-${Date.now()}`,
+          date: updatedSession.date,
+          recurringType: 'NONE',
+          seriesId: undefined
+        };
+        onUpdateSessions([standaloneSession, ...updatedSessions]);
+      }
+    }
+  };
+
+  const handleSaveEditOpenGym = (updatedGym: OpenGymSession, updateSeries: boolean, originalDateKey?: string) => {
+    if (updateSeries) {
+      const updated = openGymSessions.map(g => {
+        if ((updatedGym.seriesId && g.seriesId === updatedGym.seriesId) || g.id === updatedGym.id) {
+          return {
+            ...g,
+            timeSlot: updatedGym.timeSlot,
+            maxParticipants: updatedGym.maxParticipants
+          };
+        }
+        return g;
+      });
+      onUpdateOpenGym(updated);
+    } else {
+      const isBaseMatch = openGymSessions.some(g => g.id === updatedGym.id && (!g.recurringType || g.recurringType === 'NONE'));
+      if (isBaseMatch) {
+        onUpdateOpenGym(openGymSessions.map(g => g.id === updatedGym.id ? updatedGym : g));
+      } else {
+        const targetDate = originalDateKey || updatedGym.date;
+        const updatedGyms = openGymSessions.map(g => {
+          if ((updatedGym.seriesId && g.seriesId === updatedGym.seriesId) || updatedGym.id.startsWith(g.id)) {
+            const currentExcluded = g.excludedDates || [];
+            if (!currentExcluded.includes(targetDate)) {
+              return { ...g, excludedDates: [...currentExcluded, targetDate] };
+            }
+          }
+          return g;
+        });
+        const standaloneGym: OpenGymSession = {
+          ...updatedGym,
+          id: `open-override-${Date.now()}`,
+          date: updatedGym.date,
+          recurringType: 'NONE',
+          seriesId: undefined
+        };
+        onUpdateOpenGym([standaloneGym, ...updatedGyms]);
+      }
+    }
+  };
+
+  // Form states for creating a new training session
+  const [showSessionForm, setShowSessionForm] = useState(false);
+  const [sessionTypeCategory, setSessionTypeCategory] = useState<'GROUP' | 'PERSONAL' | 'OPEN_GYM'>('GROUP');
+  const [newSession, setNewSession] = useState({
+    title: '',
+    date: new Date().toISOString().split('T')[0],
+    time: '18:00',
+    durationMinutes: 60,
+    coachId: activeUser.id,
+    muscleGroup: MuscleGroup.UPPER,
+    maxParticipants: 10,
+    ageMin: '',
+    ageMax: '',
+    genderRestriction: Gender.ALL,
+    allowedMemberships: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+  });
+
+  // Form states for creating a new bulletin announcement
+  const [showAnnForm, setShowAnnForm] = useState(false);
+  const [newAnn, setNewAnn] = useState({
+    title: '',
+    content: '',
+    targetGender: Gender.ALL,
+    targetAgeMin: '',
+    targetAgeMax: '',
+    targetMembershipTypes: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+  });
+
+  // Handle Session Creation
+  const handleCreateSession = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (sessionTypeCategory === 'OPEN_GYM') {
+      const timeSlotStr = `${newSession.time}-${String(parseInt(newSession.time.split(':')[0]) + 2).padStart(2, '0')}:00`;
+      const openGym: OpenGymSession = {
+        id: `open-${Date.now()}`,
+        date: newSession.date,
+        timeSlot: timeSlotStr,
+        maxParticipants: Number(newSession.maxParticipants) || 15,
+        registeredUsers: [],
+        waitlistUsers: []
+      };
+      onUpdateOpenGym([openGym, ...openGymSessions]);
+    } else {
+      const coach = users.find(u => u.id === newSession.coachId) || activeUser;
+      
+      const session: TrainingSession = {
+        id: `session-${Date.now()}`,
+        title: newSession.title || (sessionTypeCategory === 'PERSONAL' ? 'אימון אישי 1-על-1' : 'אימון כושר קבוצתי'),
+        date: newSession.date,
+        time: newSession.time,
+        durationMinutes: Number(newSession.durationMinutes),
+        coachId: coach.id,
+        coachName: coach.name,
+        muscleGroup: newSession.muscleGroup,
+        maxParticipants: sessionTypeCategory === 'PERSONAL' ? (Number(newSession.maxParticipants) || 1) : Number(newSession.maxParticipants),
+        ageMin: newSession.ageMin ? Number(newSession.ageMin) : undefined,
+        ageMax: newSession.ageMax ? Number(newSession.ageMax) : undefined,
+        genderRestriction: newSession.genderRestriction,
+        allowedMemberships: newSession.allowedMemberships,
+        isPersonalTraining: sessionTypeCategory === 'PERSONAL',
+        registeredUsers: [],
+        waitlistUsers: []
+      };
+
+      onUpdateSessions([session, ...sessions]);
+    }
+
+    setShowSessionForm(false);
+    // Reset
+    setNewSession({
+      title: '',
+      date: new Date().toISOString().split('T')[0],
+      time: '18:00',
+      durationMinutes: 60,
+      coachId: activeUser.id,
+      muscleGroup: MuscleGroup.UPPER,
+      maxParticipants: 10,
+      ageMin: '',
+      ageMax: '',
+      genderRestriction: Gender.ALL,
+      allowedMemberships: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+    });
+  };
+
+  // Handle Announcement Creation
+  const handleCreateAnnouncement = (e: React.FormEvent) => {
+    e.preventDefault();
+    const announcement: Announcement = {
+      id: `ann-${Date.now()}`,
+      title: newAnn.title,
+      content: newAnn.content,
+      createdBy: activeUser.name,
+      creatorRole: activeUser.role as UserRole.MANAGER | UserRole.COACH,
+      date: new Date().toISOString().split('T')[0],
+      targetGender: newAnn.targetGender,
+      targetAgeMin: newAnn.targetAgeMin ? Number(newAnn.targetAgeMin) : undefined,
+      targetAgeMax: newAnn.targetAgeMax ? Number(newAnn.targetAgeMax) : undefined,
+      targetMembershipTypes: newAnn.targetMembershipTypes
+    };
+
+    onUpdateAnnouncements([announcement, ...announcements]);
+    setShowAnnForm(false);
+    // Reset
+    setNewAnn({
+      title: '',
+      content: '',
+      targetGender: Gender.ALL,
+      targetAgeMin: '',
+      targetAgeMax: '',
+      targetMembershipTypes: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+    });
+  };
+
+  // Handle Black Point manual deletion/override
+  const handleClearBlackPoint = (pointId: string, reason: string = 'שחרור ידני על ידי המנהל') => {
+    const updatedPoints = blackPoints.map(bp => {
+      if (bp.id === pointId) {
+        return {
+          ...bp,
+          status: 'CLEARED' as const,
+          clearedBy: activeUser.name,
+          clearReason: reason
+        };
+      }
+      return bp;
+    });
+    onUpdateBlackPoints(updatedPoints);
+
+    // Recalculate priority scores for trainees
+    const clearedBp = blackPoints.find(bp => bp.id === pointId);
+    if (clearedBp) {
+      recalculateUserPriority(clearedBp.traineeId, updatedPoints);
+    }
+  };
+
+  // Helper to recalculate trainee priority based on active black points
+  const recalculateUserPriority = (traineeId: string, currentPoints: BlackPoint[]) => {
+    const activeCount = currentPoints.filter(bp => bp.traineeId === traineeId && bp.status === 'ACTIVE').length;
+    const priority = activeCount >= settings.maxBlackPointsBeforePriorityDrop ? 50 : 100;
+    
+    const updatedUsers = users.map(u => {
+      if (u.id === traineeId) {
+        return { ...u, priorityScore: priority };
+      }
+      return u;
+    });
+    onUpdateUsers(updatedUsers);
+  };
+
+  // Delete a black point completely
+  const handleDeleteBlackPoint = (pointId: string) => {
+    const bp = blackPoints.find(p => p.id === pointId);
+    const updated = blackPoints.filter(bp => bp.id !== pointId);
+    onUpdateBlackPoints(updated);
+    if (bp) {
+      recalculateUserPriority(bp.traineeId, updated);
+    }
+  };
+
+  // Update Trainee Membership Status (billing / debit manual trigger for testing)
+  const handleUpdateStatus = (traineeId: string, newStatus: MembershipStatus) => {
+    const updatedUsers = users.map(u => {
+      if (u.id === traineeId) {
+        return { ...u, membershipStatus: newStatus };
+      }
+      return u;
+    });
+    onUpdateUsers(updatedUsers);
+  };
+
+  // Record a Mock Payment to clear debt
+  const handlePayDebt = (trainee: User) => {
+    const paymentAmount = 300;
+    const newPayment: Payment = {
+      id: `pay-${Date.now()}`,
+      traineeId: trainee.id,
+      traineeName: trainee.name,
+      amount: paymentAmount,
+      date: new Date().toISOString().split('T')[0],
+      status: 'PAID',
+      membershipTypePurchased: trainee.membershipType || MembershipType.GROUP_MONTHLY,
+      paymentMethod: 'סליקה מדומה (כרטיס אשראי)',
+      isMock: true
+    };
+
+    onUpdatePayments([newPayment, ...payments]);
+
+    // Update status to ACTIVE
+    const updatedUsers = users.map(u => {
+      if (u.id === trainee.id) {
+        return {
+          ...u,
+          membershipStatus: MembershipStatus.ACTIVE,
+          membershipExpiry: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split('T')[0] // renewed for 30 days
+        };
+      }
+      return u;
+    });
+    onUpdateUsers(updatedUsers);
+  };
+
+  // Toggle membership selection in create forms
+  const toggleMembershipSelection = (type: MembershipType, listName: 'session' | 'announcement') => {
+    if (listName === 'session') {
+      const current = [...newSession.allowedMemberships];
+      if (current.includes(type)) {
+        setNewSession({ ...newSession, allowedMemberships: current.filter(t => t !== type) });
+      } else {
+        setNewSession({ ...newSession, allowedMemberships: [...current, type] });
+      }
+    } else {
+      const current = [...newAnn.targetMembershipTypes];
+      if (current.includes(type)) {
+        setNewAnn({ ...newAnn, targetMembershipTypes: current.filter(t => t !== type) });
+      } else {
+        setNewAnn({ ...newAnn, targetMembershipTypes: [...current, type] });
+      }
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="admin-dashboard">
+      {/* Admin Tab Header */}
+      <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-wrap justify-between items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Settings className="text-emerald-400" size={20} />
+          <h1 className="text-lg font-extrabold text-white">פאנל ניהול המועדון (מנהל מערכת)</h1>
+        </div>
+        
+        <div className="flex bg-slate-800/90 p-1.5 rounded-xl gap-1 flex-wrap border border-slate-700/80">
+          <button
+            onClick={() => setActiveTab('sessions')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'sessions' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+            }`}
+          >
+            <Calendar size={14} />
+            אימונים ולו"ז
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'users' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+            }`}
+          >
+            <Users size={14} />
+            מתאמנים
+          </button>
+          <button
+            onClick={() => setActiveTab('penalties')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer relative ${
+              activeTab === 'penalties' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+            }`}
+          >
+            <AlertTriangle size={14} />
+            עונשים ונקודות
+            {blackPoints.filter(p => p.status === 'ACTIVE').length > 0 && (
+              <span className="absolute -top-1 -left-1 bg-rose-500 text-white rounded-full w-4 h-4 text-[8px] flex items-center justify-center font-bold">
+                {blackPoints.filter(p => p.status === 'ACTIVE').length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('payments')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'payments' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+            }`}
+          >
+            <CreditCard size={14} />
+            כספים וסליקה
+          </button>
+          <button
+            onClick={() => setActiveTab('announcements')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'announcements' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+            }`}
+          >
+            <Bell size={14} />
+            לוח מודעות
+          </button>
+          <button
+            onClick={() => setActiveTab('discounts')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'discounts' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+            }`}
+          >
+            <Tag size={14} />
+            קודי הנחה ומבצעים 🏷️
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              activeTab === 'settings' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Settings size={14} />
+            חוקים והגדרות
+          </button>
+        </div>
+      </div>
+
+      <div className="p-6">
+        {/* TAB 1: SESSIONS MANAGEMENT */}
+        {activeTab === 'sessions' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+              {/* VIEW SWITCHER */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700">תצוגת לו"ז אימונים:</span>
+                <div className="flex bg-slate-200/80 p-1 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setSessionViewMode('CALENDAR')}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition cursor-pointer ${
+                      sessionViewMode === 'CALENDAR'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-700 hover:text-slate-900'
+                    }`}
+                  >
+                    📅 לוח שנה שבועי
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSessionViewMode('TABLE')}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition cursor-pointer ${
+                      sessionViewMode === 'TABLE'
+                        ? 'bg-slate-800 text-white shadow-xs'
+                        : 'text-slate-700 hover:text-slate-900'
+                    }`}
+                  >
+                    📋 טבלת ניהול
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+                {sessionViewMode === 'TABLE' && (
+                  <div className="relative flex-1 max-w-xs">
+                    <Search className="absolute right-3 top-2 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      placeholder="חיפוש לפי כותרת/מאמן..."
+                      value={sessionSearch}
+                      onChange={(e) => setSessionSearch(e.target.value)}
+                      className="w-full pr-8 pl-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500 bg-white"
+                    />
+                  </div>
+                )}
+
+                <button
+                  onClick={() => handleOpenCreateModal()}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-1.5 px-3 rounded-lg flex items-center gap-1.5 transition shrink-0 cursor-pointer shadow-xs"
+                >
+                  <Plus size={14} />
+                  אימון חדש
+                </button>
+              </div>
+            </div>
+
+            {/* WEEKLY CALENDAR VIEW FOR ADMIN */}
+            {sessionViewMode === 'CALENDAR' && (
+              <WeeklyCalendar
+                role={UserRole.MANAGER}
+                activeUser={activeUser}
+                sessions={sessions}
+                openGymSessions={openGymSessions}
+                users={users}
+                onDeleteSession={handleDeleteSession}
+                onEditSession={(s) => setEditingSession(s)}
+                onDeleteOpenGym={handleDeleteOpenGym}
+                onEditOpenGym={(g) => setEditingOpenGym(g)}
+                onOpenCreateSessionModal={(d, t) => handleOpenCreateModal(d, t)}
+              />
+            )}
+
+            {/* CREATE SESSION MODAL */}
+            <CreateSessionModal
+              isOpen={isCreateModalOpen}
+              onClose={() => setIsCreateModalOpen(false)}
+              activeUser={activeUser}
+              users={users}
+              initialDate={modalInitialDate}
+              initialTime={modalInitialTime}
+              onCreateSession={handleModalCreateSession}
+            />
+
+            {/* EDIT SESSION MODAL */}
+            <EditSessionModal
+              isOpen={!!editingSession || !!editingOpenGym}
+              onClose={() => {
+                setEditingSession(null);
+                setEditingOpenGym(null);
+              }}
+              session={editingSession}
+              openGym={editingOpenGym}
+              users={users}
+              activeUser={activeUser}
+              onSaveSession={handleSaveEditSession}
+              onSaveOpenGym={handleSaveEditOpenGym}
+            />
+
+            {/* CREATE SESSION FORM */}
+            {showSessionForm && (
+              <form onSubmit={handleCreateSession} className="bg-slate-50 border border-slate-100 rounded-lg p-5 space-y-4" id="create-session-form">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <h3 className="text-sm font-semibold text-slate-800">הגדרת פעילות חדשה ביומן האימונים</h3>
+                  <button type="button" onClick={() => setShowSessionForm(false)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">ביטול</button>
+                </div>
+
+                {/* Session Type Category Tabs */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">סוג הפעילות בלוח:</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: 'GROUP', label: '👥 אימון קבוצתי', desc: 'אימון רגיל רב-משתתפים' },
+                      { id: 'PERSONAL', label: '🏋️ אימון אישי (PT)', desc: 'אימון אישי 1-על-1 (ניתן במקביל ל-Open Gym)' },
+                      { id: 'OPEN_GYM', label: '🔓 Open Gym', desc: 'שעות פתוחות לאימון עצמאי' }
+                    ].map(cat => (
+                      <button
+                        type="button"
+                        key={cat.id}
+                        onClick={() => {
+                          setSessionTypeCategory(cat.id as any);
+                          if (cat.id === 'PERSONAL') {
+                            setNewSession(s => ({ ...s, maxParticipants: 1, title: 'אימון אישי' }));
+                          } else if (cat.id === 'OPEN_GYM') {
+                            setNewSession(s => ({ ...s, maxParticipants: 15, title: 'Open Gym' }));
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex flex-col text-right cursor-pointer border ${
+                          sessionTypeCategory === cat.id
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>{cat.label}</span>
+                        <span className={`text-[9px] font-normal ${sessionTypeCategory === cat.id ? 'text-emerald-100' : 'text-slate-400'}`}>
+                          {cat.desc}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">שם האימון</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="לדוגמה: אימון אינטרוולים מחזורי / PT"
+                      value={newSession.title}
+                      onChange={(e) => setNewSession({ ...newSession, title: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">מאמן אחראי</label>
+                    <select
+                      value={newSession.coachId}
+                      onChange={(e) => setNewSession({ ...newSession, coachId: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    >
+                      {users.filter(u => u.role === UserRole.COACH || u.role === UserRole.MANAGER).map(c => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.role === UserRole.MANAGER ? 'מנהל ומאמן' : 'מאמן'})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">אזור אימון / קבוצת שרירים</label>
+                    <select
+                      value={newSession.muscleGroup}
+                      onChange={(e) => setNewSession({ ...newSession, muscleGroup: e.target.value as MuscleGroup })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value={MuscleGroup.UPPER}>פלג גוף עליון</option>
+                      <option value={MuscleGroup.LEGS}>רגליים וישבן</option>
+                      <option value={MuscleGroup.BACK}>גב</option>
+                      <option value={MuscleGroup.SHOULDERS}>כתפיים</option>
+                      <option value={MuscleGroup.CORE}>בטן וליבה (Core)</option>
+                      <option value={MuscleGroup.FUNCTIONAL}>אימון פונקציונלי כללי</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">תאריך</label>
+                    <input
+                      type="date"
+                      required
+                      value={newSession.date}
+                      onChange={(e) => setNewSession({ ...newSession, date: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">שעת התחלה</label>
+                    <input
+                      type="time"
+                      required
+                      value={newSession.time}
+                      onChange={(e) => setNewSession({ ...newSession, time: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">משך זמן (דקות)</label>
+                    <input
+                      type="number"
+                      required
+                      min="15"
+                      max="180"
+                      value={newSession.durationMinutes}
+                      onChange={(e) => setNewSession({ ...newSession, durationMinutes: Number(e.target.value) })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">מגבלת נרשמים מקסימלית</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={newSession.maxParticipants}
+                      onChange={(e) => setNewSession({ ...newSession, maxParticipants: Number(e.target.value) })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">הגבלת גיל מינימלי (אופציונלי)</label>
+                    <input
+                      type="number"
+                      placeholder="ללא הגבלה"
+                      value={newSession.ageMin}
+                      onChange={(e) => setNewSession({ ...newSession, ageMin: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">מגבלת מגדר</label>
+                    <select
+                      value={newSession.genderRestriction}
+                      onChange={(e) => setNewSession({ ...newSession, genderRestriction: e.target.value as Gender })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value={Gender.ALL}>כולם (מעורב)</option>
+                      <option value={Gender.MALE}>גברים בלבד 🚹</option>
+                      <option value={Gender.FEMALE}>נשים בלבד 🚺</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200 pt-3">
+                  <span className="block text-xs text-slate-600 font-medium mb-2">סוגי מנוי מורשים להירשם לאימון זה:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, info]) => {
+                      const typeEnum = typeKey as MembershipType;
+                      const isSelected = newSession.allowedMemberships.includes(typeEnum);
+                      return (
+                        <button
+                          type="button"
+                          key={typeEnum}
+                          onClick={() => toggleMembershipSelection(typeEnum, 'session')}
+                          className={`px-3 py-1.5 rounded-full text-[10px] font-medium border transition ${
+                            isSelected
+                              ? 'bg-emerald-100 border-emerald-300 text-emerald-800 font-bold'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {info.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
+                  <button
+                    type="submit"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-4 rounded-lg"
+                  >
+                    פרסם אימון ללוח השעות
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* SESSIONS LIST TABLE VIEW */}
+            {sessionViewMode === 'TABLE' && (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                      <th className="p-3">שם האימון</th>
+                      <th className="p-3">מאמן</th>
+                      <th className="p-3">מועד</th>
+                      <th className="p-3">קבוצת שרירים</th>
+                      <th className="p-3">מגבלות</th>
+                      <th className="p-3">תפוסה / רשומים</th>
+                      <th className="p-3">תור המתנה</th>
+                      <th className="p-3 text-left">פעולות</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessions
+                      .filter(s => s.title.toLowerCase().includes(sessionSearch.toLowerCase()) || s.coachName.toLowerCase().includes(sessionSearch.toLowerCase()))
+                      .map(s => (
+                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50" id={`session-row-${s.id}`}>
+                          <td className="p-3 font-semibold text-slate-800">{s.title}</td>
+                          <td className="p-3 text-slate-600">{s.coachName}</td>
+                          <td className="p-3 text-slate-600">
+                            <div>{s.date}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{s.time} ({s.durationMinutes} דק')</div>
+                          </td>
+                          <td className="p-3">
+                            <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700 text-[10px]">
+                              {s.muscleGroup === MuscleGroup.UPPER && 'פלג גוף עליון'}
+                              {s.muscleGroup === MuscleGroup.LEGS && 'רגליים וישבן'}
+                              {s.muscleGroup === MuscleGroup.BACK && 'גב'}
+                              {s.muscleGroup === MuscleGroup.SHOULDERS && 'כתפיים'}
+                              {s.muscleGroup === MuscleGroup.CORE && 'בטן וליבה'}
+                              {s.muscleGroup === MuscleGroup.FUNCTIONAL && 'פונקציונלי'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-[10px] text-slate-500 space-y-0.5">
+                            {s.genderRestriction !== Gender.ALL && (
+                              <div>מין: {s.genderRestriction === Gender.FEMALE ? 'נשים' : 'גברים'}</div>
+                            )}
+                            {s.ageMin && <div>גיל: {s.ageMin}+</div>}
+                            <div>מנויים: {s.allowedMemberships.length === 5 ? 'הכל' : `${s.allowedMemberships.length} סוגים`}</div>
+                          </td>
+                          <td className="p-3">
+                            <span className={`font-semibold ${s.registeredUsers.length >= s.maxParticipants ? 'text-red-500' : 'text-slate-700'}`}>
+                              {s.registeredUsers.length} / {s.maxParticipants}
+                            </span>
+                            <div className="text-[10px] text-slate-400">רשומים בפועל</div>
+                          </td>
+                          <td className="p-3">
+                            <span className={s.waitlistUsers.length > 0 ? 'text-amber-600 font-semibold' : 'text-slate-400'}>
+                              {s.waitlistUsers.length} ממתינים
+                            </span>
+                          </td>
+                          <td className="p-3 text-left">
+                            <div className="flex items-center gap-1 justify-end">
+                              <button
+                                onClick={() => setEditingSession(s)}
+                                className="text-emerald-600 hover:text-emerald-800 p-1.5 rounded hover:bg-emerald-50 transition cursor-pointer"
+                                title="ערוך אימון"
+                              >
+                                <Edit3 size={15} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm('האם אתה בטוח שברצונך למחוק אימון זה?')) {
+                                    handleDeleteSession(s.id, false);
+                                  }
+                                }}
+                                className="text-rose-500 hover:text-rose-700 p-1.5 rounded hover:bg-rose-50 transition cursor-pointer"
+                                title="מחק אימון מהלוח"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: USERS LIST & BILLING */}
+        {activeTab === 'users' && (
+          <div className="space-y-6">
+            <div className="relative max-w-md">
+              <Search className="absolute right-3 top-2.5 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="חיפוש מתאמן לפי שם, טלפון, סטטוס..."
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                className="w-full pr-9 pl-4 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-right text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                    <th className="p-3">פרטי מתאמן</th>
+                    <th className="p-3">פרטים אישיים</th>
+                    <th className="p-3">סוג מנוי</th>
+                    <th className="p-3">סטטוס מנוי ותשלום</th>
+                    <th className="p-3">עדיפות בתור</th>
+                    <th className="p-3">תוקף מנוי</th>
+                    <th className="p-3 text-left">שינוי סטטוס תשלום ופעולות</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users
+                    .filter(u => u.role === UserRole.TRAINEE)
+                    .filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()) || u.phone.includes(userSearch))
+                    .map(u => (
+                      <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="p-3 flex items-center gap-3">
+                          <img
+                            src={u.imageUrl}
+                            alt={u.name}
+                            className="w-10 h-10 rounded-full object-cover border border-slate-100"
+                          />
+                          <div>
+                            <div className="font-semibold text-slate-800 text-sm">{u.name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{u.email}</div>
+                          </div>
+                        </td>
+                        <td className="p-3 text-slate-600">
+                          <div>טלפון: {u.phone}</div>
+                          <div className="text-[10px]">גיל: {u.age} | מין: {u.gender === Gender.FEMALE ? 'נקבה' : 'זכר'}</div>
+                        </td>
+                        <td className="p-3 font-medium">
+                          <div>
+                            {u.membershipType && (
+                              <div>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border block w-fit ${MEMBERSHIP_TYPE_LABELS[u.membershipType]?.badgeColor || 'bg-slate-100 text-slate-700'}`}>
+                                  {MEMBERSHIP_TYPE_LABELS[u.membershipType]?.label || u.membershipType}
+                                </span>
+                                {u.membershipType === MembershipType.PERSONAL_TRAINING && (
+                                  <div className="text-[10px] text-slate-500 mt-1">
+                                    תעריף: <strong>₪{u.personalTrainingRate || 150}</strong> / אימון | החודש: {u.personalSessionsCountThisMonth || 0}
+                                  </div>
+                                )}
+                                {u.membershipType === MembershipType.OPEN_PUNCH_CARD && (
+                                  <div className="text-[10px] text-amber-800 font-mono font-bold mt-1">
+                                    יתרה: {u.punchCardRemaining ?? 0} ניקובים
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {u.familyId && (
+                              <div className="mt-1">
+                                <span className="bg-purple-100 text-purple-900 text-[10px] font-bold px-2 py-0.5 rounded block w-fit border border-purple-300">
+                                  👨‍👩‍👧‍👦 מנוי משפחתי ({u.familyName || 'משפחה'})
+                                </span>
+                                <div className="text-[10px] text-purple-800 font-semibold mt-0.5">
+                                  {u.isFamilyPayer ? '👑 ראש משפחה (משלם)' : `👤 בן משפחה (משלם: ${users.find(payer => payer.id === u.familyPayerId)?.name || 'ראש משפחה'})`}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Secondary Memberships Badge Display */}
+                            {u.secondaryMemberships && u.secondaryMemberships.length > 0 && (
+                              <div className="mt-1.5 pt-1 border-t border-slate-100">
+                                <div className="text-[9px] text-slate-400 font-bold">מנויים משולבים נוספים:</div>
+                                <div className="flex flex-wrap gap-1 mt-0.5">
+                                  {u.secondaryMemberships.map((sec, idx) => (
+                                    <span key={idx} className={`text-[9px] font-medium px-1.5 py-0.5 rounded border ${MEMBERSHIP_TYPE_LABELS[sec]?.badgeColor || 'bg-slate-100 text-slate-700'}`}>
+                                      {MEMBERSHIP_TYPE_LABELS[sec]?.label || sec}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <div className="space-y-1">
+                            <span className={`px-2 py-1 rounded-full text-[10px] font-semibold block w-fit ${
+                              u.membershipStatus === MembershipStatus.ACTIVE
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : u.membershipStatus === MembershipStatus.DEBT
+                                ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
+                                : 'bg-slate-200 text-slate-700'
+                            }`}>
+                              {u.membershipStatus === MembershipStatus.ACTIVE && 'פעיל / שולם'}
+                              {u.membershipStatus === MembershipStatus.DEBT && 'חוב כספי ❌'}
+                              {u.membershipStatus === MembershipStatus.EXPIRED && 'פג תוקף ❌'}
+                            </span>
+
+                            {u.offlinePaymentApproved && (
+                              <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded block w-fit">
+                                🛡️ אישור חריג מנהל (מזומן/ידני)
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <span className={`font-mono font-bold ${u.priorityScore < 100 ? 'text-rose-500' : 'text-slate-700'}`}>
+                            {u.priorityScore} / 100
+                          </span>
+                        </td>
+                        <td className="p-3 text-slate-500 font-mono">{u.membershipExpiry}</td>
+                        <td className="p-3 text-left">
+                          <div className="flex flex-col gap-1 items-end">
+                            {u.membershipStatus === MembershipStatus.DEBT && (
+                              <button
+                                onClick={() => handlePayDebt(u)}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold py-1 px-2.5 rounded transition shadow-sm w-full text-center"
+                              >
+                                סגירת חוב (MOCK סליקה)
+                              </button>
+                            )}
+
+                            {/* Manager Offline Exception Authorization */}
+                            <button
+                              onClick={() => {
+                                const isApproved = !u.offlinePaymentApproved;
+                                const updated = users.map(user => {
+                                  if (user.id === u.id) {
+                                    return {
+                                      ...user,
+                                      offlinePaymentApproved: isApproved,
+                                      membershipStatus: isApproved ? MembershipStatus.ACTIVE : user.membershipStatus,
+                                      offlinePaymentNote: isApproved ? 'אושר ידנית במזומן/העברה ע"י המנהל' : undefined
+                                    };
+                                  }
+                                  return user;
+                                });
+                                onUpdateUsers(updated);
+                              }}
+                              className={`text-[9px] font-semibold py-1 px-2 rounded border transition w-full text-center ${
+                                u.offlinePaymentApproved
+                                  ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200'
+                              }`}
+                            >
+                              {u.offlinePaymentApproved ? 'בטל אישור חריג' : 'אישור חריג (מזומן)'}
+                            </button>
+
+                              {/* Reset Personal Training Count for 1st of month settlement */}
+                              {u.membershipType === MembershipType.PERSONAL_TRAINING && (
+                                <button
+                                  onClick={() => {
+                                    const updated = users.map(user => {
+                                      if (user.id === u.id) {
+                                        return { ...user, personalSessionsCountThisMonth: 0 };
+                                      }
+                                      return user;
+                                    });
+                                    onUpdateUsers(updated);
+                                  }}
+                                  className="text-[9px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 font-medium py-0.5 px-2 rounded w-full text-center"
+                                  title="סגירת חודש ב-1 לחודש"
+                                >
+                                  🗓️ סגירת חודש (איפוס ספירה)
+                                </button>
+                              )}
+
+                              {/* Manager Punch Card Reload Action */}
+                              <button
+                                onClick={() => {
+                                  const newPunchesStr = prompt(`הכנס מספר ניקובים לכרטיסייה עבור ${u.name}:`, String(u.punchCardRemaining || 10));
+                                  if (newPunchesStr !== null) {
+                                    const count = parseInt(newPunchesStr, 10);
+                                    if (!isNaN(count) && count >= 0) {
+                                      const updated = users.map(user => {
+                                        if (user.id === u.id) {
+                                          return {
+                                            ...user,
+                                            membershipType: MembershipType.OPEN_PUNCH_CARD,
+                                            membershipStatus: MembershipStatus.ACTIVE,
+                                            punchCardRemaining: count
+                                          };
+                                        }
+                                        return user;
+                                      });
+                                      onUpdateUsers(updated);
+                                      alert(`עודכנה כרטיסייה עבור ${u.name}: ${count} ניקובים 🎟️`);
+                                    }
+                                  }
+                                }}
+                                className="text-[9px] text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 font-semibold py-0.5 px-2 rounded w-full text-center"
+                                title="הגדר/הטען ניקובים בכרטיסייה"
+                              >
+                                🎟️ טעינת כרטיסייה ({u.punchCardRemaining ?? 0})
+                              </button>
+
+                              {/* Manager Family Link Action */}
+                              <button
+                                onClick={() => {
+                                  const famName = prompt(`הכנס שם משפחה עבור ${u.name} (למשל: משפחת לוי):`, u.familyName || 'משפחת לוי');
+                                  if (famName !== null) {
+                                    const isPayer = confirm(`האם ${u.name} הוא ראש המשפחה המשלם? (אישור = משלם, ביטול = בן משפחה)`);
+                                    const updated = users.map(user => {
+                                      if (user.id === u.id) {
+                                        return {
+                                          ...user,
+                                          membershipType: MembershipType.GROUP_MONTHLY,
+                                          familyId: `family-${famName.trim().toLowerCase()}`,
+                                          familyName: famName.trim(),
+                                          isFamilyPayer: isPayer,
+                                          secondaryMemberships: user.secondaryMemberships?.length ? user.secondaryMemberships : [MembershipType.OPEN_MONTHLY]
+                                        };
+                                      }
+                                      return user;
+                                    });
+                                    onUpdateUsers(updated);
+                                    alert(`עודכן מנוי משפחתי עבור ${u.name} (${famName}) 👨‍👩‍👧‍👦`);
+                                  }
+                                }}
+                                className="text-[9px] text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-300 font-semibold py-0.5 px-2 rounded w-full text-center"
+                                title="הגדר/הצמד למנוי משפחתי"
+                              >
+                                👨‍👩‍👧‍👦 הגדר מנוי משפחתי
+                              </button>
+
+                              {/* Manager Multi-Membership Toggle Action */}
+                              <button
+                                onClick={() => {
+                                  const choice = prompt(
+                                    `בחר מנוי משני להוספה/הסרה עבור ${u.name}:\n1 = אימון אישי (PERSONAL_TRAINING)\n2 = תוכנית תזונה (NUTRITION_PLAN)\n3 = תוכנית אימון (WORKOUT_PLAN)\n4 = פתוח כרטיסייה (OPEN_PUNCH_CARD)\n5 = קבוצתי חודשי (GROUP_MONTHLY)\n6 = פתוח חודשי (OPEN_MONTHLY)`,
+                                    '1'
+                                  );
+                                  let addedType: MembershipType | null = null;
+                                  if (choice === '1') addedType = MembershipType.PERSONAL_TRAINING;
+                                  if (choice === '2') addedType = MembershipType.NUTRITION_PLAN;
+                                  if (choice === '3') addedType = MembershipType.WORKOUT_PLAN;
+                                  if (choice === '4') addedType = MembershipType.OPEN_PUNCH_CARD;
+                                  if (choice === '5') addedType = MembershipType.GROUP_MONTHLY;
+                                  if (choice === '6') addedType = MembershipType.OPEN_MONTHLY;
+
+                                  if (addedType) {
+                                    const currentSec = u.secondaryMemberships || [];
+                                    const exists = currentSec.includes(addedType);
+                                    const nextSec = exists 
+                                      ? currentSec.filter(t => t !== addedType)
+                                      : [...currentSec, addedType];
+
+                                    const updated = users.map(user => {
+                                      if (user.id === u.id) {
+                                        return {
+                                          ...user,
+                                          secondaryMemberships: nextSec,
+                                          punchCardRemaining: addedType === MembershipType.OPEN_PUNCH_CARD && !exists ? 10 : user.punchCardRemaining
+                                        };
+                                      }
+                                      return user;
+                                    });
+                                    onUpdateUsers(updated);
+                                    alert(`עודכן מנוי משולב עבור ${u.name}! 🌟`);
+                                  }
+                                }}
+                                 className="text-[9px] text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 font-semibold py-0.5 px-2 rounded w-full text-center"
+                                title="הוסף או הסר מנוי משני משולב"
+                              >
+                                ➕ מנוי משולב נוסף
+                            </button>
+
+                            {/* Primary Membership Selector */}
+                            <select
+                              value={u.membershipType}
+                              onChange={(e) => {
+                                const newType = e.target.value as MembershipType;
+                                const updated = users.map(user => user.id === u.id ? { ...user, membershipType: newType } : user);
+                                onUpdateUsers(updated);
+                              }}
+                              className="border border-slate-200 rounded p-1 text-[10px] focus:outline-none bg-emerald-50 text-emerald-900 font-bold w-full"
+                              title="שינוי סוג מנוי ראשי"
+                            >
+                              {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, info]) => (
+                                <option key={typeKey} value={typeKey}>
+                                  {info.label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              value={u.membershipStatus}
+                              onChange={(e) => handleUpdateStatus(u.id, e.target.value as MembershipStatus)}
+                              className="border border-slate-200 rounded p-1 text-[10px] focus:outline-none bg-white w-full"
+                            >
+                              <option value={MembershipStatus.ACTIVE}>סמן כפעיל</option>
+                              <option value={MembershipStatus.DEBT}>סמן בחוב כספי</option>
+                              <option value={MembershipStatus.EXPIRED}>סמן כפג תוקף</option>
+                            </select>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: BLACK POINTS / PENALTY ENGINE */}
+        {activeTab === 'penalties' && (
+          <div className="space-y-6">
+            <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                  <AlertTriangle className="text-amber-500 animate-bounce" size={16} />
+                  מערכת העונשים – נקודות שחורות
+                </h3>
+                <p className="text-xs text-slate-500">
+                  צבירת <strong className="text-slate-800 font-semibold">{settings.maxBlackPointsBeforePriorityDrop}</strong> נקודות שחורות פעילות גוררת ירידה אוטומטית בעדיפות ההרשמה (עדיפות 50/100).
+                  כל נקודה מתאפסת אוטומטית כעבור חודש.
+                </p>
+              </div>
+              <div className="flex bg-white border border-slate-200 rounded-lg p-2 items-center gap-2">
+                <span className="text-xs text-slate-600">רף עונש פעיל:</span>
+                <span className="bg-rose-100 text-rose-800 text-xs font-bold px-2 py-0.5 rounded">
+                  {settings.maxBlackPointsBeforePriorityDrop} נקודות
+                </span>
+              </div>
+            </div>
+
+            <div className="relative max-w-md">
+              <Search className="absolute right-3 top-2.5 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="חיפוש נקודות שחורות לפי שם מתאמן..."
+                value={penaltySearch}
+                onChange={(e) => setPenaltySearch(e.target.value)}
+                className="w-full pr-9 pl-4 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-right text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                    <th className="p-3">שם המתאמן</th>
+                    <th className="p-3">אימון רלוונטי</th>
+                    <th className="p-3">תאריך האימון</th>
+                    <th className="p-3">תאריך הטלה</th>
+                    <th className="p-3">תאריך תפוגה אוטומטי</th>
+                    <th className="p-3">סיבת העבירה</th>
+                    <th className="p-3">סטטוס</th>
+                    <th className="p-3 text-left">פעולות שחרור ועריכה</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {blackPoints
+                    .filter(bp => bp.traineeName.toLowerCase().includes(penaltySearch.toLowerCase()))
+                    .map(bp => (
+                      <tr key={bp.id} className="border-b border-slate-100 hover:bg-slate-50" id={`blackpoint-row-${bp.id}`}>
+                        <td className="p-3 font-semibold text-slate-800">{bp.traineeName}</td>
+                        <td className="p-3 text-slate-600">{bp.sessionTitle}</td>
+                        <td className="p-3 text-slate-500 font-mono">{bp.sessionDate}</td>
+                        <td className="p-3 text-slate-500 font-mono">{bp.issuedDate}</td>
+                        <td className="p-3 text-slate-400 font-mono">{bp.expiryDate}</td>
+                        <td className="p-3 text-slate-600">
+                          <span className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded border border-amber-200 text-[11px] block max-w-xs">
+                            {bp.reason}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            bp.status === 'ACTIVE'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                              : bp.status === 'CLEARED'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-slate-100 text-slate-400'
+                          }`}>
+                            {bp.status === 'ACTIVE' && 'פעילה 🚨'}
+                            {bp.status === 'CLEARED' && 'בוטלה ידנית ✅'}
+                            {bp.status === 'EXPIRED' && 'פג תוקפה'}
+                          </span>
+                          {bp.status === 'CLEARED' && bp.clearedBy && (
+                            <div className="text-[9px] text-slate-400 mt-0.5">
+                              שוחרר ע"י {bp.clearedBy}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3 text-left">
+                          <div className="flex justify-end gap-1">
+                            {bp.status === 'ACTIVE' && (
+                              <button
+                                onClick={() => handleClearBlackPoint(bp.id, 'בדיקה ידנית של המנהל - פטור מוצדק')}
+                                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-medium py-1 px-2 rounded transition"
+                              >
+                                שחרר ידנית/בטל נקודה
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteBlackPoint(bp.id)}
+                              className="text-rose-500 hover:bg-rose-50 p-1.5 rounded transition"
+                              title="מחק לצמיתות"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: PAYMENTS LEDGER (MOCK BILLING) */}
+        {activeTab === 'payments' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-emerald-700">סה"כ הכנסות שנסלקו (DUMMY)</div>
+                  <div className="text-2xl font-bold font-mono text-emerald-950 mt-1">
+                    ₪{payments.reduce((acc, curr) => acc + curr.amount, 0)}
+                  </div>
+                </div>
+                <div className="bg-emerald-500/20 text-emerald-800 rounded-full p-2.5">
+                  <DollarSign size={24} />
+                </div>
+              </div>
+
+              <div className="bg-rose-50 border border-rose-100 rounded-lg p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-rose-700">מתאמנים במצב חוב פעיל</div>
+                  <div className="text-2xl font-bold font-mono text-rose-950 mt-1">
+                    {users.filter(u => u.membershipStatus === MembershipStatus.DEBT).length}
+                  </div>
+                </div>
+                <div className="bg-rose-500/20 text-rose-800 rounded-full p-2.5">
+                  <AlertTriangle size={24} />
+                </div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-slate-700">סה"כ עסקאות סליקה מדומה</div>
+                  <div className="text-2xl font-bold font-mono text-slate-950 mt-1">
+                    {payments.length}
+                  </div>
+                </div>
+                <div className="bg-slate-500/20 text-slate-800 rounded-full p-2.5">
+                  <CreditCard size={24} />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800 mb-3">יומן עסקאות ותשלומים</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                      <th className="p-3">מזהה עסקה</th>
+                      <th className="p-3">שם המתאמן</th>
+                      <th className="p-3">סכום</th>
+                      <th className="p-3">עבור מנוי</th>
+                      <th className="p-3">תאריך רכישה</th>
+                      <th className="p-3">אמצעי תשלום</th>
+                      <th className="p-3">סטטוס</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.map(p => (
+                      <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="p-3 text-slate-400 font-mono text-[10px]">{p.id}</td>
+                        <td className="p-3 font-semibold text-slate-800">{p.traineeName}</td>
+                        <td className="p-3 font-bold font-mono text-emerald-600">₪{p.amount}</td>
+                        <td className="p-3 text-slate-600">
+                          {MEMBERSHIP_TYPE_LABELS[p.membershipTypePurchased]?.label || p.membershipTypePurchased}
+                        </td>
+                        <td className="p-3 text-slate-500 font-mono">{p.date}</td>
+                        <td className="p-3 text-slate-500">{p.paymentMethod}</td>
+                        <td className="p-3">
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[9px]">
+                            הושלם (MOCK)
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: BULLETIN BOARD & ANNOUNCEMENT PUBLISHER */}
+        {activeTab === 'announcements' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-semibold text-slate-800">לוח מודעות ממוקד - פרסום והודעות</h3>
+              <button
+                onClick={() => setShowAnnForm(!showAnnForm)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-3 rounded-lg flex items-center gap-1 transition"
+              >
+                <Plus size={14} />
+                מודעה ממוקדת חדשה
+              </button>
+            </div>
+
+            {showAnnForm && (
+              <form onSubmit={handleCreateAnnouncement} className="bg-slate-50 border border-slate-100 rounded-lg p-5 space-y-4" id="create-announcement-form">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <h4 className="text-xs font-semibold text-slate-800">יצירת מודעה חדשה וקביעת קהלי יעד</h4>
+                  <button type="button" onClick={() => setShowAnnForm(false)} className="text-slate-400 hover:text-slate-600 text-xs">ביטול</button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">כותרת המודעה</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="לדוגמה: 📢 מבצעים לחברים ותחרות סקווטים שבועית"
+                      value={newAnn.title}
+                      onChange={(e) => setNewAnn({ ...newAnn, title: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">פילוח לפי מגדר</label>
+                    <select
+                      value={newAnn.targetGender}
+                      onChange={(e) => setNewAnn({ ...newAnn, targetGender: e.target.value as Gender })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value={Gender.ALL}>כל המתאמנים (ללא הבדל מגדר)</option>
+                      <option value={Gender.MALE}>גברים בלבד 🚹</option>
+                      <option value={Gender.FEMALE}>נשים בלבד 🚺</option>
+                    </select>
+                  </div>
+
+                  <div className="col-span-1 md:col-span-2">
+                    <label className="block text-xs text-slate-600 font-medium mb-1">תוכן המודעה</label>
+                    <textarea
+                      required
+                      rows={3}
+                      placeholder="כתוב כאן את הודעת המועדון..."
+                      value={newAnn.content}
+                      onChange={(e) => setNewAnn({ ...newAnn, content: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">גיל מינימלי לקהל היעד (אופציונלי)</label>
+                    <input
+                      type="number"
+                      placeholder="לדוגמה: 18"
+                      value={newAnn.targetAgeMin}
+                      onChange={(e) => setNewAnn({ ...newAnn, targetAgeMin: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-600 font-medium mb-1">גיל מקסימלי לקהל היעד (אופציונלי)</label>
+                    <input
+                      type="number"
+                      placeholder="לדוגמה: 40"
+                      value={newAnn.targetAgeMax}
+                      onChange={(e) => setNewAnn({ ...newAnn, targetAgeMax: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200 pt-3">
+                  <span className="block text-xs text-slate-600 font-medium mb-2">סינון לפי סוגי מנוי המורשים לצפות בהודעה:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, info]) => {
+                      const typeEnum = typeKey as MembershipType;
+                      const isSelected = newAnn.targetMembershipTypes.includes(typeEnum);
+                      return (
+                        <button
+                          type="button"
+                          key={typeKey}
+                          onClick={() => toggleMembershipSelection(typeEnum, 'announcement')}
+                          className={`px-3 py-1.5 rounded-full text-[10px] font-medium border transition ${
+                            isSelected
+                              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {info.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
+                  <button
+                    type="submit"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-4 rounded-lg"
+                  >
+                    פרסם מודעה
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="space-y-4">
+              {announcements.map(ann => (
+                <div key={ann.id} className="border border-slate-150 rounded-xl p-4 bg-white relative hover:shadow-sm transition" id={`ann-item-${ann.id}`}>
+                  <button
+                    onClick={() => {
+                      onUpdateAnnouncements(announcements.filter(item => item.id !== ann.id));
+                    }}
+                    className="absolute left-4 top-4 text-slate-400 hover:text-rose-500 transition"
+                    title="מחק מודעה"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded">
+                      פורסם ע"י {ann.createdBy} ({ann.creatorRole === UserRole.MANAGER ? 'מנהל' : 'מאמן'})
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">{ann.date}</span>
+                  </div>
+
+                  <h4 className="font-bold text-slate-800 text-sm">{ann.title}</h4>
+                  <p className="text-xs text-slate-600 mt-2 leading-relaxed">{ann.content}</p>
+
+                  <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-1.5 items-center">
+                    <span className="text-[9px] text-slate-400 font-semibold uppercase">פילוח קהל:</span>
+                    <span className="bg-emerald-50 text-emerald-700 text-[8px] px-1.5 py-0.5 rounded border border-emerald-100 font-medium">
+                      מגדר: {ann.targetGender === Gender.ALL ? 'כולם' : ann.targetGender === Gender.FEMALE ? 'נשים' : 'גברים'}
+                    </span>
+                    {ann.targetAgeMin && (
+                      <span className="bg-emerald-50 text-emerald-700 text-[8px] px-1.5 py-0.5 rounded border border-emerald-100 font-medium">
+                        גיל: {ann.targetAgeMin}+
+                      </span>
+                    )}
+                    {ann.targetAgeMax && (
+                      <span className="bg-emerald-50 text-emerald-700 text-[8px] px-1.5 py-0.5 rounded border border-emerald-100 font-medium">
+                        עד גיל {ann.targetAgeMax}
+                      </span>
+                    )}
+                    <span className="bg-slate-50 text-slate-600 text-[8px] px-1.5 py-0.5 rounded border border-slate-150 font-medium">
+                      מנויים: {ann.targetMembershipTypes?.length === 5 ? 'הכל' : `${ann.targetMembershipTypes?.length} סוגים`}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: GLOBAL PARAMETERS & RULES */}
+        {activeTab === 'settings' && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              alert('ההגדרות נשמרו בהצלחה בסימולטור!');
+            }}
+            className="space-y-6"
+            id="settings-form"
+          >
+            <h3 className="text-sm font-semibold text-slate-800 border-b border-slate-200 pb-2">קביעת חוקי ופרמטרי מועדון הכושר</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-700">חלון ביטול אימון ללא עונש (בשעות לפני האימון)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="48"
+                    value={settings.cancellationWindowHours}
+                    onChange={(e) => onUpdateSettings({ ...settings, cancellationWindowHours: Number(e.target.value) })}
+                    className="border border-slate-200 rounded-lg p-2.5 text-xs w-24 text-center focus:outline-none focus:border-emerald-500 font-bold"
+                  />
+                  <span className="text-xs text-slate-500">שעות</span>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  ביטול במסגרת טווח שעות זה לא יגרור נקודה שחורה. ביטול לאחר מכן ייחשב כ"ביטול מאוחר".
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-700">כמות נקודות שחורות מקסימלית להורדת עדיפות רישום</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={settings.maxBlackPointsBeforePriorityDrop}
+                    onChange={(e) => onUpdateSettings({ ...settings, maxBlackPointsBeforePriorityDrop: Number(e.target.value) })}
+                    className="border border-slate-200 rounded-lg p-2.5 text-xs w-24 text-center focus:outline-none focus:border-emerald-500 font-bold"
+                  />
+                  <span className="text-xs text-slate-500">נקודות</span>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  מתאמן שיצבור מספר נקודות פעיל זה ירד אוטומטית בעדיפות ההרשמה שלו מול מתאמנים אחרים.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-700">פרק זמן למחיקה/איפוס אוטומטי של נקודות שחורות</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    value={settings.blackPointExpiryMonths}
+                    onChange={(e) => onUpdateSettings({ ...settings, blackPointExpiryMonths: Number(e.target.value) })}
+                    className="border border-slate-200 rounded-lg p-2.5 text-xs w-24 text-center focus:outline-none focus:border-emerald-500 font-bold"
+                  />
+                  <span className="text-xs text-slate-500">חודשים</span>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  תאריך התפוגה שיוצמד לנקודה חדשה בעת הטלתה.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-700">מכסת תפוסה מקסימלית בשעות Open Gym כברירת מחדל</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="5"
+                    max="100"
+                    value={settings.openGymMaxParticipants}
+                    onChange={(e) => onUpdateSettings({ ...settings, openGymMaxParticipants: Number(e.target.value) })}
+                    className="border border-slate-200 rounded-lg p-2.5 text-xs w-24 text-center focus:outline-none focus:border-emerald-500 font-bold"
+                  />
+                  <span className="text-xs text-slate-500">מתאמנים</span>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  הגבלת כמות המתאמנים בו-זמנית בשעות האימון החופשי ללא מאמן.
+                </p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-4 flex justify-end">
+              <button
+                type="submit"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2.5 px-6 rounded-lg shadow-sm"
+              >
+                עדכן פרמטרים במערכת
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* TAB 7: DISCOUNT CODES MANAGEMENT */}
+        {activeTab === 'discounts' && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-amber-900/10 via-amber-50 to-orange-50 border border-amber-200 p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-amber-950 flex items-center gap-2">
+                  <Tag size={20} className="text-amber-600" />
+                  ניהול קודי הנחה ומבצעים (מנהל / מאמן ראשי)
+                </h3>
+                <p className="text-xs text-amber-800 mt-1">
+                  ייצר קודי הנחה חד-פעמיים או רב-פעמיים למתאמנים ולמנויים משפחתיים. הקוד מוזן בשלב התשלום או בעדכון המנוי.
+                </p>
+              </div>
+            </div>
+
+            {/* Create Code Form */}
+            <form onSubmit={handleCreateDiscountCode} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
+              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Plus size={16} className="text-amber-600" />
+                יצירת קוד הנחה חדש
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">קוד ההנחה (למשל: RUBI20)</label>
+                  <div className="flex gap-1">
+                    <input
+                      type="text"
+                      required
+                      placeholder="SPECIAL20"
+                      value={newDiscountCode.code}
+                      onChange={(e) => setNewDiscountCode({ ...newDiscountCode, code: e.target.value.toUpperCase() })}
+                      className="w-full px-3 py-2 border rounded-xl font-mono uppercase bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewDiscountCode({ ...newDiscountCode, code: `RUBI${Math.floor(10 + Math.random() * 90)}` })}
+                      className="px-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-[10px] shrink-0"
+                      title="הגרל קוד אקראי"
+                    >
+                      הגרל
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">סוג ההנחה</label>
+                  <select
+                    value={newDiscountCode.type}
+                    onChange={(e) => setNewDiscountCode({ ...newDiscountCode, type: e.target.value as any })}
+                    className="w-full px-3 py-2 border rounded-xl bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  >
+                    <option value="PERCENT">אחוזים (%)</option>
+                    <option value="AMOUNT">סכום קצוב ב-₪</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    {newDiscountCode.type === 'PERCENT' ? 'שיעור ההנחה (%)' : 'סכום ההנחה (₪)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newDiscountCode.type === 'PERCENT' ? newDiscountCode.discountPercent : newDiscountCode.discountAmount}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (newDiscountCode.type === 'PERCENT') {
+                        setNewDiscountCode({ ...newDiscountCode, discountPercent: val });
+                      } else {
+                        setNewDiscountCode({ ...newDiscountCode, discountAmount: val });
+                      }
+                    }}
+                    className="w-full px-3 py-2 border rounded-xl font-bold bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-col justify-end">
+                  <label className="flex items-center gap-2 cursor-pointer pb-2">
+                    <input
+                      type="checkbox"
+                      checked={newDiscountCode.isSingleUse}
+                      onChange={(e) => setNewDiscountCode({ ...newDiscountCode, isSingleUse: e.target.checked })}
+                      className="w-4 h-4 text-amber-600 rounded"
+                    />
+                    <span className="font-bold text-slate-800 text-xs">קוד חד-פעמי</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-amber-600/20 cursor-pointer"
+                >
+                  <Plus size={16} />
+                  צור והפעל קוד הנחה
+                </button>
+              </div>
+            </form>
+
+            {/* List of active discount codes */}
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+              <div className="p-4 bg-slate-100/70 border-b font-bold text-slate-800 text-xs flex justify-between items-center">
+                <span>רשימת קודי ההנחה הפעילים במערכת ({discountCodes.length})</span>
+              </div>
+
+              <div className="divide-y divide-slate-100 text-xs">
+                {discountCodes.length === 0 ? (
+                  <div className="p-6 text-center text-slate-500">
+                    לא קיימים קודי הנחה פעילים. צור קוד ראשון בטופס למעלה.
+                  </div>
+                ) : (
+                  discountCodes.map((code) => (
+                    <div key={code.id} className="p-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-slate-50 transition">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-amber-100 text-amber-900 font-mono font-bold px-3 py-1.5 rounded-xl border border-amber-300 text-sm flex items-center gap-1.5">
+                          <Tag size={14} className="text-amber-700" />
+                          {code.code}
+                        </div>
+
+                        <div>
+                          <div className="font-bold text-slate-900">
+                            {code.discountPercent > 0 ? `${code.discountPercent}% הנחה` : `₪${code.discountAmount} הנחה קצובה`}
+                            {code.isSingleUse && (
+                              <span className="mr-2 bg-purple-100 text-purple-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                חד-פעמי
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            נוצר על ידי: {code.createdBy} | בתאריך: {code.createdAt}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteDiscountCode(code.id)}
+                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                        title="מחק קוד הנחה"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
