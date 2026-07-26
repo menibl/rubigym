@@ -159,6 +159,53 @@ export default function App() {
     saveLocalStorageData('gym_discounts_v7', discountCodes);
   }, [discountCodes]);
 
+  // In-app PUSH simulation. Production delivery while the app is closed will use a push provider.
+  useEffect(() => {
+    if (
+      !isAuthenticated ||
+      !activeUser.pushNotificationsEnabled ||
+      !('Notification' in window) ||
+      Notification.permission !== 'granted'
+    ) return;
+
+    if (activeUser.workoutRemindersEnabled) {
+      const now = Date.now();
+      const nextBooked = sessions
+        .filter(session => session.registeredUsers.includes(activeUser.id))
+        .map(session => ({
+          session,
+          startsAt: new Date(`${session.date}T${session.time}:00`).getTime()
+        }))
+        .filter(item => item.startsAt > now && item.startsAt - now <= 24 * 60 * 60 * 1000)
+        .sort((a, b) => a.startsAt - b.startsAt)[0];
+
+      if (nextBooked) {
+        const reminderKey = `baly-push-reminder-${activeUser.id}-${nextBooked.session.id}`;
+        if (!localStorage.getItem(reminderKey)) {
+          new Notification(`תזכורת לאימון: ${nextBooked.session.title}`, {
+            body: `האימון מחר/היום בשעה ${nextBooked.session.time} עם ${nextBooked.session.coachName}.`
+          });
+          localStorage.setItem(reminderKey, new Date().toISOString());
+        }
+      }
+    }
+
+    if (activeUser.role === UserRole.MANAGER && activeUser.managerPushNotificationsEnabled) {
+      const unreadForManager = messages.find(message =>
+        message.receiverId === activeUser.id && !message.read
+      );
+      if (unreadForManager) {
+        const managerPushKey = `baly-manager-push-${unreadForManager.id}`;
+        if (!localStorage.getItem(managerPushKey)) {
+          new Notification(`פנייה חדשה למנהל מאת ${unreadForManager.senderName}`, {
+            body: unreadForManager.content
+          });
+          localStorage.setItem(managerPushKey, new Date().toISOString());
+        }
+      }
+    }
+  }, [activeUser, isAuthenticated, messages, sessions]);
+
 
   // --- AUTOMATED ENGINE: Expire Old Black Points (Section 6) ---
   useEffect(() => {

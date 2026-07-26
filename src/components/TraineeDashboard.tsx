@@ -160,8 +160,54 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const isOpenGymBooked = (og: OpenGymSession) => og.registeredUsers.includes(activeUser.id);
   const isOpenGymWaitlisted = (og: OpenGymSession) => og.waitlistUsers.includes(activeUser.id);
 
+  const isHealthDeclarationValid = () => {
+    if (!activeUser.healthDeclarationSigned || !activeUser.healthDeclarationDate) return false;
+    const signedAt = new Date(`${activeUser.healthDeclarationDate}T00:00:00`);
+    if (!Number.isFinite(signedAt.getTime())) return false;
+    const expiresAt = new Date(signedAt);
+    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    return Date.now() <= expiresAt.getTime();
+  };
+
+  const timeToMinutes = (time: string) => {
+    const [hours, minutes] = time.trim().split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const overlaps = (startA: number, endA: number, startB: number, endB: number) =>
+    startA < endB && startB < endA;
+
+  const hasOverlappingTraining = (session: TrainingSession) => {
+    const start = timeToMinutes(session.time);
+    const end = start + session.durationMinutes;
+    return sessions.some(existing => {
+      if (
+        existing.id === session.id ||
+        existing.date !== session.date ||
+        !existing.registeredUsers.includes(activeUser.id)
+      ) return false;
+      const existingStart = timeToMinutes(existing.time);
+      return overlaps(start, end, existingStart, existingStart + existing.durationMinutes);
+    }) || openGymSessions.some(existing => {
+      if (existing.date !== session.date || !existing.registeredUsers.includes(activeUser.id)) return false;
+      const [slotStart, slotEnd] = existing.timeSlot.split('-').map(timeToMinutes);
+      return overlaps(start, end, slotStart, slotEnd);
+    });
+  };
+
   // Check booking eligibility constraints (Section 5.1 & 11)
   const checkBookingEligibility = (session: TrainingSession): { eligible: boolean; reason?: string } => {
+    if (isBooked(session) || isWaitlisted(session)) {
+      return { eligible: false, reason: 'כבר נרשמת לאימון זה או לרשימת ההמתנה שלו.' };
+    }
+
+    if (!isHealthDeclarationValid()) {
+      return {
+        eligible: false,
+        reason: 'הצהרת הבריאות חסרה או שתוקפה השנתי פג. יש לחתום מחדש בפרופיל לפני הרשמה לאימון.'
+      };
+    }
+
     // 0. Frozen Membership check
     if (activeUser.isMembershipFrozen) {
       return {
@@ -188,6 +234,23 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       };
     }
 
+    const payer = activeUser.familyPayerId ? users.find(user => user.id === activeUser.familyPayerId) : undefined;
+    const effectiveExpiry = payer?.membershipExpiry || activeUser.membershipExpiry;
+    const today = new Date().toISOString().split('T')[0];
+    if (!effectiveExpiry || effectiveExpiry < today) {
+      return {
+        eligible: false,
+        reason: 'תוקף המנוי פג. יש לחדש את המנוי לפני הרשמה לאימון.'
+      };
+    }
+
+    if (hasOverlappingTraining(session)) {
+      return {
+        eligible: false,
+        reason: 'לא ניתן להירשם לשני אימונים חופפים. יש לבטל את האימון הקיים או לבחור שעה אחרת.'
+      };
+    }
+
     // Consolidated list of all active membership types held by this user/family
     const userMemberships: MembershipType[] = [
       activeUser.membershipType,
@@ -199,16 +262,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     );
 
     const hasPersonalAccess = userMemberships.includes(MembershipType.PERSONAL_TRAINING);
-
-    const hasOpenGymAccess = userMemberships.some(m => 
-      [
-        MembershipType.GROUP_MONTHLY,
-        MembershipType.GROUP_ANNUAL,
-        MembershipType.OPEN_MONTHLY,
-        MembershipType.OPEN_ANNUAL,
-        MembershipType.OPEN_PUNCH_CARD
-      ].includes(m)
-    );
 
     // Personal Training session check
     if (session.isPersonalTraining && !hasPersonalAccess) {
@@ -426,27 +479,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       }
     } else {
       // Add to Automatic Waitlist (Section 5.2)
-      // Waitlist ordering handles priority score: members with 100 priority score go BEFORE priority 50.
-      const currentWaitlist = [...session.waitlistUsers];
-      
-      // Inserting member in queue based on priority score
-      let inserted = false;
-      const updatedWaitlistUsers: string[] = [];
-      
-      for (const uid of currentWaitlist) {
-        const u = users.find(item => item.id === uid);
-        const uScore = u ? u.priorityScore : 100;
-        
-        if (!inserted && activeUser.priorityScore > uScore) {
-          updatedWaitlistUsers.push(activeUser.id);
-          inserted = true;
-        }
-        updatedWaitlistUsers.push(uid);
-      }
-      
-      if (!inserted) {
-        updatedWaitlistUsers.push(activeUser.id);
-      }
+      // First come, first served: preserve exact join order.
+      const updatedWaitlistUsers = [...session.waitlistUsers, activeUser.id];
 
       updatedSessions = sessions.map(s => {
         if (s.id === session.id) {
@@ -487,9 +521,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
       let penaltyApplied = false;
       const isPersonal = !!session.isPersonalTraining;
-      const windowHours = isPersonal ? 12 : (settings.cancellationWindowHours || 2);
+      const windowHours = settings.cancellationWindowHours || 2;
 
-      // If cancellation is too late (less than 2h for group, 12h for personal)
+      // Unified cancellation window for every workout type.
       if (diffHours >= 0 && diffHours < windowHours) {
         // Late cancellation penalty applied!
         penaltyApplied = true;
@@ -578,6 +612,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // BOOK / CANCEL OPEN GYM (Section 10)
   const handleBookOpenGym = (og: OpenGymSession) => {
+    if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) {
+      showFeedback('כבר נרשמת למשבצת Open Gym זו או לרשימת ההמתנה שלה.', 'error');
+      return;
+    }
+
+    if (!isHealthDeclarationValid()) {
+      showFeedback('הצהרת הבריאות חסרה או שתוקפה השנתי פג. יש לחתום מחדש בפרופיל לפני הרשמה ל-Open Gym.', 'error');
+      return;
+    }
+
     const payer = activeUser.familyPayerId ? users.find(user => user.id === activeUser.familyPayerId) : undefined;
     const isPaid = activeUser.membershipStatus === MembershipStatus.ACTIVE
       || activeUser.offlinePaymentApproved
@@ -590,6 +634,32 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
     if (activeUser.isMembershipFrozen) {
       showFeedback('המנוי מוקפא כרגע. יש לבטל את ההקפאה לפני הרשמה ל-Open Gym.', 'error');
+      return;
+    }
+
+    const effectiveExpiry = payer?.membershipExpiry || activeUser.membershipExpiry;
+    const today = new Date().toISOString().split('T')[0];
+    if (!effectiveExpiry || effectiveExpiry < today) {
+      showFeedback('תוקף המנוי פג. יש לחדש את המנוי לפני הרשמה ל-Open Gym.', 'error');
+      return;
+    }
+
+    const [openStart, openEnd] = og.timeSlot.split('-').map(timeToMinutes);
+    const hasOverlap = sessions.some(session => {
+      if (session.date !== og.date || !session.registeredUsers.includes(activeUser.id)) return false;
+      const sessionStart = timeToMinutes(session.time);
+      return overlaps(openStart, openEnd, sessionStart, sessionStart + session.durationMinutes);
+    }) || openGymSessions.some(existing => {
+      if (
+        existing.id === og.id ||
+        existing.date !== og.date ||
+        !existing.registeredUsers.includes(activeUser.id)
+      ) return false;
+      const [existingStart, existingEnd] = existing.timeSlot.split('-').map(timeToMinutes);
+      return overlaps(openStart, openEnd, existingStart, existingEnd);
+    });
+    if (hasOverlap) {
+      showFeedback('לא ניתן להירשם לשני אימונים חופפים. יש לבחור משבצת אחרת.', 'error');
       return;
     }
 
@@ -845,7 +915,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
               <div>גיל: <span className="font-bold">{activeUser.age}</span> | מין: <span className="font-bold">{activeUser.gender === Gender.FEMALE ? 'נקבה 🚺' : 'זכר 🚹'}</span></div>
               <div>תוקף מנוי: <span className="font-mono font-semibold">{activeUser.membershipExpiry}</span></div>
-              <div>דירוג עדיפות בתור: <span className="font-bold text-slate-800">{activeUser.priorityScore}/100</span></div>
+              <div>סדר המתנה: <span className="font-bold text-slate-800">כל הקודם זוכה</span></div>
 
               {/* FAMILY MEMBERSHIP DETAILED BANNER */}
               {activeUser.familyId && (
@@ -1112,7 +1182,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             <section className="home-stats">
               <div><strong>{completedCheckIns}</strong><span>אימונים שבוצעו</span></div>
               <div><strong className="warning">{activePenaltiesCount}</strong><span>נקודות שחורות</span></div>
-              <div><strong>{activeUser.priorityScore}</strong><span>דירוג עדיפות</span></div>
+              <div><strong>FIFO</strong><span>תור לפי זמן הרשמה</span></div>
             </section>
 
             <section className="home-quick-actions" aria-label="פעולות מהירות">
@@ -1785,7 +1855,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <div><dt>טלפון</dt><dd>{activeUser.phone}</dd></div>
                   <div><dt>אימייל</dt><dd>{activeUser.email}</dd></div>
                   <div><dt>גיל</dt><dd>{activeUser.age}</dd></div>
-                  <div><dt>הצהרת בריאות</dt><dd>{activeUser.healthDeclarationSigned ? 'מאושרת' : 'חסרה'}</dd></div>
+                  <div><dt>הצהרת בריאות</dt><dd>{isHealthDeclarationValid() ? 'בתוקף' : 'נדרשת חתימה מחדש'}</dd></div>
                 </dl>
                 <button className="profile-outline-action" onClick={onOpenSettings}><Pencil size={15} /> שינוי פרטים וסיסמה</button>
               </article>

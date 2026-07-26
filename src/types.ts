@@ -124,6 +124,13 @@ export interface User {
   healthDeclarationSigned?: boolean;
   healthDeclarationSignatureUrl?: string;
   healthDeclarationDate?: string;
+  clubAgreementSigned?: boolean;
+  clubAgreementDate?: string;
+
+  // Notification preferences
+  pushNotificationsEnabled?: boolean;
+  workoutRemindersEnabled?: boolean;
+  managerPushNotificationsEnabled?: boolean;
   
   // Trainee fields
   membershipType?: MembershipType;
@@ -314,7 +321,7 @@ export interface AttendanceLog {
 }
 
 export interface SystemSettings {
-  cancellationWindowHours: number; // default: 1 hour
+  cancellationWindowHours: number; // default: 2 hours, unified for all workout types
   maxBlackPointsBeforePriorityDrop: number; // default: 3 points
   blackPointExpiryMonths: number; // default: 1 month
   openGymMaxParticipants: number; // default: 15

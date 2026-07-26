@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, Gender, DiscountCode, MEMBERSHIP_PRICES } from '../types';
-import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent } from 'lucide-react';
+import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing } from 'lucide-react';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -42,6 +42,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [phone, setPhone] = useState(currentUser.phone || '');
   const [birthDate, setBirthDate] = useState(currentUser.birthDate || '');
   const [role, setRole] = useState<UserRole>(currentUser.role || UserRole.TRAINEE);
+  const [pushEnabled, setPushEnabled] = useState(Boolean(currentUser.pushNotificationsEnabled));
+  const [workoutRemindersEnabled, setWorkoutRemindersEnabled] = useState(Boolean(currentUser.workoutRemindersEnabled));
+  const [managerPushEnabled, setManagerPushEnabled] = useState(Boolean(currentUser.managerPushNotificationsEnabled));
 
   // Family Setup / Upgrade
   const [isFamilyPayer, setIsFamilyPayer] = useState(currentUser.isFamilyPayer || false);
@@ -62,6 +65,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [subBirthDate, setSubBirthDate] = useState('');
   const [subGender, setSubGender] = useState<Gender>(Gender.MALE);
   const [subMembership, setSubMembership] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
+  const [subHealthApproved, setSubHealthApproved] = useState(false);
+  const [subAgreementApproved, setSubAgreementApproved] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -73,6 +78,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setPhone(currentUser.phone || '');
       setBirthDate(currentUser.birthDate || '');
       setRole(currentUser.role || UserRole.TRAINEE);
+      setPushEnabled(Boolean(currentUser.pushNotificationsEnabled));
+      setWorkoutRemindersEnabled(Boolean(currentUser.workoutRemindersEnabled));
+      setManagerPushEnabled(Boolean(currentUser.managerPushNotificationsEnabled));
       setIsFamilyPayer(currentUser.isFamilyPayer || false);
       setFamilyName(currentUser.familyName || '');
       setFamilyQuota(currentUser.familyMembersCount || 3);
@@ -171,7 +179,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       password: newPassword ? newPassword : password,
       phone: phone.trim(),
       birthDate: birthDate,
-      role: role
+      role: role,
+      pushNotificationsEnabled: pushEnabled,
+      workoutRemindersEnabled: pushEnabled && workoutRemindersEnabled,
+      managerPushNotificationsEnabled: role === UserRole.MANAGER && pushEnabled && managerPushEnabled
     };
 
     onUpdateUser(updated);
@@ -182,6 +193,41 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
 
     setMsg({ type: 'success', text: 'הפרטים והסיסמה עודכנו בהצלחה!' });
+  };
+
+  const handlePushToggle = async (enabled: boolean) => {
+    if (!enabled) {
+      setPushEnabled(false);
+      setWorkoutRemindersEnabled(false);
+      setManagerPushEnabled(false);
+      return;
+    }
+
+    if ('Notification' in window && Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setMsg({ type: 'error', text: 'לא ניתן להפעיל PUSH ללא אישור התראות בדפדפן.' });
+        return;
+      }
+    }
+    if ('Notification' in window && Notification.permission === 'denied') {
+      setMsg({ type: 'error', text: 'ההתראות חסומות בדפדפן. יש לאפשר אותן בהגדרות האתר.' });
+      return;
+    }
+    setPushEnabled(true);
+  };
+
+  const handleRenewHealthDeclaration = () => {
+    const updated: User = {
+      ...currentUser,
+      healthDeclarationSigned: true,
+      healthDeclarationDate: new Date().toISOString().split('T')[0]
+    };
+    onUpdateUser(updated);
+    if (onUpdateAllUsers) {
+      onUpdateAllUsers(allUsers.map(user => user.id === updated.id ? updated : user));
+    }
+    setMsg({ type: 'success', text: 'הצהרת הבריאות נחתמה מחדש ותוקפה הוארך בשנה.' });
   };
 
   const handleEnableFamilyAccount = () => {
@@ -218,6 +264,18 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setMsg({ type: 'error', text: 'שם המשתמש כבר תפוס' });
       return;
     }
+    if (!subBirthDate || !subHealthApproved || !subAgreementApproved) {
+      setMsg({ type: 'error', text: 'יש להזין תאריך לידה ולאשר הצהרת בריאות והסכם הצטרפות עבור בן המשפחה' });
+      return;
+    }
+
+    const birth = new Date(subBirthDate);
+    const today = new Date();
+    let subAge = today.getFullYear() - birth.getFullYear();
+    if (
+      today.getMonth() < birth.getMonth() ||
+      (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())
+    ) subAge -= 1;
 
     const newSubUser: User = {
       id: `user-fam-${Date.now()}`,
@@ -228,10 +286,12 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       phone: subPhone.trim() || currentUser.phone,
       role: UserRole.TRAINEE,
       gender: subGender,
-      age: 25,
+      age: Math.max(0, subAge),
       birthDate: subBirthDate,
       healthDeclarationSigned: true,
       healthDeclarationDate: new Date().toISOString().split('T')[0],
+      clubAgreementSigned: true,
+      clubAgreementDate: new Date().toISOString().split('T')[0],
       membershipType: subMembership,
       membershipStatus: MembershipStatus.ACTIVE,
       membershipExpiry: currentUser.membershipExpiry || '2027-12-31',
@@ -255,6 +315,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     setSubPassword('123456');
     setSubPhone('');
     setSubBirthDate('');
+    setSubHealthApproved(false);
+    setSubAgreementApproved(false);
     setMsg({ type: 'success', text: `בן המשפחה ${newSubUser.name} נוסף בהצלחה!` });
   };
 
@@ -374,6 +436,57 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 </div>
               </div>
 
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-2">
+                <div className="font-bold text-emerald-950 flex items-center gap-1.5">
+                  <ShieldCheck size={15} />
+                  הצהרת בריאות שנתית
+                </div>
+                <p className="text-[11px] text-emerald-800">
+                  חתימה אחרונה: {currentUser.healthDeclarationDate || 'לא נחתמה'}. הצהרה חסרה או ישנה משנה חוסמת הרשמה לכל אימון.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleRenewHealthDeclaration}
+                  className="px-3 py-2 rounded-lg bg-emerald-700 text-white font-bold text-[11px]"
+                >
+                  חתימה מחדש על הצהרת הבריאות
+                </button>
+              </div>
+
+              <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 space-y-3">
+                <div className="font-bold text-sky-950 flex items-center gap-1.5">
+                  <BellRing size={15} />
+                  התראות PUSH
+                </div>
+                <label className="flex items-center justify-between gap-3">
+                  <span>הפעלת התראות PUSH במכשיר זה</span>
+                  <input type="checkbox" checked={pushEnabled} onChange={event => void handlePushToggle(event.target.checked)} />
+                </label>
+                <label className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-1"><Bell size={13} /> תזכורות לפני אימונים</span>
+                  <input
+                    type="checkbox"
+                    checked={workoutRemindersEnabled}
+                    disabled={!pushEnabled}
+                    onChange={event => setWorkoutRemindersEnabled(event.target.checked)}
+                  />
+                </label>
+                {role === UserRole.MANAGER && (
+                  <label className="flex items-center justify-between gap-3">
+                    <span>הודעות PUSH כאשר מתקבלת פנייה למנהל</span>
+                    <input
+                      type="checkbox"
+                      checked={managerPushEnabled}
+                      disabled={!pushEnabled}
+                      onChange={event => setManagerPushEnabled(event.target.checked)}
+                    />
+                  </label>
+                )}
+                <p className="text-[10px] text-sky-700">
+                  ניתן להפעיל או לבטל בכל עת. התראות כשהאפליקציה סגורה יחוברו לספק PUSH בגרסת Production.
+                </p>
+              </div>
+
               {/* Password update section */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3 mt-2">
                 <div className="font-bold text-slate-800 flex items-center gap-1.5">
@@ -437,7 +550,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           {activeTab === 'family' && (
             <div className="space-y-4 text-xs">
               {/* If user is not yet family or is payer */}
-              {!currentUser.familyId || currentUser.isFamilyPayer ? (
+              {currentUser.role === UserRole.TRAINEE || isAdminMode ? (
                 <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="font-bold text-indigo-900 text-sm flex items-center gap-2">
@@ -558,6 +671,39 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                               ))}
                             </select>
                           </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="text-[11px] font-bold text-slate-700">
+                              תאריך לידה *
+                              <input
+                                type="date"
+                                required
+                                value={subBirthDate}
+                                onChange={(e) => setSubBirthDate(e.target.value)}
+                                className="mt-1 w-full p-2 border rounded-lg text-xs"
+                              />
+                            </label>
+                            <label className="text-[11px] font-bold text-slate-700">
+                              מין
+                              <select
+                                value={subGender}
+                                onChange={(e) => setSubGender(e.target.value as Gender)}
+                                className="mt-1 w-full p-2 border rounded-lg text-xs bg-white"
+                              >
+                                <option value={Gender.MALE}>זכר</option>
+                                <option value={Gender.FEMALE}>נקבה</option>
+                              </select>
+                            </label>
+                          </div>
+
+                          <label className="flex items-start gap-2 text-[11px] text-slate-700">
+                            <input type="checkbox" checked={subHealthApproved} onChange={event => setSubHealthApproved(event.target.checked)} />
+                            <span>אני מאשר/ת וחותם/ת על הצהרת הבריאות השנתית עבור בן המשפחה.</span>
+                          </label>
+                          <label className="flex items-start gap-2 text-[11px] text-slate-700">
+                            <input type="checkbox" checked={subAgreementApproved} onChange={event => setSubAgreementApproved(event.target.checked)} />
+                            <span>אני מאשר/ת וחותם/ת על הסכם ההצטרפות והתקנון עבור בן המשפחה.</span>
+                          </label>
 
                           <div className="flex justify-end gap-2 pt-1">
                             <button

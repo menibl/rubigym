@@ -36,7 +36,7 @@ const calculateAge = (birthDate: string) => {
   let age = today.getFullYear() - birth.getFullYear();
   const month = today.getMonth() - birth.getMonth();
   if (month < 0 || (month === 0 && today.getDate() < birth.getDate())) age -= 1;
-  return Math.max(age, 12);
+  return Math.max(age, 0);
 };
 
 export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegister }) => {
@@ -56,6 +56,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
   const [registerBirthDate, setRegisterBirthDate] = useState('');
   const [registerGender, setRegisterGender] = useState<Gender>(Gender.FEMALE);
   const [healthApproved, setHealthApproved] = useState(false);
+  const [agreementApproved, setAgreementApproved] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -158,6 +159,15 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
       setError('יש לאשר את הצהרת הבריאות כדי להשלים הרשמה.');
       return;
     }
+    if (!agreementApproved) {
+      setError('יש לקרוא ולחתום על הסכם ההצטרפות ותקנון המועדון.');
+      return;
+    }
+    const age = calculateAge(registerBirthDate);
+    if (age < 16) {
+      setError('פתיחת חשבון עצמאי אפשרית מגיל 16. מתחת לגיל 16 יש להצטרף כבן משפחה באמצעות חשבון משפחתי.');
+      return;
+    }
 
     const newUser: User = {
       id: `user-${Date.now()}`,
@@ -168,10 +178,14 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
       phone: registerPhone.trim(),
       role: UserRole.TRAINEE,
       gender: registerGender,
-      age: calculateAge(registerBirthDate),
+      age,
       birthDate: registerBirthDate,
       healthDeclarationSigned: true,
       healthDeclarationDate: new Date().toISOString().split('T')[0],
+      clubAgreementSigned: true,
+      clubAgreementDate: new Date().toISOString().split('T')[0],
+      pushNotificationsEnabled: false,
+      workoutRemindersEnabled: false,
       membershipType: MembershipType.GROUP_MONTHLY,
       membershipStatus: MembershipStatus.DEBT,
       membershipExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -285,7 +299,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
                 </div>
                 <label className="auth-checkbox">
                   <input type="checkbox" checked={healthApproved} onChange={event => setHealthApproved(event.target.checked)} />
-                  <span>קראתי ואישרתי את הצהרת הבריאות.</span>
+                  <span>קראתי, חתמתי ואישרתי את הצהרת הבריאות (בתוקף לשנה).</span>
+                </label>
+                <label className="auth-checkbox">
+                  <input type="checkbox" checked={agreementApproved} onChange={event => setAgreementApproved(event.target.checked)} />
+                  <span>קראתי וחתמתי על הסכם ההצטרפות, התקנון, מדיניות הביטולים והפרטיות.</span>
                 </label>
                 <button className="auth-primary" type="submit"><CheckCircle2 size={18} /> השלמת הרשמה</button>
               </form>
