@@ -40,6 +40,7 @@ import { RoleSwitcher } from './components/RoleSwitcher';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
+import { AuthGateway } from './components/AuthGateway';
 import { RubisLogo } from './components/RubisLogo';
 import { LoginModal } from './components/LoginModal';
 import { RegisterModal } from './components/RegisterModal';
@@ -90,6 +91,7 @@ export default function App() {
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // Active Simulated User
   const [activeUser, setActiveUser] = useState<User>(() => {
@@ -295,11 +297,13 @@ export default function App() {
     const updatedUsersList = [newUser, ...(familyMembers || []), ...users];
     setUsers(updatedUsersList);
     setActiveUser(newUser);
+    setIsAuthenticated(true);
   };
 
   // Login handler
   const handleLoginSuccess = (user: User) => {
     setActiveUser(user);
+    setIsAuthenticated(true);
   };
 
   // User details update handler
@@ -307,6 +311,16 @@ export default function App() {
     setActiveUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
   };
+
+  if (!isAuthenticated) {
+    return (
+      <AuthGateway
+        users={users}
+        onLogin={handleLoginSuccess}
+        onRegister={handleCompleteRegistration}
+      />
+    );
+  }
 
   return (
     <div className={`app-shell role-${activeUser.role.toLowerCase()} min-h-screen flex flex-col font-sans antialiased`} dir="rtl">
@@ -319,9 +333,9 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-black tracking-tight flex items-center gap-2 font-sans text-amber-500">
-                RUBIS <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-bold px-2 py-0.5 rounded">PREMIUM</span>
+                BALY <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-bold px-2 py-0.5 rounded">wellness</span>
               </h1>
-              <p className="text-[10px] text-zinc-400 font-sans">מועדון כושר ובודיבילדינג • מערכת חכמה לניהול מנויים, אימונים ועונשים</p>
+              <p className="text-[10px] text-zinc-400 font-sans">אימונים, בריאות וליווי אישי במקום אחד</p>
             </div>
           </div>
 
@@ -359,19 +373,11 @@ export default function App() {
             </div>
 
             <button
-              onClick={() => setIsLoginOpen(true)}
+              onClick={() => setIsAuthenticated(false)}
               className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-bold py-2 px-3 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
             >
               <LogIn size={14} className="text-amber-400" />
-              התחברות
-            </button>
-
-            <button
-              onClick={() => setIsRegisterOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-950/30"
-            >
-              <UserPlus size={14} />
-              הרשמה למועדון ✍️
+              יציאה
             </button>
 
             {/* Interactive Simulation Panel for No-Show Auto Engine */}
@@ -464,7 +470,13 @@ export default function App() {
               onUpdateAttendance={setAttendanceLogs}
               onUpdateUsers={setUsers}
               onUpdateBlackPoints={setBlackPoints}
+              onUpdatePayments={setPayments}
               onSendMessage={handleSendMessage}
+              onOpenSettings={() => {
+                setUserToEdit(activeUser);
+                setIsSettingsOpen(true);
+              }}
+              onLogout={() => setIsAuthenticated(false)}
             />
           )}
         </div>
@@ -474,10 +486,10 @@ export default function App() {
       <footer className="app-footer bg-zinc-950 text-zinc-500 text-xs py-6 mt-12 border-t border-zinc-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-right">
           <div>
-            <span className="font-bold text-white font-sans text-xs text-amber-500">RUBIS Premium</span> — מערכת אפיון PWA מתקדמת לניהול מועדון כושר ובודיבילדינג יוקרתי.
+            <span className="font-bold text-white font-sans text-xs text-amber-500">BALY wellness</span> — מערכת חכמה לניהול חוויית האימון והמנוי.
           </div>
           <div className="flex gap-4 text-zinc-600 text-[10px]">
-            <span>נבנה בהתאמה מלאה למסמך האפיון של RUBIS (גרסה 3.5)</span>
+            <span>גרסת בדיקות למועדון BALY wellness</span>
             <span>•</span>
             <span>מצב סימולטור וסורק קוד נוכחות פעילים</span>
           </div>

@@ -22,6 +22,7 @@ import {
   MembershipStatus,
   MembershipType,
   MEMBERSHIP_TYPE_LABELS,
+  MEMBERSHIP_PRICES,
   UserRole
 } from '../types';
 import {
@@ -42,7 +43,12 @@ import {
   Video,
   Grid,
   Home,
-  Dumbbell
+  Dumbbell,
+  CreditCard,
+  LogOut,
+  Pencil,
+  UserRound,
+  WalletCards
 } from 'lucide-react';
 import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
 
@@ -64,7 +70,10 @@ interface TraineeDashboardProps {
   onUpdateAttendance: (logs: AttendanceLog[]) => void;
   onUpdateUsers: (users: User[]) => void;
   onUpdateBlackPoints: (points: BlackPoint[]) => void;
+  onUpdatePayments: (payments: Payment[]) => void;
   onSendMessage: (content: string, receiverId: string) => void;
+  onOpenSettings: () => void;
+  onLogout: () => void;
 }
 
 export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
@@ -85,9 +94,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   onUpdateAttendance,
   onUpdateUsers,
   onUpdateBlackPoints,
-  onSendMessage
+  onUpdatePayments,
+  onSendMessage,
+  onOpenSettings,
+  onLogout
 }) => {
-  const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile'>('home');
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [showPunchCardModal, setShowPunchCardModal] = useState<boolean>(false);
   const [selectedPunchCardPackage, setSelectedPunchCardPackage] = useState<{ count: number; price: number; months: number }>({
@@ -328,6 +340,33 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       }
       showFeedback(`סוג המנוי שלך עודכן בהצלחה ל-${typeLabel}! 🎉`);
     }
+  };
+
+  const handlePayMembership = () => {
+    const membershipType = activeUser.membershipType || MembershipType.GROUP_MONTHLY;
+    const amount = MEMBERSHIP_PRICES[membershipType];
+    if (!confirm(`לבצע תשלום סימולציה בסך ${amount} ₪ עבור ${MEMBERSHIP_TYPE_LABELS[membershipType]?.label}?`)) return;
+
+    const expiryDate = new Date();
+    expiryDate.setMonth(expiryDate.getMonth() + (membershipType === MembershipType.GROUP_ANNUAL || membershipType === MembershipType.OPEN_ANNUAL ? 12 : 1));
+    onUpdateUsers(users.map(user => user.id === activeUser.id ? {
+      ...user,
+      membershipStatus: MembershipStatus.ACTIVE,
+      membershipExpiry: expiryDate.toISOString().split('T')[0],
+      offlinePaymentApproved: false
+    } : user));
+    onUpdatePayments([{
+      id: `payment-${Date.now()}`,
+      traineeId: activeUser.id,
+      traineeName: activeUser.name,
+      amount,
+      date: new Date().toISOString().split('T')[0],
+      status: 'PAID',
+      membershipTypePurchased: membershipType,
+      paymentMethod: 'כרטיס אשראי — סימולציה',
+      isMock: true
+    }, ...payments]);
+    showFeedback('התשלום נקלט בסימולציה והמנוי הופעל בהצלחה. 💳');
   };
 
   // REQUEST WORKOUT PLAN (For non-Open Gym subscribers or upon request)
@@ -984,6 +1023,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           <QrCode size={16} />
           <span>כרטיס</span>
         </button>
+        <button
+          onClick={() => setActiveTab('profile')}
+          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 relative cursor-pointer ${
+            activeTab === 'profile' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <UserRound size={16} />
+          <span>פרופיל</span>
+        </button>
       </div>
 
       <div className="trainee-content bg-white rounded-xl p-6 shadow-md border border-slate-100 min-h-[400px]">
@@ -1023,6 +1071,19 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               <div><strong>{completedCheckIns}</strong><span>אימונים שבוצעו</span></div>
               <div><strong className="warning">{activePenaltiesCount}</strong><span>נקודות שחורות</span></div>
               <div><strong>{activeUser.priorityScore}</strong><span>דירוג עדיפות</span></div>
+            </section>
+
+            <section className="home-quick-actions" aria-label="פעולות מהירות">
+              <button onClick={() => setActiveTab('workout')}>
+                <Dumbbell size={21} />
+                <span><strong>תוכנית האימונים</strong><small>תרגילים, סטים ומשקלים</small></span>
+                <ChevronRight size={17} />
+              </button>
+              <button onClick={() => setActiveTab('profile')}>
+                <UserRound size={21} />
+                <span><strong>פרופיל ומנוי</strong><small>עריכה, עדכון ותשלום</small></span>
+                <ChevronRight size={17} />
+              </button>
             </section>
 
             <section className="home-section">
@@ -1659,6 +1720,62 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* PROFILE, MEMBERSHIP & PAYMENT */}
+        {activeTab === 'profile' && (
+          <div className="member-profile-page">
+            <section className="member-profile-hero">
+              <img src={activeUser.imageUrl} alt={activeUser.name} />
+              <div>
+                <span>החשבון שלי</span>
+                <h3>{activeUser.name}</h3>
+                <p>@{activeUser.username || activeUser.email}</p>
+              </div>
+              <button onClick={onOpenSettings}><Pencil size={16} /> עריכת פרופיל</button>
+            </section>
+
+            <section className="member-profile-grid">
+              <article>
+                <div className="member-card-title"><UserRound size={18} /><strong>פרטים אישיים</strong></div>
+                <dl>
+                  <div><dt>טלפון</dt><dd>{activeUser.phone}</dd></div>
+                  <div><dt>אימייל</dt><dd>{activeUser.email}</dd></div>
+                  <div><dt>גיל</dt><dd>{activeUser.age}</dd></div>
+                  <div><dt>הצהרת בריאות</dt><dd>{activeUser.healthDeclarationSigned ? 'מאושרת' : 'חסרה'}</dd></div>
+                </dl>
+                <button className="profile-outline-action" onClick={onOpenSettings}><Pencil size={15} /> שינוי פרטים וסיסמה</button>
+              </article>
+
+              <article>
+                <div className="member-card-title"><WalletCards size={18} /><strong>המנוי שלי</strong></div>
+                <div className="membership-summary">
+                  <strong>{MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.GROUP_MONTHLY]?.label}</strong>
+                  <span className={activeUser.membershipStatus === MembershipStatus.ACTIVE ? 'active' : 'debt'}>
+                    {activeUser.membershipStatus === MembershipStatus.ACTIVE ? 'פעיל' : 'דורש תשלום'}
+                  </span>
+                </div>
+                <p>בתוקף עד: <b>{activeUser.membershipExpiry}</b></p>
+                <div className="profile-plan-actions">
+                  <button onClick={() => handleSwitchMembershipType(MembershipType.GROUP_MONTHLY)}>חודשי</button>
+                  <button onClick={() => handleSwitchMembershipType(MembershipType.GROUP_ANNUAL)}>שנתי</button>
+                </div>
+                <button className="profile-primary-action" onClick={handlePayMembership}><CreditCard size={16} /> תשלום / חידוש מנוי</button>
+              </article>
+            </section>
+
+            <section className="profile-more-actions">
+              <button onClick={() => setActiveTab('workout')}><Dumbbell size={18} /> תוכנית האימונים שלי</button>
+              <button onClick={() => setActiveTab('card')}><QrCode size={18} /> כרטיס דיגיטלי וצ'ק־אין</button>
+              {activeUser.isMembershipFrozen
+                ? <button onClick={handleUnfreezeMembership}>☀️ ביטול הקפאת מנוי</button>
+                : <button onClick={handleFreezeMembership}>❄️ הקפאת מנוי</button>}
+              {activeUser.membershipType === MembershipType.GROUP_ANNUAL && (
+                <button className="danger" onClick={handleCancelAnnualMembership}>ביטול מנוי שנתי</button>
+              )}
+              <button className="logout" onClick={onLogout}><LogOut size={18} /> יציאה מהחשבון</button>
+            </section>
           </div>
         )}
 
