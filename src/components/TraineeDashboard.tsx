@@ -201,7 +201,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const hasPersonalAccess = userMemberships.includes(MembershipType.PERSONAL_TRAINING);
 
     const hasOpenGymAccess = userMemberships.some(m => 
-      [MembershipType.OPEN_MONTHLY, MembershipType.OPEN_ANNUAL, MembershipType.OPEN_PUNCH_CARD].includes(m)
+      [
+        MembershipType.GROUP_MONTHLY,
+        MembershipType.GROUP_ANNUAL,
+        MembershipType.OPEN_MONTHLY,
+        MembershipType.OPEN_ANNUAL,
+        MembershipType.OPEN_PUNCH_CARD
+      ].includes(m)
     );
 
     // Personal Training session check
@@ -572,14 +578,39 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // BOOK / CANCEL OPEN GYM (Section 10)
   const handleBookOpenGym = (og: OpenGymSession) => {
-    // Payment check applies to Open Gym too (Section 11)
-    const isPaid = activeUser.membershipStatus === MembershipStatus.ACTIVE || activeUser.offlinePaymentApproved;
+    const payer = activeUser.familyPayerId ? users.find(user => user.id === activeUser.familyPayerId) : undefined;
+    const isPaid = activeUser.membershipStatus === MembershipStatus.ACTIVE
+      || activeUser.offlinePaymentApproved
+      || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved));
+
     if (!isPaid) {
       showFeedback('תשלום מראש חובה! ההרשמה ל-Open Gym חסומה - לא בוצע תשלום מראש באפליקציה או אישור חריג מנהל.', 'error');
       return;
     }
 
-    if (activeUser.membershipType === MembershipType.OPEN_PUNCH_CARD) {
+    if (activeUser.isMembershipFrozen) {
+      showFeedback('המנוי מוקפא כרגע. יש לבטל את ההקפאה לפני הרשמה ל-Open Gym.', 'error');
+      return;
+    }
+
+    const memberships = [
+      activeUser.membershipType,
+      ...(activeUser.secondaryMemberships || [])
+    ].filter(Boolean) as MembershipType[];
+    const includedOpenGymAccess = memberships.some(type => [
+      MembershipType.GROUP_MONTHLY,
+      MembershipType.GROUP_ANNUAL,
+      MembershipType.OPEN_MONTHLY,
+      MembershipType.OPEN_ANNUAL
+    ].includes(type));
+    const usesPunchCard = !includedOpenGymAccess && memberships.includes(MembershipType.OPEN_PUNCH_CARD);
+
+    if (!includedOpenGymAccess && !usesPunchCard) {
+      showFeedback('המנוי שלך אינו כולל כניסה ל-Open Gym. ניתן לעדכן מנוי או לרכוש כרטיסייה.', 'error');
+      return;
+    }
+
+    if (usesPunchCard) {
       if ((activeUser.punchCardRemaining ?? 0) <= 0) {
         showFeedback('אזלו הניקובים בכרטיסייה ל-Open Gym! יש לבצע טעינת כרטיסייה חדשה באפליקציה.', 'error');
         return;
@@ -596,7 +627,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         return item;
       });
 
-      if (activeUser.membershipType === MembershipType.OPEN_PUNCH_CARD && onUpdateUsers) {
+      if (usesPunchCard && onUpdateUsers) {
         const remaining = (activeUser.punchCardRemaining ?? 10) - 1;
         const updatedUsers = users.map(u => u.id === activeUser.id ? { ...u, punchCardRemaining: Math.max(0, remaining) } : u);
         onUpdateUsers(updatedUsers);
@@ -619,6 +650,17 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   const handleCancelOpenGym = (og: OpenGymSession) => {
     const isWaitlisted = og.waitlistUsers.includes(activeUser.id);
+    const memberships = [
+      activeUser.membershipType,
+      ...(activeUser.secondaryMemberships || [])
+    ].filter(Boolean) as MembershipType[];
+    const includedOpenGymAccess = memberships.some(type => [
+      MembershipType.GROUP_MONTHLY,
+      MembershipType.GROUP_ANNUAL,
+      MembershipType.OPEN_MONTHLY,
+      MembershipType.OPEN_ANNUAL
+    ].includes(type));
+    const usesPunchCard = !includedOpenGymAccess && memberships.includes(MembershipType.OPEN_PUNCH_CARD);
     let updatedOpenGym: OpenGymSession[];
 
     if (isWaitlisted) {
@@ -633,7 +675,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       const nextUser = og.waitlistUsers[0];
       const remainingWaitlist = og.waitlistUsers.slice(1);
 
-      if (activeUser.membershipType === MembershipType.OPEN_PUNCH_CARD && onUpdateUsers) {
+      if (usesPunchCard && onUpdateUsers) {
         const remaining = (activeUser.punchCardRemaining ?? 0) + 1;
         const updatedUsers = users.map(u => u.id === activeUser.id ? { ...u, punchCardRemaining: remaining } : u);
         onUpdateUsers(updatedUsers);
@@ -871,7 +913,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <div>
                       <span className="font-bold text-xs text-emerald-900 block">👥 קבוצתי חודשי – ללא התחייבות</span>
                       <p className="text-[10px] text-emerald-800 mt-0.5">
-                        מנוי חודשי מתחדש לאימונים קבוצתיים. גישה מלאה לכל אימוני הסטודיו.
+                        מנוי חודשי מתחדש לאימונים קבוצתיים, כולל כניסה ל־Open Gym כחלק מהמנוי.
                       </p>
                     </div>
                     <button
@@ -891,7 +933,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <div>
                       <span className="font-bold text-xs text-sky-900 block">⭐ קבוצתי שנתי – התחייבות לשנה</span>
                       <p className="text-[10px] text-sky-800 mt-0.5">
-                        מנוי שנתי מוזל לאימונים קבוצתיים. זכות להקפאת מנוי עד חודש אחד בשנה.
+                        מנוי שנתי מוזל לאימונים קבוצתיים, כולל Open Gym וזכות להקפאת מנוי עד חודש אחד בשנה.
                       </p>
                     </div>
                     <button
