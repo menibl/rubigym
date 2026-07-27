@@ -47,6 +47,16 @@ import { RegisterModal } from './components/RegisterModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { Dumbbell, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon } from 'lucide-react';
 
+const AUTH_SESSION_KEY = 'gym_auth_session_v1';
+
+const getSavedAuthUserId = () => {
+  try {
+    return localStorage.getItem(AUTH_SESSION_KEY);
+  } catch {
+    return null;
+  }
+};
+
 export default function App() {
   // --- Global Application State ---
   const [settings, setSettings] = useState<SystemSettings>(() =>
@@ -91,13 +101,21 @@ export default function App() {
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const savedUserId = getSavedAuthUserId();
+    return Boolean(savedUserId && users.some(user => user.id === savedUserId));
+  });
 
   // Active Simulated User
   const [activeUser, setActiveUser] = useState<User>(() => {
     const loadedUsers = getLocalStorageData('gym_users_v7', INITIAL_USERS);
+    const savedUserId = getSavedAuthUserId();
+    const savedUser = savedUserId
+      ? loadedUsers.find(user => user.id === savedUserId)
+      : undefined;
     // Open on the mobile trainee experience shown in the product mockup.
-    return loadedUsers.find(u => u.id === 'trainee-meni')
+    return savedUser
+      || loadedUsers.find(u => u.id === 'trainee-meni')
       || loadedUsers.find(u => u.role === UserRole.TRAINEE)
       || loadedUsers[0];
   });
@@ -248,6 +266,14 @@ export default function App() {
   // Switch Active user simulation callback
   const handleSwitchUser = (user: User) => {
     setActiveUser(user);
+    if (isAuthenticated) {
+      localStorage.setItem(AUTH_SESSION_KEY, user.id);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem(AUTH_SESSION_KEY);
+    setIsAuthenticated(false);
   };
 
   // Direct send message callback across dashboards
@@ -271,12 +297,14 @@ export default function App() {
     const updatedUsersList = [newUser, ...(familyMembers || []), ...users];
     setUsers(updatedUsersList);
     setActiveUser(newUser);
+    localStorage.setItem(AUTH_SESSION_KEY, newUser.id);
     setIsAuthenticated(true);
   };
 
   // Login handler
   const handleLoginSuccess = (user: User) => {
     setActiveUser(user);
+    localStorage.setItem(AUTH_SESSION_KEY, user.id);
     setIsAuthenticated(true);
   };
 
@@ -347,7 +375,7 @@ export default function App() {
             </div>
 
             <button
-              onClick={() => setIsAuthenticated(false)}
+              onClick={handleLogout}
               className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-bold py-2 px-3 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
             >
               <LogIn size={14} className="text-amber-400" />
@@ -446,7 +474,7 @@ export default function App() {
                 setUserToEdit(activeUser);
                 setIsSettingsOpen(true);
               }}
-              onLogout={() => setIsAuthenticated(false)}
+              onLogout={handleLogout}
             />
           )}
         </div>
