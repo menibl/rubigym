@@ -841,10 +841,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   const now = new Date();
   const upcomingSessions = sessions
-    .filter(session => new Date(`${session.date}T${session.time || '00:00'}`) >= now)
+    .filter(session =>
+      session.registeredUsers.includes(activeUser.id) &&
+      new Date(`${session.date}T${session.time || '00:00'}`) >= now
+    )
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
   const nextSession = upcomingSessions[0];
-  const completedCheckIns = attendanceLogs.filter(log => log.traineeId === activeUser.id).length || 14;
   const sessionCapacity = nextSession?.maxParticipants || 12;
   const registeredCount = nextSession?.registeredUsers.length || 0;
   const bookingDays = Array.from({ length: 7 }, (_, index) => {
@@ -1159,36 +1161,32 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
             <section className="next-session-card">
               <div className="next-session-eyebrow">האימון הבא שלך</div>
-              <h3>{nextSession?.title || 'עדיין לא קבעת אימון קרוב'}</h3>
-              <div className="next-session-meta">
-                <span><CalendarIcon size={14} /> {nextSession ? `${nextSession.date} · ${nextSession.time}` : 'בחר אימון שמתאים לך'}</span>
-                <span><UserCheck size={14} /> {nextSession?.coachName || 'צוות RUBIS'}</span>
-              </div>
-              <div className="next-session-bottom">
-                <button onClick={() => setActiveTab('classes')}>
-                  {nextSession ? 'לצפייה באימון' : 'הרשמה לאימון'}
-                </button>
-                <div className="capacity-block">
-                  <div className="capacity-dots" aria-label={`${registeredCount} מתוך ${sessionCapacity} מקומות תפוסים`}>
-                    {Array.from({ length: Math.min(sessionCapacity, 20) }).map((_, index) => (
-                      <i key={index} className={index < registeredCount ? 'filled' : ''} />
-                    ))}
+              {nextSession && (
+                <>
+                  <h3>{nextSession.title}</h3>
+                  <div className="next-session-meta">
+                    <span><CalendarIcon size={14} /> {nextSession.date} · {nextSession.time}</span>
+                    <span><UserCheck size={14} /> {nextSession.coachName}</span>
                   </div>
-                  <span>{registeredCount} מתוך {sessionCapacity} נרשמו</span>
-                </div>
-              </div>
-            </section>
-
-            <section className="home-stats">
-              <div><strong>{completedCheckIns}</strong><span>אימונים שבוצעו</span></div>
-              <div><strong className="warning">{activePenaltiesCount}</strong><span>נקודות שחורות</span></div>
-              <div><strong>FIFO</strong><span>תור לפי זמן הרשמה</span></div>
+                  <div className="next-session-bottom">
+                    <button onClick={() => setActiveTab('classes')}>לצפייה באימון</button>
+                    <div className="capacity-block">
+                      <div className="capacity-dots" aria-label={`${registeredCount} מתוך ${sessionCapacity} מקומות תפוסים`}>
+                        {Array.from({ length: Math.min(sessionCapacity, 20) }).map((_, index) => (
+                          <i key={index} className={index < registeredCount ? 'filled' : ''} />
+                        ))}
+                      </div>
+                      <span>{registeredCount} מתוך {sessionCapacity} נרשמו</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </section>
 
             <section className="home-quick-actions" aria-label="פעולות מהירות">
-              <button onClick={() => setActiveTab('workout')}>
-                <Dumbbell size={21} />
-                <span><strong>תוכנית האימונים</strong><small>תרגילים, סטים ומשקלים</small></span>
+              <button onClick={() => setActiveTab('classes')}>
+                <CalendarIcon size={21} />
+                <span><strong>הרשמה לאימונים</strong><small>בחירת אימון ומקום פנוי</small></span>
                 <ChevronRight size={17} />
               </button>
               <button onClick={() => setActiveTab('profile')}>
@@ -1196,27 +1194,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <span><strong>פרופיל ומנוי</strong><small>עריכה, עדכון ותשלום</small></span>
                 <ChevronRight size={17} />
               </button>
-            </section>
-
-            <section className="home-section">
-              <h3>מעקב שרירים בתוכנית</h3>
-              <div className="muscle-tracker">
-                {[
-                  { id: MuscleGroup.UPPER, label: 'עליון' },
-                  { id: MuscleGroup.LEGS, label: 'רגליים' },
-                  { id: MuscleGroup.BACK, label: 'גב' },
-                  { id: MuscleGroup.SHOULDERS, label: 'כתפיים' }
-                ].map(group => {
-                  const count = workoutMuscleGroupsStats[group.id] || 0;
-                  const total = traineeWorkout?.exercises.length || 1;
-                  return (
-                    <div key={group.id}>
-                      <span>{group.label}</span>
-                      <div><i style={{ width: `${Math.max(count ? 16 : 0, (count / total) * 100)}%` }} /></div>
-                    </div>
-                  );
-                })}
-              </div>
             </section>
 
             <section className="home-section">
