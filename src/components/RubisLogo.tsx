@@ -12,14 +12,13 @@ interface RubisLogoProps {
 
 export const RubisLogo: React.FC<RubisLogoProps> = ({ className = '', size = 120 }) => {
   const [logoPathIndex, setLogoPathIndex] = useState(0);
-  const baseUrl = import.meta.env.BASE_URL;
 
   // List of paths and formats we try in order to load the uploaded logo.
   const logoPaths = [
-    `${baseUrl}logo.png`,
-    `${baseUrl}logo.jpg`,
-    `${baseUrl}logo.jpeg`,
-    `${baseUrl}logo.webp`
+    'logo.png',
+    'logo.jpg',
+    'logo.jpeg',
+    'logo.webp'
   ];
 
   const handleImgError = () => {
