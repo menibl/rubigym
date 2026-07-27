@@ -45,7 +45,7 @@ import { RubisLogo } from './components/RubisLogo';
 import { LoginModal } from './components/LoginModal';
 import { RegisterModal } from './components/RegisterModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
-import { Dumbbell, UserCheck, AlertOctagon, HelpCircle, Flame, ShieldAlert, Sparkles, LogIn, UserPlus, Settings, User as UserIcon } from 'lucide-react';
+import { Dumbbell, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon } from 'lucide-react';
 
 export default function App() {
   // --- Global Application State ---
@@ -237,79 +237,6 @@ export default function App() {
     }
   }, []);
 
-  // --- INTERACTIVE SIMULATOR: No-Show Penalty Trigger (Section 9, 17.4) ---
-  // This simulates the check at the end of class: comparing registered list vs who actually performed check-in.
-  const handleSimulateNoShowChecks = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    
-    // Find active sessions of today
-    const todaysSessions = sessions.filter(s => s.date === todayStr);
-    
-    if (todaysSessions.length === 0) {
-      alert('אין אימונים מוגדרים להיום ביומן השעות כדי להריץ את הבדיקה. אנא צור אימון להיום בפאנל הניהול.');
-      return;
-    }
-
-    let penaltyIssuedCount = 0;
-    const newPenalties: BlackPoint[] = [];
-
-    // Loop through each session of today
-    todaysSessions.forEach(session => {
-      session.registeredUsers.forEach(traineeId => {
-        // Check if this trainee has a check-in logged for this session
-        const didCheckIn = attendanceLogs.some(
-          log => log.traineeId === traineeId && log.type === 'SESSION' && log.targetId === session.id
-        );
-
-        if (!didCheckIn) {
-          // Check if a penalty was already issued to prevent duplicate testing
-          const alreadyPenalized = blackPoints.some(
-            bp => bp.traineeId === traineeId && bp.sessionId === session.id && bp.status === 'ACTIVE'
-          );
-
-          if (!alreadyPenalized) {
-            const trainee = users.find(u => u.id === traineeId);
-            if (trainee) {
-              penaltyIssuedCount++;
-              newPenalties.push({
-                id: `bp-${Date.now()}-${traineeId}`,
-                traineeId: trainee.id,
-                traineeName: trainee.name,
-                sessionId: session.id,
-                sessionTitle: session.title,
-                sessionDate: session.date,
-                issuedDate: todayStr,
-                expiryDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split('T')[0], // 1 month
-                status: 'ACTIVE',
-                reason: 'מערכת אוטומטית: אי-הגעה לאימון ואי סריקת כרטיס נוכחות בקבלה'
-              });
-            }
-          }
-        }
-      });
-    });
-
-    if (penaltyIssuedCount > 0) {
-      const combinedPoints = [...newPenalties, ...blackPoints];
-      setBlackPoints(combinedPoints);
-
-      // Recalculate priority scores
-      const updatedUsers = users.map(u => {
-        if (u.role === UserRole.TRAINEE) {
-          const activeCount = combinedPoints.filter(p => p.traineeId === u.id && p.status === 'ACTIVE').length;
-          const score = activeCount >= settings.maxBlackPointsBeforePriorityDrop ? 50 : 100;
-          return { ...u, priorityScore: score };
-        }
-        return u;
-      });
-      setUsers(updatedUsers);
-
-      alert(`סריקת הנוכחות הושלמה!\n\nנמצאו ${penaltyIssuedCount} מקרים של מתאמנים שנרשמו לאימונים היום אך לא ביצעו צ'ק-אין בקבלה.\nהוטלה עליהם נקודה שחורה פעילה ועדיפותם בתור עודכנה.`);
-    } else {
-      alert('סריקת הנוכחות הושלמה!\nכל המתאמנים שרשומים לאימונים היום ביצעו צ\'ק-אין תקין, או שכבר הוטלו עונשים.');
-    }
-  };
-
   // Reset database completely
   const handleResetDatabase = () => {
     if (confirm('האם אתה בטוח שברצונך לאפס את כל הנתונים השמורים במערכת לערכי ברירת המחדל?')) {
@@ -427,16 +354,6 @@ export default function App() {
               יציאה
             </button>
 
-            {/* Interactive Simulation Panel for No-Show Auto Engine */}
-            <button
-              onClick={handleSimulateNoShowChecks}
-              className="bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-[10px] font-bold py-2 px-3 rounded-xl transition-all flex items-center gap-1 shadow-md shadow-amber-950/20 cursor-pointer"
-              id="btn-trigger-noshow-checker"
-              title="סוגר אימונים ובודק מי נרשם אך לא עשה צ'ק אין, ומטיל עליו נקודה שחורה"
-            >
-              <ShieldAlert size={12} />
-              סורק אי-הגעה ⚡
-            </button>
           </div>
         </div>
       </header>

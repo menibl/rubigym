@@ -1027,10 +1027,37 @@ option {
     background: var(--app-bg);
   }
 
-  .role-trainee .app-header,
   .role-trainee #role-switcher-container,
   .role-trainee .app-footer,
   .role-trainee .trainee-profile-panel {
+    display: none !important;
+  }
+
+  .role-trainee .app-header {
+    display: block !important;
+    position: sticky;
+    background: rgba(20, 22, 28, 0.96) !important;
+  }
+
+  .role-trainee .app-header-inner {
+    min-height: 66px;
+    padding: 7px 16px !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+  }
+
+  .role-trainee .app-header-inner > div:first-child {
+    gap: 10px !important;
+  }
+
+  .role-trainee .app-header-inner > div:first-child > div:first-child,
+  .role-trainee .app-header-inner > div:first-child > div:first-child img,
+  .role-trainee .app-header-inner > div:first-child > div:first-child svg {
+    width: 46px !important;
+    height: 46px !important;
+  }
+
+  .role-trainee .app-header-inner > div:last-child {
     display: none !important;
   }
 

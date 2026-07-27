@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, Gender, DiscountCode, MEMBERSHIP_PRICES } from '../types';
-import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing } from 'lucide-react';
+import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -41,6 +41,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [phone, setPhone] = useState(currentUser.phone || '');
   const [birthDate, setBirthDate] = useState(currentUser.birthDate || '');
+  const [profileImage, setProfileImage] = useState(currentUser.imageUrl || '');
   const [role, setRole] = useState<UserRole>(currentUser.role || UserRole.TRAINEE);
   const [pushEnabled, setPushEnabled] = useState(Boolean(currentUser.pushNotificationsEnabled));
   const [workoutRemindersEnabled, setWorkoutRemindersEnabled] = useState(Boolean(currentUser.workoutRemindersEnabled));
@@ -77,6 +78,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setConfirmNewPassword('');
       setPhone(currentUser.phone || '');
       setBirthDate(currentUser.birthDate || '');
+      setProfileImage(currentUser.imageUrl || '');
       setRole(currentUser.role || UserRole.TRAINEE);
       setPushEnabled(Boolean(currentUser.pushNotificationsEnabled));
       setWorkoutRemindersEnabled(Boolean(currentUser.workoutRemindersEnabled));
@@ -179,6 +181,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       password: newPassword ? newPassword : password,
       phone: phone.trim(),
       birthDate: birthDate,
+      imageUrl: profileImage || currentUser.imageUrl,
       role: role,
       pushNotificationsEnabled: pushEnabled,
       workoutRemindersEnabled: pushEnabled && workoutRemindersEnabled,
@@ -193,6 +196,28 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
 
     setMsg({ type: 'success', text: 'הפרטים והסיסמה עודכנו בהצלחה!' });
+  };
+
+  const handleProfileImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setMsg({ type: 'error', text: 'יש לבחור קובץ תמונה בלבד.' });
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setMsg({ type: 'error', text: 'גודל התמונה המרבי הוא 2MB.' });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setProfileImage(reader.result);
+        setMsg(null);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handlePushToggle = async (enabled: boolean) => {
@@ -385,6 +410,25 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
         <div className="p-6">
           {activeTab === 'profile' && (
             <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <img
+                  src={profileImage || currentUser.imageUrl}
+                  alt={`תמונת הפרופיל של ${name || currentUser.name}`}
+                  className="h-24 w-24 rounded-full border-2 border-emerald-500 object-cover shadow-md"
+                />
+                <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white transition hover:bg-emerald-700">
+                  <Camera size={16} />
+                  החלפת תמונת פרופיל
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="sr-only"
+                    onChange={handleProfileImageChange}
+                  />
+                </label>
+                <span className="text-[10px] text-slate-500">JPG, PNG או WEBP עד 2MB</span>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">שם מלא *</label>
