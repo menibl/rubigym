@@ -39,7 +39,7 @@ export const RubisLogo: React.FC<RubisLogoProps> = ({ className = '', size = 120
       <div className={`flex flex-col items-center justify-center ${className}`}>
         <img
           src={logoPaths[logoPathIndex]}
-          alt="RUBIS Logo"
+          alt="BALY WELLNESS Logo"
           style={{ width: size, height: size }}
           className="object-contain transition-transform duration-300 hover:scale-105 rounded-full"
           onError={handleImgError}
@@ -257,7 +257,7 @@ export const RubisLogo: React.FC<RubisLogoProps> = ({ className = '', size = 120
             strokeWidth="3.5"
             strokeLinejoin="round"
           />
-          {/* "RUBIS" Collegiate Block bold white text */}
+          {/* Brand fallback */}
           <text
             x="100"
             y="153"
@@ -268,7 +268,7 @@ export const RubisLogo: React.FC<RubisLogoProps> = ({ className = '', size = 120
             fontFamily="'Heebo', 'Inter', 'Arial Black', sans-serif"
             letterSpacing="4"
           >
-            RUBIS
+            BALY
           </text>
         </g>
 

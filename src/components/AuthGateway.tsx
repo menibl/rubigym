@@ -204,8 +204,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
           <div className="auth-brand">
             <RubisLogo size={58} className="auth-brand-logo" />
             <div>
-              <strong>BALY</strong>
-              <small>wellness</small>
+              <strong>BALY WELLNESS</strong>
             </div>
           </div>
           <div className="auth-kicker">המקום שלך להתחזק, להתאזן ולהרגיש טוב</div>
@@ -236,7 +235,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
         <button className="auth-back" onClick={() => openScreen('welcome')}>
           <ArrowLeft size={18} /> חזרה
         </button>
-        <div className="auth-mini-brand">BALY <span>wellness</span></div>
+        <div className="auth-mini-brand">BALY WELLNESS</div>
 
         {screen === 'login' && (
           <>

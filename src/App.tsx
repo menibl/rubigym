@@ -306,8 +306,8 @@ export default function App() {
               <RubisLogo size={54} />
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tight flex items-center gap-2 font-sans text-amber-500">
-                BALY <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-bold px-2 py-0.5 rounded">wellness</span>
+              <h1 className="text-lg font-semibold tracking-[0.16em] font-sans text-white">
+                BALY WELLNESS
               </h1>
               <p className="text-[10px] text-zinc-400 font-sans">אימונים, בריאות וליווי אישי במקום אחד</p>
             </div>

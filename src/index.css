@@ -162,7 +162,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .app-header h1 {
-  color: var(--app-gold) !important;
+  color: #f5f5f5 !important;
+  font-family: "Inter", "Heebo", sans-serif;
 }
 
 .app-main {
@@ -778,14 +779,19 @@ option {
 
 .auth-brand-logo {
   overflow: hidden;
-  border: 1px solid rgba(216, 184, 115, .52);
+  border: 1px solid rgba(255, 255, 255, .45);
   border-radius: 50%;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .45), 0 0 24px rgba(201, 168, 103, .12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
 }
 
-.auth-brand div { display: flex; align-items: baseline; gap: 6px; }
-.auth-brand strong { font-size: 25px; letter-spacing: .08em; }
-.auth-brand small { color: #c9a867; font-size: 13px; }
+.auth-brand div { display: flex; align-items: center; }
+.auth-brand strong {
+  color: #f7f7f7;
+  font-family: "Inter", "Heebo", sans-serif;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: .14em;
+}
 .auth-kicker { margin-top: 38px; color: #c9a867; font-size: 12px; }
 .auth-hero h1 { margin-top: 10px; font-size: clamp(38px, 11vw, 58px); font-weight: 900; line-height: .98; }
 .auth-hero > p { margin-top: 20px; color: #aaa99f; font-size: 14px; line-height: 1.75; }
@@ -823,8 +829,14 @@ option {
 .auth-secondary { border: 1px solid #4b4a43; color: #f4f1e8; }
 .auth-legal { display: block; margin-top: 16px; color: #77776f; font-size: 9px; line-height: 1.6; }
 .auth-back { display: flex; align-items: center; gap: 5px; color: #aaa99f; font-size: 12px; }
-.auth-mini-brand { margin-top: 22px; color: #f4f1e8; font-size: 20px; font-weight: 900; letter-spacing: .08em; }
-.auth-mini-brand span { color: #c9a867; font-size: 11px; font-weight: 500; letter-spacing: normal; }
+.auth-mini-brand {
+  margin-top: 22px;
+  color: #f4f1e8;
+  font-family: "Inter", "Heebo", sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: .14em;
+}
 .auth-panel h1 { margin-top: 26px; font-size: 27px; font-weight: 900; }
 .auth-panel > p { margin-top: 4px; color: #99988f; font-size: 12px; }
 
