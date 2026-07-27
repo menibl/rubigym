@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
 import { EditSessionModal } from './EditSessionModal';
+import { CoachDashboard } from './CoachDashboard';
 import {
   User,
   TrainingSession,
@@ -21,7 +22,10 @@ import {
   MEMBERSHIP_TYPE_LABELS,
   MembershipStatus,
   UserRole,
-  DiscountCode
+  DiscountCode,
+  WorkoutPlan,
+  NutritionPlan,
+  Message
 } from '../types';
 import {
   Calendar,
@@ -39,7 +43,8 @@ import {
   Filter,
   DollarSign,
   Tag,
-  Percent
+  Percent,
+  BookOpen
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -51,6 +56,9 @@ interface AdminDashboardProps {
   payments: Payment[];
   settings: SystemSettings;
   discountCodes?: DiscountCode[];
+  workoutPlans: WorkoutPlan[];
+  nutritionPlans: NutritionPlan[];
+  messages: Message[];
   onUpdateSessions: (sessions: TrainingSession[]) => void;
   onUpdateOpenGym: (openGyms: OpenGymSession[]) => void;
   onUpdateBlackPoints: (blackPoints: BlackPoint[]) => void;
@@ -59,6 +67,9 @@ interface AdminDashboardProps {
   onUpdatePayments: (payments: Payment[]) => void;
   onUpdateSettings: (settings: SystemSettings) => void;
   onUpdateDiscountCodes?: (discountCodes: DiscountCode[]) => void;
+  onUpdateWorkoutPlans: (plans: WorkoutPlan[]) => void;
+  onUpdateNutritionPlans: (plans: NutritionPlan[]) => void;
+  onSendMessage: (content: string, receiverId: string) => void;
   activeUser: User;
 }
 
@@ -71,6 +82,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   payments,
   settings,
   discountCodes = [],
+  workoutPlans,
+  nutritionPlans,
+  messages,
   onUpdateSessions,
   onUpdateOpenGym,
   onUpdateBlackPoints,
@@ -79,9 +93,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdatePayments,
   onUpdateSettings,
   onUpdateDiscountCodes,
+  onUpdateWorkoutPlans,
+  onUpdateNutritionPlans,
+  onSendMessage,
   activeUser
 }) => {
-  const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
+  const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
 
   // Discount Codes form state
   const [newDiscountCode, setNewDiscountCode] = useState({
@@ -573,6 +590,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             מתאמנים
           </button>
           <button
+            onClick={() => setActiveTab('programs')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'programs' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+            }`}
+          >
+            <BookOpen size={14} />
+            תוכניות אישיות
+          </button>
+          <button
             onClick={() => setActiveTab('penalties')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer relative ${
               activeTab === 'penalties' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
@@ -626,6 +652,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       <div className="p-6">
+        {activeTab === 'programs' && (
+          <CoachDashboard
+            users={users}
+            sessions={sessions}
+            openGymSessions={openGymSessions}
+            blackPoints={blackPoints}
+            announcements={announcements}
+            workoutPlans={workoutPlans}
+            nutritionPlans={nutritionPlans}
+            messages={messages}
+            settings={settings}
+            onUpdateWorkoutPlans={onUpdateWorkoutPlans}
+            onUpdateNutritionPlans={onUpdateNutritionPlans}
+            onUpdateBlackPoints={onUpdateBlackPoints}
+            onUpdateSessions={onUpdateSessions}
+            onUpdateOpenGym={onUpdateOpenGym}
+            onUpdateAnnouncements={onUpdateAnnouncements}
+            onUpdateUsers={onUpdateUsers}
+            onSendMessage={onSendMessage}
+            activeUser={activeUser}
+          />
+        )}
+
         {/* TAB 1: SESSIONS MANAGEMENT */}
         {activeTab === 'sessions' && (
           <div className="space-y-6">

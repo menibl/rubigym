@@ -437,6 +437,32 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     showFeedback('בקשתך לתוכנית אימונים אישית נשלחה בהצלחה למאמן! 📩');
   };
 
+  const handlePayWorkoutPlan = () => {
+    const amount = MEMBERSHIP_PRICES[MembershipType.WORKOUT_PLAN];
+    if (!confirm(`האם לבצע תשלום בסך ${amount} ₪ עבור תוכנית אימון אישית?`)) return;
+
+    const secondaryMemberships = activeUser.secondaryMemberships || [];
+    onUpdateUsers(users.map(user => user.id === activeUser.id ? {
+      ...user,
+      requestedWorkoutPlan: true,
+      secondaryMemberships: secondaryMemberships.includes(MembershipType.WORKOUT_PLAN)
+        ? secondaryMemberships
+        : [...secondaryMemberships, MembershipType.WORKOUT_PLAN]
+    } : user));
+    onUpdatePayments([{
+      id: `payment-workout-${Date.now()}`,
+      traineeId: activeUser.id,
+      traineeName: activeUser.name,
+      amount,
+      date: new Date().toISOString().split('T')[0],
+      status: 'PAID',
+      membershipTypePurchased: MembershipType.WORKOUT_PLAN,
+      paymentMethod: 'כרטיס אשראי — סימולציה',
+      isMock: true
+    }, ...payments]);
+    showFeedback('התשלום התקבל. הבקשה לבניית תוכנית האימון הועברה למאמן.');
+  };
+
   // PAY FOR NUTRITION PLAN (150 ILS individual fee)
   const handlePayNutritionPlan = () => {
     if (confirm('האם לבצע תשלום בסך 150 ₪ עבור תוכנית תזונה מותאמת אישית שנבנית ע"י המאמן?')) {
@@ -824,6 +850,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   const traineeWorkout = workoutPlans.find(wp => wp.traineeId === activeUser.id);
   const traineeNutrition = nutritionPlans.find(np => np.traineeId === activeUser.id);
+  const hasWorkoutPlanAccess = Boolean(
+    activeUser.secondaryMemberships?.includes(MembershipType.WORKOUT_PLAN) ||
+    (activeUser.membershipType && MEMBERSHIP_TYPE_LABELS[activeUser.membershipType]?.includesWorkoutPlan &&
+      (activeUser.membershipStatus === MembershipStatus.ACTIVE || activeUser.offlinePaymentApproved))
+  );
   const activePenaltiesCount = blackPoints.filter(bp => bp.traineeId === activeUser.id && bp.status === 'ACTIVE').length;
 
   // Chats between trainee and selected coach
@@ -1531,7 +1562,19 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </div>
             )}
 
-            {traineeWorkout && traineeWorkout.exercises.length > 0 ? (
+            {!hasWorkoutPlanAccess ? (
+              <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-200 rounded-xl p-6 text-center space-y-3">
+                <div className="text-2xl">🏋️</div>
+                <h4 className="text-sm font-bold text-amber-900">תוכנית אימון אישית בתשלום</h4>
+                <p className="text-xs text-amber-800">לאחר התשלום המאמן או המנהל יוכלו לבנות עבורך תוכנית. התוכנית תוצג כאן רק לאחר שהגישה שולמה ואושרה.</p>
+                <button
+                  onClick={handlePayWorkoutPlan}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 px-6 rounded-lg shadow-sm transition"
+                >
+                  תשלום עבור תוכנית אימון ({MEMBERSHIP_PRICES[MembershipType.WORKOUT_PLAN]} ₪)
+                </button>
+              </div>
+            ) : traineeWorkout && traineeWorkout.exercises.length > 0 ? (
               <div className="space-y-6">
                 {/* Visual Muscle Allocation Stats Tracker (Section 7) */}
                 <div className="bg-slate-50 border border-slate-150 rounded-xl p-4">
@@ -1581,7 +1624,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
                         <h4 className="font-bold text-slate-800 text-sm">{ex.name}</h4>
 
-                        <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-lg p-2 my-3 text-center border border-slate-100">
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-50 rounded-lg p-2 my-3 text-center border border-slate-100">
                           <div>
                             <span className="text-[9px] text-slate-400 block font-sans">סטים</span>
                             <span className="font-bold font-mono text-slate-800 text-xs">{ex.sets}</span>
@@ -1594,6 +1637,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                             <span className="text-[9px] text-slate-400 block font-sans">משקל</span>
                             <span className="font-bold font-mono text-emerald-600 text-xs truncate">{ex.weight || 'גוף'}</span>
                           </div>
+                          <div>
+                            <span className="text-[9px] text-slate-400 block font-sans">זמן עבודה</span>
+                            <span className="font-bold font-mono text-slate-800 text-xs">{ex.workDuration || '—'}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-400 block font-sans">זמן מנוחה</span>
+                            <span className="font-bold font-mono text-slate-800 text-xs">{ex.restDuration || '—'}</span>
+                          </div>
                         </div>
 
                         {ex.notes && (
@@ -1604,17 +1655,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       </div>
 
                       {ex.mediaUrl && (
-                        <div className="rounded-lg overflow-hidden border border-slate-100 h-32 relative mt-2">
-                          <img
-                            src={ex.mediaUrl}
-                            alt={ex.name}
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute bottom-2 right-2 bg-slate-900/80 text-white rounded px-2 py-0.5 text-[8px] flex items-center gap-1 font-semibold">
-                            <Video size={10} />
-                            הדגמת וידאו מצורפת
-                          </div>
-                        </div>
+                        <a
+                          href={ex.mediaUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 flex items-center justify-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-xs font-bold text-sky-700"
+                        >
+                          <Video size={15} />
+                          צפייה בסרטון ההדגמה
+                          <ExternalLink size={13} />
+                        </a>
                       )}
                     </div>
                   ))}

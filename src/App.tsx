@@ -380,6 +380,9 @@ export default function App() {
               payments={payments}
               settings={settings}
               discountCodes={discountCodes}
+              workoutPlans={workoutPlans}
+              nutritionPlans={nutritionPlans}
+              messages={messages}
               onUpdateSessions={setSessions}
               onUpdateOpenGym={setOpenGymSessions}
               onUpdateBlackPoints={setBlackPoints}
@@ -388,6 +391,9 @@ export default function App() {
               onUpdatePayments={setPayments}
               onUpdateSettings={setSettings}
               onUpdateDiscountCodes={setDiscountCodes}
+              onUpdateWorkoutPlans={setWorkoutPlans}
+              onUpdateNutritionPlans={setNutritionPlans}
+              onSendMessage={handleSendMessage}
               activeUser={activeUser}
             />
           )}

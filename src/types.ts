@@ -224,7 +224,9 @@ export interface Exercise {
   sets: number;
   reps: string; // e.g., "12", "8-10", "1 min"
   weight?: string; // e.g., "15kg", "משקל גוף"
-  mediaUrl?: string; // image or short video demonstration link
+  workDuration?: string; // e.g., "45 sec"
+  restDuration?: string; // e.g., "60 sec"
+  mediaUrl?: string; // optional demonstration video link
   notes?: string;
 }
 

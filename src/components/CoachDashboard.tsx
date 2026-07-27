@@ -22,6 +22,7 @@ import {
   UserRole,
   Gender,
   MembershipType,
+  MembershipStatus,
   MEMBERSHIP_TYPE_LABELS
 } from '../types';
 import {
@@ -35,7 +36,6 @@ import {
   Check,
   Send,
   Video,
-  Image as ImageIcon,
   UserCheck,
   Sparkles,
   Calendar,
@@ -288,7 +288,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     sets: 3,
     reps: '12',
     weight: 'משקל גוף',
-    mediaUrl: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600&auto=format&fit=crop&q=80',
+    workDuration: '',
+    restDuration: '60 שניות',
+    mediaUrl: '',
     notes: ''
   });
 
@@ -385,14 +387,6 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     alert(`האימון האישי נקבע בהצלחה!\nנשלחה הודעת עדכון באפליקציה ל-${selectedTrainee.name} והאימון התווסף ליומן.`);
   };
 
-  // Preset Media links for quick trainer assignment
-  const PRESET_MEDIA = [
-    { name: '💪 Bench Press דמו', url: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=600&auto=format&fit=crop&q=80' },
-    { name: '🏋️ Back Squat דמו', url: 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=600&auto=format&fit=crop&q=80' },
-    { name: '🧗 Pullups דמו', url: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600&auto=format&fit=crop&q=80' },
-    { name: '🧘 Yoga Core דמו', url: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=600&auto=format&fit=crop&q=80' }
-  ];
-
   // Load Nutrition into form when trainee changes or editing starts
   const startEditingNutrition = () => {
     if (currentNutrition) {
@@ -481,6 +475,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       sets: Number(newExercise.sets),
       reps: newExercise.reps,
       weight: newExercise.weight,
+      workDuration: newExercise.workDuration,
+      restDuration: newExercise.restDuration,
       mediaUrl: newExercise.mediaUrl,
       notes: newExercise.notes
     };
@@ -520,7 +516,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       sets: 3,
       reps: '12',
       weight: 'משקל גוף',
-      mediaUrl: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600&auto=format&fit=crop&q=80',
+      workDuration: '',
+      restDuration: '60 שניות',
+      mediaUrl: '',
       notes: ''
     });
   };
@@ -622,6 +620,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   };
 
   const traineeWorkoutPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId);
+  const selectedHasWorkoutPlanAccess = Boolean(
+    selectedTrainee?.secondaryMemberships?.includes(MembershipType.WORKOUT_PLAN) ||
+    (selectedTrainee?.membershipType && MEMBERSHIP_TYPE_LABELS[selectedTrainee.membershipType]?.includesWorkoutPlan &&
+      (selectedTrainee.membershipStatus === MembershipStatus.ACTIVE || selectedTrainee.offlinePaymentApproved))
+  );
   const chatMessages = messages.filter(
     m =>
       (m.senderId === activeUser.id && m.receiverId === selectedTraineeId) ||
@@ -744,17 +747,21 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 </div>
 
                 {/* Membership & Request Notice */}
-                {selectedTrainee.membershipType === MembershipType.OPEN_MONTHLY || selectedTrainee.membershipType === MembershipType.OPEN_ANNUAL || selectedTrainee.membershipType === MembershipType.OPEN_PUNCH_CARD ? (
+                {selectedHasWorkoutPlanAccess ? (
                   <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-900">
-                    <span className="font-bold">🔓 מתאמן מנוי Open Gym (אימונים פתוחים בלבד):</span>
-                    <span className="mr-1">על פי תקנון המועדון, חובה להגדיר תוכנית אימונים אישית ע"י המאמן לכל מנויי Open Gym!</span>
+                    <span className="font-bold">✅ הגישה לתוכנית שולמה או כלולה במנוי:</span>
+                    <span className="mr-1">התוכנית שתיבנה כאן תוצג למתאמן מיד לאחר השמירה.</span>
                   </div>
                 ) : selectedTrainee.requestedWorkoutPlan ? (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900">
-                    <span className="font-bold">📩 בקשת תוכנית אימונים מותאמת אישית:</span>
-                    <span className="mr-1">המתאמן ביקש מהמאמן לבנות לו תוכנית אימונים אישית!</span>
+                    <span className="font-bold">📩 בקשת תוכנית אימונים ממתינה לתשלום:</span>
+                    <span className="mr-1">אפשר לבנות את התוכנית מראש, אך היא תישאר חסומה למתאמן עד להסדרת התשלום.</span>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600">
+                    ניתן להכין את התוכנית מראש. היא תוצג למתאמן רק לאחר רכישת תוכנית אימון או במסגרת מנוי הכולל אותה.
+                  </div>
+                )}
 
                 {/* ADD EXERCISE FORM */}
                 {showAddExercise && (
@@ -840,30 +847,39 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                           className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
                         />
                       </div>
+
+                      <div>
+                        <label className="block text-xs text-slate-600 font-medium mb-1">זמן עבודה</label>
+                        <input
+                          type="text"
+                          placeholder="לדוגמה: 45 שניות"
+                          value={newExercise.workDuration}
+                          onChange={(e) => setNewExercise({ ...newExercise, workDuration: e.target.value })}
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-slate-600 font-medium mb-1">זמן מנוחה</label>
+                        <input
+                          type="text"
+                          placeholder="לדוגמה: 60 שניות"
+                          value={newExercise.restDuration}
+                          onChange={(e) => setNewExercise({ ...newExercise, restDuration: e.target.value })}
+                          className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs text-slate-600 font-medium mb-1">קישור לתמונה או סרטון להמחשה (אופציונלי)</label>
+                      <label className="block text-xs text-slate-600 font-medium mb-1">קישור לסרטון הדגמה (אופציונלי)</label>
                       <input
                         type="url"
-                        placeholder="הדבק קישור (URL) או בחר מהדוגמאות מטה"
+                        placeholder="לדוגמה: קישור YouTube, Vimeo או קובץ וידאו"
                         value={newExercise.mediaUrl}
                         onChange={(e) => setNewExercise({ ...newExercise, mediaUrl: e.target.value })}
                         className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
                       />
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        <span className="text-[10px] text-slate-400 self-center">קישורים מוכנים להדגמה:</span>
-                        {PRESET_MEDIA.map(media => (
-                          <button
-                            type="button"
-                            key={media.name}
-                            onClick={() => setNewExercise({ ...newExercise, mediaUrl: media.url })}
-                            className="bg-white border border-slate-200 rounded hover:bg-slate-50 py-1 px-2 text-[9px] text-slate-600 transition"
-                          >
-                            {media.name}
-                          </button>
-                        ))}
-                      </div>
                     </div>
 
                     <div>
@@ -918,7 +934,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
                           <h4 className="font-bold text-slate-800 text-sm">{ex.name}</h4>
 
-                          <div className="grid grid-cols-3 gap-2 bg-white rounded-lg p-2.5 my-3 border border-slate-100 text-center font-mono">
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-white rounded-lg p-2.5 my-3 border border-slate-100 text-center font-mono">
                             <div>
                               <div className="text-[10px] text-slate-400">סטים</div>
                               <div className="font-bold text-slate-800 text-xs">{ex.sets}</div>
@@ -931,6 +947,14 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                               <div className="text-[10px] text-slate-400">משקל</div>
                               <div className="font-bold text-emerald-600 text-xs truncate">{ex.weight || 'גוף'}</div>
                             </div>
+                            <div>
+                              <div className="text-[10px] text-slate-400">עבודה</div>
+                              <div className="font-bold text-slate-800 text-xs">{ex.workDuration || '—'}</div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] text-slate-400">מנוחה</div>
+                              <div className="font-bold text-slate-800 text-xs">{ex.restDuration || '—'}</div>
+                            </div>
                           </div>
 
                           {ex.notes && (
@@ -941,17 +965,15 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                         </div>
 
                         {ex.mediaUrl && (
-                          <div className="rounded-lg overflow-hidden border border-slate-200 h-32 relative">
-                            <img
-                              src={ex.mediaUrl}
-                              alt={ex.name}
-                              className="w-full h-full object-cover"
-                            />
-                            <div className="absolute bottom-2 right-2 bg-slate-900/80 text-white rounded px-1.5 py-0.5 text-[8px] flex items-center gap-1">
-                              <Video size={10} />
-                              המחשה מצורפת
-                            </div>
-                          </div>
+                          <a
+                            href={ex.mediaUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center justify-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-xs font-bold text-sky-700"
+                          >
+                            <Video size={15} />
+                            צפייה בסרטון ההדגמה
+                          </a>
                         )}
                       </div>
                     ))}
