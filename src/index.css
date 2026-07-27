@@ -773,17 +773,14 @@ option {
 .auth-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 13px;
 }
 
-.auth-brand > span {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
+.auth-brand-logo {
+  overflow: hidden;
+  border: 1px solid rgba(216, 184, 115, .52);
   border-radius: 50%;
-  background: #c9a867;
-  color: #171810;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45), 0 0 24px rgba(201, 168, 103, .12);
 }
 
 .auth-brand div { display: flex; align-items: baseline; gap: 6px; }

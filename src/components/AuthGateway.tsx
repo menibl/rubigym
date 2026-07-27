@@ -8,9 +8,9 @@ import {
   MessageSquareText,
   Phone,
   ShieldCheck,
-  Sparkles,
   UserPlus
 } from 'lucide-react';
+import { RubisLogo } from './RubisLogo';
 import {
   Gender,
   MembershipStatus,
@@ -202,7 +202,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
       <main className="auth-gateway" dir="rtl">
         <section className="auth-hero">
           <div className="auth-brand">
-            <span><Sparkles size={18} /></span>
+            <RubisLogo size={58} className="auth-brand-logo" />
             <div>
               <strong>BALY</strong>
               <small>wellness</small>
