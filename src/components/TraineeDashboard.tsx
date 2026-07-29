@@ -76,6 +76,20 @@ interface TraineeDashboardProps {
   onLogout: () => void;
 }
 
+const PRIMARY_MEMBERSHIP_PLANS = [
+  MembershipType.GROUP_MONTHLY,
+  MembershipType.GROUP_ANNUAL,
+  MembershipType.OPEN_MONTHLY,
+  MembershipType.OPEN_ANNUAL,
+  MembershipType.OPEN_PUNCH_CARD
+];
+
+const MEMBERSHIP_ADD_ONS = [
+  MembershipType.PERSONAL_TRAINING,
+  MembershipType.NUTRITION_PLAN,
+  MembershipType.WORKOUT_PLAN
+];
+
 export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   activeUser,
   users,
@@ -99,7 +113,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   onOpenSettings,
   onLogout
 }) => {
-  const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>('home');
+  const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
+  const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
+  const [membershipPayment, setMembershipPayment] = useState({
+    cardholder: '',
+    cardNumber: '',
+    expiry: '',
+    cvv: ''
+  });
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [showPunchCardModal, setShowPunchCardModal] = useState<boolean>(false);
   const [selectedPunchCardPackage, setSelectedPunchCardPackage] = useState<{ count: number; price: number; months: number }>({
@@ -383,49 +405,75 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
   };
 
-  // SWITCH MEMBERSHIP PLAN (Monthly 600 vs Annual 500)
-  const handleSwitchMembershipType = (newType: MembershipType) => {
-    const typeLabel = newType === MembershipType.GROUP_MONTHLY ? 'מנוי קבוצתי חודשי' : 'מנוי קבוצתי שנתי';
-    if (confirm(`האם לעבור ל-${typeLabel}?`)) {
-      if (onUpdateUsers) {
-        const updatedUsers = users.map(u => u.id === activeUser.id ? {
-          ...u,
-          membershipType: newType,
-          membershipStatus: MembershipStatus.ACTIVE,
-          isMembershipFrozen: false,
-          isCancelledEarly: false
-        } : u);
-        onUpdateUsers(updatedUsers);
-      }
-      showFeedback(`סוג המנוי שלך עודכן בהצלחה ל-${typeLabel}! 🎉`);
-    }
+  const openMembershipCheckout = (membershipType: MembershipType, mode: 'PRIMARY' | 'ADDON') => {
+    setSelectedMembershipPurchase(membershipType);
+    setMembershipPurchaseMode(mode);
+    setMembershipPayment({ cardholder: '', cardNumber: '', expiry: '', cvv: '' });
   };
 
-  const handlePayMembership = () => {
-    const membershipType = activeUser.membershipType || MembershipType.GROUP_MONTHLY;
-    const amount = MEMBERSHIP_PRICES[membershipType];
-    if (!confirm(`לבצע תשלום סימולציה בסך ${amount} ₪ עבור ${MEMBERSHIP_TYPE_LABELS[membershipType]?.label}?`)) return;
+  const handleMembershipCheckout = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedMembershipPurchase) return;
 
+    const cardDigits = membershipPayment.cardNumber.replace(/\D/g, '');
+    if (
+      !membershipPayment.cardholder.trim()
+      || cardDigits.length < 12
+      || !/^\d{2}\/\d{2}$/.test(membershipPayment.expiry)
+      || !/^\d{3,4}$/.test(membershipPayment.cvv)
+    ) {
+      showFeedback('יש להשלים פרטי אשראי תקינים לתשלום הבדיקה.', 'error');
+      return;
+    }
+
+    const purchasedType = selectedMembershipPurchase;
     const expiryDate = new Date();
-    expiryDate.setMonth(expiryDate.getMonth() + (membershipType === MembershipType.GROUP_ANNUAL || membershipType === MembershipType.OPEN_ANNUAL ? 12 : 1));
-    onUpdateUsers(users.map(user => user.id === activeUser.id ? {
-      ...user,
-      membershipStatus: MembershipStatus.ACTIVE,
-      membershipExpiry: expiryDate.toISOString().split('T')[0],
-      offlinePaymentApproved: false
-    } : user));
+    const isAnnual = purchasedType === MembershipType.GROUP_ANNUAL || purchasedType === MembershipType.OPEN_ANNUAL;
+    expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : purchasedType === MembershipType.OPEN_PUNCH_CARD ? 6 : 1));
+
+    onUpdateUsers(users.map(user => {
+      if (user.id !== activeUser.id) return user;
+      if (membershipPurchaseMode === 'PRIMARY') {
+        return {
+          ...user,
+          membershipType: purchasedType,
+          membershipStatus: MembershipStatus.ACTIVE,
+          membershipExpiry: expiryDate.toISOString().split('T')[0],
+          punchCardRemaining: purchasedType === MembershipType.OPEN_PUNCH_CARD
+            ? (user.punchCardRemaining || 0) + 10
+            : user.punchCardRemaining,
+          isMembershipFrozen: false,
+          membershipFrozenUntil: undefined,
+          isCancelledEarly: false,
+          offlinePaymentApproved: false
+        };
+      }
+
+      const secondaryMemberships = user.secondaryMemberships || [];
+      return {
+        ...user,
+        secondaryMemberships: secondaryMemberships.includes(purchasedType)
+          ? secondaryMemberships
+          : [...secondaryMemberships, purchasedType],
+        nutritionPlanPaid: purchasedType === MembershipType.NUTRITION_PLAN ? true : user.nutritionPlanPaid,
+        requestedWorkoutPlan: purchasedType === MembershipType.WORKOUT_PLAN ? true : user.requestedWorkoutPlan
+      };
+    }));
+
     onUpdatePayments([{
-      id: `payment-${Date.now()}`,
+      id: `payment-membership-${Date.now()}`,
       traineeId: activeUser.id,
       traineeName: activeUser.name,
-      amount,
+      amount: MEMBERSHIP_PRICES[purchasedType],
       date: new Date().toISOString().split('T')[0],
       status: 'PAID',
-      membershipTypePurchased: membershipType,
-      paymentMethod: 'כרטיס אשראי — סימולציה',
+      membershipTypePurchased: purchasedType,
+      paymentMethod: 'כרטיס אשראי — תשלום MOCK',
       isMock: true
     }, ...payments]);
-    showFeedback('התשלום נקלט בסימולציה והמנוי הופעל בהצלחה. 💳');
+
+    showFeedback(`${MEMBERSHIP_TYPE_LABELS[purchasedType].label} נרכש והוגדר בחשבון בהצלחה.`);
+    setSelectedMembershipPurchase(null);
   };
 
   // REQUEST WORKOUT PLAN (For non-Open Gym subscribers or upon request)
@@ -1020,7 +1068,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       </p>
                     </div>
                     <button
-                      onClick={() => handleSwitchMembershipType(MembershipType.GROUP_ANNUAL)}
+                      onClick={() => { setSelectedMembershipPurchase(MembershipType.GROUP_ANNUAL); setMembershipPurchaseMode('PRIMARY'); setActiveTab('membership'); }}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg shadow-sm transition shrink-0 self-start sm:self-center"
                     >
                       ⭐ שדרג לקבוצתי שנתי
@@ -1040,7 +1088,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       </p>
                     </div>
                     <button
-                      onClick={() => handleSwitchMembershipType(MembershipType.GROUP_MONTHLY)}
+                      onClick={() => { setSelectedMembershipPurchase(MembershipType.GROUP_MONTHLY); setMembershipPurchaseMode('PRIMARY'); setActiveTab('membership'); }}
                       className="bg-sky-700 hover:bg-sky-800 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg shadow-sm transition shrink-0 self-start sm:self-center"
                     >
                       🔄 מעבר לקבוצתי חודשי
@@ -1862,6 +1910,144 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           </div>
         )}
 
+        {/* MEMBERSHIP MANAGEMENT & MOCK CHECKOUT */}
+        {activeTab === 'membership' && (
+          <div className="space-y-6">
+            <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
+              <button className="text-xs text-amber-300 mb-4" onClick={() => { setSelectedMembershipPurchase(null); setActiveTab('profile'); }}>
+                חזרה לפרופיל
+              </button>
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+                <div>
+                  <span className="text-[11px] text-amber-300 font-bold">המנוי שלי</span>
+                  <h3 className="text-2xl font-black mt-1">ניהול ובחירת מסלולים</h3>
+                  <p className="text-xs text-slate-400 mt-2">שינוי או רכישת מסלול נכנסים לתוקף רק לאחר השלמת תשלום MOCK.</p>
+                </div>
+                <div className="rounded-xl bg-white/5 border border-white/10 p-3 min-w-52">
+                  <div className="flex justify-between gap-4 text-xs">
+                    <span className="text-slate-400">מסלול נוכחי</span>
+                    <b>{MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.GROUP_MONTHLY].label}</b>
+                  </div>
+                  <div className="flex justify-between gap-4 text-xs mt-2">
+                    <span className="text-slate-400">תוקף</span>
+                    <b>{activeUser.membershipExpiry || 'לא הוגדר'}</b>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {selectedMembershipPurchase ? (
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 shadow-sm max-w-2xl mx-auto">
+                <button className="text-xs text-slate-500 mb-5" onClick={() => setSelectedMembershipPurchase(null)}>חזרה לבחירת מסלול</button>
+                <h3 className="text-xl font-black text-slate-900">תשלום והפעלת מסלול</h3>
+                <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4 flex justify-between items-center gap-4">
+                  <div>
+                    <b className="block text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[selectedMembershipPurchase].label}</b>
+                    <span className="text-[11px] text-slate-600">{membershipPurchaseMode === 'PRIMARY' ? 'מסלול ראשי' : 'שירות נוסף'}</span>
+                  </div>
+                  <strong className="text-xl text-amber-800">₪{MEMBERSHIP_PRICES[selectedMembershipPurchase]}</strong>
+                </div>
+                <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
+                  <label className="grid gap-1 text-xs font-bold text-slate-700">
+                    שם בעל הכרטיס
+                    <input className="rounded-xl border border-slate-200 p-3 font-normal" value={membershipPayment.cardholder} onChange={event => setMembershipPayment(current => ({ ...current, cardholder: event.target.value }))} autoComplete="cc-name" />
+                  </label>
+                  <label className="grid gap-1 text-xs font-bold text-slate-700">
+                    מספר כרטיס
+                    <input className="rounded-xl border border-slate-200 p-3 font-normal" inputMode="numeric" value={membershipPayment.cardNumber} onChange={event => setMembershipPayment(current => ({ ...current, cardNumber: event.target.value }))} placeholder="4580 0000 0000 0000" autoComplete="cc-number" />
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="grid gap-1 text-xs font-bold text-slate-700">
+                      תוקף
+                      <input className="rounded-xl border border-slate-200 p-3 font-normal" value={membershipPayment.expiry} onChange={event => setMembershipPayment(current => ({ ...current, expiry: event.target.value }))} placeholder="12/30" autoComplete="cc-exp" />
+                    </label>
+                    <label className="grid gap-1 text-xs font-bold text-slate-700">
+                      CVV
+                      <input className="rounded-xl border border-slate-200 p-3 font-normal" inputMode="numeric" maxLength={4} value={membershipPayment.cvv} onChange={event => setMembershipPayment(current => ({ ...current, cvv: event.target.value }))} placeholder="123" autoComplete="cc-csc" />
+                    </label>
+                  </div>
+                  <p className="text-[10px] text-slate-500">סביבת בדיקה בלבד — לא נשמרים פרטי אשראי ולא מתבצע חיוב אמיתי.</p>
+                  <button type="submit" className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2">
+                    <CreditCard size={17} /> תשלום MOCK והפעלת המסלול
+                  </button>
+                </form>
+              </section>
+            ) : (
+              <>
+                <section>
+                  <div className="mb-3">
+                    <h3 className="font-black text-slate-900">בחירת מסלול ראשי</h3>
+                    <p className="text-xs text-slate-500 mt-1">אפשר לחדש, לשדרג או להחליף את המסלול הקיים.</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {PRIMARY_MEMBERSHIP_PLANS.map(plan => (
+                      <article key={plan} className={`rounded-2xl border p-4 bg-white flex flex-col ${activeUser.membershipType === plan ? 'border-amber-400 ring-1 ring-amber-200' : 'border-slate-200'}`}>
+                        <div className="flex justify-between gap-3">
+                          <strong className="text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
+                          {activeUser.membershipType === plan && <span className="text-[9px] bg-amber-100 text-amber-800 rounded-full px-2 py-1 h-fit">נוכחי</span>}
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-2 leading-5 flex-1">{MEMBERSHIP_TYPE_LABELS[plan].description}</p>
+                        <div className="flex items-end justify-between gap-3 mt-4">
+                          <b className="text-xl text-slate-950">₪{MEMBERSHIP_PRICES[plan]}</b>
+                          <button className="rounded-lg bg-slate-950 text-white text-xs font-bold px-3 py-2" onClick={() => openMembershipCheckout(plan, 'PRIMARY')}>
+                            {activeUser.membershipType === plan ? 'חידוש מסלול' : 'בחירה ותשלום'}
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section>
+                  <h3 className="font-black text-slate-900 mb-3">רכישת שירותים נוספים</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {MEMBERSHIP_ADD_ONS.map(plan => {
+                      const alreadyPurchased = (activeUser.secondaryMemberships || []).includes(plan);
+                      return (
+                        <article key={plan} className="rounded-2xl border border-slate-200 p-4 bg-white">
+                          <strong className="text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
+                          <p className="text-[11px] text-slate-500 mt-2 min-h-10">{MEMBERSHIP_TYPE_LABELS[plan].description}</p>
+                          <div className="flex justify-between items-center mt-4">
+                            <b>₪{MEMBERSHIP_PRICES[plan]}</b>
+                            <button className="rounded-lg border border-slate-300 text-xs font-bold px-3 py-2" onClick={() => openMembershipCheckout(plan, 'ADDON')}>
+                              {alreadyPurchased ? 'רכישה נוספת' : 'הוספה ותשלום'}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button className="rounded-2xl border border-slate-200 bg-white p-4 text-right" onClick={onOpenSettings}>
+                    <strong className="block text-sm text-slate-900">הוספת בן משפחה</strong>
+                    <span className="text-[11px] text-slate-500 mt-1 block">פתיחת הגדרות המשפחה, הוספת משתמש ובחירת מסלול עבורו.</span>
+                  </button>
+                  {activeUser.isMembershipFrozen
+                    ? (
+                      <button className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-right" onClick={handleUnfreezeMembership}>
+                        <strong className="block text-sm text-emerald-900">ביטול הקפאת מנוי</strong>
+                        <span className="text-[11px] text-emerald-700 mt-1 block">החזרת המנוי לפעילות.</span>
+                      </button>
+                    ) : (
+                      <button className="rounded-2xl border border-slate-200 bg-white p-4 text-right" onClick={handleFreezeMembership}>
+                        <strong className="block text-sm text-slate-900">הקפאת מנוי</strong>
+                        <span className="text-[11px] text-slate-500 mt-1 block">הקפאה לתקופה של עד חודש.</span>
+                      </button>
+                    )}
+                  {activeUser.membershipType === MembershipType.GROUP_ANNUAL && (
+                    <button className="rounded-2xl border border-red-200 bg-red-50 p-4 text-right sm:col-span-2" onClick={handleCancelAnnualMembership}>
+                      <strong className="block text-sm text-red-900">ביטול מנוי שנתי</strong>
+                      <span className="text-[11px] text-red-700 mt-1 block">הפעולה כפופה לתנאי הביטול ולקנס היציאה שהוגדר במערכת.</span>
+                    </button>
+                  )}
+                </section>
+              </>
+            )}
+          </div>
+        )}
+
         {/* PROFILE, MEMBERSHIP & PAYMENT */}
         {activeTab === 'profile' && (
           <div className="member-profile-page">
@@ -1896,16 +2082,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   </span>
                 </div>
                 <p>בתוקף עד: <b>{activeUser.membershipExpiry}</b></p>
-                <div className="profile-plan-actions">
-                  <button onClick={() => handleSwitchMembershipType(MembershipType.GROUP_MONTHLY)}>חודשי</button>
-                  <button onClick={() => handleSwitchMembershipType(MembershipType.GROUP_ANNUAL)}>שנתי</button>
-                </div>
-                <button className="profile-primary-action" onClick={handlePayMembership}><CreditCard size={16} /> תשלום / חידוש מנוי</button>
+                <button className="profile-primary-action" onClick={() => setActiveTab('membership')}><CreditCard size={16} /> ניהול, שינוי ורכישת מסלול</button>
               </article>
             </section>
 
             <section className="profile-more-actions">
               <button onClick={() => setActiveTab('workout')}><Dumbbell size={18} /> תוכנית האימונים שלי</button>
+              <button onClick={() => setActiveTab('membership')}><WalletCards size={18} /> ניהול מסלול ותשלומים</button>
               <button onClick={() => setActiveTab('card')}><QrCode size={18} /> כרטיס דיגיטלי וצ'ק־אין</button>
               {activeUser.isMembershipFrozen
                 ? <button onClick={handleUnfreezeMembership}>☀️ ביטול הקפאת מנוי</button>

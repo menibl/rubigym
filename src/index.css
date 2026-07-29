@@ -885,6 +885,56 @@ option {
 .auth-progress { display: flex; gap: 5px; margin-top: 24px; }
 .auth-progress i { width: 28px; height: 4px; border-radius: 999px; background: #3d3e38; }
 .auth-progress i.active { background: #c9a867; }
+
+.auth-plan-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.auth-plan-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  text-align: right;
+  color: #e7e2d7;
+  background: #22231f;
+  border: 1px solid #3d3e38;
+  border-radius: 14px;
+  transition: border-color .2s ease, background .2s ease;
+}
+
+.auth-plan-card.active {
+  background: rgba(201, 168, 103, .12);
+  border-color: #c9a867;
+}
+
+.auth-plan-card span {
+  display: grid;
+  gap: 3px;
+}
+
+.auth-plan-card strong { font-size: 12px; }
+.auth-plan-card small { color: #99988f; font-size: 9px; line-height: 1.45; }
+.auth-plan-card b { color: #d9bc7f; font-size: 15px; white-space: nowrap; }
+
+.auth-checkout-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: #11120f;
+  border: 1px solid #3d3e38;
+  border-radius: 14px;
+  color: #b8b4aa;
+  font-size: 11px;
+}
+
+.auth-checkout-summary strong { color: #d9bc7f; font-size: 20px; }
+.auth-payment-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.auth-mock-note { color: #99988f; font-size: 9px; }
 .auth-gender { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .auth-gender button { min-height: 42px; border: 1px solid #41423b; border-radius: 11px; color: #a3a299; }
 .auth-gender button.active { border-color: #c9a867; background: rgba(201, 168, 103, .12); color: #e0c68d; }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
+  CreditCard,
   Dumbbell,
   KeyRound,
   LockKeyhole,
@@ -13,8 +14,11 @@ import {
 import { RubisLogo } from './RubisLogo';
 import {
   Gender,
+  MEMBERSHIP_PRICES,
+  MEMBERSHIP_TYPE_LABELS,
   MembershipStatus,
   MembershipType,
+  Payment,
   User,
   UserRole
 } from '../types';
@@ -22,13 +26,20 @@ import {
 interface AuthGatewayProps {
   users: User[];
   onLogin: (user: User) => void;
-  onRegister: (user: User) => void;
+  onRegister: (user: User, payment: Payment) => void;
 }
 
 type AuthScreen = 'welcome' | 'login' | 'register';
 type LoginMethod = 'password' | 'phone';
 
 const TEST_OTP = '1111';
+const REGISTRATION_PLANS = [
+  MembershipType.GROUP_MONTHLY,
+  MembershipType.GROUP_ANNUAL,
+  MembershipType.OPEN_MONTHLY,
+  MembershipType.OPEN_ANNUAL,
+  MembershipType.OPEN_PUNCH_CARD
+];
 
 const calculateAge = (birthDate: string) => {
   const birth = new Date(birthDate);
@@ -47,7 +58,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
-  const [registerStep, setRegisterStep] = useState<1 | 2 | 3>(1);
+  const [registerStep, setRegisterStep] = useState<1 | 2 | 3 | 4>(1);
   const [registerPhone, setRegisterPhone] = useState('');
   const [registerOtp, setRegisterOtp] = useState('');
   const [registerName, setRegisterName] = useState('');
@@ -57,6 +68,13 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
   const [registerGender, setRegisterGender] = useState<Gender>(Gender.FEMALE);
   const [healthApproved, setHealthApproved] = useState(false);
   const [agreementApproved, setAgreementApproved] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
+  const [paymentDetails, setPaymentDetails] = useState({
+    cardholder: '',
+    cardNumber: '',
+    expiry: '',
+    cvv: ''
+  });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -169,8 +187,25 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
       return;
     }
 
+    setRegisterStep(4);
+  };
+
+  const handleRegistrationPayment = (event: React.FormEvent) => {
+    event.preventDefault();
+    resetMessages();
+    const digits = paymentDetails.cardNumber.replace(/\D/g, '');
+    if (!paymentDetails.cardholder.trim() || digits.length < 12 || !/^\d{2}\/\d{2}$/.test(paymentDetails.expiry) || !/^\d{3,4}$/.test(paymentDetails.cvv)) {
+      setError('יש להשלים פרטי אשראי תקינים לביצוע תשלום הבדיקה.');
+      return;
+    }
+
+    const age = calculateAge(registerBirthDate);
+    const expiryDate = new Date();
+    const isAnnual = selectedPlan === MembershipType.GROUP_ANNUAL || selectedPlan === MembershipType.OPEN_ANNUAL;
+    expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 6 : 1));
+    const now = Date.now();
     const newUser: User = {
-      id: `user-${Date.now()}`,
+      id: `user-${now}`,
       name: registerName.trim(),
       username: registerUsername.trim(),
       password: registerPassword,
@@ -186,15 +221,27 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
       clubAgreementDate: new Date().toISOString().split('T')[0],
       pushNotificationsEnabled: false,
       workoutRemindersEnabled: false,
-      membershipType: MembershipType.GROUP_MONTHLY,
-      membershipStatus: MembershipStatus.DEBT,
-      membershipExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      membershipType: selectedPlan,
+      membershipStatus: MembershipStatus.ACTIVE,
+      membershipExpiry: expiryDate.toISOString().split('T')[0],
+      punchCardRemaining: selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 10 : undefined,
       priorityScore: 100,
       imageUrl: registerGender === Gender.FEMALE
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
     };
-    onRegister(newUser);
+    const payment: Payment = {
+      id: `payment-registration-${now}`,
+      traineeId: newUser.id,
+      traineeName: newUser.name,
+      amount: MEMBERSHIP_PRICES[selectedPlan],
+      date: new Date().toISOString().split('T')[0],
+      status: 'PAID',
+      membershipTypePurchased: selectedPlan,
+      paymentMethod: 'כרטיס אשראי — תשלום MOCK',
+      isMock: true
+    };
+    onRegister(newUser, payment);
   };
 
   if (screen === 'welcome') {
@@ -269,9 +316,9 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
 
         {screen === 'register' && (
           <>
-            <div className="auth-progress"><i className={registerStep >= 1 ? 'active' : ''} /><i className={registerStep >= 2 ? 'active' : ''} /><i className={registerStep >= 3 ? 'active' : ''} /></div>
+            <div className="auth-progress"><i className={registerStep >= 1 ? 'active' : ''} /><i className={registerStep >= 2 ? 'active' : ''} /><i className={registerStep >= 3 ? 'active' : ''} /><i className={registerStep >= 4 ? 'active' : ''} /></div>
             <h1>הרשמה ל־BALY</h1>
-            <p>{registerStep === 1 ? 'מתחילים באימות מספר הטלפון.' : registerStep === 2 ? 'הזינו את קוד האימות.' : 'כמה פרטים ונוכל להתחיל.'}</p>
+            <p>{registerStep === 1 ? 'מתחילים באימות מספר הטלפון.' : registerStep === 2 ? 'הזינו את קוד האימות.' : registerStep === 3 ? 'כמה פרטים ונוכל להתחיל.' : 'בוחרים מסלול ומשלימים תשלום בדיקה.'}</p>
 
             {registerStep === 1 && (
               <form onSubmit={handleRegistrationPhone} className="auth-form">
@@ -304,7 +351,40 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
                   <input type="checkbox" checked={agreementApproved} onChange={event => setAgreementApproved(event.target.checked)} />
                   <span>קראתי וחתמתי על הסכם ההצטרפות, התקנון, מדיניות הביטולים והפרטיות.</span>
                 </label>
-                <button className="auth-primary" type="submit"><CheckCircle2 size={18} /> השלמת הרשמה</button>
+                <button className="auth-primary" type="submit"><CheckCircle2 size={18} /> המשך לבחירת מסלול</button>
+              </form>
+            )}
+            {registerStep === 4 && (
+              <form onSubmit={handleRegistrationPayment} className="auth-form">
+                <div className="auth-plan-grid">
+                  {REGISTRATION_PLANS.map(plan => (
+                    <button
+                      key={plan}
+                      type="button"
+                      className={`auth-plan-card ${selectedPlan === plan ? 'active' : ''}`}
+                      onClick={() => setSelectedPlan(plan)}
+                    >
+                      <span>
+                        <strong>{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
+                        <small>{MEMBERSHIP_TYPE_LABELS[plan].description}</small>
+                      </span>
+                      <b>₪{MEMBERSHIP_PRICES[plan]}</b>
+                    </button>
+                  ))}
+                </div>
+                <div className="auth-checkout-summary">
+                  <span>לתשלום כעת (MOCK)</span>
+                  <strong>₪{MEMBERSHIP_PRICES[selectedPlan]}</strong>
+                </div>
+                <label>שם בעל הכרטיס<input value={paymentDetails.cardholder} onChange={event => setPaymentDetails(current => ({ ...current, cardholder: event.target.value }))} autoComplete="cc-name" /></label>
+                <label>מספר כרטיס<input inputMode="numeric" value={paymentDetails.cardNumber} onChange={event => setPaymentDetails(current => ({ ...current, cardNumber: event.target.value }))} placeholder="4580 0000 0000 0000" autoComplete="cc-number" /></label>
+                <div className="auth-payment-row">
+                  <label>תוקף<input value={paymentDetails.expiry} onChange={event => setPaymentDetails(current => ({ ...current, expiry: event.target.value }))} placeholder="12/30" autoComplete="cc-exp" /></label>
+                  <label>CVV<input inputMode="numeric" maxLength={4} value={paymentDetails.cvv} onChange={event => setPaymentDetails(current => ({ ...current, cvv: event.target.value }))} placeholder="123" autoComplete="cc-csc" /></label>
+                </div>
+                <small className="auth-mock-note">סביבת בדיקה בלבד — לא מתבצע חיוב אמיתי.</small>
+                <button className="auth-primary" type="submit"><CreditCard size={18} /> תשלום והפעלת מנוי</button>
+                <button className="auth-text-link" type="button" onClick={() => setRegisterStep(3)}>חזרה לפרטים האישיים</button>
               </form>
             )}
             <button className="auth-text-link" onClick={() => openScreen('login')}>כבר רשומים? לכניסה</button>

@@ -301,6 +301,11 @@ export default function App() {
     setIsAuthenticated(true);
   };
 
+  const handleGatewayRegistration = (newUser: User, payment: Payment) => {
+    handleCompleteRegistration(newUser);
+    setPayments(prev => [payment, ...prev]);
+  };
+
   // Login handler
   const handleLoginSuccess = (user: User) => {
     setActiveUser(user);
@@ -319,7 +324,7 @@ export default function App() {
       <AuthGateway
         users={users}
         onLogin={handleLoginSuccess}
-        onRegister={handleCompleteRegistration}
+        onRegister={handleGatewayRegistration}
       />
     );
   }
