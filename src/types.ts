@@ -349,6 +349,12 @@ export interface GroupWorkoutExercise extends Exercise {
   rounds: number;
 }
 
+export interface GroupWorkoutStation {
+  id: string;
+  name: string;
+  exercises: GroupWorkoutExercise[];
+}
+
 export interface GroupWorkoutProgram {
   id: string;
   groupName: string;
@@ -357,6 +363,12 @@ export interface GroupWorkoutProgram {
   coachId: string;
   coachName: string;
   exercises: GroupWorkoutExercise[];
+  mode?: 'LINEAR' | 'ROTATING_GROUPS';
+  participantCount?: number;
+  participantGroupNames?: string[];
+  stations?: GroupWorkoutStation[];
+  roundsPerStation?: number;
+  transitionSeconds?: number;
   defaultWorkSeconds: number;
   defaultRestSeconds: number;
   preparationSeconds: number;

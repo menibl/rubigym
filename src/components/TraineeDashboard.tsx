@@ -48,7 +48,8 @@ import {
   LogOut,
   Pencil,
   UserRound,
-  WalletCards
+  WalletCards,
+  MonitorPlay
 } from 'lucide-react';
 import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
 
@@ -903,6 +904,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     (activeUser.membershipType && MEMBERSHIP_TYPE_LABELS[activeUser.membershipType]?.includesWorkoutPlan &&
       (activeUser.membershipStatus === MembershipStatus.ACTIVE || activeUser.offlinePaymentApproved))
   );
+  const openPersonalWorkoutDisplay = () => {
+    if (!traineeWorkout) return;
+    const displayUrl = `${window.location.origin}${window.location.pathname}#personal-workout-display=${encodeURIComponent(activeUser.id)}`;
+    window.open(displayUrl, '_blank', 'noopener,noreferrer');
+  };
   const activePenaltiesCount = blackPoints.filter(bp => bp.traineeId === activeUser.id && bp.status === 'ACTIVE').length;
 
   // Chats between trainee and selected coach
@@ -1597,6 +1603,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 </div>
               )}
             </div>
+
+            {traineeWorkout && traineeWorkout.exercises.length > 0 && (
+              <div className="rounded-2xl border border-indigo-200 bg-gradient-to-l from-indigo-950 to-slate-900 p-4 text-white shadow-lg">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div><h4 className="flex items-center gap-2 text-sm font-black"><MonitorPlay size={18} className="text-indigo-300" /> מצב אימון עצמאי</h4><p className="mt-1 text-xs text-slate-300">הפעל את התוכנית במסך מלא עם טיימר, צפצופים ומעקב אחרי התרגילים והסטים.</p></div>
+                  <button onClick={openPersonalWorkoutDisplay} className="flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-400"><MonitorPlay size={16} /> פתח והתחל אימון</button>
+                </div>
+              </div>
+            )}
 
             {/* Program Notice */}
             {activeUser.membershipType === MembershipType.OPEN_MONTHLY || activeUser.membershipType === MembershipType.OPEN_ANNUAL || activeUser.membershipType === MembershipType.OPEN_PUNCH_CARD ? (

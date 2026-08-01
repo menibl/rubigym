@@ -11,6 +11,7 @@ import {
   X
 } from 'lucide-react';
 import { GroupWorkoutProgram } from '../types';
+import { RotatingGroupWorkoutDisplay } from './RotatingGroupWorkoutDisplay';
 
 interface GroupWorkoutDisplayProps {
   program?: GroupWorkoutProgram;
@@ -23,7 +24,7 @@ const formatTime = (seconds: number) => {
   return `${String(minutes).padStart(2, '0')}:${String(Math.max(0, seconds) % 60).padStart(2, '0')}`;
 };
 
-export const GroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program }) => {
+const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program }) => {
   const [exerciseIndex, setExerciseIndex] = useState(0);
   const [round, setRound] = useState(1);
   const [phase, setPhase] = useState<TimerPhase>('PREPARE');
@@ -260,4 +261,9 @@ export const GroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ progra
       </div>
     </main>
   );
+};
+
+export const GroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program }) => {
+  if (program?.mode === 'ROTATING_GROUPS') return <RotatingGroupWorkoutDisplay program={program} />;
+  return <LinearGroupWorkoutDisplay program={program} />;
 };
