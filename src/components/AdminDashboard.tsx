@@ -27,7 +27,8 @@ import {
   NutritionPlan,
   Message,
   TraineeMemoryEntry,
-  TraineeProfessionalProfile
+  TraineeProfessionalProfile,
+  GymEquipment
 } from '../types';
 import {
   Calendar,
@@ -76,6 +77,8 @@ interface AdminDashboardProps {
   traineeMemoryEntries: TraineeMemoryEntry[];
   onUpdateTraineeProfiles: (profiles: TraineeProfessionalProfile[]) => void;
   onUpdateTraineeMemoryEntries: (entries: TraineeMemoryEntry[]) => void;
+  gymEquipment: GymEquipment[];
+  onUpdateGymEquipment: (equipment: GymEquipment[]) => void;
   activeUser: User;
 }
 
@@ -106,6 +109,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   traineeMemoryEntries,
   onUpdateTraineeProfiles,
   onUpdateTraineeMemoryEntries,
+  gymEquipment,
+  onUpdateGymEquipment,
   activeUser
 }) => {
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
@@ -685,6 +690,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             traineeMemoryEntries={traineeMemoryEntries}
             onUpdateTraineeProfiles={onUpdateTraineeProfiles}
             onUpdateTraineeMemoryEntries={onUpdateTraineeMemoryEntries}
+            gymEquipment={gymEquipment}
+            onUpdateGymEquipment={onUpdateGymEquipment}
             activeUser={activeUser}
           />
         )}

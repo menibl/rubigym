@@ -275,6 +275,23 @@ export interface TraineeMemoryEntry {
   createdByName: string;
 }
 
+export type GymEquipmentStatus = 'AVAILABLE' | 'LIMITED' | 'OUT_OF_SERVICE';
+
+export interface GymEquipment {
+  id: string;
+  name: string;
+  category: string;
+  aliases: string[];
+  muscleGroups: MuscleGroup[];
+  quantity: number;
+  location: string;
+  status: GymEquipmentStatus;
+  notes: string;
+  updatedAt: string;
+  updatedById: string;
+  updatedByName: string;
+}
+
 export interface NutritionPlan {
   id: string;
   traineeId: string;

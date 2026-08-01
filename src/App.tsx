@@ -17,6 +17,7 @@ import {
   AttendanceLog,
   DiscountCode,
   SystemSettings,
+  GymEquipment,
   TraineeMemoryEntry,
   TraineeProfessionalProfile,
   UserRole,
@@ -102,6 +103,9 @@ export default function App() {
   );
   const [traineeMemoryEntries, setTraineeMemoryEntries] = useState<TraineeMemoryEntry[]>(() =>
     getLocalStorageData('gym_trainee_memory_v1', [])
+  );
+  const [gymEquipment, setGymEquipment] = useState<GymEquipment[]>(() =>
+    getLocalStorageData('gym_equipment_v1', [])
   );
 
   // Modals state
@@ -192,6 +196,10 @@ export default function App() {
   useEffect(() => {
     saveLocalStorageData('gym_trainee_memory_v1', traineeMemoryEntries);
   }, [traineeMemoryEntries]);
+
+  useEffect(() => {
+    saveLocalStorageData('gym_equipment_v1', gymEquipment);
+  }, [gymEquipment]);
 
   // In-app PUSH simulation. Production delivery while the app is closed will use a push provider.
   useEffect(() => {
@@ -447,6 +455,8 @@ export default function App() {
               traineeMemoryEntries={traineeMemoryEntries}
               onUpdateTraineeProfiles={setTraineeProfiles}
               onUpdateTraineeMemoryEntries={setTraineeMemoryEntries}
+              gymEquipment={gymEquipment}
+              onUpdateGymEquipment={setGymEquipment}
               activeUser={activeUser}
             />
           )}
@@ -474,6 +484,8 @@ export default function App() {
               traineeMemoryEntries={traineeMemoryEntries}
               onUpdateTraineeProfiles={setTraineeProfiles}
               onUpdateTraineeMemoryEntries={setTraineeMemoryEntries}
+              gymEquipment={gymEquipment}
+              onUpdateGymEquipment={setGymEquipment}
               activeUser={activeUser}
             />
           )}

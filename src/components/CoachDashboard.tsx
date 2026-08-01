@@ -19,6 +19,7 @@ import {
   SystemSettings,
   TraineeMemoryEntry,
   TraineeProfessionalProfile,
+  GymEquipment,
   MuscleGroup,
   Exercise,
   UserRole,
@@ -28,6 +29,7 @@ import {
   MEMBERSHIP_TYPE_LABELS
 } from '../types';
 import { TraineeMemoryPanel } from './TraineeMemoryPanel';
+import { GymEquipmentPanel } from './GymEquipmentPanel';
 import {
   BookOpen,
   Apple,
@@ -42,7 +44,8 @@ import {
   UserCheck,
   Sparkles,
   Calendar,
-  Dumbbell
+  Dumbbell,
+  Wrench
 } from 'lucide-react';
 
 interface CoachDashboardProps {
@@ -67,6 +70,8 @@ interface CoachDashboardProps {
   traineeMemoryEntries: TraineeMemoryEntry[];
   onUpdateTraineeProfiles: (profiles: TraineeProfessionalProfile[]) => void;
   onUpdateTraineeMemoryEntries: (entries: TraineeMemoryEntry[]) => void;
+  gymEquipment: GymEquipment[];
+  onUpdateGymEquipment: (equipment: GymEquipment[]) => void;
   activeUser: User;
 }
 
@@ -92,9 +97,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   traineeMemoryEntries,
   onUpdateTraineeProfiles,
   onUpdateTraineeMemoryEntries,
+  gymEquipment,
+  onUpdateGymEquipment,
   activeUser
 }) => {
-  const [activeTab, setActiveTab] = useState<'programs' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
+  const [activeTab, setActiveTab] = useState<'programs' | 'equipment' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
 
   // CreateSessionModal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -687,6 +694,15 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
             בניית תוכנית אימון
           </button>
           <button
+            onClick={() => setActiveTab('equipment')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'equipment' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            <Wrench size={14} />
+            ציוד ומכשירים
+          </button>
+          <button
             onClick={() => setActiveTab('nutrition')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
               activeTab === 'nutrition' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'
@@ -1014,6 +1030,14 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   </div>
                 )}
               </div>
+            )}
+
+            {activeTab === 'equipment' && (
+              <GymEquipmentPanel
+                activeUser={activeUser}
+                equipment={gymEquipment}
+                onUpdateEquipment={onUpdateGymEquipment}
+              />
             )}
 
             {/* TAB 2: NUTRITION PLANS */}
