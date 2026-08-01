@@ -343,6 +343,29 @@ export interface WorkoutAssistantDraft {
   status: 'DRAFT' | 'PUBLISHED';
 }
 
+export interface GroupWorkoutExercise extends Exercise {
+  workSeconds: number;
+  restSeconds: number;
+  rounds: number;
+}
+
+export interface GroupWorkoutProgram {
+  id: string;
+  groupName: string;
+  title: string;
+  description: string;
+  coachId: string;
+  coachName: string;
+  exercises: GroupWorkoutExercise[];
+  defaultWorkSeconds: number;
+  defaultRestSeconds: number;
+  preparationSeconds: number;
+  status: 'DRAFT' | 'PUBLISHED';
+  createdAt: string;
+  updatedAt: string;
+  publishedAt?: string;
+}
+
 export interface NutritionPlan {
   id: string;
   traineeId: string;

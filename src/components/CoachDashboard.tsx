@@ -23,6 +23,7 @@ import {
   CoachPdfDocument,
   WorkoutAssistantDraft,
   WorkoutAssistantMessage,
+  GroupWorkoutProgram,
   MuscleGroup,
   Exercise,
   UserRole,
@@ -35,6 +36,7 @@ import { TraineeMemoryPanel } from './TraineeMemoryPanel';
 import { GymEquipmentPanel } from './GymEquipmentPanel';
 import { CoachPdfLibraryPanel } from './CoachPdfLibraryPanel';
 import { WorkoutAssistantPanel } from './WorkoutAssistantPanel';
+import { GroupWorkoutProgramManager } from './GroupWorkoutProgramManager';
 import {
   BookOpen,
   Apple,
@@ -51,7 +53,9 @@ import {
   Calendar,
   Dumbbell,
   Wrench,
-  FileText
+  FileText,
+  UsersRound,
+  MonitorPlay
 } from 'lucide-react';
 
 interface CoachDashboardProps {
@@ -84,6 +88,8 @@ interface CoachDashboardProps {
   workoutAssistantDrafts: WorkoutAssistantDraft[];
   onUpdateWorkoutAssistantMessages: (messages: WorkoutAssistantMessage[]) => void;
   onUpdateWorkoutAssistantDrafts: (drafts: WorkoutAssistantDraft[]) => void;
+  groupWorkoutPrograms: GroupWorkoutProgram[];
+  onUpdateGroupWorkoutPrograms: (programs: GroupWorkoutProgram[]) => void;
   activeUser: User;
 }
 
@@ -117,9 +123,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   workoutAssistantDrafts,
   onUpdateWorkoutAssistantMessages,
   onUpdateWorkoutAssistantDrafts,
+  groupWorkoutPrograms,
+  onUpdateGroupWorkoutPrograms,
   activeUser
 }) => {
-  const [activeTab, setActiveTab] = useState<'programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
+  const [activeTab, setActiveTab] = useState<'programs' | 'group-programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
 
   // CreateSessionModal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -703,6 +711,12 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ופורסמה באזור תוכנית האימונים.`, selectedTrainee.id);
   };
 
+  const openPersonalWorkoutDisplay = () => {
+    if (!selectedTrainee || !traineeWorkoutPlan) return;
+    const displayUrl = `${window.location.origin}${window.location.pathname}#personal-workout-display=${encodeURIComponent(selectedTrainee.id)}`;
+    window.open(displayUrl, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="coach-dashboard">
       {/* Tab Header */}
@@ -746,6 +760,15 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
           >
             <Wrench size={14} />
             ציוד ומכשירים
+          </button>
+          <button
+            onClick={() => setActiveTab('group-programs')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'group-programs' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            <UsersRound size={14} />
+            תוכניות לקבוצות
           </button>
           <button
             onClick={() => setActiveTab('pdf-library')}
@@ -827,13 +850,21 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       }
                     </p>
                   </div>
-                  <button
-                    onClick={() => setShowAddExercise(!showAddExercise)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1 transition"
-                  >
-                    <Plus size={14} />
-                    הוסף תרגיל חדש
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {traineeWorkoutPlan && traineeWorkoutPlan.exercises.length > 0 && (
+                      <button onClick={openPersonalWorkoutDisplay} className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1 transition">
+                        <MonitorPlay size={14} />
+                        פתח מסך אימון
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowAddExercise(!showAddExercise)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1 transition"
+                    >
+                      <Plus size={14} />
+                      הוסף תרגיל חדש
+                    </button>
+                  </div>
                 </div>
 
                 <TraineeMemoryPanel
@@ -1106,6 +1137,14 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 activeUser={activeUser}
                 equipment={gymEquipment}
                 onUpdateEquipment={onUpdateGymEquipment}
+              />
+            )}
+
+            {activeTab === 'group-programs' && (
+              <GroupWorkoutProgramManager
+                activeUser={activeUser}
+                programs={groupWorkoutPrograms}
+                onUpdatePrograms={onUpdateGroupWorkoutPrograms}
               />
             )}
 

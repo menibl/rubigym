@@ -21,6 +21,7 @@ import {
   CoachPdfDocument,
   WorkoutAssistantDraft,
   WorkoutAssistantMessage,
+  GroupWorkoutProgram,
   TraineeMemoryEntry,
   TraineeProfessionalProfile,
   UserRole,
@@ -51,9 +52,27 @@ import { RubisLogo } from './components/RubisLogo';
 import { LoginModal } from './components/LoginModal';
 import { RegisterModal } from './components/RegisterModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
+import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
 import { Dumbbell, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon } from 'lucide-react';
 
 const AUTH_SESSION_KEY = 'gym_auth_session_v1';
+const GROUP_WORKOUT_STORAGE_KEY = 'gym_group_workout_programs_v1';
+
+const getGroupWorkoutDisplayId = () => {
+  const match = window.location.hash.match(/^#group-workout-display=(.+)$/);
+  return match ? decodeURIComponent(match[1]) : '';
+};
+
+const getPersonalWorkoutDisplayId = () => {
+  const match = window.location.hash.match(/^#personal-workout-display=(.+)$/);
+  return match ? decodeURIComponent(match[1]) : '';
+};
+
+const parseDisplaySeconds = (value: string | undefined, fallback: number) => {
+  const parsed = Number.parseInt(value || '', 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return /min|דק/i.test(value || '') ? parsed * 60 : parsed;
+};
 
 const getSavedAuthUserId = () => {
   try {
@@ -119,6 +138,11 @@ export default function App() {
   const [workoutAssistantDrafts, setWorkoutAssistantDrafts] = useState<WorkoutAssistantDraft[]>(() =>
     getLocalStorageData('gym_workout_assistant_drafts_v1', [])
   );
+  const [groupWorkoutPrograms, setGroupWorkoutPrograms] = useState<GroupWorkoutProgram[]>(() =>
+    getLocalStorageData(GROUP_WORKOUT_STORAGE_KEY, [])
+  );
+  const [groupWorkoutDisplayId, setGroupWorkoutDisplayId] = useState(getGroupWorkoutDisplayId);
+  const [personalWorkoutDisplayId, setPersonalWorkoutDisplayId] = useState(getPersonalWorkoutDisplayId);
 
   // Modals state
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -224,6 +248,32 @@ export default function App() {
   useEffect(() => {
     saveLocalStorageData('gym_workout_assistant_drafts_v1', workoutAssistantDrafts);
   }, [workoutAssistantDrafts]);
+
+  useEffect(() => {
+    saveLocalStorageData(GROUP_WORKOUT_STORAGE_KEY, groupWorkoutPrograms);
+  }, [groupWorkoutPrograms]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setGroupWorkoutDisplayId(getGroupWorkoutDisplayId());
+      setPersonalWorkoutDisplayId(getPersonalWorkoutDisplayId());
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === GROUP_WORKOUT_STORAGE_KEY && event.newValue) {
+        try {
+          setGroupWorkoutPrograms(JSON.parse(event.newValue));
+        } catch {
+          // Ignore invalid external storage updates.
+        }
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   // In-app PUSH simulation. Production delivery while the app is closed will use a push provider.
   useEffect(() => {
@@ -367,6 +417,37 @@ export default function App() {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
   };
 
+  if (groupWorkoutDisplayId) {
+    return <GroupWorkoutDisplay program={groupWorkoutPrograms.find(program => program.id === groupWorkoutDisplayId)} />;
+  }
+
+  if (personalWorkoutDisplayId) {
+    const workoutPlan = workoutPlans.find(plan => plan.traineeId === personalWorkoutDisplayId);
+    const trainee = users.find(user => user.id === personalWorkoutDisplayId);
+    const displayProgram: GroupWorkoutProgram | undefined = workoutPlan ? {
+      id: `personal-display-${workoutPlan.id}`,
+      groupName: trainee?.name || 'אימון אישי',
+      title: 'תוכנית אימון אישית',
+      description: `תוכנית אישית בהנחיית ${workoutPlan.coachName}`,
+      coachId: workoutPlan.coachId,
+      coachName: workoutPlan.coachName,
+      exercises: workoutPlan.exercises.map(exercise => ({
+        ...exercise,
+        workSeconds: parseDisplaySeconds(exercise.workDuration, 45),
+        restSeconds: parseDisplaySeconds(exercise.restDuration, 30),
+        rounds: Math.max(1, exercise.sets)
+      })),
+      defaultWorkSeconds: 45,
+      defaultRestSeconds: 30,
+      preparationSeconds: 10,
+      status: 'PUBLISHED',
+      createdAt: workoutPlan.lastUpdated,
+      updatedAt: workoutPlan.lastUpdated,
+      publishedAt: workoutPlan.lastUpdated
+    } : undefined;
+    return <GroupWorkoutDisplay program={displayProgram} />;
+  }
+
   if (!isAuthenticated) {
     return (
       <AuthGateway
@@ -487,6 +568,8 @@ export default function App() {
               workoutAssistantDrafts={workoutAssistantDrafts}
               onUpdateWorkoutAssistantMessages={setWorkoutAssistantMessages}
               onUpdateWorkoutAssistantDrafts={setWorkoutAssistantDrafts}
+              groupWorkoutPrograms={groupWorkoutPrograms}
+              onUpdateGroupWorkoutPrograms={setGroupWorkoutPrograms}
               activeUser={activeUser}
             />
           )}
@@ -522,6 +605,8 @@ export default function App() {
               workoutAssistantDrafts={workoutAssistantDrafts}
               onUpdateWorkoutAssistantMessages={setWorkoutAssistantMessages}
               onUpdateWorkoutAssistantDrafts={setWorkoutAssistantDrafts}
+              groupWorkoutPrograms={groupWorkoutPrograms}
+              onUpdateGroupWorkoutPrograms={setGroupWorkoutPrograms}
               activeUser={activeUser}
             />
           )}

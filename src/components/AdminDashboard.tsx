@@ -31,7 +31,8 @@ import {
   GymEquipment,
   CoachPdfDocument,
   WorkoutAssistantDraft,
-  WorkoutAssistantMessage
+  WorkoutAssistantMessage,
+  GroupWorkoutProgram
 } from '../types';
 import {
   Calendar,
@@ -88,6 +89,8 @@ interface AdminDashboardProps {
   workoutAssistantDrafts: WorkoutAssistantDraft[];
   onUpdateWorkoutAssistantMessages: (messages: WorkoutAssistantMessage[]) => void;
   onUpdateWorkoutAssistantDrafts: (drafts: WorkoutAssistantDraft[]) => void;
+  groupWorkoutPrograms: GroupWorkoutProgram[];
+  onUpdateGroupWorkoutPrograms: (programs: GroupWorkoutProgram[]) => void;
   activeUser: User;
 }
 
@@ -126,6 +129,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   workoutAssistantDrafts,
   onUpdateWorkoutAssistantMessages,
   onUpdateWorkoutAssistantDrafts,
+  groupWorkoutPrograms,
+  onUpdateGroupWorkoutPrograms,
   activeUser
 }) => {
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
@@ -713,6 +718,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             workoutAssistantDrafts={workoutAssistantDrafts}
             onUpdateWorkoutAssistantMessages={onUpdateWorkoutAssistantMessages}
             onUpdateWorkoutAssistantDrafts={onUpdateWorkoutAssistantDrafts}
+            groupWorkoutPrograms={groupWorkoutPrograms}
+            onUpdateGroupWorkoutPrograms={onUpdateGroupWorkoutPrograms}
             activeUser={activeUser}
           />
         )}
