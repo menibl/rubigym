@@ -29,7 +29,9 @@ import {
   TraineeMemoryEntry,
   TraineeProfessionalProfile,
   GymEquipment,
-  CoachPdfDocument
+  CoachPdfDocument,
+  WorkoutAssistantDraft,
+  WorkoutAssistantMessage
 } from '../types';
 import {
   Calendar,
@@ -82,6 +84,10 @@ interface AdminDashboardProps {
   onUpdateGymEquipment: (equipment: GymEquipment[]) => void;
   coachPdfDocuments: CoachPdfDocument[];
   onUpdateCoachPdfDocuments: (documents: CoachPdfDocument[]) => void;
+  workoutAssistantMessages: WorkoutAssistantMessage[];
+  workoutAssistantDrafts: WorkoutAssistantDraft[];
+  onUpdateWorkoutAssistantMessages: (messages: WorkoutAssistantMessage[]) => void;
+  onUpdateWorkoutAssistantDrafts: (drafts: WorkoutAssistantDraft[]) => void;
   activeUser: User;
 }
 
@@ -116,6 +122,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateGymEquipment,
   coachPdfDocuments,
   onUpdateCoachPdfDocuments,
+  workoutAssistantMessages,
+  workoutAssistantDrafts,
+  onUpdateWorkoutAssistantMessages,
+  onUpdateWorkoutAssistantDrafts,
   activeUser
 }) => {
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
@@ -699,6 +709,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             onUpdateGymEquipment={onUpdateGymEquipment}
             coachPdfDocuments={coachPdfDocuments}
             onUpdateCoachPdfDocuments={onUpdateCoachPdfDocuments}
+            workoutAssistantMessages={workoutAssistantMessages}
+            workoutAssistantDrafts={workoutAssistantDrafts}
+            onUpdateWorkoutAssistantMessages={onUpdateWorkoutAssistantMessages}
+            onUpdateWorkoutAssistantDrafts={onUpdateWorkoutAssistantDrafts}
             activeUser={activeUser}
           />
         )}

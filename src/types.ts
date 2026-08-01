@@ -318,6 +318,31 @@ export interface CoachPdfDocument {
   errorMessage?: string;
 }
 
+export interface WorkoutAssistantMessage {
+  id: string;
+  traineeId: string;
+  coachId: string;
+  coachName: string;
+  role: 'COACH' | 'ASSISTANT';
+  content: string;
+  createdAt: string;
+  sourceDocumentIds?: string[];
+}
+
+export interface WorkoutAssistantDraft {
+  id: string;
+  traineeId: string;
+  coachId: string;
+  coachName: string;
+  objective: string;
+  coachNotes: string;
+  exercises: Exercise[];
+  sourceDocumentIds: string[];
+  createdAt: string;
+  updatedAt: string;
+  status: 'DRAFT' | 'PUBLISHED';
+}
+
 export interface NutritionPlan {
   id: string;
   traineeId: string;

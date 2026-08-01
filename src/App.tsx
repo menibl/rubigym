@@ -19,6 +19,8 @@ import {
   SystemSettings,
   GymEquipment,
   CoachPdfDocument,
+  WorkoutAssistantDraft,
+  WorkoutAssistantMessage,
   TraineeMemoryEntry,
   TraineeProfessionalProfile,
   UserRole,
@@ -110,6 +112,12 @@ export default function App() {
   );
   const [coachPdfDocuments, setCoachPdfDocuments] = useState<CoachPdfDocument[]>(() =>
     getLocalStorageData('gym_coach_pdf_documents_v1', [])
+  );
+  const [workoutAssistantMessages, setWorkoutAssistantMessages] = useState<WorkoutAssistantMessage[]>(() =>
+    getLocalStorageData('gym_workout_assistant_messages_v1', [])
+  );
+  const [workoutAssistantDrafts, setWorkoutAssistantDrafts] = useState<WorkoutAssistantDraft[]>(() =>
+    getLocalStorageData('gym_workout_assistant_drafts_v1', [])
   );
 
   // Modals state
@@ -208,6 +216,14 @@ export default function App() {
   useEffect(() => {
     saveLocalStorageData('gym_coach_pdf_documents_v1', coachPdfDocuments);
   }, [coachPdfDocuments]);
+
+  useEffect(() => {
+    saveLocalStorageData('gym_workout_assistant_messages_v1', workoutAssistantMessages);
+  }, [workoutAssistantMessages]);
+
+  useEffect(() => {
+    saveLocalStorageData('gym_workout_assistant_drafts_v1', workoutAssistantDrafts);
+  }, [workoutAssistantDrafts]);
 
   // In-app PUSH simulation. Production delivery while the app is closed will use a push provider.
   useEffect(() => {
@@ -467,6 +483,10 @@ export default function App() {
               onUpdateGymEquipment={setGymEquipment}
               coachPdfDocuments={coachPdfDocuments}
               onUpdateCoachPdfDocuments={setCoachPdfDocuments}
+              workoutAssistantMessages={workoutAssistantMessages}
+              workoutAssistantDrafts={workoutAssistantDrafts}
+              onUpdateWorkoutAssistantMessages={setWorkoutAssistantMessages}
+              onUpdateWorkoutAssistantDrafts={setWorkoutAssistantDrafts}
               activeUser={activeUser}
             />
           )}
@@ -498,6 +518,10 @@ export default function App() {
               onUpdateGymEquipment={setGymEquipment}
               coachPdfDocuments={coachPdfDocuments}
               onUpdateCoachPdfDocuments={setCoachPdfDocuments}
+              workoutAssistantMessages={workoutAssistantMessages}
+              workoutAssistantDrafts={workoutAssistantDrafts}
+              onUpdateWorkoutAssistantMessages={setWorkoutAssistantMessages}
+              onUpdateWorkoutAssistantDrafts={setWorkoutAssistantDrafts}
               activeUser={activeUser}
             />
           )}

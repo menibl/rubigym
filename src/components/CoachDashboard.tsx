@@ -21,6 +21,8 @@ import {
   TraineeProfessionalProfile,
   GymEquipment,
   CoachPdfDocument,
+  WorkoutAssistantDraft,
+  WorkoutAssistantMessage,
   MuscleGroup,
   Exercise,
   UserRole,
@@ -32,6 +34,7 @@ import {
 import { TraineeMemoryPanel } from './TraineeMemoryPanel';
 import { GymEquipmentPanel } from './GymEquipmentPanel';
 import { CoachPdfLibraryPanel } from './CoachPdfLibraryPanel';
+import { WorkoutAssistantPanel } from './WorkoutAssistantPanel';
 import {
   BookOpen,
   Apple,
@@ -77,6 +80,10 @@ interface CoachDashboardProps {
   onUpdateGymEquipment: (equipment: GymEquipment[]) => void;
   coachPdfDocuments: CoachPdfDocument[];
   onUpdateCoachPdfDocuments: (documents: CoachPdfDocument[]) => void;
+  workoutAssistantMessages: WorkoutAssistantMessage[];
+  workoutAssistantDrafts: WorkoutAssistantDraft[];
+  onUpdateWorkoutAssistantMessages: (messages: WorkoutAssistantMessage[]) => void;
+  onUpdateWorkoutAssistantDrafts: (drafts: WorkoutAssistantDraft[]) => void;
   activeUser: User;
 }
 
@@ -106,6 +113,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   onUpdateGymEquipment,
   coachPdfDocuments,
   onUpdateCoachPdfDocuments,
+  workoutAssistantMessages,
+  workoutAssistantDrafts,
+  onUpdateWorkoutAssistantMessages,
+  onUpdateWorkoutAssistantDrafts,
   activeUser
 }) => {
   const [activeTab, setActiveTab] = useState<'programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
@@ -657,12 +668,39 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   );
   const selectedTraineeProfile = traineeProfiles.find(profile => profile.traineeId === selectedTraineeId);
   const selectedTraineeMemoryEntries = traineeMemoryEntries.filter(entry => entry.traineeId === selectedTraineeId);
+  const selectedAssistantDraft = workoutAssistantDrafts.find(draft => draft.traineeId === selectedTraineeId);
 
   const handleSaveTraineeProfile = (profile: TraineeProfessionalProfile) => {
     const exists = traineeProfiles.some(item => item.traineeId === profile.traineeId);
     onUpdateTraineeProfiles(exists
       ? traineeProfiles.map(item => item.traineeId === profile.traineeId ? profile : item)
       : [profile, ...traineeProfiles]);
+  };
+
+  const handleUpdateAssistantDraft = (draft: WorkoutAssistantDraft) => {
+    const exists = workoutAssistantDrafts.some(item => item.traineeId === draft.traineeId);
+    onUpdateWorkoutAssistantDrafts(exists
+      ? workoutAssistantDrafts.map(item => item.traineeId === draft.traineeId ? draft : item)
+      : [draft, ...workoutAssistantDrafts]);
+  };
+
+  const handlePublishAssistantDraft = (draft: WorkoutAssistantDraft) => {
+    if (!selectedTrainee || !selectedHasWorkoutPlanAccess || draft.exercises.length === 0) return;
+    const publishedPlan: WorkoutPlan = {
+      id: traineeWorkoutPlan?.id || `plan-${Date.now()}`,
+      traineeId: selectedTrainee.id,
+      coachId: activeUser.id,
+      coachName: activeUser.name,
+      lastUpdated: new Date().toISOString().split('T')[0],
+      exercises: draft.exercises.map(exercise => ({ ...exercise })),
+      status: 'APPROVED_ASSIGNED',
+      isRequested: false
+    };
+    onUpdateWorkoutPlans(traineeWorkoutPlan
+      ? workoutPlans.map(plan => plan.traineeId === selectedTrainee.id ? publishedPlan : plan)
+      : [publishedPlan, ...workoutPlans]);
+    handleUpdateAssistantDraft({ ...draft, status: 'PUBLISHED', updatedAt: new Date().toISOString() });
+    onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ופורסמה באזור תוכנית האימונים.`, selectedTrainee.id);
   };
 
   return (
@@ -806,6 +844,21 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   onSaveProfile={handleSaveTraineeProfile}
                   onAddEntry={entry => onUpdateTraineeMemoryEntries([entry, ...traineeMemoryEntries])}
                   onDeleteEntry={entryId => onUpdateTraineeMemoryEntries(traineeMemoryEntries.filter(entry => entry.id !== entryId))}
+                />
+
+                <WorkoutAssistantPanel
+                  activeUser={activeUser}
+                  trainee={selectedTrainee}
+                  profile={selectedTraineeProfile}
+                  memoryEntries={selectedTraineeMemoryEntries}
+                  equipment={gymEquipment}
+                  pdfDocuments={coachPdfDocuments}
+                  messages={workoutAssistantMessages}
+                  draft={selectedAssistantDraft}
+                  canPublish={selectedHasWorkoutPlanAccess}
+                  onUpdateMessages={onUpdateWorkoutAssistantMessages}
+                  onUpdateDraft={handleUpdateAssistantDraft}
+                  onPublish={handlePublishAssistantDraft}
                 />
 
                 {/* Membership & Request Notice */}
