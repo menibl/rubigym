@@ -292,6 +292,32 @@ export interface GymEquipment {
   updatedByName: string;
 }
 
+export type CoachPdfVisibility = 'TEAM' | 'PRIVATE_COACH';
+export type CoachPdfStatus = 'PROCESSING' | 'READY' | 'NEEDS_OCR' | 'ERROR';
+
+export interface PdfPageContent {
+  pageNumber: number;
+  text: string;
+}
+
+export interface CoachPdfDocument {
+  id: string;
+  title: string;
+  fileName: string;
+  fileSize: number;
+  pageCount: number;
+  category: string;
+  description: string;
+  tags: string[];
+  visibility: CoachPdfVisibility;
+  status: CoachPdfStatus;
+  extractedCharacterCount: number;
+  uploadedAt: string;
+  uploadedById: string;
+  uploadedByName: string;
+  errorMessage?: string;
+}
+
 export interface NutritionPlan {
   id: string;
   traineeId: string;

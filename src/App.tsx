@@ -18,6 +18,7 @@ import {
   DiscountCode,
   SystemSettings,
   GymEquipment,
+  CoachPdfDocument,
   TraineeMemoryEntry,
   TraineeProfessionalProfile,
   UserRole,
@@ -106,6 +107,9 @@ export default function App() {
   );
   const [gymEquipment, setGymEquipment] = useState<GymEquipment[]>(() =>
     getLocalStorageData('gym_equipment_v1', [])
+  );
+  const [coachPdfDocuments, setCoachPdfDocuments] = useState<CoachPdfDocument[]>(() =>
+    getLocalStorageData('gym_coach_pdf_documents_v1', [])
   );
 
   // Modals state
@@ -200,6 +204,10 @@ export default function App() {
   useEffect(() => {
     saveLocalStorageData('gym_equipment_v1', gymEquipment);
   }, [gymEquipment]);
+
+  useEffect(() => {
+    saveLocalStorageData('gym_coach_pdf_documents_v1', coachPdfDocuments);
+  }, [coachPdfDocuments]);
 
   // In-app PUSH simulation. Production delivery while the app is closed will use a push provider.
   useEffect(() => {
@@ -457,6 +465,8 @@ export default function App() {
               onUpdateTraineeMemoryEntries={setTraineeMemoryEntries}
               gymEquipment={gymEquipment}
               onUpdateGymEquipment={setGymEquipment}
+              coachPdfDocuments={coachPdfDocuments}
+              onUpdateCoachPdfDocuments={setCoachPdfDocuments}
               activeUser={activeUser}
             />
           )}
@@ -486,6 +496,8 @@ export default function App() {
               onUpdateTraineeMemoryEntries={setTraineeMemoryEntries}
               gymEquipment={gymEquipment}
               onUpdateGymEquipment={setGymEquipment}
+              coachPdfDocuments={coachPdfDocuments}
+              onUpdateCoachPdfDocuments={setCoachPdfDocuments}
               activeUser={activeUser}
             />
           )}

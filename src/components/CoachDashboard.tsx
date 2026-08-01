@@ -20,6 +20,7 @@ import {
   TraineeMemoryEntry,
   TraineeProfessionalProfile,
   GymEquipment,
+  CoachPdfDocument,
   MuscleGroup,
   Exercise,
   UserRole,
@@ -30,6 +31,7 @@ import {
 } from '../types';
 import { TraineeMemoryPanel } from './TraineeMemoryPanel';
 import { GymEquipmentPanel } from './GymEquipmentPanel';
+import { CoachPdfLibraryPanel } from './CoachPdfLibraryPanel';
 import {
   BookOpen,
   Apple,
@@ -45,7 +47,8 @@ import {
   Sparkles,
   Calendar,
   Dumbbell,
-  Wrench
+  Wrench,
+  FileText
 } from 'lucide-react';
 
 interface CoachDashboardProps {
@@ -72,6 +75,8 @@ interface CoachDashboardProps {
   onUpdateTraineeMemoryEntries: (entries: TraineeMemoryEntry[]) => void;
   gymEquipment: GymEquipment[];
   onUpdateGymEquipment: (equipment: GymEquipment[]) => void;
+  coachPdfDocuments: CoachPdfDocument[];
+  onUpdateCoachPdfDocuments: (documents: CoachPdfDocument[]) => void;
   activeUser: User;
 }
 
@@ -99,9 +104,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   onUpdateTraineeMemoryEntries,
   gymEquipment,
   onUpdateGymEquipment,
+  coachPdfDocuments,
+  onUpdateCoachPdfDocuments,
   activeUser
 }) => {
-  const [activeTab, setActiveTab] = useState<'programs' | 'equipment' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
+  const [activeTab, setActiveTab] = useState<'programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
 
   // CreateSessionModal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -703,6 +710,15 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
             ציוד ומכשירים
           </button>
           <button
+            onClick={() => setActiveTab('pdf-library')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'pdf-library' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            <FileText size={14} />
+            ספריית PDF
+          </button>
+          <button
             onClick={() => setActiveTab('nutrition')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
               activeTab === 'nutrition' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'
@@ -1037,6 +1053,14 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 activeUser={activeUser}
                 equipment={gymEquipment}
                 onUpdateEquipment={onUpdateGymEquipment}
+              />
+            )}
+
+            {activeTab === 'pdf-library' && (
+              <CoachPdfLibraryPanel
+                activeUser={activeUser}
+                documents={coachPdfDocuments}
+                onUpdateDocuments={onUpdateCoachPdfDocuments}
               />
             )}
 
