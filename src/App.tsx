@@ -17,6 +17,8 @@ import {
   AttendanceLog,
   DiscountCode,
   SystemSettings,
+  TraineeMemoryEntry,
+  TraineeProfessionalProfile,
   UserRole,
   MembershipStatus
 } from './types';
@@ -94,6 +96,12 @@ export default function App() {
   );
   const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>(() =>
     getLocalStorageData('gym_discounts_v7', INITIAL_DISCOUNT_CODES)
+  );
+  const [traineeProfiles, setTraineeProfiles] = useState<TraineeProfessionalProfile[]>(() =>
+    getLocalStorageData('gym_trainee_profiles_v1', [])
+  );
+  const [traineeMemoryEntries, setTraineeMemoryEntries] = useState<TraineeMemoryEntry[]>(() =>
+    getLocalStorageData('gym_trainee_memory_v1', [])
   );
 
   // Modals state
@@ -176,6 +184,14 @@ export default function App() {
   useEffect(() => {
     saveLocalStorageData('gym_discounts_v7', discountCodes);
   }, [discountCodes]);
+
+  useEffect(() => {
+    saveLocalStorageData('gym_trainee_profiles_v1', traineeProfiles);
+  }, [traineeProfiles]);
+
+  useEffect(() => {
+    saveLocalStorageData('gym_trainee_memory_v1', traineeMemoryEntries);
+  }, [traineeMemoryEntries]);
 
   // In-app PUSH simulation. Production delivery while the app is closed will use a push provider.
   useEffect(() => {
@@ -427,6 +443,10 @@ export default function App() {
               onUpdateWorkoutPlans={setWorkoutPlans}
               onUpdateNutritionPlans={setNutritionPlans}
               onSendMessage={handleSendMessage}
+              traineeProfiles={traineeProfiles}
+              traineeMemoryEntries={traineeMemoryEntries}
+              onUpdateTraineeProfiles={setTraineeProfiles}
+              onUpdateTraineeMemoryEntries={setTraineeMemoryEntries}
               activeUser={activeUser}
             />
           )}
@@ -450,6 +470,10 @@ export default function App() {
               onUpdateAnnouncements={setAnnouncements}
               onUpdateUsers={setUsers}
               onSendMessage={handleSendMessage}
+              traineeProfiles={traineeProfiles}
+              traineeMemoryEntries={traineeMemoryEntries}
+              onUpdateTraineeProfiles={setTraineeProfiles}
+              onUpdateTraineeMemoryEntries={setTraineeMemoryEntries}
               activeUser={activeUser}
             />
           )}

@@ -17,6 +17,8 @@ import {
   NutritionPlan,
   Message,
   SystemSettings,
+  TraineeMemoryEntry,
+  TraineeProfessionalProfile,
   MuscleGroup,
   Exercise,
   UserRole,
@@ -25,6 +27,7 @@ import {
   MembershipStatus,
   MEMBERSHIP_TYPE_LABELS
 } from '../types';
+import { TraineeMemoryPanel } from './TraineeMemoryPanel';
 import {
   BookOpen,
   Apple,
@@ -60,6 +63,10 @@ interface CoachDashboardProps {
   onUpdateAnnouncements: (announcements: Announcement[]) => void;
   onUpdateUsers?: (users: User[]) => void;
   onSendMessage: (content: string, receiverId: string) => void;
+  traineeProfiles: TraineeProfessionalProfile[];
+  traineeMemoryEntries: TraineeMemoryEntry[];
+  onUpdateTraineeProfiles: (profiles: TraineeProfessionalProfile[]) => void;
+  onUpdateTraineeMemoryEntries: (entries: TraineeMemoryEntry[]) => void;
   activeUser: User;
 }
 
@@ -81,6 +88,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   onUpdateAnnouncements,
   onUpdateUsers,
   onSendMessage,
+  traineeProfiles,
+  traineeMemoryEntries,
+  onUpdateTraineeProfiles,
+  onUpdateTraineeMemoryEntries,
   activeUser
 }) => {
   const [activeTab, setActiveTab] = useState<'programs' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
@@ -630,6 +641,15 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       (m.senderId === activeUser.id && m.receiverId === selectedTraineeId) ||
       (m.senderId === selectedTraineeId && m.receiverId === activeUser.id)
   );
+  const selectedTraineeProfile = traineeProfiles.find(profile => profile.traineeId === selectedTraineeId);
+  const selectedTraineeMemoryEntries = traineeMemoryEntries.filter(entry => entry.traineeId === selectedTraineeId);
+
+  const handleSaveTraineeProfile = (profile: TraineeProfessionalProfile) => {
+    const exists = traineeProfiles.some(item => item.traineeId === profile.traineeId);
+    onUpdateTraineeProfiles(exists
+      ? traineeProfiles.map(item => item.traineeId === profile.traineeId ? profile : item)
+      : [profile, ...traineeProfiles]);
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="coach-dashboard">
@@ -745,6 +765,16 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     הוסף תרגיל חדש
                   </button>
                 </div>
+
+                <TraineeMemoryPanel
+                  trainee={selectedTrainee}
+                  activeUser={activeUser}
+                  profile={selectedTraineeProfile}
+                  entries={selectedTraineeMemoryEntries}
+                  onSaveProfile={handleSaveTraineeProfile}
+                  onAddEntry={entry => onUpdateTraineeMemoryEntries([entry, ...traineeMemoryEntries])}
+                  onDeleteEntry={entryId => onUpdateTraineeMemoryEntries(traineeMemoryEntries.filter(entry => entry.id !== entryId))}
+                />
 
                 {/* Membership & Request Notice */}
                 {selectedHasWorkoutPlanAccess ? (

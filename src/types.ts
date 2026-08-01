@@ -241,6 +241,40 @@ export interface WorkoutPlan {
   isRequested?: boolean;
 }
 
+export type TraineeExperienceLevel = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+export type TraineeMemoryCategory = 'GOAL' | 'LIMITATION' | 'PREFERENCE' | 'PROGRESS' | 'COACH_NOTE';
+export type TraineeMemoryVisibility = 'TEAM' | 'PRIVATE_COACH';
+
+export interface TraineeProfessionalProfile {
+  traineeId: string;
+  primaryGoal: string;
+  secondaryGoals: string;
+  experienceLevel: TraineeExperienceLevel;
+  weeklySessions: number;
+  preferredWorkoutMinutes: number;
+  limitations: string;
+  painAreas: string;
+  prohibitedExercises: string;
+  preferredExercises: string;
+  equipmentPreferences: string;
+  coachSummary: string;
+  updatedAt: string;
+  updatedById: string;
+  updatedByName: string;
+}
+
+export interface TraineeMemoryEntry {
+  id: string;
+  traineeId: string;
+  category: TraineeMemoryCategory;
+  content: string;
+  visibility: TraineeMemoryVisibility;
+  confirmed: boolean;
+  createdAt: string;
+  createdById: string;
+  createdByName: string;
+}
+
 export interface NutritionPlan {
   id: string;
   traineeId: string;

@@ -25,7 +25,9 @@ import {
   DiscountCode,
   WorkoutPlan,
   NutritionPlan,
-  Message
+  Message,
+  TraineeMemoryEntry,
+  TraineeProfessionalProfile
 } from '../types';
 import {
   Calendar,
@@ -70,6 +72,10 @@ interface AdminDashboardProps {
   onUpdateWorkoutPlans: (plans: WorkoutPlan[]) => void;
   onUpdateNutritionPlans: (plans: NutritionPlan[]) => void;
   onSendMessage: (content: string, receiverId: string) => void;
+  traineeProfiles: TraineeProfessionalProfile[];
+  traineeMemoryEntries: TraineeMemoryEntry[];
+  onUpdateTraineeProfiles: (profiles: TraineeProfessionalProfile[]) => void;
+  onUpdateTraineeMemoryEntries: (entries: TraineeMemoryEntry[]) => void;
   activeUser: User;
 }
 
@@ -96,6 +102,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateWorkoutPlans,
   onUpdateNutritionPlans,
   onSendMessage,
+  traineeProfiles,
+  traineeMemoryEntries,
+  onUpdateTraineeProfiles,
+  onUpdateTraineeMemoryEntries,
   activeUser
 }) => {
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
@@ -671,6 +681,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             onUpdateAnnouncements={onUpdateAnnouncements}
             onUpdateUsers={onUpdateUsers}
             onSendMessage={onSendMessage}
+            traineeProfiles={traineeProfiles}
+            traineeMemoryEntries={traineeMemoryEntries}
+            onUpdateTraineeProfiles={onUpdateTraineeProfiles}
+            onUpdateTraineeMemoryEntries={onUpdateTraineeMemoryEntries}
             activeUser={activeUser}
           />
         )}
