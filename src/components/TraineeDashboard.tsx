@@ -898,7 +898,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     return true;
   });
 
-  const traineeWorkout = workoutPlans.find(wp => wp.traineeId === activeUser.id);
+  const traineeWorkout = workoutPlans.find(wp => wp.traineeId === activeUser.id && !wp.sessionId)
+    || workoutPlans.find(wp => wp.traineeId === activeUser.id);
   const traineeNutrition = nutritionPlans.find(np => np.traineeId === activeUser.id);
   const hasWorkoutPlanAccess = Boolean(
     activeUser.secondaryMemberships?.includes(MembershipType.WORKOUT_PLAN) ||

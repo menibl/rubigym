@@ -437,8 +437,10 @@ export default function App() {
   }
 
   if (personalWorkoutDisplayId) {
-    const workoutPlan = workoutPlans.find(plan => plan.traineeId === personalWorkoutDisplayId);
-    const trainee = users.find(user => user.id === personalWorkoutDisplayId);
+    const workoutPlan = workoutPlans.find(plan => plan.id === personalWorkoutDisplayId)
+      || workoutPlans.find(plan => plan.traineeId === personalWorkoutDisplayId && !plan.sessionId)
+      || workoutPlans.find(plan => plan.traineeId === personalWorkoutDisplayId);
+    const trainee = users.find(user => user.id === workoutPlan?.traineeId || user.id === personalWorkoutDisplayId);
     const displayProgram: GroupWorkoutProgram | undefined = workoutPlan ? {
       id: `personal-display-${workoutPlan.id}`,
       groupName: trainee?.name || 'אימון אישי',

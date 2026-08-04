@@ -235,6 +235,9 @@ export interface Exercise {
 export interface WorkoutPlan {
   id: string;
   traineeId: string;
+  title?: string;
+  sessionId?: string;
+  sourcePlanId?: string;
   coachId: string;
   coachName: string;
   lastUpdated: string; // YYYY-MM-DD

@@ -553,7 +553,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     e.preventDefault();
     if (!selectedTraineeId) return;
 
-    const currentPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId);
+    const currentPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId && !wp.sessionId);
     const exerciseId = `ex-${Date.now()}`;
     let mediaStorageId: string | undefined;
     let resolvedMediaType = newExercise.mediaType;
@@ -589,7 +589,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
     if (currentPlan) {
       updatedPlans = workoutPlans.map(wp => {
-        if (wp.traineeId === selectedTraineeId) {
+        if (wp.traineeId === selectedTraineeId && !wp.sessionId) {
           return {
             ...wp,
             lastUpdated: new Date().toISOString().split('T')[0],
@@ -631,10 +631,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   // Workout Program delete exercise
   const handleDeleteExercise = (exerciseId: string) => {
-    const exercise = workoutPlans.find(plan => plan.traineeId === selectedTraineeId)?.exercises.find(item => item.id === exerciseId);
+    const exercise = workoutPlans.find(plan => plan.traineeId === selectedTraineeId && !plan.sessionId)?.exercises.find(item => item.id === exerciseId);
     if (exercise?.mediaStorageId) void deleteExerciseMedia(exercise.mediaStorageId).catch(() => undefined);
     const updatedPlans = workoutPlans.map(wp => {
-      if (wp.traineeId === selectedTraineeId) {
+      if (wp.traineeId === selectedTraineeId && !wp.sessionId) {
         return {
           ...wp,
           exercises: wp.exercises.filter(ex => ex.id !== exerciseId)
@@ -672,7 +672,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       void deleteExerciseMedia(mediaStorageId).catch(() => undefined);
       mediaStorageId = undefined;
     }
-    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId
+    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId && !plan.sessionId
       ? {
           ...plan,
           lastUpdated: new Date().toISOString().split('T')[0],
@@ -690,7 +690,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   const removeExistingExerciseMedia = (exercise: Exercise) => {
     if (exercise.mediaStorageId) void deleteExerciseMedia(exercise.mediaStorageId).catch(() => undefined);
-    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId
+    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId && !plan.sessionId
       ? { ...plan, exercises: plan.exercises.map(item => item.id === exercise.id ? { ...item, mediaUrl: '', mediaStorageId: undefined } : item) }
       : plan));
     setEditingExerciseMediaId('');
@@ -778,7 +778,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     });
   };
 
-  const traineeWorkoutPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId);
+  const traineeWorkoutPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId && !wp.sessionId);
   const selectedHasWorkoutPlanAccess = Boolean(
     selectedTrainee?.secondaryMemberships?.includes(MembershipType.WORKOUT_PLAN) ||
     (selectedTrainee?.membershipType && MEMBERSHIP_TYPE_LABELS[selectedTrainee.membershipType]?.includesWorkoutPlan &&
@@ -820,7 +820,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       isRequested: false
     };
     onUpdateWorkoutPlans(traineeWorkoutPlan
-      ? workoutPlans.map(plan => plan.traineeId === selectedTrainee.id ? publishedPlan : plan)
+      ? workoutPlans.map(plan => plan.traineeId === selectedTrainee.id && !plan.sessionId ? publishedPlan : plan)
       : [publishedPlan, ...workoutPlans]);
     handleUpdateAssistantDraft({ ...draft, status: 'PUBLISHED', updatedAt: new Date().toISOString() });
     onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ופורסמה באזור תוכנית האימונים.`, selectedTrainee.id);
@@ -845,6 +845,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         users={users}
         sessions={sessions}
         workoutPlans={workoutPlans}
+        onUpdateWorkoutPlans={onUpdateWorkoutPlans}
         groupWorkoutPrograms={groupWorkoutPrograms}
         onUpdateGroupWorkoutPrograms={onUpdateGroupWorkoutPrograms}
         onOpenProgram={openWorkoutProgramFromCalendar}
