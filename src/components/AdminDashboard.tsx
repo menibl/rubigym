@@ -52,7 +52,8 @@ import {
   DollarSign,
   Tag,
   Percent,
-  BookOpen
+  BookOpen,
+  UserPlus
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -186,9 +187,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Search & Filters
   const [userSearch, setUserSearch] = useState('');
+  const [showAddCoach, setShowAddCoach] = useState(false);
+  const [newCoach, setNewCoach] = useState({ name: '', username: '', password: '', phone: '', email: '' });
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionViewMode, setSessionViewMode] = useState<'CALENDAR' | 'TABLE'>('CALENDAR');
   const [penaltySearch, setPenaltySearch] = useState('');
+
+  const handleAddCoach = (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = newCoach.name.trim();
+    const username = newCoach.username.trim();
+    const password = newCoach.password.trim();
+    if (!name || !username || password.length < 4) return;
+    if (users.some(user => user.username?.toLowerCase() === username.toLowerCase())) {
+      window.alert('שם המשתמש כבר קיים במערכת.');
+      return;
+    }
+    const coach: User = {
+      id: `coach-${Date.now()}`,
+      name,
+      username,
+      password,
+      email: newCoach.email.trim(),
+      phone: newCoach.phone.trim(),
+      role: UserRole.COACH,
+      gender: Gender.ALL,
+      age: 0,
+      priorityScore: 100,
+      pushNotificationsEnabled: true,
+      workoutRemindersEnabled: true,
+      imageUrl: `https://ui-avatars.com/api/?background=18181b&color=f4f4f5&name=${encodeURIComponent(name)}`
+    };
+    onUpdateUsers([coach, ...users]);
+    setNewCoach({ name: '', username: '', password: '', phone: '', email: '' });
+    setShowAddCoach(false);
+  };
 
   // New CreateSessionModal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -1122,16 +1155,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* TAB 2: USERS LIST & BILLING */}
         {activeTab === 'users' && (
           <div className="space-y-6">
-            <div className="relative max-w-md">
-              <Search className="absolute right-3 top-2.5 text-slate-400" size={16} />
-              <input
-                type="text"
-                placeholder="חיפוש מתאמן לפי שם, טלפון, סטטוס..."
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                className="w-full pr-9 pl-4 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500"
-              />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative w-full max-w-md">
+                <Search className="absolute right-3 top-2.5 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="חיפוש מתאמן לפי שם, טלפון, סטטוס..."
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  className="w-full pr-9 pl-4 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <button type="button" onClick={() => setShowAddCoach(current => !current)} className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-black text-white"><UserPlus size={16} /> הוספת מאמן חדש</button>
             </div>
+
+            {showAddCoach && (
+              <form onSubmit={handleAddCoach} className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+                <div className="mb-3"><h3 className="text-sm font-black text-indigo-950">פרטי המאמן החדש</h3><p className="mt-1 text-[11px] text-indigo-700">המאמן יקבל יומן, אימונים, תוכניות אישיות וקבוצתיות והודעות בלבד. הגדרות המועדון, משתמשים ותשלומים יישארו למנהל.</p></div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <input required value={newCoach.name} onChange={event => setNewCoach(current => ({ ...current, name: event.target.value }))} placeholder="שם מלא" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
+                  <input required value={newCoach.username} onChange={event => setNewCoach(current => ({ ...current, username: event.target.value }))} placeholder="שם משתמש" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
+                  <input required minLength={4} type="password" value={newCoach.password} onChange={event => setNewCoach(current => ({ ...current, password: event.target.value }))} placeholder="סיסמה, לפחות 4 תווים" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
+                  <input value={newCoach.phone} onChange={event => setNewCoach(current => ({ ...current, phone: event.target.value }))} placeholder="טלפון" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
+                  <input type="email" value={newCoach.email} onChange={event => setNewCoach(current => ({ ...current, email: event.target.value }))} placeholder="דוא״ל" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
+                </div>
+                <div className="mt-3 flex gap-2"><button type="submit" className="rounded-xl bg-indigo-700 px-5 py-2.5 text-xs font-black text-white">צור חשבון מאמן</button><button type="button" onClick={() => setShowAddCoach(false)} className="rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600">ביטול</button></div>
+              </form>
+            )}
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="mb-3 text-sm font-black text-slate-900">צוות המאמנים</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {users.filter(user => user.role === UserRole.COACH).map(coach => <article key={coach.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3"><img src={coach.imageUrl} alt={coach.name} className="h-10 w-10 rounded-full object-cover" /><div className="min-w-0"><strong className="block truncate text-xs text-slate-900">{coach.name}</strong><span className="text-[10px] text-slate-500">@{coach.username} · הרשאות מאמן</span></div></article>)}
+                {users.every(user => user.role !== UserRole.COACH) && <p className="text-xs text-slate-500">עדיין לא נוספו מאמנים.</p>}
+              </div>
+            </section>
 
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-right text-xs">

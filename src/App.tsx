@@ -625,6 +625,7 @@ export default function App() {
               announcements={announcements}
               messages={messages}
               onSendMessage={handleSendMessage}
+              onUpdateAnnouncements={setAnnouncements}
             />
           )}
 

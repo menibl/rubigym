@@ -6,11 +6,13 @@ import {
   ClipboardList,
   CreditCard,
   Dumbbell,
+  Edit3,
   Inbox,
   MessageCircle,
   Megaphone,
   Send,
   Settings2,
+  Trash2,
   UserRound
 } from 'lucide-react';
 import { Announcement, Gender, Message, User, UserRole } from '../types';
@@ -30,6 +32,7 @@ interface RoleWorkspaceLandingProps {
   announcements?: Announcement[];
   messages?: Message[];
   onSendMessage?: (content: string, receiverId: string) => void;
+  onUpdateAnnouncements?: (announcements: Announcement[]) => void;
 }
 
 const workspaceCards = {
@@ -89,7 +92,8 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   users = [],
   announcements = [],
   messages = [],
-  onSendMessage
+  onSendMessage,
+  onUpdateAnnouncements
 }) => {
   const coaches = users.filter(user => user.role === UserRole.COACH || user.role === UserRole.MANAGER);
   const [selectedCoachId, setSelectedCoachId] = useState(() => coaches[0]?.id || '');
@@ -97,6 +101,9 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   const staffRecipients = users.filter(user => user.id !== activeUser.id);
   const [selectedRecipientId, setSelectedRecipientId] = useState(() => staffRecipients[0]?.id || '');
   const [staffMessageInput, setStaffMessageInput] = useState('');
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementContent, setAnnouncementContent] = useState('');
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState('');
 
   const views: WorkspaceView[] = activeUser.role === UserRole.MANAGER
     ? ['CLUB_MANAGEMENT', 'TRAINING', 'WORKOUT_PLANNING']
@@ -148,6 +155,37 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
     if (!content || !selectedRecipientId || !onSendMessage) return;
     onSendMessage(content, selectedRecipientId);
     setStaffMessageInput('');
+  };
+
+  const saveClubAnnouncement = (event: React.FormEvent) => {
+    event.preventDefault();
+    const title = announcementTitle.trim();
+    const content = announcementContent.trim();
+    if (!title || !content || !onUpdateAnnouncements) return;
+    if (editingAnnouncementId) {
+      onUpdateAnnouncements(announcements.map(announcement => announcement.id === editingAnnouncementId
+        ? { ...announcement, title, content, createdBy: activeUser.name, creatorRole: activeUser.role as UserRole.MANAGER | UserRole.COACH, date: new Date().toISOString().split('T')[0] }
+        : announcement));
+    } else {
+      onUpdateAnnouncements([{
+        id: `announcement-${Date.now()}`,
+        title,
+        content,
+        createdBy: activeUser.name,
+        creatorRole: activeUser.role as UserRole.MANAGER | UserRole.COACH,
+        date: new Date().toISOString().split('T')[0],
+        targetGender: Gender.ALL
+      }, ...announcements]);
+    }
+    setAnnouncementTitle('');
+    setAnnouncementContent('');
+    setEditingAnnouncementId('');
+  };
+
+  const startEditingAnnouncement = (announcement: Announcement) => {
+    setEditingAnnouncementId(announcement.id);
+    setAnnouncementTitle(announcement.title);
+    setAnnouncementContent(announcement.content);
   };
 
   const roleLabel = activeUser.role === UserRole.MANAGER
@@ -250,12 +288,27 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
               </div>
               <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-[10px] font-black text-zinc-300">{announcements.length} מודעות</span>
             </div>
+            <form onSubmit={saveClubAnnouncement} className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-black text-amber-300">{editingAnnouncementId ? 'עריכת הודעת מועדון' : 'פרסום הודעה לכל המועדון'}</p>
+                {editingAnnouncementId && <button type="button" onClick={() => { setEditingAnnouncementId(''); setAnnouncementTitle(''); setAnnouncementContent(''); }} className="text-[10px] font-bold text-zinc-400">ביטול עריכה</button>}
+              </div>
+              <input value={announcementTitle} onChange={event => setAnnouncementTitle(event.target.value)} placeholder="כותרת ההודעה" className="mb-2 min-h-10 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-amber-400" />
+              <textarea value={announcementContent} onChange={event => setAnnouncementContent(event.target.value)} placeholder="תוכן ההודעה לכל חברי המועדון..." rows={3} className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-400" />
+              <button type="submit" disabled={!announcementTitle.trim() || !announcementContent.trim()} className="mt-2 flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-amber-500 px-4 text-xs font-black text-zinc-950 disabled:opacity-40"><Megaphone size={15} /> {editingAnnouncementId ? 'שמור עדכון' : 'פרסם לכל המועדון'}</button>
+            </form>
             <div className="space-y-3">
               {latestClubAnnouncements.map(announcement => (
                 <article key={announcement.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-                  <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500"><span>פורסם על ידי {announcement.createdBy}</span><time>{announcement.date}</time></div>
-                  <h4 className="mt-2 text-sm font-black text-white">{announcement.title}</h4>
-                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">{announcement.content}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1"><div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500"><span>פורסם על ידי {announcement.createdBy}</span><time>{announcement.date}</time></div>
+                    <h4 className="mt-2 text-sm font-black text-white">{announcement.title}</h4>
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">{announcement.content}</p></div>
+                    <div className="flex shrink-0 gap-1">
+                      <button type="button" onClick={() => startEditingAnnouncement(announcement)} className="grid h-8 w-8 place-items-center rounded-lg bg-zinc-800 text-zinc-300 hover:text-amber-400" aria-label="עריכת הודעה"><Edit3 size={14} /></button>
+                      <button type="button" onClick={() => { if (window.confirm('למחוק את הודעת המועדון?')) onUpdateAnnouncements?.(announcements.filter(item => item.id !== announcement.id)); }} className="grid h-8 w-8 place-items-center rounded-lg bg-zinc-800 text-zinc-300 hover:text-red-400" aria-label="מחיקת הודעה"><Trash2 size={14} /></button>
+                    </div>
+                  </div>
                 </article>
               ))}
               {latestClubAnnouncements.length === 0 && (
