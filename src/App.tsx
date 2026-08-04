@@ -422,8 +422,14 @@ export default function App() {
 
   // User details update handler
   const handleUpdateUser = (updatedUser: User) => {
-    setActiveUser(updatedUser);
+    setActiveUser(current => current.id === updatedUser.id ? updatedUser : current);
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+    setUserToEdit(current => current?.id === updatedUser.id ? updatedUser : current);
+  };
+
+  const handleCloseSettings = () => {
+    setIsSettingsOpen(false);
+    setUserToEdit(null);
   };
 
   if (groupWorkoutDisplayId) {
@@ -744,7 +750,7 @@ export default function App() {
 
       <UserSettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={handleCloseSettings}
         currentUser={userToEdit || activeUser}
         onUpdateUser={handleUpdateUser}
         allUsers={users}

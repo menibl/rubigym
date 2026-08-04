@@ -195,7 +195,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       onUpdateAllUsers(allUsers.map(u => u.id === updated.id ? updated : u));
     }
 
-    setMsg({ type: 'success', text: 'הפרטים והסיסמה עודכנו בהצלחה!' });
+    onClose();
   };
 
   const handleProfileImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
