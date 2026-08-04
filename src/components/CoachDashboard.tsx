@@ -37,6 +37,8 @@ import { GymEquipmentPanel } from './GymEquipmentPanel';
 import { CoachPdfLibraryPanel } from './CoachPdfLibraryPanel';
 import { WorkoutAssistantPanel } from './WorkoutAssistantPanel';
 import { GroupWorkoutProgramManager } from './GroupWorkoutProgramManager';
+import { ExerciseMedia } from './ExerciseMedia';
+import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import {
   BookOpen,
   Apple,
@@ -325,6 +327,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   // New Exercise Form State
   const [showAddExercise, setShowAddExercise] = useState(false);
+  const [newExerciseMediaFile, setNewExerciseMediaFile] = useState<File | null>(null);
+  const [editingExerciseMediaId, setEditingExerciseMediaId] = useState('');
+  const [editingExerciseMediaUrl, setEditingExerciseMediaUrl] = useState('');
+  const [editingExerciseMediaType, setEditingExerciseMediaType] = useState<Exercise['mediaType']>('VIDEO');
+  const [editingExerciseMediaFile, setEditingExerciseMediaFile] = useState<File | null>(null);
   const [newExercise, setNewExercise] = useState<Omit<Exercise, 'id'>>({
     name: '',
     category: 'תרגילי כוח כבדים',
@@ -335,6 +342,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     workDuration: '',
     restDuration: '60 שניות',
     mediaUrl: '',
+    mediaType: 'VIDEO',
     notes: ''
   });
 
@@ -506,13 +514,28 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   };
 
   // Workout Program Builder Add Exercise
-  const handleAddExerciseToPlan = (e: React.FormEvent) => {
+  const handleAddExerciseToPlan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTraineeId) return;
 
     const currentPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId);
+    const exerciseId = `ex-${Date.now()}`;
+    let mediaStorageId: string | undefined;
+    let resolvedMediaType = newExercise.mediaType;
+    if (newExerciseMediaFile) {
+      mediaStorageId = `exercise-media-${exerciseId}`;
+      resolvedMediaType = newExerciseMediaFile.type === 'image/gif'
+        ? 'GIF'
+        : newExerciseMediaFile.type.startsWith('image/') ? 'IMAGE' : 'VIDEO';
+      try {
+        await saveExerciseMedia(mediaStorageId, newExerciseMediaFile);
+      } catch {
+        mediaStorageId = undefined;
+        window.alert('לא ניתן היה לשמור את קובץ ההדגמה במכשיר. התרגיל יישמר ללא הקובץ.');
+      }
+    }
     const exerciseToAdd: Exercise = {
-      id: `ex-${Date.now()}`,
+      id: exerciseId,
       name: newExercise.name || 'תרגיל כושר כללי',
       category: newExercise.category,
       muscleGroup: newExercise.muscleGroup,
@@ -522,6 +545,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       workDuration: newExercise.workDuration,
       restDuration: newExercise.restDuration,
       mediaUrl: newExercise.mediaUrl,
+      mediaType: resolvedMediaType,
+      mediaStorageId,
       notes: newExercise.notes
     };
 
@@ -563,12 +588,16 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       workDuration: '',
       restDuration: '60 שניות',
       mediaUrl: '',
+      mediaType: 'VIDEO',
       notes: ''
     });
+    setNewExerciseMediaFile(null);
   };
 
   // Workout Program delete exercise
   const handleDeleteExercise = (exerciseId: string) => {
+    const exercise = workoutPlans.find(plan => plan.traineeId === selectedTraineeId)?.exercises.find(item => item.id === exerciseId);
+    if (exercise?.mediaStorageId) void deleteExerciseMedia(exercise.mediaStorageId).catch(() => undefined);
     const updatedPlans = workoutPlans.map(wp => {
       if (wp.traineeId === selectedTraineeId) {
         return {
@@ -579,6 +608,57 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       return wp;
     });
     onUpdateWorkoutPlans(updatedPlans);
+  };
+
+  const startEditingExerciseMedia = (exercise: Exercise) => {
+    setEditingExerciseMediaId(exercise.id);
+    setEditingExerciseMediaUrl(exercise.mediaUrl || '');
+    setEditingExerciseMediaType(exercise.mediaType || 'VIDEO');
+    setEditingExerciseMediaFile(null);
+  };
+
+  const saveExistingExerciseMedia = async (exercise: Exercise) => {
+    let mediaStorageId = exercise.mediaStorageId;
+    let mediaType = editingExerciseMediaType;
+    if (editingExerciseMediaFile) {
+      const previousMediaStorageId = mediaStorageId;
+      mediaStorageId = `exercise-media-${exercise.id}-${Date.now()}`;
+      mediaType = editingExerciseMediaFile.type === 'image/gif'
+        ? 'GIF'
+        : editingExerciseMediaFile.type.startsWith('image/') ? 'IMAGE' : 'VIDEO';
+      try {
+        await saveExerciseMedia(mediaStorageId, editingExerciseMediaFile);
+        if (previousMediaStorageId) void deleteExerciseMedia(previousMediaStorageId).catch(() => undefined);
+      } catch {
+        window.alert('לא ניתן היה לשמור את קובץ ההדגמה במכשיר.');
+        return;
+      }
+    } else if (editingExerciseMediaUrl.trim() && mediaStorageId) {
+      void deleteExerciseMedia(mediaStorageId).catch(() => undefined);
+      mediaStorageId = undefined;
+    }
+    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId
+      ? {
+          ...plan,
+          lastUpdated: new Date().toISOString().split('T')[0],
+          exercises: plan.exercises.map(item => item.id === exercise.id ? {
+            ...item,
+            mediaUrl: editingExerciseMediaUrl.trim(),
+            mediaType,
+            mediaStorageId
+          } : item)
+        }
+      : plan));
+    setEditingExerciseMediaId('');
+    setEditingExerciseMediaFile(null);
+  };
+
+  const removeExistingExerciseMedia = (exercise: Exercise) => {
+    if (exercise.mediaStorageId) void deleteExerciseMedia(exercise.mediaStorageId).catch(() => undefined);
+    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId
+      ? { ...plan, exercises: plan.exercises.map(item => item.id === exercise.id ? { ...item, mediaUrl: '', mediaStorageId: undefined } : item) }
+      : plan));
+    setEditingExerciseMediaId('');
   };
 
   // Send Direct Message to Selected Trainee
@@ -1017,15 +1097,30 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs text-slate-600 font-medium mb-1">קישור לסרטון הדגמה (אופציונלי)</label>
-                      <input
-                        type="url"
-                        placeholder="לדוגמה: קישור YouTube, Vimeo או קובץ וידאו"
-                        value={newExercise.mediaUrl}
-                        onChange={(e) => setNewExercise({ ...newExercise, mediaUrl: e.target.value })}
-                        className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
-                      />
+                    <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-3">
+                      <label className="block text-xs font-bold text-slate-700 mb-2">תמונת / GIF / סרטון הדגמה (אופציונלי)</label>
+                      <div className="grid gap-2 md:grid-cols-[140px_minmax(0,1fr)]">
+                        <select value={newExercise.mediaType || 'VIDEO'} onChange={(e) => setNewExercise({ ...newExercise, mediaType: e.target.value as Exercise['mediaType'] })} className="rounded-lg border border-slate-300 bg-white p-2 text-xs">
+                          <option value="VIDEO">סרטון בלולאה</option>
+                          <option value="GIF">GIF מונפש</option>
+                          <option value="IMAGE">תמונה</option>
+                        </select>
+                        <input type="url" placeholder="קישור לתמונה, GIF, MP4 או YouTube" value={newExercise.mediaUrl} onChange={(e) => setNewExercise({ ...newExercise, mediaUrl: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs" />
+                      </div>
+                      <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed border-sky-300 bg-white px-3 py-2 text-xs text-slate-600">
+                        <span>{newExerciseMediaFile ? newExerciseMediaFile.name : 'או העלה קובץ מהמכשיר (תמונה, GIF, MP4 או WebM)'}</span>
+                        <span className="rounded-md bg-sky-600 px-2 py-1 font-bold text-white">בחירת קובץ</span>
+                        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm" className="hidden" onChange={event => {
+                          const file = event.target.files?.[0] || null;
+                          if (file && file.size > 15 * 1024 * 1024) {
+                            window.alert('גודל קובץ ההדגמה המרבי הוא 15MB.');
+                            event.target.value = '';
+                            return;
+                          }
+                          setNewExerciseMediaFile(file);
+                        }} />
+                      </label>
+                      <p className="mt-2 text-[10px] text-slate-500">הסרטון יוצג ללא קול וירוץ ברצף, כדי להשאיר את צפצופי הטיימר ברורים.</p>
                     </div>
 
                     <div>
@@ -1107,6 +1202,24 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                             <p className="text-xs text-slate-500 italic bg-white p-2 rounded border border-slate-50/50 mb-3">
                               💡 {ex.notes}
                             </p>
+                          )}
+                          {(ex.mediaUrl || ex.mediaStorageId) && <ExerciseMedia exercise={ex} compact className="mt-3" controls />}
+                          <button onClick={() => startEditingExerciseMedia(ex)} className="mt-2 w-full rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
+                            {ex.mediaUrl || ex.mediaStorageId ? 'שנה תמונה / GIF / סרטון' : 'הוסף תמונה / GIF / סרטון'}
+                          </button>
+                          {editingExerciseMediaId === ex.id && (
+                            <div className="mt-2 space-y-2 rounded-xl border border-sky-200 bg-white p-3">
+                              <div className="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
+                                <select value={editingExerciseMediaType || 'VIDEO'} onChange={event => setEditingExerciseMediaType(event.target.value as Exercise['mediaType'])} className="rounded-lg border border-slate-300 px-2 py-2 text-xs"><option value="VIDEO">סרטון</option><option value="GIF">GIF</option><option value="IMAGE">תמונה</option></select>
+                                <input value={editingExerciseMediaUrl} onChange={event => setEditingExerciseMediaUrl(event.target.value)} className="rounded-lg border border-slate-300 px-2 py-2 text-xs" placeholder="קישור לתמונה, GIF, MP4 או YouTube" />
+                              </div>
+                              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-sky-300 px-3 py-2 text-[10px] text-slate-600"><span>{editingExerciseMediaFile?.name || 'העלה קובץ חדש מהמכשיר'}</span><span className="font-bold text-sky-700">בחירה</span><input type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm" className="hidden" onChange={event => {
+                                const file = event.target.files?.[0] || null;
+                                if (file && file.size > 15 * 1024 * 1024) { window.alert('גודל קובץ ההדגמה המרבי הוא 15MB.'); return; }
+                                setEditingExerciseMediaFile(file);
+                              }} /></label>
+                              <div className="flex gap-2"><button onClick={() => void saveExistingExerciseMedia(ex)} className="flex-1 rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white">שמור מדיה</button><button onClick={() => setEditingExerciseMediaId('')} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">ביטול</button>{(ex.mediaUrl || ex.mediaStorageId) && <button onClick={() => removeExistingExerciseMedia(ex)} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600">הסר</button>}</div>
+                            </div>
                           )}
                         </div>
 

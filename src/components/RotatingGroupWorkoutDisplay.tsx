@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Maximize, Pause, Play, RotateCcw, Volume2, X } from 'lucide-react';
 import { GroupWorkoutProgram } from '../types';
+import { ExerciseMedia } from './ExerciseMedia';
 
 interface RotatingGroupWorkoutDisplayProps {
   program: GroupWorkoutProgram;
@@ -204,8 +205,9 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
                   <div className="flex flex-1 flex-col items-center justify-center py-4 text-center">
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">תרגיל {exerciseSlot + 1}</p>
                     <h2 className="mt-2 text-[clamp(1.5rem,3vw,2.6rem)] font-black leading-tight">{exercise?.name || 'המתנה / התאוששות'}</h2>
+                    {exercise && (exercise.mediaUrl || exercise.mediaStorageId) && <ExerciseMedia exercise={exercise} compact className="mt-3 max-h-36 w-full" />}
                     {exercise && (exercise.weight || exercise.reps) && <p className="mt-3 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-bold text-emerald-300">{exercise.weight || exercise.reps}</p>}
-                    {exercise?.notes && <p className="mt-3 text-sm text-slate-300">{exercise.notes}</p>}
+                    {exercise?.notes && <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-right"><span className="block text-[9px] font-black text-amber-300">דגשי המאמן</span><p className="mt-0.5 text-sm text-white">{exercise.notes}</p></div>}
                   </div>
                   <div className="flex gap-1.5">{station?.exercises.map((_, index) => <span key={index} className={`h-1.5 flex-1 rounded-full ${index === exerciseSlot ? 'bg-indigo-400' : index < exerciseSlot ? 'bg-emerald-500' : 'bg-white/10'}`} />)}</div>
                 </article>

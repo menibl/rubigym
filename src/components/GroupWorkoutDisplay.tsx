@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { GroupWorkoutProgram } from '../types';
 import { RotatingGroupWorkoutDisplay } from './RotatingGroupWorkoutDisplay';
+import { ExerciseMedia } from './ExerciseMedia';
 
 interface GroupWorkoutDisplayProps {
   program?: GroupWorkoutProgram;
@@ -225,12 +226,13 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
               <>
                 <div className={`font-mono text-[clamp(6rem,20vw,15rem)] font-black leading-none tracking-tighter tabular-nums ${secondsLeft <= 3 ? 'animate-pulse text-red-400' : 'text-white'}`}>{formatTime(secondsLeft)}</div>
                 <p className="mt-5 text-[clamp(2rem,5vw,4.5rem)] font-black leading-tight">{currentExercise.name}</p>
+                {(currentExercise.mediaUrl || currentExercise.mediaStorageId) && <ExerciseMedia exercise={currentExercise} className="mt-5 max-h-[34vh] w-full max-w-xl" />}
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-lg font-bold text-slate-300">
                   <span className="rounded-xl bg-white/10 px-4 py-2">תחנה {exerciseIndex + 1}/{program.exercises.length}</span>
                   <span className="rounded-xl bg-white/10 px-4 py-2">סבב {round}/{currentExercise.rounds}</span>
                   {(currentExercise.weight || currentExercise.reps) && <span className="rounded-xl bg-white/10 px-4 py-2">{currentExercise.weight || currentExercise.reps}</span>}
                 </div>
-                {currentExercise.notes && <p className="mt-5 max-w-3xl rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-lg text-slate-300">{currentExercise.notes}</p>}
+                {currentExercise.notes && <div className="mt-5 max-w-3xl rounded-xl border border-amber-400/30 bg-amber-400/10 px-5 py-3 text-right"><span className="block text-xs font-black text-amber-300">דגשי המאמן</span><p className="mt-1 text-lg text-white">{currentExercise.notes}</p></div>}
               </>
             ) : (
               <div className="py-16"><div className="text-8xl">🏆</div><h2 className="mt-5 text-5xl font-black">כל הכבוד!</h2><p className="mt-4 text-2xl text-slate-300">האימון הקבוצתי הסתיים</p></div>

@@ -35,12 +35,10 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  ExternalLink,
   ChevronRight,
   TrendingUp,
   UserCheck,
   Send,
-  Video,
   Grid,
   Home,
   Dumbbell,
@@ -52,6 +50,7 @@ import {
   MonitorPlay
 } from 'lucide-react';
 import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
+import { ExerciseMedia } from './ExerciseMedia';
 
 interface TraineeDashboardProps {
   activeUser: User;
@@ -1717,18 +1716,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                         )}
                       </div>
 
-                      {ex.mediaUrl && (
-                        <a
-                          href={ex.mediaUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-2 flex items-center justify-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-xs font-bold text-sky-700"
-                        >
-                          <Video size={15} />
-                          צפייה בסרטון ההדגמה
-                          <ExternalLink size={13} />
-                        </a>
-                      )}
+                      {(ex.mediaUrl || ex.mediaStorageId) && <ExerciseMedia exercise={ex} compact controls className="mt-2 border-slate-200" />}
                     </div>
                   ))}
                 </div>

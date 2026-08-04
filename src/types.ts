@@ -227,6 +227,8 @@ export interface Exercise {
   workDuration?: string; // e.g., "45 sec"
   restDuration?: string; // e.g., "60 sec"
   mediaUrl?: string; // optional demonstration video link
+  mediaType?: 'IMAGE' | 'GIF' | 'VIDEO';
+  mediaStorageId?: string; // device-local uploaded media in the demo version
   notes?: string;
 }
 
