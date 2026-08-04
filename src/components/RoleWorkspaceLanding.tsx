@@ -94,6 +94,9 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   const coaches = users.filter(user => user.role === UserRole.COACH || user.role === UserRole.MANAGER);
   const [selectedCoachId, setSelectedCoachId] = useState(() => coaches[0]?.id || '');
   const [chatInput, setChatInput] = useState('');
+  const staffRecipients = users.filter(user => user.id !== activeUser.id);
+  const [selectedRecipientId, setSelectedRecipientId] = useState(() => staffRecipients[0]?.id || '');
+  const [staffMessageInput, setStaffMessageInput] = useState('');
 
   const views: WorkspaceView[] = activeUser.role === UserRole.MANAGER
     ? ['CLUB_MANAGEMENT', 'TRAINING', 'WORKOUT_PLANNING']
@@ -137,6 +140,14 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
     if (!content || !selectedCoachId || !onSendMessage) return;
     onSendMessage(content, selectedCoachId);
     setChatInput('');
+  };
+
+  const sendStaffMessage = (event: React.FormEvent) => {
+    event.preventDefault();
+    const content = staffMessageInput.trim();
+    if (!content || !selectedRecipientId || !onSendMessage) return;
+    onSendMessage(content, selectedRecipientId);
+    setStaffMessageInput('');
   };
 
   const roleLabel = activeUser.role === UserRole.MANAGER
@@ -200,6 +211,16 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
                 </span>
               )}
             </div>
+            <form onSubmit={sendStaffMessage} className="mb-4 rounded-2xl border border-sky-500/20 bg-sky-500/5 p-3">
+              <p className="mb-2 text-xs font-black text-sky-300">כתיבת הודעה חדשה</p>
+              <div className="grid gap-2 sm:grid-cols-[minmax(130px,0.45fr)_1fr_auto]">
+                <select value={selectedRecipientId} onChange={event => setSelectedRecipientId(event.target.value)} className="min-h-11 rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-xs font-bold text-white">
+                  {staffRecipients.map(recipient => <option key={recipient.id} value={recipient.id}>{recipient.name} · {recipient.role === UserRole.TRAINEE ? 'מתאמן' : recipient.role === UserRole.COACH ? 'מאמן' : 'מנהל'}</option>)}
+                </select>
+                <input value={staffMessageInput} onChange={event => setStaffMessageInput(event.target.value)} placeholder="כתיבת הודעה..." className="min-h-11 min-w-0 rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-sky-400" />
+                <button type="submit" disabled={!staffMessageInput.trim() || !selectedRecipientId} className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-sky-500 px-4 text-xs font-black text-white disabled:opacity-40"><Send size={15} /> שליחה</button>
+              </div>
+            </form>
             <div className="space-y-2.5">
               {incomingStaffMessages.slice(0, 6).map(message => (
                 <article key={message.id} className={`rounded-2xl border p-3.5 ${message.read ? 'border-zinc-800 bg-zinc-950/60' : 'border-sky-500/40 bg-sky-500/10'}`}>

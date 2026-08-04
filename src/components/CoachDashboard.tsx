@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
 import { EditSessionModal } from './EditSessionModal';
+import { copyGroupProgramToSessions, copyPersonalPlanToSessions } from '../data/workoutAssignment';
 import {
   User,
   TrainingSession,
@@ -166,6 +167,14 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     const { newSessions, newOpenGym } = createSessionsFromData(data, users, activeUser);
     if (newSessions.length > 0) {
       onUpdateSessions([...newSessions, ...sessions]);
+      if (data.category === 'PERSONAL' && data.selectedProgramId && data.targetTraineeId) {
+        const source = workoutPlans.find(plan => plan.id === data.selectedProgramId && !plan.sessionId);
+        if (source) onUpdateWorkoutPlans([...copyPersonalPlanToSessions(source, newSessions, data.targetTraineeId, activeUser), ...workoutPlans]);
+      }
+      if (data.category === 'GROUP' && data.selectedProgramId) {
+        const source = groupWorkoutPrograms.find(program => program.id === data.selectedProgramId && !program.sessionId);
+        if (source) onUpdateGroupWorkoutPrograms([...copyGroupProgramToSessions(source, newSessions, activeUser, users), ...groupWorkoutPrograms]);
+      }
     }
     if (newOpenGym.length > 0 && onUpdateOpenGym) {
       onUpdateOpenGym([...newOpenGym, ...openGymSessions]);
@@ -1561,6 +1570,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   initialDate={modalInitialDate}
                   initialTime={modalInitialTime}
                   onCreateSession={handleModalCreateSession}
+                  workoutPlans={workoutPlans}
+                  groupWorkoutPrograms={groupWorkoutPrograms}
                 />
 
                 {/* EDIT SESSION MODAL */}

@@ -10,7 +10,9 @@ import {
   MuscleGroup,
   Gender,
   MembershipType,
-  MEMBERSHIP_TYPE_LABELS
+  MEMBERSHIP_TYPE_LABELS,
+  WorkoutPlan,
+  GroupWorkoutProgram
 } from '../types';
 import { X, Calendar, Clock, Users, Plus, Dumbbell, Sparkles, Repeat, ShieldCheck } from 'lucide-react';
 
@@ -29,6 +31,8 @@ export interface CreateSessionData {
   category: 'GROUP' | 'PERSONAL' | 'OPEN_GYM';
   recurringType: 'NONE' | 'WEEKLY_UNLIMITED' | 'WEEKLY_UNTIL_DATE';
   recurringUntilDate?: string;
+  targetTraineeId?: string;
+  selectedProgramId?: string;
 }
 
 function formatLocalDate(d: Date): string {
@@ -113,6 +117,8 @@ export function createSessionsFromData(
       genderRestriction: data.genderRestriction,
       allowedMemberships: data.allowedMemberships,
       isPersonalTraining: data.category === 'PERSONAL',
+      targetTraineeId: data.category === 'PERSONAL' ? data.targetTraineeId : undefined,
+      coTrainees: data.category === 'PERSONAL' && data.targetTraineeId ? [data.targetTraineeId] : undefined,
       registeredUsers: [],
       waitlistUsers: [],
       recurringType: isSeries ? data.recurringType : ('NONE' as const),
@@ -132,6 +138,8 @@ interface CreateSessionModalProps {
   initialDate?: string;
   initialTime?: string;
   onCreateSession: (data: CreateSessionData) => void;
+  workoutPlans?: WorkoutPlan[];
+  groupWorkoutPrograms?: GroupWorkoutProgram[];
 }
 
 export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
@@ -141,7 +149,9 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   users,
   initialDate,
   initialTime,
-  onCreateSession
+  onCreateSession,
+  workoutPlans = [],
+  groupWorkoutPrograms = []
 }) => {
   const [category, setCategory] = useState<'GROUP' | 'PERSONAL' | 'OPEN_GYM'>('GROUP');
   const [title, setTitle] = useState('');
@@ -157,6 +167,8 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   const [allowedMemberships, setAllowedMemberships] = useState<MembershipType[]>(
     Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
   );
+  const [targetTraineeId, setTargetTraineeId] = useState('');
+  const [selectedProgramId, setSelectedProgramId] = useState('');
 
   // Recurrence state
   const [recurringType, setRecurringType] = useState<'NONE' | 'WEEKLY_UNLIMITED' | 'WEEKLY_UNTIL_DATE'>('NONE');
@@ -180,6 +192,8 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
       setGenderRestriction(Gender.ALL);
       setAllowedMemberships(Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]);
       setRecurringType('NONE');
+      setTargetTraineeId('');
+      setSelectedProgramId('');
 
       // Default end date for until date (e.g., 1 month ahead)
       const oneMonthLater = new Date(defaultDate + 'T00:00:00');
@@ -201,6 +215,11 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
 
     if (category !== 'OPEN_GYM' && allowedMemberships.length === 0) {
       alert('יש לבחור לפחות סוג מנוי אחד המורשה להירשם לאימון!');
+      return;
+    }
+
+    if (category === 'PERSONAL' && selectedProgramId && !targetTraineeId) {
+      alert('כדי לשבץ תוכנית אישית מהמאגר יש לבחור מתאמן.');
       return;
     }
 
@@ -229,13 +248,19 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
       allowedMemberships,
       category,
       recurringType,
-      recurringUntilDate: recurringType === 'WEEKLY_UNTIL_DATE' ? recurringUntilDate : undefined
+      recurringUntilDate: recurringType === 'WEEKLY_UNTIL_DATE' ? recurringUntilDate : undefined,
+      targetTraineeId: category === 'PERSONAL' ? targetTraineeId || undefined : undefined,
+      selectedProgramId: category !== 'OPEN_GYM' ? selectedProgramId || undefined : undefined
     });
 
     onClose();
   };
 
   const coaches = users.filter(u => u.role === UserRole.COACH || u.role === UserRole.MANAGER);
+  const trainees = users.filter(u => u.role === UserRole.TRAINEE);
+  const availablePrograms = category === 'PERSONAL'
+    ? workoutPlans.filter(plan => !plan.sessionId && plan.exercises.length > 0)
+    : groupWorkoutPrograms.filter(program => !program.sessionId);
 
   return (
     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fade-in dir-rtl overflow-y-auto">
@@ -282,6 +307,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
                   onClick={() => {
                     const c = cat.id as any;
                     setCategory(c);
+                    setSelectedProgramId('');
                     if (c === 'PERSONAL') {
                       setMaxParticipants(1);
                       if (!title) setTitle('אימון אישי');
@@ -304,6 +330,38 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
               ))}
             </div>
           </div>
+
+          {category !== 'OPEN_GYM' && (
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-3.5">
+              <div className="mb-2 flex items-center gap-2 text-xs font-extrabold text-indigo-950">
+                <Dumbbell size={16} className="text-indigo-600" />
+                <span>שיבוץ תוכנית מוכנה מהמאגר</span>
+              </div>
+              <div className={`grid gap-3 ${category === 'PERSONAL' ? 'sm:grid-cols-2' : ''}`}>
+                {category === 'PERSONAL' && (
+                  <label className="text-xs font-bold text-slate-700">מתאמן לאימון האישי
+                    <select value={targetTraineeId} onChange={event => setTargetTraineeId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs">
+                      <option value="">בחירת מתאמן...</option>
+                      {trainees.map(trainee => <option key={trainee.id} value={trainee.id}>{trainee.name}</option>)}
+                    </select>
+                  </label>
+                )}
+                <label className="text-xs font-bold text-slate-700">תוכנית מהמאגר
+                  <select value={selectedProgramId} onChange={event => setSelectedProgramId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs">
+                    <option value="">ללא תוכנית — שיבוץ מאוחר יותר</option>
+                    {availablePrograms.map(program => (
+                      <option key={program.id} value={program.id}>
+                        {'traineeId' in program
+                          ? `${program.title || `תוכנית של ${users.find(user => user.id === program.traineeId)?.name || 'מתאמן'}`} · ${program.exercises.length} תרגילים`
+                          : `${program.title} · ${program.mode === 'ROTATING_GROUPS' ? (program.stations || []).reduce((sum, station) => sum + station.exercises.length, 0) : program.exercises.length} תרגילים`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="mt-2 text-[10px] leading-4 text-indigo-700">אם תיבחר תוכנית, ייווצר עותק נפרד ויישובץ אוטומטית לכל אירוע שייווצר ביומן.</p>
+            </div>
+          )}
 
           {/* Core Info Row */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">

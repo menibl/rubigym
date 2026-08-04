@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
 import { EditSessionModal } from './EditSessionModal';
+import { copyGroupProgramToSessions, copyPersonalPlanToSessions } from '../data/workoutAssignment';
 import { CoachDashboard } from './CoachDashboard';
 import {
   User,
@@ -208,6 +209,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const { newSessions, newOpenGym } = createSessionsFromData(data, users, activeUser);
     if (newSessions.length > 0) {
       onUpdateSessions([...newSessions, ...sessions]);
+      if (data.category === 'PERSONAL' && data.selectedProgramId && data.targetTraineeId) {
+        const source = workoutPlans.find(plan => plan.id === data.selectedProgramId && !plan.sessionId);
+        if (source) onUpdateWorkoutPlans([...copyPersonalPlanToSessions(source, newSessions, data.targetTraineeId, activeUser), ...workoutPlans]);
+      }
+      if (data.category === 'GROUP' && data.selectedProgramId) {
+        const source = groupWorkoutPrograms.find(program => program.id === data.selectedProgramId && !program.sessionId);
+        if (source) onUpdateGroupWorkoutPrograms([...copyGroupProgramToSessions(source, newSessions, activeUser, users), ...groupWorkoutPrograms]);
+      }
     }
     if (newOpenGym.length > 0) {
       onUpdateOpenGym([...newOpenGym, ...openGymSessions]);
@@ -813,6 +822,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               initialDate={modalInitialDate}
               initialTime={modalInitialTime}
               onCreateSession={handleModalCreateSession}
+              workoutPlans={workoutPlans}
+              groupWorkoutPrograms={groupWorkoutPrograms}
             />
 
             {/* EDIT SESSION MODAL */}
