@@ -8,14 +8,19 @@ import {
   ExternalLink,
   ImagePlus,
   MonitorPlay,
+  Pause,
+  Play,
   Plus,
   Save,
+  SkipForward,
+  TimerReset,
   Trash2,
   UsersRound
 } from 'lucide-react';
 import { GroupWorkoutExercise, GroupWorkoutProgram, GroupWorkoutStation, MuscleGroup, User } from '../types';
 import { ExerciseMedia } from './ExerciseMedia';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
+import { getGroupWorkoutStatus, GroupWorkoutLiveStatus, sendGroupWorkoutCommand, subscribeToGroupWorkoutStatus } from '../data/groupWorkoutRemote';
 
 interface GroupWorkoutProgramManagerProps {
   activeUser: User;
@@ -75,6 +80,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   const [selectedProgramId, setSelectedProgramId] = useState(programs[0]?.id || '');
   const [selectedTraineeId, setSelectedTraineeId] = useState('');
   const [manualParticipantName, setManualParticipantName] = useState('');
+  const [liveStatus, setLiveStatus] = useState<GroupWorkoutLiveStatus>();
   const selectedProgram = programs.find(program => program.id === selectedProgramId);
 
   useEffect(() => {
@@ -83,6 +89,15 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       setSelectedProgramId(programs[0]?.id || '');
     }
   }, [programs, selectedProgramId]);
+
+  useEffect(() => {
+    if (!selectedProgramId) {
+      setLiveStatus(undefined);
+      return;
+    }
+    setLiveStatus(getGroupWorkoutStatus(selectedProgramId));
+    return subscribeToGroupWorkoutStatus(selectedProgramId, setLiveStatus);
+  }, [selectedProgramId]);
 
   const sortedPrograms = useMemo(
     () => [...programs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
@@ -444,6 +459,22 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
                   </article>
                 ))}
                 {selectedProgram.exercises.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">הוסיפו את התרגיל או התחנה הראשונה.</div>}
+              </div>
+            </div>}
+
+            {selectedProgram.mode === 'ROTATING_GROUPS' && <div className="rounded-2xl border border-indigo-200 bg-gradient-to-l from-indigo-950 to-slate-950 p-4 text-white shadow-lg">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="flex items-center gap-2"><MonitorPlay size={18} className="text-indigo-300" /><h3 className="font-black">שלט חי למסך האימון</h3>{liveStatus && <span className="rounded-full bg-emerald-500/20 px-2 py-1 text-[10px] font-black text-emerald-300">מחובר</span>}</div>
+                  <p className="mt-1 text-xs text-slate-300">{liveStatus ? `${liveStatus.phase === 'WORK' ? 'עבודה' : liveStatus.phase === 'REST' ? 'מנוחה' : liveStatus.phase === 'TRANSITION' ? 'מעבר תחנות' : liveStatus.phase === 'PREPARE' ? 'הכנה' : 'הושלם'} · ${formatDuration(liveStatus.secondsLeft)} · סבב ${liveStatus.chainRound}` : 'פתחו את מסך האימון בכרטיסייה נוספת כדי להפעיל את השלט.'}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => sendGroupWorkoutCommand(selectedProgram.id, 'PAUSE')} disabled={!liveStatus || !liveStatus.isRunning} className="flex items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-2 text-xs font-black text-slate-950 disabled:opacity-35"><Pause size={15} fill="currentColor" /> עצור</button>
+                  <button onClick={() => sendGroupWorkoutCommand(selectedProgram.id, 'RESUME')} disabled={!liveStatus || liveStatus.isRunning || liveStatus.phase === 'COMPLETE'} className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-black text-white disabled:opacity-35"><Play size={15} fill="currentColor" /> המשך</button>
+                  <button onClick={() => sendGroupWorkoutCommand(selectedProgram.id, 'ADD_REST', 10)} disabled={!liveStatus || !['REST', 'TRANSITION'].includes(liveStatus.phase)} className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-black disabled:opacity-35"><TimerReset size={15} /> +10 שנ׳ מנוחה</button>
+                  <button onClick={() => sendGroupWorkoutCommand(selectedProgram.id, 'ADD_REST', 30)} disabled={!liveStatus || !['REST', 'TRANSITION'].includes(liveStatus.phase)} className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-black disabled:opacity-35"><TimerReset size={15} /> +30 שנ׳</button>
+                  <button onClick={() => sendGroupWorkoutCommand(selectedProgram.id, 'NEXT_STEP')} disabled={!liveStatus || liveStatus.phase === 'COMPLETE'} className="flex items-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-2 text-xs font-black text-white disabled:opacity-35"><SkipForward size={15} /> לשלב הבא</button>
+                </div>
               </div>
             </div>}
 

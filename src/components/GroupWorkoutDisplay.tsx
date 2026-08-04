@@ -13,6 +13,7 @@ import {
 import { GroupWorkoutProgram } from '../types';
 import { RotatingGroupWorkoutDisplay } from './RotatingGroupWorkoutDisplay';
 import { ExerciseMedia } from './ExerciseMedia';
+import { LiveClock } from './LiveClock';
 
 interface GroupWorkoutDisplayProps {
   program?: GroupWorkoutProgram;
@@ -206,8 +207,8 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
   const phaseLabel = phase === 'WORK' ? 'עבודה' : phase === 'REST' ? 'מנוחה' : phase === 'COMPLETE' ? 'האימון הושלם!' : 'מתכוננים';
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-slate-950 text-white" dir="rtl">
-      <div className="flex min-h-screen flex-col">
+    <main className="h-screen overflow-hidden bg-slate-950 text-white" dir="rtl">
+      <div className="flex h-screen min-h-0 flex-col overflow-hidden">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-950 px-5 py-3 lg:px-8">
           <div><p className="text-sm font-black text-indigo-300">{program.groupName}</p><h1 className="text-xl font-black lg:text-2xl">{program.title}</h1></div>
           <div className="flex items-center gap-2">
@@ -219,45 +220,45 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
 
         <div className="h-2 bg-slate-800"><div className="h-full bg-gradient-to-l from-indigo-400 to-emerald-400 transition-all duration-500" style={{ width: `${progress}%` }} /></div>
 
-        <section className="grid flex-1 lg:grid-cols-[minmax(0,1.45fr)_minmax(330px,0.55fr)]">
-          <div className="flex min-h-[68vh] flex-col items-center justify-center p-5 text-center lg:p-10">
-            <div className={`mb-5 rounded-full bg-gradient-to-l px-8 py-2 text-lg font-black shadow-lg ${phaseStyle}`}>{phaseLabel}</div>
+        <section className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1.45fr)_minmax(330px,0.55fr)]">
+          <div className="flex min-h-0 flex-col items-center justify-center overflow-hidden p-3 text-center lg:p-5">
+            <div className={`mb-2 shrink-0 rounded-full bg-gradient-to-l px-8 py-1.5 text-lg font-black shadow-lg ${phaseStyle}`}>{phaseLabel}</div>
             {phase !== 'COMPLETE' ? (
               <>
-                <div className={`font-mono text-[clamp(6rem,20vw,15rem)] font-black leading-none tracking-tighter tabular-nums ${secondsLeft <= 3 ? 'animate-pulse text-red-400' : 'text-white'}`}>{formatTime(secondsLeft)}</div>
-                <p className="mt-5 text-[clamp(2rem,5vw,4.5rem)] font-black leading-tight">{currentExercise.name}</p>
-                {(currentExercise.mediaUrl || currentExercise.mediaStorageId) && <ExerciseMedia exercise={currentExercise} className="mt-5 max-h-[34vh] w-full max-w-xl" />}
-                <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-lg font-bold text-slate-300">
+                <div className={`shrink-0 font-mono text-[clamp(5rem,16vh,10rem)] font-black leading-none tracking-tighter tabular-nums ${secondsLeft <= 3 ? 'animate-pulse text-red-400' : 'text-white'}`}>{formatTime(secondsLeft)}</div>
+                <p className="mt-2 shrink-0 text-[clamp(2rem,5vh,4rem)] font-black leading-tight">{currentExercise.name}</p>
+                {(currentExercise.mediaUrl || currentExercise.mediaStorageId) && <ExerciseMedia exercise={currentExercise} className="mt-2 min-h-0 max-h-[24vh] w-full max-w-xl flex-1" />}
+                <div className="mt-2 flex shrink-0 flex-wrap items-center justify-center gap-2 text-base font-bold text-slate-300">
                   <span className="rounded-xl bg-white/10 px-4 py-2">תחנה {exerciseIndex + 1}/{program.exercises.length}</span>
                   <span className="rounded-xl bg-white/10 px-4 py-2">סבב {round}/{currentExercise.rounds}</span>
                   {(currentExercise.weight || currentExercise.reps) && <span className="rounded-xl bg-white/10 px-4 py-2">{currentExercise.weight || currentExercise.reps}</span>}
                 </div>
-                {currentExercise.notes && <div className="mt-5 max-w-3xl rounded-xl border border-amber-400/30 bg-amber-400/10 px-5 py-3 text-right"><span className="block text-xs font-black text-amber-300">דגשי המאמן</span><p className="mt-1 text-lg text-white">{currentExercise.notes}</p></div>}
+                {currentExercise.notes && <div className="mt-2 max-w-3xl shrink-0 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-right"><span className="block text-xs font-black text-amber-300">דגשי המאמן</span><p className="mt-1 line-clamp-2 text-base text-white">{currentExercise.notes}</p></div>}
               </>
             ) : (
               <div className="py-16"><div className="text-8xl">🏆</div><h2 className="mt-5 text-5xl font-black">כל הכבוד!</h2><p className="mt-4 text-2xl text-slate-300">האימון הקבוצתי הסתיים</p></div>
             )}
 
-            <div className="mt-8 flex items-center justify-center gap-3">
-              <button onClick={previousStation} className="rounded-2xl bg-white/10 p-4 hover:bg-white/20"><ChevronRight size={30} /></button>
-              <button onClick={() => { beep(880, 0.1); setIsRunning(value => !value); }} disabled={phase === 'COMPLETE'} className={`flex h-20 w-20 items-center justify-center rounded-full shadow-2xl transition hover:scale-105 disabled:opacity-40 ${isRunning ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-white'}`}>{isRunning ? <Pause size={38} fill="currentColor" /> : <Play size={38} fill="currentColor" />}</button>
-              <button onClick={nextStation} className="rounded-2xl bg-white/10 p-4 hover:bg-white/20"><ChevronLeft size={30} /></button>
-              <button onClick={resetWorkout} className="mr-3 rounded-2xl bg-white/10 p-4 hover:bg-white/20"><RotateCcw size={26} /></button>
-              <button onClick={() => beep(880, 0.15)} className="rounded-2xl bg-white/10 p-4 hover:bg-white/20" title="בדיקת צליל"><Volume2 size={26} /></button>
+            <div className="mt-2 flex shrink-0 items-center justify-center gap-2">
+              <button onClick={previousStation} className="rounded-xl bg-white/10 p-2.5 hover:bg-white/20"><ChevronRight size={25} /></button>
+              <button onClick={() => { beep(880, 0.1); setIsRunning(value => !value); }} disabled={phase === 'COMPLETE'} className={`flex h-14 w-14 items-center justify-center rounded-full shadow-2xl transition hover:scale-105 disabled:opacity-40 ${isRunning ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-white'}`}>{isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}</button>
+              <button onClick={nextStation} className="rounded-xl bg-white/10 p-2.5 hover:bg-white/20"><ChevronLeft size={25} /></button>
+              <button onClick={resetWorkout} className="mr-2 rounded-xl bg-white/10 p-2.5 hover:bg-white/20"><RotateCcw size={22} /></button>
+              <button onClick={() => beep(880, 0.15)} className="rounded-xl bg-white/10 p-2.5 hover:bg-white/20" title="בדיקת צליל"><Volume2 size={22} /></button>
             </div>
           </div>
 
-          <aside className="border-t border-white/10 bg-slate-900/70 p-4 lg:border-r lg:border-t-0 lg:p-6">
-            <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-black">מהלך האימון</h2><span className="text-xs text-slate-400">{Math.round(progress)}%</span></div>
-            <div className="max-h-[74vh] space-y-2 overflow-y-auto pl-1">
+          <aside className="hidden min-h-0 overflow-hidden border-r border-white/10 bg-slate-900/70 p-3 lg:flex lg:flex-col">
+            <div className="mb-3 flex shrink-0 items-center justify-between gap-2"><div><h2 className="text-lg font-black">מהלך האימון</h2><span className="text-xs text-slate-400">{Math.round(progress)}%</span></div><LiveClock /></div>
+            <div className="grid min-h-0 flex-1 gap-1.5" style={{ gridTemplateRows: `repeat(${Math.max(1, program.exercises.length)}, minmax(0, 1fr))` }}>
               {program.exercises.map((exercise, index) => (
-                <button key={exercise.id} onClick={() => setWorkPhase(index, 1)} className={`flex w-full items-center gap-3 rounded-xl border p-3 text-right transition ${index === exerciseIndex && phase !== 'COMPLETE' ? 'border-indigo-400 bg-indigo-500/20' : index < exerciseIndex || phase === 'COMPLETE' ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black ${index < exerciseIndex || phase === 'COMPLETE' ? 'bg-emerald-500 text-white' : index === exerciseIndex ? 'bg-indigo-500 text-white' : 'bg-white/10 text-slate-300'}`}>{index < exerciseIndex || phase === 'COMPLETE' ? '✓' : index + 1}</span>
-                  <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{exercise.name}</strong><small className="text-slate-400">{exercise.workSeconds} שנ׳ עבודה · {exercise.restSeconds} שנ׳ מנוחה · {exercise.rounds} סבבים</small></span>
+                <button key={exercise.id} onClick={() => setWorkPhase(index, 1)} className={`flex min-h-0 w-full items-center gap-2 overflow-hidden rounded-xl border px-2 py-1.5 text-right transition ${index === exerciseIndex && phase !== 'COMPLETE' ? 'border-indigo-400 bg-indigo-500/20' : index < exerciseIndex || phase === 'COMPLETE' ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black ${index < exerciseIndex || phase === 'COMPLETE' ? 'bg-emerald-500 text-white' : index === exerciseIndex ? 'bg-indigo-500 text-white' : 'bg-white/10 text-slate-300'}`}>{index < exerciseIndex || phase === 'COMPLETE' ? '✓' : index + 1}</span>
+                  <span className="min-w-0 flex-1"><strong className="block truncate text-base">{exercise.name}</strong><small className="block truncate text-xs text-slate-400">{exercise.workSeconds} שנ׳ עבודה · {exercise.restSeconds} שנ׳ מנוחה · {exercise.rounds} סבבים</small></span>
                 </button>
               ))}
             </div>
-            {nextExercise && phase !== 'COMPLETE' && <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4"><p className="text-xs font-bold text-slate-400">הבא בתור</p><p className="mt-1 text-lg font-black">{nextExercise.name}</p></div>}
+            {nextExercise && phase !== 'COMPLETE' && <div className="mt-2 shrink-0 rounded-xl border border-white/10 bg-white/5 p-2.5"><p className="text-xs font-bold text-slate-400">הבא בתור</p><p className="truncate text-base font-black">{nextExercise.name}</p></div>}
           </aside>
         </section>
       </div>
