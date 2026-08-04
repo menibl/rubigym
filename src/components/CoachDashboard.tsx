@@ -37,6 +37,7 @@ import { GymEquipmentPanel } from './GymEquipmentPanel';
 import { CoachPdfLibraryPanel } from './CoachPdfLibraryPanel';
 import { WorkoutAssistantPanel } from './WorkoutAssistantPanel';
 import { GroupWorkoutProgramManager } from './GroupWorkoutProgramManager';
+import { CoachTrainingMode } from './CoachTrainingMode';
 import { ExerciseMedia } from './ExerciseMedia';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import {
@@ -135,6 +136,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   onInitialWorkoutSessionHandled
 }) => {
   const [activeTab, setActiveTab] = useState<'programs' | 'group-programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
+  const [coachMode, setCoachMode] = useState<'TRAINING' | 'PLANNING'>(() => activeUser.role === UserRole.COACH ? 'TRAINING' : 'PLANNING');
   const [groupProgramSessionId, setGroupProgramSessionId] = useState('');
 
   // CreateSessionModal state
@@ -332,6 +334,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const selectedTrainee = traineesOnly.find(t => t.id === selectedTraineeId);
 
   const openWorkoutProgramFromCalendar = (session: TrainingSession) => {
+    setCoachMode('PLANNING');
     if (session.isPersonalTraining) {
       const traineeId = session.targetTraineeId || session.registeredUsers[0] || session.coTrainees?.[0];
       if (traineeId) setSelectedTraineeId(traineeId);
@@ -821,8 +824,29 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     window.open(displayUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const modeSwitcher = <div className="grid grid-cols-2 gap-2 border-b border-slate-200 bg-white p-3" dir="rtl">
+    <button onClick={() => setCoachMode('TRAINING')} className={`min-h-12 rounded-xl px-4 py-3 text-sm font-black transition ${coachMode === 'TRAINING' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-600'}`}><Calendar size={16} className="ml-2 inline" />אימונים</button>
+    <button onClick={() => setCoachMode('PLANNING')} className={`min-h-12 rounded-xl px-4 py-3 text-sm font-black transition ${coachMode === 'PLANNING' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600'}`}><BookOpen size={16} className="ml-2 inline" />תכנון</button>
+  </div>;
+
+  if (coachMode === 'TRAINING') {
+    return <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-md" id="coach-dashboard">
+      {modeSwitcher}
+      <CoachTrainingMode
+        activeUser={activeUser}
+        users={users}
+        sessions={sessions}
+        workoutPlans={workoutPlans}
+        groupWorkoutPrograms={groupWorkoutPrograms}
+        onUpdateGroupWorkoutPrograms={onUpdateGroupWorkoutPrograms}
+        onOpenProgram={openWorkoutProgramFromCalendar}
+      />
+    </div>;
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="coach-dashboard">
+      {modeSwitcher}
       {/* Tab Header */}
       <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-wrap justify-between items-center gap-4">
         <div className="flex items-center gap-2">
@@ -854,7 +878,16 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
             }`}
           >
             <BookOpen size={14} />
-            בניית תוכנית אימון
+            תוכנית אימונים
+          </button>
+          <button
+            onClick={() => setActiveTab('group-programs')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'group-programs' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            <UsersRound size={14} />
+            תוכנית אימונים לקבוצות
           </button>
           <button
             onClick={() => setActiveTab('equipment')}
@@ -864,15 +897,6 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
           >
             <Wrench size={14} />
             ציוד ומכשירים
-          </button>
-          <button
-            onClick={() => setActiveTab('group-programs')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-              activeTab === 'group-programs' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'
-            }`}
-          >
-            <UsersRound size={14} />
-            תוכניות לקבוצות
           </button>
           <button
             onClick={() => setActiveTab('pdf-library')}

@@ -11,6 +11,7 @@ import {
   Pause,
   Play,
   Plus,
+  RotateCcw,
   Save,
   SkipForward,
   TimerReset,
@@ -85,6 +86,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
 }) => {
   const [selectedProgramId, setSelectedProgramId] = useState(programs[0]?.id || '');
   const [selectedSessionId, setSelectedSessionId] = useState(initialSessionId || '');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [liveStatus, setLiveStatus] = useState<GroupWorkoutLiveStatus>();
   const selectedProgram = programs.find(program => program.id === selectedProgramId);
   const groupSessions = useMemo(() => sessions
@@ -133,6 +135,12 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     () => [...programs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [programs]
   );
+  const templatePrograms = useMemo(() => programs.filter(program => !program.sessionId), [programs]);
+
+  useEffect(() => {
+    if (!selectedTemplateId && templatePrograms[0]) setSelectedTemplateId(templatePrograms[0].id);
+    if (selectedTemplateId && !templatePrograms.some(program => program.id === selectedTemplateId)) setSelectedTemplateId(templatePrograms[0]?.id || '');
+  }, [selectedTemplateId, templatePrograms]);
 
   const updateProgram = (changes: Partial<GroupWorkoutProgram>) => {
     if (!selectedProgram) return;
@@ -175,6 +183,37 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     if (session) setSelectedSessionId(session.id);
   };
 
+  const assignTemplateToSession = (templateId: string, sessionId: string) => {
+    const template = programs.find(program => program.id === templateId && !program.sessionId);
+    const session = sessions.find(item => item.id === sessionId && !item.isPersonalTraining);
+    if (!template || !session) return;
+    const now = new Date().toISOString();
+    const participants = participantsFromSession(session, [], (template.stations || []).length || 1);
+    const assigned: GroupWorkoutProgram = {
+      ...template,
+      id: `group-program-${Date.now()}`,
+      sessionId: session.id,
+      sessionDate: session.date,
+      sessionTime: session.time,
+      groupName: session.title,
+      title: template.title,
+      exercises: template.exercises.map((exercise, index) => ({ ...exercise, id: `group-exercise-${Date.now()}-${index}` })),
+      stations: (template.stations || []).map((station, stationIndex) => ({
+        ...station,
+        id: `group-station-${Date.now()}-${stationIndex}`,
+        exercises: station.exercises.map((exercise, exerciseIndex) => ({ ...exercise, id: `group-station-exercise-${Date.now()}-${stationIndex}-${exerciseIndex}` }))
+      })),
+      participants,
+      participantCount: participants.length,
+      createdAt: now,
+      updatedAt: now,
+      publishedAt: template.status === 'PUBLISHED' ? now : undefined
+    };
+    onUpdatePrograms([assigned, ...programs]);
+    setSelectedProgramId(assigned.id);
+    setSelectedSessionId(session.id);
+  };
+
   useEffect(() => {
     if (!initialSessionId) return;
     setSelectedSessionId(initialSessionId);
@@ -208,6 +247,15 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
 
   const linkSelectedProgramToSession = (sessionId: string) => {
     if (!selectedProgram) return;
+    if (!sessionId) {
+      updateProgram({ sessionId: undefined, sessionDate: undefined, sessionTime: undefined, participants: [], participantCount: 0 });
+      setSelectedSessionId('');
+      return;
+    }
+    if (!selectedProgram.sessionId) {
+      assignTemplateToSession(selectedProgram.id, sessionId);
+      return;
+    }
     const session = sessions.find(item => item.id === sessionId && !item.isPersonalTraining);
     if (!session) return;
     const participants = participantsFromSession(session, selectedProgram.participants || [], (selectedProgram.stations || []).length || 1);
@@ -394,34 +442,42 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
             <h2 className="text-2xl font-black">מנהל תוכניות אימון קבוצתיות</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">בנו את סדר האימון, הגדירו זמני עבודה ומנוחה ופתחו מסך נקי להצגה למאמן או על מסך המועדון.</p>
           </div>
-          <button onClick={() => createProgram()} className="flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-black text-white hover:bg-indigo-400"><Plus size={18} /> תוכנית קבוצה חדשה</button>
+          <button onClick={() => { setSelectedSessionId(''); createProgram(''); }} className="flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-black text-white hover:bg-indigo-400"><Plus size={18} /> תוכנית חדשה למאגר</button>
         </div>
       </div>
 
       <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end">
+        <div className="grid gap-3 md:grid-cols-2">
           <label className="min-w-0 flex-1 text-xs font-black text-slate-800">בחרו אימון מהיומן
             <select value={selectedSessionId} onChange={event => setSelectedSessionId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-3 text-sm font-bold">
               <option value="">בחר אימון קבוצתי...</option>
               {groupSessions.map(session => <option key={session.id} value={session.id}>{session.date} · {session.time} · {session.title} ({session.registeredUsers.length} נרשמים)</option>)}
             </select>
           </label>
+          <label className="min-w-0 flex-1 text-xs font-black text-slate-800">תוכנית מוכנה מהמאגר
+            <select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-3 text-sm font-bold">
+              <option value="">ללא תבנית — אימון חדש</option>
+              {templatePrograms.map(program => <option key={program.id} value={program.id}>{program.title} · {programExerciseCount(program)} תרגילים</option>)}
+            </select>
+          </label>
           <button onClick={() => {
             const existing = programs.find(program => program.sessionId === selectedSessionId);
             if (existing) setSelectedProgramId(existing.id);
+            else if (selectedTemplateId) assignTemplateToSession(selectedTemplateId, selectedSessionId);
             else createProgram(selectedSessionId);
-          }} disabled={!selectedSessionId} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white disabled:opacity-40">{programs.some(program => program.sessionId === selectedSessionId) ? 'פתח תוכנית קיימת' : 'צור תוכנית לאימון'}</button>
+          }} disabled={!selectedSessionId} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white disabled:opacity-40">{programs.some(program => program.sessionId === selectedSessionId) ? 'פתח תוכנית קיימת' : selectedTemplateId ? 'שבץ עותק מהמאגר' : 'צור תוכנית חדשה'}</button>
+          <button onClick={() => { setSelectedSessionId(''); createProgram(''); }} className="rounded-xl border border-indigo-300 bg-white px-5 py-3 text-sm font-black text-indigo-800">צור תוכנית למאגר</button>
         </div>
-        <p className="mt-2 text-xs text-indigo-800">רשימת המתאמנים תגיע אוטומטית מההרשמה ביומן ותתעדכן בכל שינוי.</p>
+        <p className="mt-2 text-xs text-indigo-800">אפשר להכין מראש מאגר לשבוע או לחודש. השיבוץ יוצר עותק נפרד לאירוע ורשימת המתאמנים מגיעה אוטומטית מהיומן.</p>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <h3 className="px-2 pb-3 text-sm font-black text-slate-800">הקבוצות והתוכניות שלי</h3>
+          <h3 className="px-2 pb-3 text-sm font-black text-slate-800">מאגר ותוכניות משובצות</h3>
           <div className="space-y-2">
             {sortedPrograms.map(program => (
               <button key={program.id} onClick={() => setSelectedProgramId(program.id)} className={`w-full rounded-xl border p-3 text-right transition ${selectedProgramId === program.id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-                <div className="flex items-start justify-between gap-2"><strong className="text-sm text-slate-900">{program.groupName}</strong><span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${program.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>{program.status === 'PUBLISHED' ? 'פורסם' : 'טיוטה'}</span></div>
+                <div className="flex items-start justify-between gap-2"><strong className="text-sm text-slate-900">{program.groupName}</strong><span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${program.sessionId ? 'bg-indigo-100 text-indigo-700' : 'bg-fuchsia-100 text-fuchsia-700'}`}>{program.sessionId ? 'משובץ ביומן' : 'במאגר'}</span></div>
                 <p className="mt-1 truncate text-xs text-slate-500">{program.title}</p>
                 <p className="mt-2 text-[10px] text-slate-400">{program.sessionDate ? `${program.sessionDate} · ${program.sessionTime} · ` : ''}{programExerciseCount(program)} תרגילים · {formatDuration(totalProgramSeconds(program))}</p>
               </button>
@@ -555,6 +611,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
                   <button onClick={() => sendGroupWorkoutCommand(selectedProgram.id, 'ADD_REST', 10)} disabled={!liveStatus || !['REST', 'TRANSITION'].includes(liveStatus.phase)} className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-black disabled:opacity-35"><TimerReset size={15} /> +10 שנ׳ מנוחה</button>
                   <button onClick={() => sendGroupWorkoutCommand(selectedProgram.id, 'ADD_REST', 30)} disabled={!liveStatus || !['REST', 'TRANSITION'].includes(liveStatus.phase)} className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-black disabled:opacity-35"><TimerReset size={15} /> +30 שנ׳</button>
                   <button onClick={() => sendGroupWorkoutCommand(selectedProgram.id, 'NEXT_STEP')} disabled={!liveStatus || liveStatus.phase === 'COMPLETE'} className="flex items-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-2 text-xs font-black text-white disabled:opacity-35"><SkipForward size={15} /> לשלב הבא</button>
+                  <button onClick={() => { sendGroupWorkoutCommand(selectedProgram.id, 'RESET'); window.setTimeout(() => sendGroupWorkoutCommand(selectedProgram.id, 'RESUME'), 150); }} disabled={!liveStatus} className="flex items-center gap-1.5 rounded-xl bg-red-500 px-3 py-2 text-xs font-black text-white disabled:opacity-35"><RotateCcw size={15} /> הפעלה מחדש</button>
                 </div>
               </div>
             </div>}
