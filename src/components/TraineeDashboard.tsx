@@ -74,6 +74,7 @@ interface TraineeDashboardProps {
   onSendMessage: (content: string, receiverId: string) => void;
   onOpenSettings: () => void;
   onLogout: () => void;
+  initialTab?: 'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership';
 }
 
 const PRIMARY_MEMBERSHIP_PLANS = [
@@ -111,9 +112,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   onUpdatePayments,
   onSendMessage,
   onOpenSettings,
-  onLogout
+  onLogout,
+  initialTab = 'home'
 }) => {
-  const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>(initialTab);
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
   const [membershipPayment, setMembershipPayment] = useState({

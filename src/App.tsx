@@ -53,7 +53,8 @@ import { LoginModal } from './components/LoginModal';
 import { RegisterModal } from './components/RegisterModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
-import { Dumbbell, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon } from 'lucide-react';
+import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
+import { ArrowRight, Dumbbell, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon } from 'lucide-react';
 
 const AUTH_SESSION_KEY = 'gym_auth_session_v1';
 const GROUP_WORKOUT_STORAGE_KEY = 'gym_group_workout_programs_v1';
@@ -143,6 +144,7 @@ export default function App() {
   );
   const [groupWorkoutDisplayId, setGroupWorkoutDisplayId] = useState(getGroupWorkoutDisplayId);
   const [personalWorkoutDisplayId, setPersonalWorkoutDisplayId] = useState(getPersonalWorkoutDisplayId);
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
 
   // Modals state
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -364,6 +366,7 @@ export default function App() {
   // Switch Active user simulation callback
   const handleSwitchUser = (user: User) => {
     setActiveUser(user);
+    setWorkspaceView(null);
     if (isAuthenticated) {
       localStorage.setItem(AUTH_SESSION_KEY, user.id);
     }
@@ -372,6 +375,7 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem(AUTH_SESSION_KEY);
     setIsAuthenticated(false);
+    setWorkspaceView(null);
   };
 
   // Direct send message callback across dashboards
@@ -409,6 +413,7 @@ export default function App() {
     setActiveUser(user);
     localStorage.setItem(AUTH_SESSION_KEY, user.id);
     setIsAuthenticated(true);
+    setWorkspaceView(null);
   };
 
   // User details update handler
@@ -457,6 +462,52 @@ export default function App() {
       />
     );
   }
+
+  const renderCoachWorkspace = (mode: 'TRAINING' | 'PLANNING') => (
+    <CoachDashboard
+      key={`${activeUser.id}-${mode}`}
+      users={users}
+      sessions={sessions}
+      openGymSessions={openGymSessions}
+      blackPoints={blackPoints}
+      announcements={announcements}
+      workoutPlans={workoutPlans}
+      nutritionPlans={nutritionPlans}
+      messages={messages}
+      settings={settings}
+      onUpdateWorkoutPlans={setWorkoutPlans}
+      onUpdateNutritionPlans={setNutritionPlans}
+      onUpdateBlackPoints={setBlackPoints}
+      onUpdateSessions={setSessions}
+      onUpdateOpenGym={setOpenGymSessions}
+      onUpdateAnnouncements={setAnnouncements}
+      onUpdateUsers={setUsers}
+      onSendMessage={handleSendMessage}
+      traineeProfiles={traineeProfiles}
+      traineeMemoryEntries={traineeMemoryEntries}
+      onUpdateTraineeProfiles={setTraineeProfiles}
+      onUpdateTraineeMemoryEntries={setTraineeMemoryEntries}
+      gymEquipment={gymEquipment}
+      onUpdateGymEquipment={setGymEquipment}
+      coachPdfDocuments={coachPdfDocuments}
+      onUpdateCoachPdfDocuments={setCoachPdfDocuments}
+      workoutAssistantMessages={workoutAssistantMessages}
+      workoutAssistantDrafts={workoutAssistantDrafts}
+      onUpdateWorkoutAssistantMessages={setWorkoutAssistantMessages}
+      onUpdateWorkoutAssistantDrafts={setWorkoutAssistantDrafts}
+      groupWorkoutPrograms={groupWorkoutPrograms}
+      onUpdateGroupWorkoutPrograms={setGroupWorkoutPrograms}
+      activeUser={activeUser}
+      initialMode={mode}
+      hideModeSwitcher
+    />
+  );
+
+  const traineeInitialTab = workspaceView === 'BOOKING'
+    ? 'classes'
+    : workspaceView === 'MY_PROGRAM'
+      ? 'workout'
+      : 'membership';
 
   return (
     <div className={`app-shell role-${activeUser.role.toLowerCase()} min-h-screen flex flex-col font-sans antialiased`} dir="rtl">
@@ -532,7 +583,21 @@ export default function App() {
 
         {/* Dynamic Dashboards */}
         <div className="dashboard-stage transition-all duration-300">
-          {activeUser.role === UserRole.MANAGER && (
+          {!workspaceView && (
+            <RoleWorkspaceLanding activeUser={activeUser} onSelect={setWorkspaceView} />
+          )}
+
+          {workspaceView && (
+            <button
+              type="button"
+              onClick={() => setWorkspaceView(null)}
+              className="mb-4 flex min-h-11 items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-black text-white transition hover:border-amber-400 hover:text-amber-400"
+            >
+              <ArrowRight size={17} /> חזרה לבחירת אזור
+            </button>
+          )}
+
+          {activeUser.role === UserRole.MANAGER && workspaceView === 'CLUB_MANAGEMENT' && (
             <AdminDashboard
               users={users}
               sessions={sessions}
@@ -574,45 +639,15 @@ export default function App() {
             />
           )}
 
-          {activeUser.role === UserRole.COACH && (
-            <CoachDashboard
-              users={users}
-              sessions={sessions}
-              openGymSessions={openGymSessions}
-              blackPoints={blackPoints}
-              announcements={announcements}
-              workoutPlans={workoutPlans}
-              nutritionPlans={nutritionPlans}
-              messages={messages}
-              settings={settings}
-              onUpdateWorkoutPlans={setWorkoutPlans}
-              onUpdateNutritionPlans={setNutritionPlans}
-              onUpdateBlackPoints={setBlackPoints}
-              onUpdateSessions={setSessions}
-              onUpdateOpenGym={setOpenGymSessions}
-              onUpdateAnnouncements={setAnnouncements}
-              onUpdateUsers={setUsers}
-              onSendMessage={handleSendMessage}
-              traineeProfiles={traineeProfiles}
-              traineeMemoryEntries={traineeMemoryEntries}
-              onUpdateTraineeProfiles={setTraineeProfiles}
-              onUpdateTraineeMemoryEntries={setTraineeMemoryEntries}
-              gymEquipment={gymEquipment}
-              onUpdateGymEquipment={setGymEquipment}
-              coachPdfDocuments={coachPdfDocuments}
-              onUpdateCoachPdfDocuments={setCoachPdfDocuments}
-              workoutAssistantMessages={workoutAssistantMessages}
-              workoutAssistantDrafts={workoutAssistantDrafts}
-              onUpdateWorkoutAssistantMessages={setWorkoutAssistantMessages}
-              onUpdateWorkoutAssistantDrafts={setWorkoutAssistantDrafts}
-              groupWorkoutPrograms={groupWorkoutPrograms}
-              onUpdateGroupWorkoutPrograms={setGroupWorkoutPrograms}
-              activeUser={activeUser}
-            />
-          )}
+          {activeUser.role === UserRole.MANAGER && workspaceView === 'TRAINING' && renderCoachWorkspace('TRAINING')}
+          {activeUser.role === UserRole.MANAGER && workspaceView === 'WORKOUT_PLANNING' && renderCoachWorkspace('PLANNING')}
 
-          {activeUser.role === UserRole.TRAINEE && (
+          {activeUser.role === UserRole.COACH && workspaceView === 'TRAINING' && renderCoachWorkspace('TRAINING')}
+          {activeUser.role === UserRole.COACH && workspaceView === 'WORKOUT_PLANNING' && renderCoachWorkspace('PLANNING')}
+
+          {activeUser.role === UserRole.TRAINEE && workspaceView && (
             <TraineeDashboard
+              key={`${activeUser.id}-${workspaceView}`}
               activeUser={activeUser}
               users={users}
               sessions={sessions}
@@ -637,6 +672,7 @@ export default function App() {
                 setIsSettingsOpen(true);
               }}
               onLogout={handleLogout}
+              initialTab={traineeInitialTab}
             />
           )}
         </div>

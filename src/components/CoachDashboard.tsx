@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
 import { EditSessionModal } from './EditSessionModal';
@@ -97,6 +97,8 @@ interface CoachDashboardProps {
   activeUser: User;
   initialWorkoutSessionId?: string;
   onInitialWorkoutSessionHandled?: () => void;
+  initialMode?: 'TRAINING' | 'PLANNING';
+  hideModeSwitcher?: boolean;
 }
 
 export const CoachDashboard: React.FC<CoachDashboardProps> = ({
@@ -133,11 +135,17 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   onUpdateGroupWorkoutPrograms,
   activeUser,
   initialWorkoutSessionId,
-  onInitialWorkoutSessionHandled
+  onInitialWorkoutSessionHandled,
+  initialMode,
+  hideModeSwitcher = false
 }) => {
   const [activeTab, setActiveTab] = useState<'programs' | 'group-programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
-  const [coachMode, setCoachMode] = useState<'TRAINING' | 'PLANNING'>(() => activeUser.role === UserRole.COACH ? 'TRAINING' : 'PLANNING');
+  const [coachMode, setCoachMode] = useState<'TRAINING' | 'PLANNING'>(() => initialMode || (activeUser.role === UserRole.COACH ? 'TRAINING' : 'PLANNING'));
   const [groupProgramSessionId, setGroupProgramSessionId] = useState('');
+
+  useEffect(() => {
+    if (initialMode) setCoachMode(initialMode);
+  }, [initialMode]);
 
   // CreateSessionModal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -824,7 +832,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     window.open(displayUrl, '_blank', 'noopener,noreferrer');
   };
 
-  const modeSwitcher = <div className="grid grid-cols-2 gap-2 border-b border-slate-200 bg-white p-3" dir="rtl">
+  const modeSwitcher = hideModeSwitcher ? null : <div className="grid grid-cols-2 gap-2 border-b border-slate-200 bg-white p-3" dir="rtl">
     <button onClick={() => setCoachMode('TRAINING')} className={`min-h-12 rounded-xl px-4 py-3 text-sm font-black transition ${coachMode === 'TRAINING' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-600'}`}><Calendar size={16} className="ml-2 inline" />אימונים</button>
     <button onClick={() => setCoachMode('PLANNING')} className={`min-h-12 rounded-xl px-4 py-3 text-sm font-black transition ${coachMode === 'PLANNING' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600'}`}><BookOpen size={16} className="ml-2 inline" />תכנון</button>
   </div>;
