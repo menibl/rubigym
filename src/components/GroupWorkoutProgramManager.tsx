@@ -6,6 +6,7 @@ import {
   Copy,
   Dumbbell,
   ExternalLink,
+  ImagePlus,
   MonitorPlay,
   Plus,
   Save,
@@ -13,11 +14,14 @@ import {
   UsersRound
 } from 'lucide-react';
 import { GroupWorkoutExercise, GroupWorkoutProgram, GroupWorkoutStation, MuscleGroup, User } from '../types';
+import { ExerciseMedia } from './ExerciseMedia';
+import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 
 interface GroupWorkoutProgramManagerProps {
   activeUser: User;
   programs: GroupWorkoutProgram[];
   onUpdatePrograms: (programs: GroupWorkoutProgram[]) => void;
+  trainees: User[];
 }
 
 const createExercise = (index: number, workSeconds: number, restSeconds: number): GroupWorkoutExercise => ({
@@ -65,9 +69,12 @@ const programExerciseCount = (program: GroupWorkoutProgram) => program.mode === 
 export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProps> = ({
   activeUser,
   programs,
-  onUpdatePrograms
+  onUpdatePrograms,
+  trainees
 }) => {
   const [selectedProgramId, setSelectedProgramId] = useState(programs[0]?.id || '');
+  const [selectedTraineeId, setSelectedTraineeId] = useState('');
+  const [manualParticipantName, setManualParticipantName] = useState('');
   const selectedProgram = programs.find(program => program.id === selectedProgramId);
 
   useEffect(() => {
@@ -101,7 +108,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       exercises: [],
       mode: 'LINEAR',
       participantCount: 12,
-      participantGroupNames: ['קבוצה 1', 'קבוצה 2', 'קבוצה 3', 'קבוצה 4'],
+      participantGroupNames: ['קבוצה 1', 'קבוצה 2', 'קבוצה 3'],
+      participants: [],
       stations: [],
       roundsPerStation: 3,
       transitionSeconds: 30,
@@ -180,7 +188,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   const enableRotatingGroups = () => {
     if (!selectedProgram) return;
     const existingExercises = selectedProgram.exercises;
-    const stations: GroupWorkoutStation[] = Array.from({ length: 4 }, (_, index) => ({
+    const stations: GroupWorkoutStation[] = Array.from({ length: 3 }, (_, index) => ({
       id: `group-station-${Date.now()}-${index}`,
       name: `תחנה ${index + 1}`,
       exercises: index === 0 ? existingExercises.map(exercise => ({
@@ -194,7 +202,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       mode: 'ROTATING_GROUPS',
       stations,
       participantCount: selectedProgram.participantCount || 12,
-      participantGroupNames: ['קבוצה 1', 'קבוצה 2', 'קבוצה 3', 'קבוצה 4'],
+      participantGroupNames: ['קבוצה 1', 'קבוצה 2', 'קבוצה 3'],
+      participants: selectedProgram.participants || [],
       roundsPerStation: selectedProgram.roundsPerStation || 3,
       transitionSeconds: selectedProgram.transitionSeconds ?? 30
     });
@@ -208,6 +217,53 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       stations: [...stations, { id: `group-station-${Date.now()}`, name: `תחנה ${nextNumber}`, exercises: [] }],
       participantGroupNames: [...(selectedProgram.participantGroupNames || []), `קבוצה ${nextNumber}`]
     });
+  };
+
+  const addParticipant = () => {
+    if (!selectedProgram) return;
+    const selectedTrainee = trainees.find(trainee => trainee.id === selectedTraineeId);
+    const name = selectedTrainee?.name || manualParticipantName.trim();
+    if (!name) return;
+    const participants = selectedProgram.participants || [];
+    const participantId = selectedTrainee?.id || `group-participant-${Date.now()}`;
+    if (participants.some(participant => participant.id === participantId)) return;
+    const groupCounts = (selectedProgram.stations || []).map((_, index) => participants.filter(participant => participant.groupIndex === index).length);
+    const groupIndex = groupCounts.length ? groupCounts.indexOf(Math.min(...groupCounts)) : 0;
+    updateProgram({
+      participants: [...participants, { id: participantId, name, groupIndex }],
+      participantCount: participants.length + 1
+    });
+    setSelectedTraineeId('');
+    setManualParticipantName('');
+  };
+
+  const updateParticipantGroup = (participantId: string, groupIndex: number) => {
+    if (!selectedProgram) return;
+    updateProgram({ participants: (selectedProgram.participants || []).map(participant => participant.id === participantId ? { ...participant, groupIndex } : participant) });
+  };
+
+  const removeParticipant = (participantId: string) => {
+    if (!selectedProgram) return;
+    const participants = (selectedProgram.participants || []).filter(participant => participant.id !== participantId);
+    updateProgram({ participants, participantCount: participants.length });
+  };
+
+  const storeExerciseMedia = async (exercise: GroupWorkoutExercise, file: File, onStored: (changes: Partial<GroupWorkoutExercise>) => void) => {
+    if (file.size > 15 * 1024 * 1024) {
+      window.alert('גודל קובץ ההדגמה המרבי הוא 15MB.');
+      return;
+    }
+    const mediaStorageId = `exercise-media-${exercise.id}-${Date.now()}`;
+    try {
+      await saveExerciseMedia(mediaStorageId, file);
+      if (exercise.mediaStorageId) void deleteExerciseMedia(exercise.mediaStorageId).catch(() => undefined);
+      onStored({
+        mediaStorageId,
+        mediaType: file.type === 'image/gif' ? 'GIF' : file.type.startsWith('image/') ? 'IMAGE' : 'VIDEO'
+      });
+    } catch {
+      window.alert('לא ניתן היה לשמור את קובץ ההדגמה במכשיר.');
+    }
   };
 
   const updateStation = (stationId: string, changes: Partial<GroupWorkoutStation>) => {
@@ -316,8 +372,26 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
             {selectedProgram.mode === 'ROTATING_GROUPS' ? (
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div><h3 className="flex items-center gap-2 text-lg font-black text-slate-900"><UsersRound size={19} className="text-indigo-600" /> תחנות ותתי־קבוצות</h3><p className="mt-1 text-xs text-slate-500">{selectedProgram.participantCount || 0} משתתפים · {(selectedProgram.stations || []).length} תתי־קבוצות · כ־{Math.ceil((selectedProgram.participantCount || 0) / Math.max(1, (selectedProgram.stations || []).length))} אנשים בקבוצה</p></div>
+                  <div><h3 className="flex items-center gap-2 text-lg font-black text-slate-900"><UsersRound size={19} className="text-indigo-600" /> תחנות ותתי־קבוצות</h3><p className="mt-1 text-xs text-slate-500">{(selectedProgram.participants || []).length || selectedProgram.participantCount || 0} משתתפים · {(selectedProgram.stations || []).length} תתי־קבוצות · כ־{Math.ceil(((selectedProgram.participants || []).length || selectedProgram.participantCount || 0) / Math.max(1, (selectedProgram.stations || []).length))} אנשים בקבוצה</p></div>
                   <button onClick={addStation} className="flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-black text-white"><Plus size={15} /> הוסף תת־קבוצה / תחנה</button>
+                </div>
+                <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-black text-slate-900">שיבוץ מתאמנים לקבוצות התחלה</h4><p className="mt-1 text-[10px] text-slate-600">ניתן לשנות את השיבוץ גם בזמן האימון; מסך התצוגה יתעדכן בדפדפן הפתוח.</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-black text-emerald-700">{(selectedProgram.participants || []).length} משובצים</span></div>
+                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                    <select value={selectedTraineeId} onChange={event => setSelectedTraineeId(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs"><option value="">בחר מתאמן רשום</option>{trainees.filter(trainee => !(selectedProgram.participants || []).some(participant => participant.id === trainee.id)).map(trainee => <option key={trainee.id} value={trainee.id}>{trainee.name}</option>)}</select>
+                    <input value={manualParticipantName} onChange={event => setManualParticipantName(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs" placeholder="או הקלד שם משתתף אורח" />
+                    <button onClick={addParticipant} disabled={!selectedTraineeId && !manualParticipantName.trim()} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-black text-white disabled:opacity-40">הוסף ושבץ</button>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {(selectedProgram.participants || []).map((participant, participantIndex) => (
+                      <div key={participant.id} className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-white p-2">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-700">{participantIndex + 1}</span>
+                        <strong className="min-w-0 flex-1 truncate text-xs text-slate-800">{participant.name}</strong>
+                        <select value={Math.min(participant.groupIndex, Math.max(0, (selectedProgram.stations || []).length - 1))} onChange={event => updateParticipantGroup(participant.id, Number(event.target.value))} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px]">{(selectedProgram.stations || []).map((station, index) => <option key={station.id} value={index}>{(selectedProgram.participantGroupNames || [])[index] || `קבוצה ${index + 1}`}</option>)}</select>
+                        <button onClick={() => removeParticipant(participant.id)} className="rounded p-1 text-red-500"><Trash2 size={13} /></button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div className="grid gap-4 2xl:grid-cols-2">
                   {(selectedProgram.stations || []).map((station, stationIndex) => (
@@ -338,6 +412,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
                             <div className="flex items-center gap-2"><span className="text-xs font-black text-indigo-600">{exerciseIndex + 1}</span><input value={exercise.name} onChange={event => updateStationExercise(station, exercise.id, { name: event.target.value })} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold" placeholder="שם התרגיל" /><button onClick={() => updateStation(station.id, { exercises: station.exercises.filter(item => item.id !== exercise.id) })} className="text-red-500"><Trash2 size={14} /></button></div>
                             <div className="mt-2 grid grid-cols-2 gap-2"><input value={exercise.weight || exercise.reps} onChange={event => updateStationExercise(station, exercise.id, { weight: event.target.value })} className="rounded-lg border border-slate-200 px-2 py-1.5 text-[10px]" placeholder="חזרות / משקל" /><input value={exercise.notes || ''} onChange={event => updateStationExercise(station, exercise.id, { notes: event.target.value })} className="rounded-lg border border-slate-200 px-2 py-1.5 text-[10px]" placeholder="דגש למאמן" /></div>
                             <div className="mt-2 grid grid-cols-[90px_minmax(0,1fr)] gap-2"><select value={exercise.mediaType || 'VIDEO'} onChange={event => updateStationExercise(station, exercise.id, { mediaType: event.target.value as GroupWorkoutExercise['mediaType'] })} className="rounded-lg border border-slate-200 px-2 py-1.5 text-[10px]"><option value="VIDEO">סרטון</option><option value="GIF">GIF</option><option value="IMAGE">תמונה</option></select><input value={exercise.mediaUrl || ''} onChange={event => updateStationExercise(station, exercise.id, { mediaUrl: event.target.value })} className="rounded-lg border border-slate-200 px-2 py-1.5 text-[10px]" placeholder="קישור למדיה (אופציונלי)" /></div>
+                            {(exercise.mediaUrl || exercise.mediaStorageId) && <ExerciseMedia exercise={exercise} compact controls className="mt-2 border-slate-200" />}
+                            <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-fuchsia-300 bg-fuchsia-50 px-3 py-2 text-[10px] font-black text-fuchsia-700"><ImagePlus size={14} /> {exercise.mediaUrl || exercise.mediaStorageId ? 'החלף תמונה / GIF / סרטון' : 'העלה תמונה / GIF / סרטון'}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) void storeExerciseMedia(exercise, file, changes => updateStationExercise(station, exercise.id, changes)); event.target.value = ''; }} /></label>
                           </div>
                         ))}
                         <button onClick={() => addStationExercise(station)} className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-indigo-300 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-50"><Plus size={14} /> הוסף תרגיל לשרשרת</button>
@@ -361,7 +437,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
                         <label className="text-[9px] font-bold text-slate-500">סבבים<input type="number" min={1} max={20} value={exercise.rounds} onChange={event => updateExercise(exercise.id, { rounds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
                         <label className="text-[9px] font-bold text-slate-500">חזרות / משקל<input value={exercise.weight || exercise.reps} onChange={event => updateExercise(exercise.id, { weight: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" placeholder="לפי זמן" /></label>
                         <label className="sm:col-span-2 lg:col-span-5 text-[9px] font-bold text-slate-500">הנחיות למאמן<input value={exercise.notes || ''} onChange={event => updateExercise(exercise.id, { notes: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" placeholder="טכניקה, התאמות או ציוד נדרש" /></label>
-                        <label className="sm:col-span-2 lg:col-span-3 text-[9px] font-bold text-slate-500">תמונה / GIF / סרטון הדגמה<div className="mt-1 grid grid-cols-[100px_minmax(0,1fr)] gap-2"><select value={exercise.mediaType || 'VIDEO'} onChange={event => updateExercise(exercise.id, { mediaType: event.target.value as GroupWorkoutExercise['mediaType'] })} className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"><option value="VIDEO">סרטון</option><option value="GIF">GIF</option><option value="IMAGE">תמונה</option></select><input value={exercise.mediaUrl || ''} onChange={event => updateExercise(exercise.id, { mediaUrl: event.target.value })} className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" placeholder="קישור אופציונלי" /></div></label>
+                        <div className="sm:col-span-2 lg:col-span-3"><label className="text-[9px] font-bold text-slate-500">תמונה / GIF / סרטון הדגמה<div className="mt-1 grid grid-cols-[100px_minmax(0,1fr)] gap-2"><select value={exercise.mediaType || 'VIDEO'} onChange={event => updateExercise(exercise.id, { mediaType: event.target.value as GroupWorkoutExercise['mediaType'] })} className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"><option value="VIDEO">סרטון</option><option value="GIF">GIF</option><option value="IMAGE">תמונה</option></select><input value={exercise.mediaUrl || ''} onChange={event => updateExercise(exercise.id, { mediaUrl: event.target.value })} className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" placeholder="קישור אופציונלי" /></div></label>{(exercise.mediaUrl || exercise.mediaStorageId) && <ExerciseMedia exercise={exercise} compact controls className="mt-2 border-slate-200" />}<label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-fuchsia-300 bg-fuchsia-50 px-3 py-2 text-[10px] font-black text-fuchsia-700"><ImagePlus size={14} /> {exercise.mediaUrl || exercise.mediaStorageId ? 'החלף קובץ הדגמה' : 'העלה קובץ הדגמה'}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) void storeExerciseMedia(exercise, file, changes => updateExercise(exercise.id, changes)); event.target.value = ''; }} /></label></div>
                       </div>
                       <button onClick={() => updateProgram({ exercises: selectedProgram.exercises.filter(item => item.id !== exercise.id) })} className="self-start rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={16} /></button>
                     </div>

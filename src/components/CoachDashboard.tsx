@@ -57,7 +57,8 @@ import {
   Wrench,
   FileText,
   UsersRound,
-  MonitorPlay
+  MonitorPlay,
+  ImagePlus
 } from 'lucide-react';
 
 interface CoachDashboardProps {
@@ -1204,8 +1205,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                             </p>
                           )}
                           {(ex.mediaUrl || ex.mediaStorageId) && <ExerciseMedia exercise={ex} compact className="mt-3" controls />}
-                          <button onClick={() => startEditingExerciseMedia(ex)} className="mt-2 w-full rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
-                            {ex.mediaUrl || ex.mediaStorageId ? 'שנה תמונה / GIF / סרטון' : 'הוסף תמונה / GIF / סרטון'}
+                          <button onClick={() => startEditingExerciseMedia(ex)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-fuchsia-300 bg-fuchsia-50 px-3 py-2.5 text-xs font-black text-fuchsia-700">
+                            <ImagePlus size={16} /> {ex.mediaUrl || ex.mediaStorageId ? 'שנה תמונה / GIF / סרטון' : 'העלה תמונה / GIF / סרטון לתרגיל'}
                           </button>
                           {editingExerciseMediaId === ex.id && (
                             <div className="mt-2 space-y-2 rounded-xl border border-sky-200 bg-white p-3">
@@ -1258,6 +1259,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 activeUser={activeUser}
                 programs={groupWorkoutPrograms}
                 onUpdatePrograms={onUpdateGroupWorkoutPrograms}
+                trainees={users.filter(user => user.role === UserRole.TRAINEE)}
               />
             )}
 
