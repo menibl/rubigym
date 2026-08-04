@@ -6,7 +6,9 @@ import {
   ClipboardList,
   CreditCard,
   Dumbbell,
+  Inbox,
   MessageCircle,
+  Megaphone,
   Send,
   Settings2,
   UserRound
@@ -121,6 +123,14 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
     .slice(-4), [activeUser.id, messages, selectedCoachId]);
 
+  const incomingStaffMessages = useMemo(() => messages
+    .filter(message => message.receiverId === activeUser.id)
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp)), [activeUser.id, messages]);
+
+  const latestClubAnnouncements = useMemo(() => [...announcements]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5), [announcements]);
+
   const sendChatMessage = (event: React.FormEvent) => {
     event.preventDefault();
     const content = chatInput.trim();
@@ -175,6 +185,65 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
           );
         })}
       </div>
+
+      {activeUser.role !== UserRole.TRAINEE && (
+        <div className="mt-6 grid gap-5 lg:grid-cols-2">
+          <section className="rounded-3xl border border-zinc-800 bg-zinc-900 p-5 text-white shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-400/10 text-sky-400"><Inbox size={20} /></span>
+                <div><h3 className="font-black">הודעות שנשלחו אליי</h3><p className="text-[11px] text-zinc-500">פניות ממתאמנים ומצוות המועדון</p></div>
+              </div>
+              {incomingStaffMessages.some(message => !message.read) && (
+                <span className="rounded-full bg-sky-500 px-2.5 py-1 text-[10px] font-black text-white">
+                  {incomingStaffMessages.filter(message => !message.read).length} חדשות
+                </span>
+              )}
+            </div>
+            <div className="space-y-2.5">
+              {incomingStaffMessages.slice(0, 6).map(message => (
+                <article key={message.id} className={`rounded-2xl border p-3.5 ${message.read ? 'border-zinc-800 bg-zinc-950/60' : 'border-sky-500/40 bg-sky-500/10'}`}>
+                  <div className="flex items-start gap-3">
+                    <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${message.read ? 'bg-zinc-700' : 'bg-sky-400'}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <strong className="text-xs text-white">{message.senderName}</strong>
+                        <time className="text-[10px] text-zinc-500">{new Date(message.timestamp).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time>
+                      </div>
+                      <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-zinc-400">{message.content}</p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+              {incomingStaffMessages.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-zinc-700 p-7 text-center text-xs text-zinc-500">לא התקבלו עדיין הודעות אישיות.</div>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-zinc-800 bg-zinc-900 p-5 text-white shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-400/10 text-amber-400"><Megaphone size={20} /></span>
+                <div><h3 className="font-black">הודעות המועדון</h3><p className="text-[11px] text-zinc-500">עדכונים שפורסמו לצוות ולמתאמנים</p></div>
+              </div>
+              <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-[10px] font-black text-zinc-300">{announcements.length} מודעות</span>
+            </div>
+            <div className="space-y-3">
+              {latestClubAnnouncements.map(announcement => (
+                <article key={announcement.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500"><span>פורסם על ידי {announcement.createdBy}</span><time>{announcement.date}</time></div>
+                  <h4 className="mt-2 text-sm font-black text-white">{announcement.title}</h4>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">{announcement.content}</p>
+                </article>
+              ))}
+              {latestClubAnnouncements.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-zinc-700 p-7 text-center text-xs text-zinc-500">עדיין לא פורסמו הודעות מועדון.</div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
 
       {activeUser.role === UserRole.TRAINEE && (
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
