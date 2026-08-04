@@ -134,6 +134,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   activeUser
 }) => {
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
+  const [programSessionId, setProgramSessionId] = useState('');
 
   // Discount Codes form state
   const [newDiscountCode, setNewDiscountCode] = useState({
@@ -721,6 +722,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             groupWorkoutPrograms={groupWorkoutPrograms}
             onUpdateGroupWorkoutPrograms={onUpdateGroupWorkoutPrograms}
             activeUser={activeUser}
+            initialWorkoutSessionId={programSessionId}
+            onInitialWorkoutSessionHandled={() => setProgramSessionId('')}
           />
         )}
 
@@ -791,6 +794,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 users={users}
                 onDeleteSession={handleDeleteSession}
                 onEditSession={(s) => setEditingSession(s)}
+                onOpenWorkoutProgram={(session) => {
+                  setProgramSessionId(session.id);
+                  setActiveTab('programs');
+                }}
                 onDeleteOpenGym={handleDeleteOpenGym}
                 onEditOpenGym={(g) => setEditingOpenGym(g)}
                 onOpenCreateSessionModal={(d, t) => handleOpenCreateModal(d, t)}

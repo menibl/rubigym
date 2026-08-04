@@ -45,6 +45,7 @@ interface WeeklyCalendarProps {
   onBookOpenGym?: (openGymSession: OpenGymSession) => void;
   onCancelOpenGym?: (openGymSessionId: string) => void;
   onEditSession?: (session: TrainingSession) => void;
+  onOpenWorkoutProgram?: (session: TrainingSession) => void;
   onDeleteSession?: (sessionId: string, deleteSeries?: boolean) => void;
   onEditOpenGym?: (openGym: OpenGymSession) => void;
   onDeleteOpenGym?: (openGymId: string, deleteSeries?: boolean) => void;
@@ -91,6 +92,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   onCancelOpenGym,
   onDeleteSession,
   onEditSession,
+  onOpenWorkoutProgram,
   onDeleteOpenGym,
   onEditOpenGym,
   checkBookingEligibility,
@@ -932,6 +934,19 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                   {(role === UserRole.MANAGER || role === UserRole.COACH) && (
                     <div className="w-full flex justify-between items-center gap-2 flex-wrap border-t border-slate-100 pt-3">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {onOpenWorkoutProgram && (
+                          <button
+                            onClick={() => {
+                              const curr = selectedItem.session!;
+                              setSelectedItem(null);
+                              onOpenWorkoutProgram(curr);
+                            }}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          >
+                            <Dumbbell className="w-4 h-4" />
+                            <span>{selectedItem.session.isPersonalTraining ? 'צור / ערוך תוכנית אישית' : 'צור / ערוך תוכנית לאימון'}</span>
+                          </button>
+                        )}
                         {onEditSession && (
                           <button
                             onClick={() => {

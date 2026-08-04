@@ -94,6 +94,8 @@ interface CoachDashboardProps {
   groupWorkoutPrograms: GroupWorkoutProgram[];
   onUpdateGroupWorkoutPrograms: (programs: GroupWorkoutProgram[]) => void;
   activeUser: User;
+  initialWorkoutSessionId?: string;
+  onInitialWorkoutSessionHandled?: () => void;
 }
 
 export const CoachDashboard: React.FC<CoachDashboardProps> = ({
@@ -128,9 +130,12 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   onUpdateWorkoutAssistantDrafts,
   groupWorkoutPrograms,
   onUpdateGroupWorkoutPrograms,
-  activeUser
+  activeUser,
+  initialWorkoutSessionId,
+  onInitialWorkoutSessionHandled
 }) => {
   const [activeTab, setActiveTab] = useState<'programs' | 'group-programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
+  const [groupProgramSessionId, setGroupProgramSessionId] = useState('');
 
   // CreateSessionModal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -325,6 +330,24 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const traineesOnly = users.filter(u => u.role === UserRole.TRAINEE);
   const [selectedTraineeId, setSelectedTraineeId] = useState<string>(traineesOnly[0]?.id || '');
   const selectedTrainee = traineesOnly.find(t => t.id === selectedTraineeId);
+
+  const openWorkoutProgramFromCalendar = (session: TrainingSession) => {
+    if (session.isPersonalTraining) {
+      const traineeId = session.targetTraineeId || session.registeredUsers[0] || session.coTrainees?.[0];
+      if (traineeId) setSelectedTraineeId(traineeId);
+      setActiveTab('programs');
+      return;
+    }
+    setGroupProgramSessionId(session.id);
+    setActiveTab('group-programs');
+  };
+
+  React.useEffect(() => {
+    if (!initialWorkoutSessionId) return;
+    const session = sessions.find(item => item.id === initialWorkoutSessionId);
+    if (session) openWorkoutProgramFromCalendar(session);
+    onInitialWorkoutSessionHandled?.();
+  }, [initialWorkoutSessionId]);
 
   // New Exercise Form State
   const [showAddExercise, setShowAddExercise] = useState(false);
@@ -1260,6 +1283,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 programs={groupWorkoutPrograms}
                 onUpdatePrograms={onUpdateGroupWorkoutPrograms}
                 trainees={users.filter(user => user.role === UserRole.TRAINEE)}
+                sessions={sessions}
+                initialSessionId={groupProgramSessionId}
+                onInitialSessionHandled={() => setGroupProgramSessionId('')}
               />
             )}
 
@@ -1487,6 +1513,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   users={users}
                   onDeleteSession={handleDeleteSession}
                   onEditSession={(s) => setEditingSession(s)}
+                  onOpenWorkoutProgram={openWorkoutProgramFromCalendar}
                   onDeleteOpenGym={handleDeleteOpenGym}
                   onEditOpenGym={(g) => setEditingOpenGym(g)}
                   onOpenCreateSessionModal={(d, t) => handleOpenCreateModal(d, t)}

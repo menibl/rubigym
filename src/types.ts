@@ -365,6 +365,9 @@ export interface GroupWorkoutParticipant {
 
 export interface GroupWorkoutProgram {
   id: string;
+  sessionId?: string;
+  sessionDate?: string;
+  sessionTime?: string;
   groupName: string;
   title: string;
   description: string;

@@ -17,7 +17,7 @@ import {
   Trash2,
   UsersRound
 } from 'lucide-react';
-import { GroupWorkoutExercise, GroupWorkoutProgram, GroupWorkoutStation, MuscleGroup, User } from '../types';
+import { GroupWorkoutExercise, GroupWorkoutParticipant, GroupWorkoutProgram, GroupWorkoutStation, MuscleGroup, TrainingSession, User } from '../types';
 import { ExerciseMedia } from './ExerciseMedia';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import { getGroupWorkoutStatus, GroupWorkoutLiveStatus, sendGroupWorkoutCommand, subscribeToGroupWorkoutStatus } from '../data/groupWorkoutRemote';
@@ -27,6 +27,9 @@ interface GroupWorkoutProgramManagerProps {
   programs: GroupWorkoutProgram[];
   onUpdatePrograms: (programs: GroupWorkoutProgram[]) => void;
   trainees: User[];
+  sessions: TrainingSession[];
+  initialSessionId?: string;
+  onInitialSessionHandled?: () => void;
 }
 
 const createExercise = (index: number, workSeconds: number, restSeconds: number): GroupWorkoutExercise => ({
@@ -75,13 +78,36 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   activeUser,
   programs,
   onUpdatePrograms,
-  trainees
+  trainees,
+  sessions,
+  initialSessionId,
+  onInitialSessionHandled
 }) => {
   const [selectedProgramId, setSelectedProgramId] = useState(programs[0]?.id || '');
-  const [selectedTraineeId, setSelectedTraineeId] = useState('');
-  const [manualParticipantName, setManualParticipantName] = useState('');
+  const [selectedSessionId, setSelectedSessionId] = useState(initialSessionId || '');
   const [liveStatus, setLiveStatus] = useState<GroupWorkoutLiveStatus>();
   const selectedProgram = programs.find(program => program.id === selectedProgramId);
+  const groupSessions = useMemo(() => sessions
+    .filter(session => !session.isPersonalTraining)
+    .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`)), [sessions]);
+  const selectedSession = sessions.find(session => session.id === selectedProgram?.sessionId);
+
+  const participantsFromSession = (session: TrainingSession, existing: GroupWorkoutParticipant[] = [], groupCount = 1) => {
+    const counts = Array.from({ length: Math.max(1, groupCount) }, () => 0);
+    existing.filter(participant => session.registeredUsers.includes(participant.id)).forEach(participant => {
+      const index = Math.min(Math.max(0, participant.groupIndex), counts.length - 1);
+      counts[index] += 1;
+    });
+    return session.registeredUsers.map((userId, index) => {
+      const trainee = trainees.find(user => user.id === userId);
+      const previous = existing.find(participant => participant.id === userId);
+      const groupIndex = previous
+        ? Math.min(Math.max(0, previous.groupIndex), counts.length - 1)
+        : counts.indexOf(Math.min(...counts));
+      if (!previous) counts[groupIndex] += 1;
+      return { id: userId, name: trainee?.name || previous?.name || `מתאמן ${index + 1}`, groupIndex };
+    });
+  };
 
   useEffect(() => {
     if (!selectedProgramId && programs[0]) setSelectedProgramId(programs[0].id);
@@ -89,6 +115,10 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       setSelectedProgramId(programs[0]?.id || '');
     }
   }, [programs, selectedProgramId]);
+
+  useEffect(() => {
+    if (selectedProgram?.sessionId) setSelectedSessionId(selectedProgram.sessionId);
+  }, [selectedProgram?.id, selectedProgram?.sessionId]);
 
   useEffect(() => {
     if (!selectedProgramId) {
@@ -111,20 +141,25 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       : program));
   };
 
-  const createProgram = () => {
+  const createProgram = (sessionId = selectedSessionId) => {
     const now = new Date().toISOString();
+    const session = sessions.find(item => item.id === sessionId && !item.isPersonalTraining);
+    const participants = session ? participantsFromSession(session) : [];
     const program: GroupWorkoutProgram = {
       id: `group-program-${Date.now()}`,
-      groupName: 'קבוצה חדשה',
-      title: 'אימון קבוצתי',
+      sessionId: session?.id,
+      sessionDate: session?.date,
+      sessionTime: session?.time,
+      groupName: session?.title || 'קבוצה חדשה',
+      title: session ? `תוכנית · ${session.title}` : 'אימון קבוצתי',
       description: '',
       coachId: activeUser.id,
       coachName: activeUser.name,
       exercises: [],
       mode: 'LINEAR',
-      participantCount: 12,
+      participantCount: participants.length || session?.maxParticipants || 12,
       participantGroupNames: ['קבוצה 1', 'קבוצה 2', 'קבוצה 3'],
-      participants: [],
+      participants,
       stations: [],
       roundsPerStation: 3,
       transitionSeconds: 30,
@@ -137,6 +172,54 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     };
     onUpdatePrograms([program, ...programs]);
     setSelectedProgramId(program.id);
+    if (session) setSelectedSessionId(session.id);
+  };
+
+  useEffect(() => {
+    if (!initialSessionId) return;
+    setSelectedSessionId(initialSessionId);
+    const existingProgram = programs.find(program => program.sessionId === initialSessionId);
+    if (existingProgram) setSelectedProgramId(existingProgram.id);
+    else createProgram(initialSessionId);
+    onInitialSessionHandled?.();
+  }, [initialSessionId]);
+
+  useEffect(() => {
+    if (!selectedProgram?.sessionId) return;
+    const session = sessions.find(item => item.id === selectedProgram.sessionId);
+    if (!session) return;
+    const participants = participantsFromSession(session, selectedProgram.participants || [], (selectedProgram.stations || []).length || 1);
+    const current = selectedProgram.participants || [];
+    const changed = participants.length !== current.length || participants.some((participant, index) => {
+      const previous = current[index];
+      return !previous || previous.id !== participant.id || previous.name !== participant.name || previous.groupIndex !== participant.groupIndex;
+    });
+    if (!changed && selectedProgram.sessionDate === session.date && selectedProgram.sessionTime === session.time && selectedProgram.groupName === session.title) return;
+    onUpdatePrograms(programs.map(program => program.id === selectedProgram.id ? {
+      ...program,
+      sessionDate: session.date,
+      sessionTime: session.time,
+      groupName: session.title,
+      participantCount: participants.length,
+      participants,
+      updatedAt: new Date().toISOString()
+    } : program));
+  }, [selectedProgram?.id, selectedProgram?.sessionId, sessions, trainees]);
+
+  const linkSelectedProgramToSession = (sessionId: string) => {
+    if (!selectedProgram) return;
+    const session = sessions.find(item => item.id === sessionId && !item.isPersonalTraining);
+    if (!session) return;
+    const participants = participantsFromSession(session, selectedProgram.participants || [], (selectedProgram.stations || []).length || 1);
+    setSelectedSessionId(session.id);
+    updateProgram({
+      sessionId: session.id,
+      sessionDate: session.date,
+      sessionTime: session.time,
+      groupName: session.title,
+      participantCount: participants.length,
+      participants
+    });
   };
 
   const duplicateProgram = (program: GroupWorkoutProgram) => {
@@ -144,6 +227,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     const duplicate: GroupWorkoutProgram = {
       ...program,
       id: `group-program-${Date.now()}`,
+      sessionId: undefined,
+      sessionDate: undefined,
+      sessionTime: undefined,
       groupName: `${program.groupName} – עותק`,
       exercises: program.exercises.map((exercise, index) => ({ ...exercise, id: `group-exercise-${Date.now()}-${index}` })),
       stations: (program.stations || []).map((station, stationIndex) => ({
@@ -202,6 +288,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
 
   const enableRotatingGroups = () => {
     if (!selectedProgram) return;
+    if (selectedProgram.mode === 'ROTATING_GROUPS') return;
     const existingExercises = selectedProgram.exercises;
     const stations: GroupWorkoutStation[] = Array.from({ length: 3 }, (_, index) => ({
       id: `group-station-${Date.now()}-${index}`,
@@ -218,7 +305,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       stations,
       participantCount: selectedProgram.participantCount || 12,
       participantGroupNames: ['קבוצה 1', 'קבוצה 2', 'קבוצה 3'],
-      participants: selectedProgram.participants || [],
+      participants: (selectedProgram.participants || []).map((participant, index) => ({ ...participant, groupIndex: index % 3 })),
       roundsPerStation: selectedProgram.roundsPerStation || 3,
       transitionSeconds: selectedProgram.transitionSeconds ?? 30
     });
@@ -234,33 +321,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     });
   };
 
-  const addParticipant = () => {
-    if (!selectedProgram) return;
-    const selectedTrainee = trainees.find(trainee => trainee.id === selectedTraineeId);
-    const name = selectedTrainee?.name || manualParticipantName.trim();
-    if (!name) return;
-    const participants = selectedProgram.participants || [];
-    const participantId = selectedTrainee?.id || `group-participant-${Date.now()}`;
-    if (participants.some(participant => participant.id === participantId)) return;
-    const groupCounts = (selectedProgram.stations || []).map((_, index) => participants.filter(participant => participant.groupIndex === index).length);
-    const groupIndex = groupCounts.length ? groupCounts.indexOf(Math.min(...groupCounts)) : 0;
-    updateProgram({
-      participants: [...participants, { id: participantId, name, groupIndex }],
-      participantCount: participants.length + 1
-    });
-    setSelectedTraineeId('');
-    setManualParticipantName('');
-  };
-
   const updateParticipantGroup = (participantId: string, groupIndex: number) => {
     if (!selectedProgram) return;
     updateProgram({ participants: (selectedProgram.participants || []).map(participant => participant.id === participantId ? { ...participant, groupIndex } : participant) });
-  };
-
-  const removeParticipant = (participantId: string) => {
-    if (!selectedProgram) return;
-    const participants = (selectedProgram.participants || []).filter(participant => participant.id !== participantId);
-    updateProgram({ participants, participantCount: participants.length });
   };
 
   const storeExerciseMedia = async (exercise: GroupWorkoutExercise, file: File, onStored: (changes: Partial<GroupWorkoutExercise>) => void) => {
@@ -331,8 +394,25 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
             <h2 className="text-2xl font-black">מנהל תוכניות אימון קבוצתיות</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">בנו את סדר האימון, הגדירו זמני עבודה ומנוחה ופתחו מסך נקי להצגה למאמן או על מסך המועדון.</p>
           </div>
-          <button onClick={createProgram} className="flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-black text-white hover:bg-indigo-400"><Plus size={18} /> תוכנית קבוצה חדשה</button>
+          <button onClick={() => createProgram()} className="flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-black text-white hover:bg-indigo-400"><Plus size={18} /> תוכנית קבוצה חדשה</button>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end">
+          <label className="min-w-0 flex-1 text-xs font-black text-slate-800">בחרו אימון מהיומן
+            <select value={selectedSessionId} onChange={event => setSelectedSessionId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-3 text-sm font-bold">
+              <option value="">בחר אימון קבוצתי...</option>
+              {groupSessions.map(session => <option key={session.id} value={session.id}>{session.date} · {session.time} · {session.title} ({session.registeredUsers.length} נרשמים)</option>)}
+            </select>
+          </label>
+          <button onClick={() => {
+            const existing = programs.find(program => program.sessionId === selectedSessionId);
+            if (existing) setSelectedProgramId(existing.id);
+            else createProgram(selectedSessionId);
+          }} disabled={!selectedSessionId} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white disabled:opacity-40">{programs.some(program => program.sessionId === selectedSessionId) ? 'פתח תוכנית קיימת' : 'צור תוכנית לאימון'}</button>
+        </div>
+        <p className="mt-2 text-xs text-indigo-800">רשימת המתאמנים תגיע אוטומטית מההרשמה ביומן ותתעדכן בכל שינוי.</p>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
@@ -343,7 +423,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
               <button key={program.id} onClick={() => setSelectedProgramId(program.id)} className={`w-full rounded-xl border p-3 text-right transition ${selectedProgramId === program.id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
                 <div className="flex items-start justify-between gap-2"><strong className="text-sm text-slate-900">{program.groupName}</strong><span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${program.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>{program.status === 'PUBLISHED' ? 'פורסם' : 'טיוטה'}</span></div>
                 <p className="mt-1 truncate text-xs text-slate-500">{program.title}</p>
-                <p className="mt-2 text-[10px] text-slate-400">{programExerciseCount(program)} תרגילים · {formatDuration(totalProgramSeconds(program))}</p>
+                <p className="mt-2 text-[10px] text-slate-400">{program.sessionDate ? `${program.sessionDate} · ${program.sessionTime} · ` : ''}{programExerciseCount(program)} תרגילים · {formatDuration(totalProgramSeconds(program))}</p>
               </button>
             ))}
             {programs.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500">עדיין לא נבנתה תוכנית קבוצתית.</div>}
@@ -361,6 +441,11 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
+                <label className="md:col-span-2 text-xs font-bold text-slate-700">אימון מקושר ביומן
+                  <select value={selectedProgram.sessionId || ''} onChange={event => linkSelectedProgramToSession(event.target.value)} className="mt-1 w-full rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 font-normal">
+                    <option value="">ללא קישור ליומן</option>{groupSessions.map(session => <option key={session.id} value={session.id}>{session.date} · {session.time} · {session.title} · {session.registeredUsers.length} נרשמים</option>)}
+                  </select>
+                </label>
                 <label className="text-xs font-bold text-slate-700">שם הקבוצה<input value={selectedProgram.groupName} onChange={event => updateProgram({ groupName: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" placeholder="לדוגמה: אימון בנים ערב" /></label>
                 <label className="text-xs font-bold text-slate-700">שם האימון<input value={selectedProgram.title} onChange={event => updateProgram({ title: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" placeholder="לדוגמה: כוח וסבולת – יום ראשון" /></label>
                 <label className="md:col-span-2 text-xs font-bold text-slate-700">דגשים למאמן<textarea value={selectedProgram.description} onChange={event => updateProgram({ description: event.target.value })} rows={2} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" placeholder="מטרת האימון, התאמות ודגשים לקבוצה" /></label>
@@ -377,7 +462,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
                 <label className="text-[10px] font-bold text-slate-600">זמן עבודה משותף<input type="number" min={5} max={600} value={selectedProgram.defaultWorkSeconds} onChange={event => updateProgram({ defaultWorkSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
                 <label className="text-[10px] font-bold text-slate-600">זמן מנוחה משותף<input type="number" min={0} max={300} value={selectedProgram.defaultRestSeconds} onChange={event => updateProgram({ defaultRestSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
                 {selectedProgram.mode === 'ROTATING_GROUPS' && <>
-                  <label className="text-[10px] font-bold text-slate-600">מספר משתתפים<input type="number" min={2} max={100} value={selectedProgram.participantCount || 12} onChange={event => updateProgram({ participantCount: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
+                  <label className="text-[10px] font-bold text-slate-600">מספר נרשמים<input type="number" min={0} max={100} disabled={!!selectedProgram.sessionId} value={selectedProgram.participantCount || 0} onChange={event => updateProgram({ participantCount: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs disabled:bg-slate-100" /></label>
                   <label className="text-[10px] font-bold text-slate-600">סבבים בכל תחנה<input type="number" min={1} max={20} value={selectedProgram.roundsPerStation || 3} onChange={event => updateProgram({ roundsPerStation: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
                   <label className="text-[10px] font-bold text-slate-600">זמן החלפת תחנה<input type="number" min={0} max={300} value={selectedProgram.transitionSeconds ?? 30} onChange={event => updateProgram({ transitionSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
                 </>}
@@ -390,22 +475,18 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
                   <div><h3 className="flex items-center gap-2 text-lg font-black text-slate-900"><UsersRound size={19} className="text-indigo-600" /> תחנות ותתי־קבוצות</h3><p className="mt-1 text-xs text-slate-500">{(selectedProgram.participants || []).length || selectedProgram.participantCount || 0} משתתפים · {(selectedProgram.stations || []).length} תתי־קבוצות · כ־{Math.ceil(((selectedProgram.participants || []).length || selectedProgram.participantCount || 0) / Math.max(1, (selectedProgram.stations || []).length))} אנשים בקבוצה</p></div>
                   <button onClick={addStation} className="flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-black text-white"><Plus size={15} /> הוסף תת־קבוצה / תחנה</button>
                 </div>
-                <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-black text-slate-900">שיבוץ מתאמנים לקבוצות התחלה</h4><p className="mt-1 text-[10px] text-slate-600">ניתן לשנות את השיבוץ גם בזמן האימון; מסך התצוגה יתעדכן בדפדפן הפתוח.</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-black text-emerald-700">{(selectedProgram.participants || []).length} משובצים</span></div>
-                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                    <select value={selectedTraineeId} onChange={event => setSelectedTraineeId(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs"><option value="">בחר מתאמן רשום</option>{trainees.filter(trainee => !(selectedProgram.participants || []).some(participant => participant.id === trainee.id)).map(trainee => <option key={trainee.id} value={trainee.id}>{trainee.name}</option>)}</select>
-                    <input value={manualParticipantName} onChange={event => setManualParticipantName(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs" placeholder="או הקלד שם משתתף אורח" />
-                    <button onClick={addParticipant} disabled={!selectedTraineeId && !manualParticipantName.trim()} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-black text-white disabled:opacity-40">הוסף ושבץ</button>
-                  </div>
-                  <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-3 sm:p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-black text-slate-900">שיבוץ מהיר לפני האימון</h4><p className="mt-1 text-[10px] text-slate-600">המתאמנים נטענים מהיומן. בנייד פשוט לוחצים על הקבוצה הרצויה ליד כל שם.</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-black text-emerald-700">{(selectedProgram.participants || []).length} נרשמים</span></div>
+                  {!selectedProgram.sessionId && <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-800">יש לקשר את התוכנית לאימון ביומן כדי לטעון את הנרשמים אוטומטית.</div>}
+                  {selectedSession && <div className="mb-3 rounded-xl bg-white p-3 text-xs text-slate-700"><strong>{selectedSession.title}</strong> · {selectedSession.date} בשעה {selectedSession.time} · {selectedSession.registeredUsers.length}/{selectedSession.maxParticipants} נרשמים</div>}
+                  <div className="grid gap-2 lg:grid-cols-2">
                     {(selectedProgram.participants || []).map((participant, participantIndex) => (
-                      <div key={participant.id} className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-white p-2">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-700">{participantIndex + 1}</span>
-                        <strong className="min-w-0 flex-1 truncate text-xs text-slate-800">{participant.name}</strong>
-                        <select value={Math.min(participant.groupIndex, Math.max(0, (selectedProgram.stations || []).length - 1))} onChange={event => updateParticipantGroup(participant.id, Number(event.target.value))} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px]">{(selectedProgram.stations || []).map((station, index) => <option key={station.id} value={index}>{(selectedProgram.participantGroupNames || [])[index] || `קבוצה ${index + 1}`}</option>)}</select>
-                        <button onClick={() => removeParticipant(participant.id)} className="rounded p-1 text-red-500"><Trash2 size={13} /></button>
+                      <div key={participant.id} className="rounded-xl border border-emerald-100 bg-white p-2.5">
+                        <div className="mb-2 flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-700">{participantIndex + 1}</span><strong className="min-w-0 flex-1 truncate text-sm text-slate-800">{participant.name}</strong></div>
+                        <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">{(selectedProgram.stations || []).map((station, index) => <button key={station.id} onClick={() => updateParticipantGroup(participant.id, index)} className={`rounded-lg border px-2 py-2 text-[10px] font-black ${participant.groupIndex === index ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>{(selectedProgram.participantGroupNames || [])[index] || `קבוצה ${index + 1}`}</button>)}</div>
                       </div>
                     ))}
+                    {selectedProgram.sessionId && (selectedProgram.participants || []).length === 0 && <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center text-xs text-slate-500 lg:col-span-2">עדיין אין נרשמים לאימון. הרשימה תתעדכן אוטומטית לאחר הרשמה ביומן.</div>}
                   </div>
                 </div>
                 <div className="grid gap-4 2xl:grid-cols-2">
