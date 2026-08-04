@@ -54,7 +54,7 @@ import { RegisterModal } from './components/RegisterModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
 import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
-import { ArrowRight, Dumbbell, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon } from 'lucide-react';
+import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const AUTH_SESSION_KEY = 'gym_auth_session_v1';
 const GROUP_WORKOUT_STORAGE_KEY = 'gym_group_workout_programs_v1';
@@ -145,6 +145,7 @@ export default function App() {
   const [groupWorkoutDisplayId, setGroupWorkoutDisplayId] = useState(getGroupWorkoutDisplayId);
   const [personalWorkoutDisplayId, setPersonalWorkoutDisplayId] = useState(getPersonalWorkoutDisplayId);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
+  const [showTraineeAccessAlert, setShowTraineeAccessAlert] = useState(true);
 
   // Modals state
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -367,6 +368,7 @@ export default function App() {
   const handleSwitchUser = (user: User) => {
     setActiveUser(user);
     setWorkspaceView(null);
+    setShowTraineeAccessAlert(true);
     if (isAuthenticated) {
       localStorage.setItem(AUTH_SESSION_KEY, user.id);
     }
@@ -376,6 +378,7 @@ export default function App() {
     localStorage.removeItem(AUTH_SESSION_KEY);
     setIsAuthenticated(false);
     setWorkspaceView(null);
+    setShowTraineeAccessAlert(true);
   };
 
   // Direct send message callback across dashboards
@@ -414,6 +417,7 @@ export default function App() {
     localStorage.setItem(AUTH_SESSION_KEY, user.id);
     setIsAuthenticated(true);
     setWorkspaceView(null);
+    setShowTraineeAccessAlert(true);
   };
 
   // User details update handler
@@ -509,6 +513,28 @@ export default function App() {
       ? 'workout'
       : 'membership';
 
+  const familyPayer = activeUser.familyPayerId
+    ? users.find(user => user.id === activeUser.familyPayerId)
+    : undefined;
+  const hasValidPayment = activeUser.membershipStatus === MembershipStatus.ACTIVE
+    || Boolean(activeUser.offlinePaymentApproved)
+    || familyPayer?.membershipStatus === MembershipStatus.ACTIVE
+    || Boolean(familyPayer?.offlinePaymentApproved);
+  const healthSignedAt = activeUser.healthDeclarationDate
+    ? new Date(`${activeUser.healthDeclarationDate}T00:00:00`)
+    : null;
+  const healthExpiresAt = healthSignedAt ? new Date(healthSignedAt) : null;
+  if (healthExpiresAt) healthExpiresAt.setFullYear(healthExpiresAt.getFullYear() + 1);
+  const hasValidHealthDeclaration = Boolean(
+    activeUser.healthDeclarationSigned
+    && healthExpiresAt
+    && Number.isFinite(healthExpiresAt.getTime())
+    && Date.now() <= healthExpiresAt.getTime()
+  );
+  const showBlockingAlert = activeUser.role === UserRole.TRAINEE
+    && showTraineeAccessAlert
+    && (!hasValidPayment || !hasValidHealthDeclaration);
+
   return (
     <div className={`app-shell role-${activeUser.role.toLowerCase()} min-h-screen flex flex-col font-sans antialiased`} dir="rtl">
       {/* Visual Header */}
@@ -584,7 +610,14 @@ export default function App() {
         {/* Dynamic Dashboards */}
         <div className="dashboard-stage transition-all duration-300">
           {!workspaceView && (
-            <RoleWorkspaceLanding activeUser={activeUser} onSelect={setWorkspaceView} />
+            <RoleWorkspaceLanding
+              activeUser={activeUser}
+              onSelect={setWorkspaceView}
+              users={users}
+              announcements={announcements}
+              messages={messages}
+              onSendMessage={handleSendMessage}
+            />
           )}
 
           {workspaceView && (
@@ -720,6 +753,39 @@ export default function App() {
         onUpdateDiscountCodes={setDiscountCodes}
         isAdminMode={activeUser.role === UserRole.MANAGER && userToEdit?.id !== activeUser.id}
       />
+
+      {showBlockingAlert && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" dir="rtl" role="dialog" aria-modal="true" aria-labelledby="access-alert-title">
+          <div className="w-full max-w-lg rounded-3xl border border-zinc-700 bg-zinc-950 p-5 text-white shadow-2xl sm:p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black text-amber-400">נדרשת פעולה בחשבון</p>
+                <h2 id="access-alert-title" className="mt-1 text-2xl font-black">לפני שנרשמים לאימון</h2>
+                <p className="mt-2 text-sm leading-6 text-zinc-400">יש להסדיר את הנושאים הבאים. עד להסדרם ההרשמה לאימונים חסומה.</p>
+              </div>
+              <button type="button" onClick={() => setShowTraineeAccessAlert(false)} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-zinc-900 text-zinc-400 hover:text-white" aria-label="סגירה"><X size={18} /></button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {!hasValidPayment && (
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+                  <div className="flex gap-3"><CreditCard className="shrink-0 text-amber-400" size={22} /><div><h3 className="font-black">המנוי אינו משולם או אינו פעיל</h3><p className="mt-1 text-xs leading-5 text-zinc-400">יש לבחור מסלול או להסדיר את התשלום לפני הרשמה לאימון.</p></div></div>
+                  <button type="button" onClick={() => { setWorkspaceView('MY_ACCOUNT'); setShowTraineeAccessAlert(false); }} className="mt-3 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-zinc-950">להסדרת מנוי ותשלום</button>
+                </div>
+              )}
+
+              {!hasValidHealthDeclaration && (
+                <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4">
+                  <div className="flex gap-3"><HeartPulse className="shrink-0 text-rose-400" size={22} /><div><h3 className="font-black">הצהרת הבריאות חסרה או פגה</h3><p className="mt-1 text-xs leading-5 text-zinc-400">תוקף ההצהרה הוא שנה. לאחר מכן נדרשת חתימה מחדש.</p></div></div>
+                  <button type="button" onClick={() => { setUserToEdit(activeUser); setIsSettingsOpen(true); setShowTraineeAccessAlert(false); }} className="mt-3 w-full rounded-xl bg-rose-500 px-4 py-3 text-sm font-black text-white">לחתימה על הצהרת בריאות</button>
+                </div>
+              )}
+            </div>
+
+            <button type="button" onClick={() => setShowTraineeAccessAlert(false)} className="mt-5 w-full rounded-xl border border-zinc-700 px-4 py-3 text-sm font-bold text-zinc-300 hover:bg-zinc-900">הבנתי, אטפל מאוחר יותר</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
