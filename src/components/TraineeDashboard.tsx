@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import {
   User,
@@ -51,6 +51,17 @@ import {
 } from 'lucide-react';
 import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
 import { ExerciseMedia } from './ExerciseMedia';
+import {
+  clearCardcomReturnParams,
+  clearPendingCardcomPayment,
+  getPendingCardcomPayment,
+  isCardcomConfigured,
+  markTransactionProcessed,
+  startCardcomPayment,
+  VerifiedCardcomPayment,
+  verifyPendingCardcomPayment,
+  wasTransactionProcessed
+} from '../data/cardcomPayments';
 
 interface TraineeDashboardProps {
   activeUser: User;
@@ -118,12 +129,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>(initialTab);
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
-  const [membershipPayment, setMembershipPayment] = useState({
-    cardholder: '',
-    cardNumber: '',
-    expiry: '',
-    cvv: ''
-  });
+  const [paymentStarting, setPaymentStarting] = useState(false);
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [showPunchCardModal, setShowPunchCardModal] = useState<boolean>(false);
   const [selectedPunchCardPackage, setSelectedPunchCardPackage] = useState<{ count: number; price: number; months: number }>({
@@ -132,31 +138,27 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     months: 6
   });
 
-  const handlePurchasePunchCard = () => {
-    const months = selectedPunchCardPackage.months;
-    const expiryDate = new Date();
-    expiryDate.setMonth(expiryDate.getMonth() + months);
-    const expiryStr = expiryDate.toISOString().split('T')[0];
-
-    const currentRemaining = activeUser.punchCardRemaining ?? 0;
-    const newRemaining = currentRemaining + selectedPunchCardPackage.count;
-
-    const updatedUsers = users.map(u => {
-      if (u.id === activeUser.id) {
-        return {
-          ...u,
-          membershipType: MembershipType.OPEN_PUNCH_CARD,
-          membershipStatus: MembershipStatus.ACTIVE,
-          membershipExpiry: expiryStr,
-          punchCardRemaining: newRemaining
-        };
-      }
-      return u;
-    });
-
-    onUpdateUsers(updatedUsers);
-    setShowPunchCardModal(false);
-    showFeedback(`רכישת כרטיסיית ${selectedPunchCardPackage.count} אימונים (₪${selectedPunchCardPackage.price}) בוצעה בהצלחה! היתרה המעודכנת: ${newRemaining} ניקובים.`);
+  const handlePurchasePunchCard = async () => {
+    if (!isCardcomConfigured()) {
+      showFeedback('שרת התשלומים טרם הוגדר. לא ניתן לבצע חיוב בשלב זה.', 'error');
+      return;
+    }
+    const purchaseVariant = `PUNCH_${selectedPunchCardPackage.count}` as 'PUNCH_5' | 'PUNCH_10' | 'PUNCH_20';
+    setPaymentStarting(true);
+    try {
+      await startCardcomPayment({
+        userId: activeUser.id,
+        userName: activeUser.name,
+        email: activeUser.email,
+        phone: activeUser.phone,
+        membershipType: MembershipType.OPEN_PUNCH_CARD,
+        mode: 'PRIMARY',
+        purchaseVariant
+      });
+    } catch (error) {
+      setPaymentStarting(false);
+      showFeedback(error instanceof Error ? error.message : 'לא ניתן לפתוח את דף התשלום.', 'error');
+    }
   };
   
   // Notification banner for feedback
@@ -175,6 +177,96 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       setFeedbackMsg(null);
     }, 5000);
   };
+
+  const applyVerifiedMembershipPayment = (
+    purchasedType: MembershipType,
+    mode: 'PRIMARY' | 'ADDON',
+    verified: VerifiedCardcomPayment,
+    purchaseVariant?: 'PUNCH_5' | 'PUNCH_10' | 'PUNCH_20'
+  ) => {
+    onUpdateUsers(users.map(user => {
+      if (user.id !== activeUser.id) return user;
+      if (mode === 'PRIMARY') {
+        const expiryDate = new Date();
+        const isAnnual = purchasedType === MembershipType.GROUP_ANNUAL || purchasedType === MembershipType.OPEN_ANNUAL;
+        const punchCount = purchaseVariant ? Number(purchaseVariant.replace('PUNCH_', '')) : 10;
+        const punchMonths = punchCount === 5 ? 3 : punchCount === 20 ? 12 : 6;
+        expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : purchasedType === MembershipType.OPEN_PUNCH_CARD ? punchMonths : 1));
+        return {
+          ...user,
+          membershipType: purchasedType,
+          membershipStatus: MembershipStatus.ACTIVE,
+          membershipExpiry: expiryDate.toISOString().split('T')[0],
+          punchCardRemaining: purchasedType === MembershipType.OPEN_PUNCH_CARD
+            ? (user.punchCardRemaining || 0) + punchCount
+            : user.punchCardRemaining,
+          isMembershipFrozen: false,
+          membershipFrozenUntil: undefined,
+          isCancelledEarly: false,
+          offlinePaymentApproved: false
+        };
+      }
+
+      const secondaryMemberships = user.secondaryMemberships || [];
+      return {
+        ...user,
+        secondaryMemberships: secondaryMemberships.includes(purchasedType)
+          ? secondaryMemberships
+          : [...secondaryMemberships, purchasedType],
+        nutritionPlanPaid: purchasedType === MembershipType.NUTRITION_PLAN ? true : user.nutritionPlanPaid,
+        requestedWorkoutPlan: purchasedType === MembershipType.WORKOUT_PLAN ? true : user.requestedWorkoutPlan
+      };
+    }));
+
+    onUpdatePayments([{
+      id: `payment-cardcom-${verified.transactionId || verified.lowProfileId}`,
+      traineeId: activeUser.id,
+      traineeName: activeUser.name,
+      amount: verified.amount,
+      date: new Date().toISOString().split('T')[0],
+      status: 'PAID',
+      membershipTypePurchased: purchasedType,
+      paymentMethod: `Cardcom${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
+      isMock: false
+    }, ...payments]);
+  };
+
+  useEffect(() => {
+    const returnStatus = new URLSearchParams(window.location.search).get('cardcom');
+    if (!returnStatus) return;
+    const pending = getPendingCardcomPayment();
+    if (returnStatus === 'failed') {
+      clearCardcomReturnParams();
+      setActiveTab('membership');
+      showFeedback('התשלום לא הושלם. לא בוצע חיוב ולא בוצע שינוי במנוי.', 'error');
+      return;
+    }
+    if (!pending || pending.mode === 'REGISTRATION' || pending.userId !== activeUser.id) return;
+    const purchaseMode: 'PRIMARY' | 'ADDON' = pending.mode;
+
+    setPaymentStarting(true);
+    verifyPendingCardcomPayment(pending)
+      .then(verified => {
+        const transactionKey = verified.transactionId || verified.lowProfileId;
+        if (!wasTransactionProcessed(transactionKey)) {
+          applyVerifiedMembershipPayment(pending.membershipType, purchaseMode, verified, pending.purchaseVariant);
+          markTransactionProcessed(transactionKey);
+        }
+        clearPendingCardcomPayment();
+        clearCardcomReturnParams();
+        setActiveTab('membership');
+        setSelectedMembershipPurchase(null);
+        showFeedback(`${MEMBERSHIP_TYPE_LABELS[pending.membershipType].label} נרכש והופעל בהצלחה.`);
+      })
+      .catch(error => {
+        clearCardcomReturnParams();
+        setActiveTab('membership');
+        showFeedback(error instanceof Error ? error.message : 'לא ניתן לאמת את התשלום.', 'error');
+      })
+      .finally(() => setPaymentStarting(false));
+    // The Cardcom return is intentionally processed once when the dashboard mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Helper: check if active trainee has booked a class/open gym
   const isBooked = (session: TrainingSession) => session.registeredUsers.includes(activeUser.id);
@@ -410,72 +502,29 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const openMembershipCheckout = (membershipType: MembershipType, mode: 'PRIMARY' | 'ADDON') => {
     setSelectedMembershipPurchase(membershipType);
     setMembershipPurchaseMode(mode);
-    setMembershipPayment({ cardholder: '', cardNumber: '', expiry: '', cvv: '' });
   };
 
-  const handleMembershipCheckout = (event: React.FormEvent) => {
+  const handleMembershipCheckout = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedMembershipPurchase) return;
-
-    const cardDigits = membershipPayment.cardNumber.replace(/\D/g, '');
-    if (
-      !membershipPayment.cardholder.trim()
-      || cardDigits.length < 12
-      || !/^\d{2}\/\d{2}$/.test(membershipPayment.expiry)
-      || !/^\d{3,4}$/.test(membershipPayment.cvv)
-    ) {
-      showFeedback('יש להשלים פרטי אשראי תקינים לתשלום הבדיקה.', 'error');
+    if (!isCardcomConfigured()) {
+      showFeedback('שרת התשלומים טרם הוגדר. יש להשלים את כתובת השרת לפני ביצוע חיוב.', 'error');
       return;
     }
-
-    const purchasedType = selectedMembershipPurchase;
-    const expiryDate = new Date();
-    const isAnnual = purchasedType === MembershipType.GROUP_ANNUAL || purchasedType === MembershipType.OPEN_ANNUAL;
-    expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : purchasedType === MembershipType.OPEN_PUNCH_CARD ? 6 : 1));
-
-    onUpdateUsers(users.map(user => {
-      if (user.id !== activeUser.id) return user;
-      if (membershipPurchaseMode === 'PRIMARY') {
-        return {
-          ...user,
-          membershipType: purchasedType,
-          membershipStatus: MembershipStatus.ACTIVE,
-          membershipExpiry: expiryDate.toISOString().split('T')[0],
-          punchCardRemaining: purchasedType === MembershipType.OPEN_PUNCH_CARD
-            ? (user.punchCardRemaining || 0) + 10
-            : user.punchCardRemaining,
-          isMembershipFrozen: false,
-          membershipFrozenUntil: undefined,
-          isCancelledEarly: false,
-          offlinePaymentApproved: false
-        };
-      }
-
-      const secondaryMemberships = user.secondaryMemberships || [];
-      return {
-        ...user,
-        secondaryMemberships: secondaryMemberships.includes(purchasedType)
-          ? secondaryMemberships
-          : [...secondaryMemberships, purchasedType],
-        nutritionPlanPaid: purchasedType === MembershipType.NUTRITION_PLAN ? true : user.nutritionPlanPaid,
-        requestedWorkoutPlan: purchasedType === MembershipType.WORKOUT_PLAN ? true : user.requestedWorkoutPlan
-      };
-    }));
-
-    onUpdatePayments([{
-      id: `payment-membership-${Date.now()}`,
-      traineeId: activeUser.id,
-      traineeName: activeUser.name,
-      amount: MEMBERSHIP_PRICES[purchasedType],
-      date: new Date().toISOString().split('T')[0],
-      status: 'PAID',
-      membershipTypePurchased: purchasedType,
-      paymentMethod: 'כרטיס אשראי — תשלום MOCK',
-      isMock: true
-    }, ...payments]);
-
-    showFeedback(`${MEMBERSHIP_TYPE_LABELS[purchasedType].label} נרכש והוגדר בחשבון בהצלחה.`);
-    setSelectedMembershipPurchase(null);
+    setPaymentStarting(true);
+    try {
+      await startCardcomPayment({
+        userId: activeUser.id,
+        userName: activeUser.name,
+        email: activeUser.email,
+        phone: activeUser.phone,
+        membershipType: selectedMembershipPurchase,
+        mode: membershipPurchaseMode
+      });
+    } catch (error) {
+      setPaymentStarting(false);
+      showFeedback(error instanceof Error ? error.message : 'לא ניתן לפתוח את דף התשלום.', 'error');
+    }
   };
 
   // REQUEST WORKOUT PLAN (For non-Open Gym subscribers or upon request)
@@ -488,40 +537,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   const handlePayWorkoutPlan = () => {
-    const amount = MEMBERSHIP_PRICES[MembershipType.WORKOUT_PLAN];
-    if (!confirm(`האם לבצע תשלום בסך ${amount} ₪ עבור תוכנית אימון אישית?`)) return;
-
-    const secondaryMemberships = activeUser.secondaryMemberships || [];
-    onUpdateUsers(users.map(user => user.id === activeUser.id ? {
-      ...user,
-      requestedWorkoutPlan: true,
-      secondaryMemberships: secondaryMemberships.includes(MembershipType.WORKOUT_PLAN)
-        ? secondaryMemberships
-        : [...secondaryMemberships, MembershipType.WORKOUT_PLAN]
-    } : user));
-    onUpdatePayments([{
-      id: `payment-workout-${Date.now()}`,
-      traineeId: activeUser.id,
-      traineeName: activeUser.name,
-      amount,
-      date: new Date().toISOString().split('T')[0],
-      status: 'PAID',
-      membershipTypePurchased: MembershipType.WORKOUT_PLAN,
-      paymentMethod: 'כרטיס אשראי — סימולציה',
-      isMock: true
-    }, ...payments]);
-    showFeedback('התשלום התקבל. הבקשה לבניית תוכנית האימון הועברה למאמן.');
+    setActiveTab('membership');
+    openMembershipCheckout(MembershipType.WORKOUT_PLAN, 'ADDON');
   };
 
   // PAY FOR NUTRITION PLAN (150 ILS individual fee)
   const handlePayNutritionPlan = () => {
-    if (confirm('האם לבצע תשלום בסך 150 ₪ עבור תוכנית תזונה מותאמת אישית שנבנית ע"י המאמן?')) {
-      if (onUpdateUsers) {
-        const updatedUsers = users.map(u => u.id === activeUser.id ? { ...u, nutritionPlanPaid: true } : u);
-        onUpdateUsers(updatedUsers);
-      }
-      showFeedback('התשלום בסך 150 ₪ עבור תוכנית התזונה התקבל בהצלחה! 💳 המאמן קיבל הודעה להכנת התפריט עבורך.');
-    }
+    setActiveTab('membership');
+    openMembershipCheckout(MembershipType.NUTRITION_PLAN, 'ADDON');
   };
 
   // BOOK / JOIN WAITLIST (Section 5.1 & 5.2)
@@ -1916,7 +1939,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           </div>
         )}
 
-        {/* MEMBERSHIP MANAGEMENT & MOCK CHECKOUT */}
+        {/* MEMBERSHIP MANAGEMENT & CARDCOM CHECKOUT */}
         {activeTab === 'membership' && (
           <div className="space-y-6">
             <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
@@ -1927,7 +1950,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <div>
                   <span className="text-[11px] text-amber-300 font-bold">המנוי שלי</span>
                   <h3 className="text-2xl font-black mt-1">ניהול ובחירת מסלולים</h3>
-                  <p className="text-xs text-slate-400 mt-2">שינוי או רכישת מסלול נכנסים לתוקף רק לאחר השלמת תשלום MOCK.</p>
+                  <p className="text-xs text-slate-400 mt-2">שינוי או רכישת מסלול נכנסים לתוקף רק לאחר אימות התשלום מול Cardcom.</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-3 min-w-52">
                   <div className="flex justify-between gap-4 text-xs">
@@ -1954,27 +1977,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <strong className="text-xl text-amber-800">₪{MEMBERSHIP_PRICES[selectedMembershipPurchase]}</strong>
                 </div>
                 <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
-                  <label className="grid gap-1 text-xs font-bold text-slate-700">
-                    שם בעל הכרטיס
-                    <input className="rounded-xl border border-slate-200 p-3 font-normal" value={membershipPayment.cardholder} onChange={event => setMembershipPayment(current => ({ ...current, cardholder: event.target.value }))} autoComplete="cc-name" />
-                  </label>
-                  <label className="grid gap-1 text-xs font-bold text-slate-700">
-                    מספר כרטיס
-                    <input className="rounded-xl border border-slate-200 p-3 font-normal" inputMode="numeric" value={membershipPayment.cardNumber} onChange={event => setMembershipPayment(current => ({ ...current, cardNumber: event.target.value }))} placeholder="4580 0000 0000 0000" autoComplete="cc-number" />
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="grid gap-1 text-xs font-bold text-slate-700">
-                      תוקף
-                      <input className="rounded-xl border border-slate-200 p-3 font-normal" value={membershipPayment.expiry} onChange={event => setMembershipPayment(current => ({ ...current, expiry: event.target.value }))} placeholder="12/30" autoComplete="cc-exp" />
-                    </label>
-                    <label className="grid gap-1 text-xs font-bold text-slate-700">
-                      CVV
-                      <input className="rounded-xl border border-slate-200 p-3 font-normal" inputMode="numeric" maxLength={4} value={membershipPayment.cvv} onChange={event => setMembershipPayment(current => ({ ...current, cvv: event.target.value }))} placeholder="123" autoComplete="cc-csc" />
-                    </label>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
+                    התשלום מתבצע בעמוד המאובטח של Cardcom. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
                   </div>
-                  <p className="text-[10px] text-slate-500">סביבת בדיקה בלבד — לא נשמרים פרטי אשראי ולא מתבצע חיוב אמיתי.</p>
-                  <button type="submit" className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2">
-                    <CreditCard size={17} /> תשלום MOCK והפעלת המסלול
+                  {!isCardcomConfigured() && (
+                    <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                      שירות התשלומים עדיין אינו מחובר לשרת הציבורי. לא יתבצע חיוב עד להשלמת הגדרת השרת.
+                    </p>
+                  )}
+                  <button type="submit" disabled={paymentStarting || !isCardcomConfigured()} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
+                    <CreditCard size={17} /> {paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח ב־Cardcom'}
                   </button>
                 </form>
               </section>
@@ -2276,8 +2288,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-600 space-y-1">
-              <div>💳 <strong>אופן תשלום:</strong> חיוב מיידי MOCK באשראי שמור במערכת.</div>
-              <div>✅ היתרה תתעדכן מיידית בחשבונך באפליקציה לאחר האישור.</div>
+              <div>💳 <strong>אופן תשלום:</strong> מעבר לעמוד התשלום המאובטח של Cardcom.</div>
+              <div>✅ היתרה תתעדכן רק לאחר אימות העסקה מול Cardcom.</div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -2289,9 +2301,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </button>
               <button
                 onClick={handlePurchasePunchCard}
-                className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition flex items-center gap-1.5"
+                disabled={paymentStarting || !isCardcomConfigured()}
+                className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <span>אשר ורכוש כרטיסייה (₪{selectedPunchCardPackage.price})</span>
+                <span>{paymentStarting ? 'פותח תשלום…' : `מעבר לתשלום Cardcom (₪${selectedPunchCardPackage.price})`}</span>
               </button>
             </div>
           </div>

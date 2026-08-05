@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -22,6 +22,16 @@ import {
   User,
   UserRole
 } from '../types';
+import {
+  clearCardcomReturnParams,
+  clearPendingCardcomPayment,
+  getPendingCardcomPayment,
+  isCardcomConfigured,
+  markTransactionProcessed,
+  startCardcomPayment,
+  verifyPendingCardcomPayment,
+  wasTransactionProcessed
+} from '../data/cardcomPayments';
 
 interface AuthGatewayProps {
   users: User[];
@@ -69,12 +79,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
   const [healthApproved, setHealthApproved] = useState(false);
   const [agreementApproved, setAgreementApproved] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
-  const [paymentDetails, setPaymentDetails] = useState({
-    cardholder: '',
-    cardNumber: '',
-    expiry: '',
-    cvv: ''
-  });
+  const [paymentStarting, setPaymentStarting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -87,6 +92,58 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
     resetMessages();
     setScreen(next);
   };
+
+  useEffect(() => {
+    const returnStatus = new URLSearchParams(window.location.search).get('cardcom');
+    if (!returnStatus) return;
+    const pending = getPendingCardcomPayment();
+    if (!pending || pending.mode !== 'REGISTRATION') return;
+    setScreen('register');
+    setRegisterStep(4);
+
+    if (returnStatus === 'failed') {
+      clearCardcomReturnParams();
+      setError('התשלום לא הושלם. החשבון לא נפתח ולא בוצע חיוב.');
+      return;
+    }
+
+    setPaymentStarting(true);
+    verifyPendingCardcomPayment(pending)
+      .then(verified => {
+        const transactionKey = verified.transactionId || verified.lowProfileId;
+        if (wasTransactionProcessed(transactionKey)) {
+          clearPendingCardcomPayment();
+          clearCardcomReturnParams();
+          setNotice('התשלום כבר נקלט בהצלחה. ניתן להיכנס לחשבון.');
+          setScreen('login');
+          return;
+        }
+        const draft = pending.registrationDraft as { user?: User } | undefined;
+        if (!draft?.user || draft.user.id !== pending.userId) throw new Error('פרטי ההרשמה לא נמצאו במכשיר זה. יש לפנות למועדון עם אישור העסקה.');
+        const payment: Payment = {
+          id: `payment-cardcom-${transactionKey}`,
+          traineeId: draft.user.id,
+          traineeName: draft.user.name,
+          amount: verified.amount,
+          date: new Date().toISOString().split('T')[0],
+          status: 'PAID',
+          membershipTypePurchased: verified.membershipType,
+          paymentMethod: `Cardcom${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
+          isMock: false
+        };
+        markTransactionProcessed(transactionKey);
+        clearPendingCardcomPayment();
+        clearCardcomReturnParams();
+        onRegister(draft.user, payment);
+      })
+      .catch(paymentError => {
+        clearCardcomReturnParams();
+        setError(paymentError instanceof Error ? paymentError.message : 'לא ניתן לאמת את התשלום מול Cardcom.');
+      })
+      .finally(() => setPaymentStarting(false));
+    // Process the hosted-payment return once when the unauthenticated gateway mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const sendLoginOtp = () => {
     resetMessages();
@@ -190,12 +247,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
     setRegisterStep(4);
   };
 
-  const handleRegistrationPayment = (event: React.FormEvent) => {
+  const handleRegistrationPayment = async (event: React.FormEvent) => {
     event.preventDefault();
     resetMessages();
-    const digits = paymentDetails.cardNumber.replace(/\D/g, '');
-    if (!paymentDetails.cardholder.trim() || digits.length < 12 || !/^\d{2}\/\d{2}$/.test(paymentDetails.expiry) || !/^\d{3,4}$/.test(paymentDetails.cvv)) {
-      setError('יש להשלים פרטי אשראי תקינים לביצוע תשלום הבדיקה.');
+    if (!isCardcomConfigured()) {
+      setError('שרת התשלומים טרם הוגדר. לא ניתן לבצע חיוב בשלב זה.');
       return;
     }
 
@@ -230,18 +286,21 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
     };
-    const payment: Payment = {
-      id: `payment-registration-${now}`,
-      traineeId: newUser.id,
-      traineeName: newUser.name,
-      amount: MEMBERSHIP_PRICES[selectedPlan],
-      date: new Date().toISOString().split('T')[0],
-      status: 'PAID',
-      membershipTypePurchased: selectedPlan,
-      paymentMethod: 'כרטיס אשראי — תשלום MOCK',
-      isMock: true
-    };
-    onRegister(newUser, payment);
+    setPaymentStarting(true);
+    try {
+      await startCardcomPayment({
+        userId: newUser.id,
+        userName: newUser.name,
+        email: newUser.email,
+        phone: newUser.phone,
+        membershipType: selectedPlan,
+        mode: 'REGISTRATION',
+        registrationDraft: { user: newUser }
+      });
+    } catch (paymentError) {
+      setPaymentStarting(false);
+      setError(paymentError instanceof Error ? paymentError.message : 'לא ניתן לפתוח את דף התשלום.');
+    }
   };
 
   if (screen === 'welcome') {
@@ -373,17 +432,12 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
                   ))}
                 </div>
                 <div className="auth-checkout-summary">
-                  <span>לתשלום כעת (MOCK)</span>
+                  <span>לתשלום כעת</span>
                   <strong>₪{MEMBERSHIP_PRICES[selectedPlan]}</strong>
                 </div>
-                <label>שם בעל הכרטיס<input value={paymentDetails.cardholder} onChange={event => setPaymentDetails(current => ({ ...current, cardholder: event.target.value }))} autoComplete="cc-name" /></label>
-                <label>מספר כרטיס<input inputMode="numeric" value={paymentDetails.cardNumber} onChange={event => setPaymentDetails(current => ({ ...current, cardNumber: event.target.value }))} placeholder="4580 0000 0000 0000" autoComplete="cc-number" /></label>
-                <div className="auth-payment-row">
-                  <label>תוקף<input value={paymentDetails.expiry} onChange={event => setPaymentDetails(current => ({ ...current, expiry: event.target.value }))} placeholder="12/30" autoComplete="cc-exp" /></label>
-                  <label>CVV<input inputMode="numeric" maxLength={4} value={paymentDetails.cvv} onChange={event => setPaymentDetails(current => ({ ...current, cvv: event.target.value }))} placeholder="123" autoComplete="cc-csc" /></label>
-                </div>
-                <small className="auth-mock-note">סביבת בדיקה בלבד — לא מתבצע חיוב אמיתי.</small>
-                <button className="auth-primary" type="submit"><CreditCard size={18} /> תשלום והפעלת מנוי</button>
+                <small className="auth-mock-note">פרטי האשראי יוזנו רק בעמוד המאובטח של Cardcom ולא יישמרו ב־BALY.</small>
+                {!isCardcomConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}
+                <button className="auth-primary" type="submit" disabled={paymentStarting || !isCardcomConfigured()}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>
                 <button className="auth-text-link" type="button" onClick={() => setRegisterStep(3)}>חזרה לפרטים האישיים</button>
               </form>
             )}
