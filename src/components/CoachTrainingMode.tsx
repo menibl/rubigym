@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Clock3, FastForward, MonitorPlay, Pause, Play, RotateCcw, UsersRound } from 'lucide-react';
 import { GroupWorkoutLiveStatus, getGroupWorkoutStatus, sendGroupWorkoutCommand, subscribeToGroupWorkoutStatus } from '../data/groupWorkoutRemote';
 import { GroupWorkoutProgram, TrainingSession, User, UserRole, WorkoutPlan } from '../types';
+import { activateClubDisplay, clubDisplayUrl } from '../data/clubDisplayRemote';
 
 interface CoachTrainingModeProps {
   activeUser: User;
@@ -60,9 +61,13 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
     ? relevantSessions
     : relevantSessions.filter(session => session.date === selectedScheduleDate);
 
-  const openGroupDisplay = (program: GroupWorkoutProgram) => {
-    const url = `${window.location.origin}${window.location.pathname}#group-workout-display=${encodeURIComponent(program.id)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const openGroupDisplay = async (program: GroupWorkoutProgram) => {
+    try {
+      await activateClubDisplay(program);
+      window.alert('האימון נשלח למסך המועדון הקבוע.');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'לא ניתן להפעיל את מסך המועדון.');
+    }
   };
 
   const personalLibrary = useMemo(() => workoutPlans.filter(plan => !plan.sessionId && plan.exercises.length > 0), [workoutPlans]);
@@ -162,7 +167,7 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
           {personalPlan && <button onClick={() => window.open(`${window.location.origin}${window.location.pathname}#personal-workout-display=${encodeURIComponent(personalPlan.id)}`, '_blank', 'noopener,noreferrer')} className="flex w-full min-h-11 items-center justify-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-black text-white"><MonitorPlay size={16} /> פתח תצוגת אימון</button>}
         </div> : <>
           {program ? <div className="mt-3 space-y-3">
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-black text-indigo-900">{program.title}</p><p className="mt-1 text-[10px] text-indigo-700">{program.mode === 'ROTATING_GROUPS' ? `${(program.stations || []).length} קבוצות · ${(program.stations || []).reduce((sum, station) => sum + station.exercises.length, 0)} תרגילים` : `${program.exercises.length} תרגילים`}</p></div><button onClick={() => openGroupDisplay(program)} disabled={program.status !== 'PUBLISHED'} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40"><MonitorPlay size={15} /> מסך אימון</button></div></div>
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-black text-indigo-900">{program.title}</p><p className="mt-1 text-[10px] text-indigo-700">{program.mode === 'ROTATING_GROUPS' ? `${(program.stations || []).length} קבוצות · ${(program.stations || []).reduce((sum, station) => sum + station.exercises.length, 0)} תרגילים` : `${program.exercises.length} תרגילים`}</p></div><button onClick={() => void openGroupDisplay(program)} disabled={program.status !== 'PUBLISHED'} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40"><MonitorPlay size={15} /> הצג במסך המועדון</button></div><a href={clubDisplayUrl()} target="_blank" rel="noreferrer" className="mt-2 block text-left text-[10px] font-bold text-indigo-700 underline">פתח את כתובת המסך הקבועה במחשב זה</a></div>
             {program.mode === 'ROTATING_GROUPS' && (program.participants || []).length > 0 && <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><div className="mb-2 flex items-center gap-2"><UsersRound size={15} className="text-emerald-700" /><p className="text-xs font-black text-emerald-900">שיבוץ מהיר לקבוצות</p></div><div className="space-y-2">{(program.participants || []).map(participant => <div key={participant.id} className="rounded-xl bg-white p-2"><strong className="block truncate text-xs text-slate-800">{participant.name}</strong><div className="mt-2 grid grid-cols-2 gap-1.5">{(program.stations || []).map((station, index) => <button key={station.id} onClick={() => updateParticipantGroup(program, participant.id, index)} className={`rounded-lg px-2 py-2 text-[10px] font-black ${participant.groupIndex === index ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{(program.participantGroupNames || [])[index] || `קבוצה ${index + 1}`}</button>)}</div></div>)}</div></div>}
             <div className="grid gap-2 rounded-xl border border-indigo-100 bg-white p-3 sm:grid-cols-[1fr_auto]">
               <select value={selectedLibraryItems[session.id] || groupLibrary[0]?.id || ''} onChange={event => setSelectedLibraryItems(current => ({ ...current, [session.id]: event.target.value }))} disabled={groupLibrary.length === 0} className="min-h-11 rounded-xl border border-indigo-200 bg-white px-3 text-xs font-bold text-slate-800 disabled:opacity-50">

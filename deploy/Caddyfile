@@ -1,0 +1,20 @@
+{
+  email {$ACME_EMAIL}
+  admin 127.0.0.1:2019
+}
+
+{$APP_DOMAIN} {
+  encode zstd gzip
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://images.unsplash.com https://ui-avatars.com; media-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; connect-src 'self'; worker-src 'self' blob:; form-action 'self' https://secure.cardcom.solutions; upgrade-insecure-requests"
+    -Server
+  }
+
+  reverse_proxy app:8080 {
+    health_uri /healthz
+    health_interval 30s
+    health_timeout 5s
+  }
+}

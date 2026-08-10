@@ -1,4 +1,5 @@
 const CARDCOM_BASE_URL = 'https://secure.cardcom.solutions/api/v11';
+const liveDisplayState = { program: null, commands: new Map(), statuses: new Map() };
 
 const membershipPrices = {
   GROUP_MONTHLY: 350,
@@ -118,12 +119,16 @@ const corsHeaders = (request, env) => {
   return allowed.includes(origin) ? {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
     'Vary': 'Origin'
   } : {};
 };
 
 const requirePaymentEnv = env => {
+  if (String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
+    if (!env.PAYMENT_SIGNING_SECRET || !env.PUBLIC_APP_URL) throw new Error('DEMO_PAYMENT_NOT_CONFIGURED');
+    return;
+  }
   if (!env.CARDCOM_TERMINAL_NUMBER || !env.CARDCOM_API_NAME || !env.PAYMENT_SIGNING_SECRET || !env.PUBLIC_APP_URL) {
     throw new Error('PAYMENT_NOT_CONFIGURED');
   }
@@ -151,6 +156,13 @@ const handleCreatePayment = async (request, env) => {
   catch { return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env)); }
   const { amount } = purchase;
   const returnValue = await createSignedOrder(body, env);
+  if (String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
+    const checkoutUrl = new URL('/demo-checkout', request.url);
+    checkoutUrl.searchParams.set('token', returnValue);
+    checkoutUrl.searchParams.set('amount', String(amount));
+    checkoutUrl.searchParams.set('label', purchase.label);
+    return json({ url: checkoutUrl.toString(), lowProfileId: returnValue }, 200, corsHeaders(request, env));
+  }
   const appUrl = new URL(env.PUBLIC_APP_URL);
   appUrl.searchParams.set('cardcom', 'success');
   const failedUrl = new URL(env.PUBLIC_APP_URL);
@@ -186,6 +198,19 @@ const handleVerifyPayment = async (request, env) => {
   requirePaymentEnv(env);
   const { lowProfileId } = await request.json();
   if (!lowProfileId) return json({ message: 'חסר מזהה עסקה.' }, 400, corsHeaders(request, env));
+  if (String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
+    const order = await verifySignedOrder(lowProfileId, env);
+    return json({
+      success: true,
+      lowProfileId,
+      membershipType: order.m,
+      mode: order.d,
+      purchaseVariant: order.v,
+      amount: order.a,
+      transactionId: `demo-${order.o}`,
+      last4Digits: '1111'
+    }, 200, corsHeaders(request, env));
+  }
   const { result, order } = await getLowProfileResult(lowProfileId, env);
   return json({
     success: true,
@@ -215,6 +240,54 @@ const handleApi = async (request, env, url) => {
   const headers = corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   try {
+    if (url.pathname === '/api/live-display/active' && request.method === 'GET') {
+      const program = env.STATE_STORE ? await env.STATE_STORE.getActiveProgram(env.CLUB_ID || 'baly-wellness') : liveDisplayState.program;
+      return program ? json({ program }, 200, headers) : new Response(null, { status: 204, headers });
+    }
+    if (url.pathname === '/api/live-display/active' && request.method === 'PUT') {
+      const body = await request.json();
+      if (!body?.program?.id) return json({ message: 'Invalid program' }, 400, headers);
+      if (env.STATE_STORE) await env.STATE_STORE.setActiveProgram(env.CLUB_ID || 'baly-wellness', body.program);
+      else liveDisplayState.program = body.program;
+      return json({ ok: true, programId: body.program.id }, 200, headers);
+    }
+    const commandMatch = url.pathname.match(/^\/api\/live-display\/([^/]+)\/commands$/);
+    if (commandMatch && request.method === 'GET') {
+      const programId = decodeURIComponent(commandMatch[1]);
+      return json(env.STATE_STORE ? await env.STATE_STORE.getCommand(programId) : liveDisplayState.commands.get(programId) || null, 200, headers);
+    }
+    if (commandMatch && request.method === 'POST') {
+      const command = await request.json();
+      if (!command?.id || !command?.action) return json({ message: 'Invalid command' }, 400, headers);
+      const programId = decodeURIComponent(commandMatch[1]);
+      if (env.STATE_STORE) await env.STATE_STORE.setCommand(programId, command); else liveDisplayState.commands.set(programId, command);
+      return json({ ok: true }, 200, headers);
+    }
+    const statusMatch = url.pathname.match(/^\/api\/live-display\/([^/]+)\/status$/);
+    if (statusMatch && request.method === 'GET') {
+      const programId = decodeURIComponent(statusMatch[1]);
+      const status = env.STATE_STORE ? await env.STATE_STORE.getStatus(programId) : liveDisplayState.statuses.get(programId);
+      return status ? json(status, 200, headers) : new Response(null, { status: 204, headers });
+    }
+    if (statusMatch && request.method === 'PUT') {
+      const status = await request.json();
+      const programId = decodeURIComponent(statusMatch[1]);
+      if (env.STATE_STORE) await env.STATE_STORE.setStatus(programId, status); else liveDisplayState.statuses.set(programId, status);
+      return json({ ok: true }, 200, headers);
+    }
+    if (url.pathname === '/api/state' && request.method === 'GET') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      if (!env.STATE_SYNC_TOKEN || request.headers.get('Authorization') !== `Bearer ${env.STATE_SYNC_TOKEN}`) return json({ message: 'Unauthorized' }, 401, headers);
+      const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
+      return state ? json(state, 200, headers) : new Response(null, { status: 204, headers });
+    }
+    if (url.pathname === '/api/state' && request.method === 'PUT') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      if (!env.STATE_SYNC_TOKEN || request.headers.get('Authorization') !== `Bearer ${env.STATE_SYNC_TOKEN}`) return json({ message: 'Unauthorized' }, 401, headers);
+      const body = await request.json();
+      const result = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', body.payload, body.expectedRevision);
+      return result.conflict ? json(result, 409, headers) : json(result, 200, headers);
+    }
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/create') return await handleCreatePayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/verify') return await handleVerifyPayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/webhook') return await handleWebhook(request, env);
@@ -229,6 +302,22 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) return handleApi(request, env, url);
+    if (url.pathname === '/demo-checkout' && String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
+      try {
+        const token = url.searchParams.get('token');
+        const order = await verifySignedOrder(token, env);
+        const amount = Number(url.searchParams.get('amount') || order.a);
+        const label = url.searchParams.get('label') || 'רכישה ב־BALY WELLNESS';
+        const successUrl = new URL(env.PUBLIC_APP_URL);
+        successUrl.searchParams.set('cardcom', 'success');
+        const cancelUrl = new URL(env.PUBLIC_APP_URL);
+        cancelUrl.searchParams.set('cardcom', 'failed');
+        const html = `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>תשלום דמו</title><style>body{margin:0;background:#0b0d12;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh}.card{width:min(92vw,440px);background:#171a22;border:1px solid #333846;border-radius:24px;padding:28px;box-shadow:0 24px 70px #0008}h1{margin:0 0 8px;color:#d7b765}.demo{background:#442b05;color:#ffd78a;padding:10px;border-radius:12px;font-weight:700}.sum{font-size:42px;font-weight:900;margin:24px 0}button,a{display:block;width:100%;box-sizing:border-box;text-align:center;border:0;border-radius:14px;padding:15px;margin-top:10px;font-size:16px;font-weight:900;text-decoration:none}.pay{background:#d7b765;color:#111}.cancel{background:#272b35;color:#ddd}</style><main class="card"><h1>BALY WELLNESS</h1><p>${label.replace(/[<>&"']/g, '')}</p><div class="demo">סביבת דמו בלבד — לא מתבצע חיוב אמיתי</div><div class="sum">₪${amount}</div><button class="pay" onclick="location.href='${successUrl.toString()}'">אישור תשלום דמו</button><a class="cancel" href="${cancelUrl.toString()}">ביטול</a></main></html>`;
+        return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+      } catch {
+        return new Response('Invalid demo payment', { status: 400 });
+      }
+    }
     const assetRequest = url.pathname === '/'
       ? new Request(new URL('/index.html', url), request)
       : request;

@@ -1,0 +1,10 @@
+.git
+.github
+.openai
+node_modules
+dist
+docs/rendered-rules
+*.log
+.env*
+deploy/*.env
+deploy/secrets

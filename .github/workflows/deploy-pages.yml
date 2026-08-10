@@ -32,6 +32,8 @@ jobs:
 
       - name: Build public site
         run: npm run build:pages
+        env:
+          VITE_PAYMENT_API_URL: ${{ vars.PAYMENT_API_URL }}
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

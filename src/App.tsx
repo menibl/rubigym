@@ -53,11 +53,13 @@ import { LoginModal } from './components/LoginModal';
 import { RegisterModal } from './components/RegisterModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
+import { ClubWorkoutDisplay } from './components/ClubWorkoutDisplay';
 import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const AUTH_SESSION_KEY = 'gym_auth_session_v1';
 const GROUP_WORKOUT_STORAGE_KEY = 'gym_group_workout_programs_v1';
+const isClubWorkoutDisplay = () => window.location.hash === '#club-workout-display';
 
 const getGroupWorkoutDisplayId = () => {
   const match = window.location.hash.match(/^#group-workout-display=(.+)$/);
@@ -143,6 +145,7 @@ export default function App() {
     getLocalStorageData(GROUP_WORKOUT_STORAGE_KEY, [])
   );
   const [groupWorkoutDisplayId, setGroupWorkoutDisplayId] = useState(getGroupWorkoutDisplayId);
+  const [clubWorkoutDisplay, setClubWorkoutDisplay] = useState(isClubWorkoutDisplay);
   const [personalWorkoutDisplayId, setPersonalWorkoutDisplayId] = useState(getPersonalWorkoutDisplayId);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
   const [showTraineeAccessAlert, setShowTraineeAccessAlert] = useState(true);
@@ -259,6 +262,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       setGroupWorkoutDisplayId(getGroupWorkoutDisplayId());
+      setClubWorkoutDisplay(isClubWorkoutDisplay());
       setPersonalWorkoutDisplayId(getPersonalWorkoutDisplayId());
     };
     const handleStorage = (event: StorageEvent) => {
@@ -431,6 +435,8 @@ export default function App() {
     setIsSettingsOpen(false);
     setUserToEdit(null);
   };
+
+  if (clubWorkoutDisplay) return <ClubWorkoutDisplay />;
 
   if (groupWorkoutDisplayId) {
     return <GroupWorkoutDisplay program={groupWorkoutPrograms.find(program => program.id === groupWorkoutDisplayId)} />;
