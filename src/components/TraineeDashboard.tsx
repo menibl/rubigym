@@ -139,6 +139,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [selectedWorkoutDay, setSelectedWorkoutDay] = useState(1);
   const [demoExercise, setDemoExercise] = useState<Exercise | null>(null);
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [bookingView, setBookingView] = useState<'DAY' | 'WEEK'>('DAY');
   const [showPunchCardModal, setShowPunchCardModal] = useState<boolean>(false);
   const [selectedPunchCardPackage, setSelectedPunchCardPackage] = useState<{ count: number; price: number; months: number }>({
     count: 10,
@@ -1388,6 +1389,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {/* TAB 1: CLASSES BOOKING */}
         {activeTab === 'classes' && (
           <div className="space-y-6">
+            <div className="booking-view-toggle" dir="rtl">
+              <button type="button" className={bookingView === 'DAY' ? 'active' : ''} onClick={() => setBookingView('DAY')}>יום</button>
+              <button type="button" className={bookingView === 'WEEK' ? 'active' : ''} onClick={() => setBookingView('WEEK')}>שבוע</button>
+            </div>
+            {bookingView === 'DAY' && <>
             <div className="mobile-booking-header">
               <h2>הרשמה לאימונים</h2>
               <p>בחר יום כדי לראות אימונים פנויים</p>
@@ -1414,9 +1420,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 />
               </label>
             </div>
+            </>}
 
             {/* WEEKLY CALENDAR FOR TRAINEE */}
-            <div className="desktop-weekly-calendar">
+            {bookingView === 'WEEK' && <div className="trainee-weekly-calendar">
             <WeeklyCalendar
               role={UserRole.TRAINEE}
               activeUser={activeUser}
@@ -1435,8 +1442,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               }}
               checkBookingEligibility={checkBookingEligibility}
             />
-            </div>
+            </div>}
 
+            {bookingView === 'DAY' && <>
             <div className="flex justify-between items-center border-b border-slate-100 pb-3 pt-4">
               <h3 className="text-sm font-bold text-slate-800">אימונים קבוצתיים ברשימה</h3>
               {activePenaltiesCount > 0 && (
@@ -1580,6 +1588,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 );
               })}
             </div>
+            </>}
           </div>
         )}
 

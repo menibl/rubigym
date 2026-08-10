@@ -99,7 +99,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   // Family members list
   const currentFamilyId = currentUser.familyId;
   const familyMembersList = currentFamilyId
-    ? allUsers.filter(u => u.familyId === currentFamilyId)
+    ? [currentUser, ...allUsers.filter(u => u.id !== currentUser.id && u.familyId === currentFamilyId)]
     : [];
 
   // Coupon application handler
@@ -271,10 +271,12 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       familyTrackName: `מסלול משפחתי (${familyQuota} מנויים)`
     };
 
-    onUpdateUser(updated);
     if (onUpdateAllUsers) {
       onUpdateAllUsers(allUsers.map(u => u.id === updated.id ? updated : u));
     }
+    onUpdateUser(updated);
+    setFamilyName(updated.familyName || '');
+    setFamilyQuota(updated.familyMembersCount || familyQuota);
     setMsg({ type: 'success', text: `חשבון משפחתי (${familyName}) הוגדר בהצלחה!` });
   };
 

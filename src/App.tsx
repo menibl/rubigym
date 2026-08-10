@@ -469,6 +469,7 @@ export default function App() {
     return (
       <AuthGateway
         users={users}
+        discountCodes={discountCodes}
         onLogin={handleLoginSuccess}
         onRegister={handleGatewayRegistration}
       />

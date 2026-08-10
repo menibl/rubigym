@@ -44,6 +44,8 @@ const LiveControls: React.FC<{ program: GroupWorkoutProgram }> = ({ program }) =
 
 export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser, users, sessions, workoutPlans, onUpdateWorkoutPlans, groupWorkoutPrograms, onUpdateGroupWorkoutPrograms, onOpenProgram }) => {
   const [selectedLibraryItems, setSelectedLibraryItems] = useState<Record<string, string>>({});
+  const [scheduleView, setScheduleView] = useState<'DAY' | 'WEEK'>('DAY');
+  const [selectedScheduleDate, setSelectedScheduleDate] = useState(() => new Date().toISOString().split('T')[0]);
   const relevantSessions = useMemo(() => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -51,10 +53,12 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
     end.setDate(end.getDate() + 7);
     return sessions.filter(session => {
       const date = sessionDateTime(session);
-      const belongsToCoach = activeUser.role === UserRole.MANAGER || session.coachId === activeUser.id;
-      return belongsToCoach && date >= start && date < end;
+      return date >= start && date < end;
     }).sort((a, b) => sessionDateTime(a).getTime() - sessionDateTime(b).getTime());
-  }, [activeUser.id, activeUser.role, sessions]);
+  }, [sessions]);
+  const displayedSessions = scheduleView === 'WEEK'
+    ? relevantSessions
+    : relevantSessions.filter(session => session.date === selectedScheduleDate);
 
   const openGroupDisplay = (program: GroupWorkoutProgram) => {
     const url = `${window.location.origin}${window.location.pathname}#group-workout-display=${encodeURIComponent(program.id)}`;
@@ -128,8 +132,16 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
   };
 
   return <section className="space-y-3 p-3 sm:p-5" dir="rtl">
-    <div className="rounded-2xl bg-gradient-to-l from-slate-950 to-indigo-950 p-4 text-white"><div className="flex items-center gap-2"><CalendarDays className="text-indigo-300" size={20} /><h2 className="text-xl font-black">האימונים הקרובים שלי</h2></div><p className="mt-1 text-xs text-slate-300">שבוע קרוב · תוכנית, משתתפים ושליטה במסך במקום אחד</p></div>
-    {relevantSessions.map(session => {
+    <div className="rounded-2xl bg-gradient-to-l from-slate-950 to-indigo-950 p-4 text-white">
+      <div className="flex items-center gap-2"><CalendarDays className="text-indigo-300" size={20} /><h2 className="text-xl font-black">לוח האימונים של המועדון</h2></div>
+      <p className="mt-1 text-xs text-slate-300">כל האימונים, התוכניות והשליטה במסך במקום אחד</p>
+      <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-white/10 p-1">
+        <button type="button" onClick={() => setScheduleView('DAY')} className={`min-h-10 rounded-lg text-xs font-black ${scheduleView === 'DAY' ? 'bg-white text-slate-950' : 'text-white'}`}>תצוגה יומית</button>
+        <button type="button" onClick={() => setScheduleView('WEEK')} className={`min-h-10 rounded-lg text-xs font-black ${scheduleView === 'WEEK' ? 'bg-white text-slate-950' : 'text-white'}`}>תצוגה שבועית</button>
+      </div>
+      {scheduleView === 'DAY' && <input type="date" value={selectedScheduleDate} onChange={event => setSelectedScheduleDate(event.target.value)} className="mt-3 min-h-11 w-full rounded-xl border border-white/20 bg-white px-3 font-bold text-slate-900" aria-label="בחירת יום להצגת אימונים" />}
+    </div>
+    {displayedSessions.map(session => {
       const program = groupWorkoutPrograms.find(item => item.sessionId === session.id);
       const traineeId = session.targetTraineeId || session.registeredUsers[0] || session.coTrainees?.[0];
       const trainee = users.find(user => user.id === traineeId);
@@ -171,6 +183,6 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
         </>}
       </article>;
     })}
-    {relevantSessions.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><CalendarDays className="mx-auto text-slate-300" size={34} /><p className="mt-3 text-sm font-black text-slate-600">אין אימונים רלוונטיים בשבוע הקרוב</p></div>}
+    {displayedSessions.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><CalendarDays className="mx-auto text-slate-300" size={34} /><p className="mt-3 text-sm font-black text-slate-600">אין אימונים במועד שנבחר</p></div>}
   </section>;
 };

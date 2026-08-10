@@ -11,6 +11,8 @@ export interface PendingCardcomPayment {
   purchaseVariant?: 'PUNCH_5' | 'PUNCH_10' | 'PUNCH_20';
   createdAt: string;
   registrationDraft?: Record<string, unknown>;
+  familyMembersCount?: number;
+  discountCode?: string;
 }
 
 interface CreatePaymentRequest {
@@ -22,6 +24,8 @@ interface CreatePaymentRequest {
   mode: PendingCardcomPayment['mode'];
   purchaseVariant?: PendingCardcomPayment['purchaseVariant'];
   registrationDraft?: Record<string, unknown>;
+  familyMembersCount?: number;
+  discountCode?: string;
 }
 
 export interface VerifiedCardcomPayment {
@@ -52,7 +56,9 @@ export const startCardcomPayment = async (request: CreatePaymentRequest) => {
       phone: request.phone,
       membershipType: request.membershipType,
       mode: request.mode,
-      purchaseVariant: request.purchaseVariant
+      purchaseVariant: request.purchaseVariant,
+      familyMembersCount: request.familyMembersCount,
+      discountCode: request.discountCode
     })
   });
   const result = await response.json().catch(() => ({}));

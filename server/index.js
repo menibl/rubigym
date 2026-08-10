@@ -32,7 +32,21 @@ const punchCardVariants = {
   PUNCH_20: { amount: 800, label: 'כרטיסיית 20 אימונים' }
 };
 
+const familyPrices = { 2: 550, 3: 750, 4: 920, 5: 1100 };
+const discountCodes = {
+  RUBI10: { percent: 10 },
+  FAMILY15: { percent: 15 },
+  VIP50: { amount: 50 }
+};
+
 const resolvePurchase = body => {
+  if (body.familyMembersCount) {
+    const familyAmount = familyPrices[Number(body.familyMembersCount)];
+    if (!familyAmount || body.membershipType !== 'GROUP_MONTHLY') throw new Error('INVALID_FAMILY_PLAN');
+    const discount = body.discountCode ? discountCodes[String(body.discountCode).toUpperCase()] : undefined;
+    const amount = discount?.percent ? Math.round(familyAmount * (1 - discount.percent / 100)) : Math.max(0, familyAmount - (discount?.amount || 0));
+    return { amount, label: `מנוי משפחתי ${body.familyMembersCount} מנויים` };
+  }
   if (body.membershipType === 'OPEN_PUNCH_CARD' && body.purchaseVariant) {
     const variant = punchCardVariants[body.purchaseVariant];
     if (!variant) throw new Error('INVALID_VARIANT');
@@ -40,7 +54,10 @@ const resolvePurchase = body => {
   }
   const amount = membershipPrices[body.membershipType];
   if (!amount) throw new Error('INVALID_MEMBERSHIP');
-  return { amount, label: membershipLabels[body.membershipType] };
+  const discount = body.discountCode ? discountCodes[String(body.discountCode).toUpperCase()] : undefined;
+  if (body.discountCode && !discount) throw new Error('INVALID_DISCOUNT');
+  const finalAmount = discount?.percent ? Math.round(amount * (1 - discount.percent / 100)) : Math.max(0, amount - (discount?.amount || 0));
+  return { amount: finalAmount, label: membershipLabels[body.membershipType] };
 };
 
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
@@ -65,6 +82,8 @@ const createSignedOrder = async (body, env) => {
     m: body.membershipType,
     d: body.mode,
     v: body.purchaseVariant || undefined,
+    f: body.familyMembersCount || undefined,
+    c: body.discountCode ? String(body.discountCode).toUpperCase() : undefined,
     a: amount,
     t: Date.now()
   });
@@ -77,7 +96,7 @@ const verifySignedOrder = async (value, env) => {
   if (!payload || !signature || await sign(payload, env.PAYMENT_SIGNING_SECRET) !== signature) throw new Error('INVALID_SIGNATURE');
   const order = decodePayload(payload);
   if (Date.now() - Number(order.t) > 24 * 60 * 60 * 1000) throw new Error('ORDER_EXPIRED');
-  if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v }).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
+  if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v, familyMembersCount: order.f, discountCode: order.c }).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(order.d)) throw new Error('INVALID_MODE');
   return order;
 };

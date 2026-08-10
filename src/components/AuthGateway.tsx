@@ -14,6 +14,7 @@ import {
 import { RubisLogo } from './RubisLogo';
 import {
   Gender,
+  DiscountCode,
   MEMBERSHIP_PRICES,
   MEMBERSHIP_TYPE_LABELS,
   MembershipStatus,
@@ -35,6 +36,7 @@ import {
 
 interface AuthGatewayProps {
   users: User[];
+  discountCodes: DiscountCode[];
   onLogin: (user: User) => void;
   onRegister: (user: User, payment: Payment) => void;
 }
@@ -62,7 +64,7 @@ const calculateAge = (birthDate: string) => {
   return Math.max(age, 0);
 };
 
-export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegister }) => {
+export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, onLogin, onRegister }) => {
   const [screen, setScreen] = useState<AuthScreen>('welcome');
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
   const [username, setUsername] = useState('');
@@ -81,6 +83,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
   const [healthApproved, setHealthApproved] = useState(false);
   const [agreementApproved, setAgreementApproved] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
+  const [isFamilyPlan, setIsFamilyPlan] = useState(false);
+  const [familyName, setFamilyName] = useState('');
+  const [familyMembersCount, setFamilyMembersCount] = useState(2);
+  const [discountInput, setDiscountInput] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
   const [paymentStarting, setPaymentStarting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -263,6 +270,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
     const isHalfYear = selectedPlan === MembershipType.WEIGHT_LOSS_HALF_YEAR || selectedPlan === MembershipType.POSTPARTUM_HALF_YEAR;
     expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : isHalfYear || selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 6 : 1));
     const now = Date.now();
+    const familyId = isFamilyPlan ? `fam-${now}` : undefined;
     const newUser: User = {
       id: `user-${now}`,
       name: registerName.trim(),
@@ -285,6 +293,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
       membershipExpiry: expiryDate.toISOString().split('T')[0],
       punchCardRemaining: selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 10 : undefined,
       priorityScore: 100,
+      familyId,
+      familyName: isFamilyPlan ? (familyName.trim() || `משפחת ${registerName.trim().split(' ')[0]}`) : undefined,
+      isFamilyPayer: isFamilyPlan || undefined,
+      familyMembersCount: isFamilyPlan ? familyMembersCount : undefined,
+      familyTrackName: isFamilyPlan ? `מסלול משפחתי (${familyMembersCount} מנויים)` : undefined,
       imageUrl: registerGender === Gender.FEMALE
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
@@ -298,6 +311,8 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
         phone: newUser.phone,
         membershipType: selectedPlan,
         mode: 'REGISTRATION',
+        familyMembersCount: isFamilyPlan ? familyMembersCount : undefined,
+        discountCode: appliedDiscount?.code,
         registrationDraft: { user: newUser }
       });
     } catch (paymentError) {
@@ -419,12 +434,20 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
             {registerStep === 4 && (
               <form onSubmit={handleRegistrationPayment} className="auth-form">
                 <div className="auth-plan-grid">
+                  <button
+                    type="button"
+                    className={`auth-plan-card ${isFamilyPlan ? 'active' : ''}`}
+                    onClick={() => { setIsFamilyPlan(true); setSelectedPlan(MembershipType.GROUP_MONTHLY); }}
+                  >
+                    <span><strong>מנוי משפחתי</strong><small>חשבון משלם אחד, עם פרופיל נפרד לכל בן משפחה</small></span>
+                    <b>מ־₪550</b>
+                  </button>
                   {REGISTRATION_PLANS.map(plan => (
                     <button
                       key={plan}
                       type="button"
-                      className={`auth-plan-card ${selectedPlan === plan ? 'active' : ''}`}
-                      onClick={() => setSelectedPlan(plan)}
+                      className={`auth-plan-card ${!isFamilyPlan && selectedPlan === plan ? 'active' : ''}`}
+                      onClick={() => { setSelectedPlan(plan); setIsFamilyPlan(false); }}
                     >
                       <span>
                         <strong>{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
@@ -434,9 +457,33 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
                     </button>
                   ))}
                 </div>
+                {isFamilyPlan && <div className="auth-family-options">
+                  <label>שם המשפחה<input value={familyName} onChange={event => setFamilyName(event.target.value)} placeholder={`משפחת ${registerName.trim().split(' ')[0] || 'ישראל'}`} /></label>
+                  <label>מספר מנויים בחבילה<select value={familyMembersCount} onChange={event => setFamilyMembersCount(Number(event.target.value))}>
+                    <option value={2}>2 מנויים — ₪550 לחודש</option>
+                    <option value={3}>3 מנויים — ₪750 לחודש</option>
+                    <option value={4}>4 מנויים — ₪920 לחודש</option>
+                    <option value={5}>5 מנויים — ₪1,100 לחודש</option>
+                  </select></label>
+                  <small>לאחר התשלום ניתן להוסיף את בני המשפחה ולחתום עבור כל אחד בפרופיל.</small>
+                </div>}
+                <div className="auth-discount-box">
+                  <label>קוד הנחה</label>
+                  <div><input value={discountInput} onChange={event => setDiscountInput(event.target.value.toUpperCase())} placeholder="הזנת קוד" />
+                  <button type="button" onClick={() => {
+                    const match = discountCodes.find(code => code.code.toUpperCase() === discountInput.trim().toUpperCase() && (!code.isSingleUse || !code.isUsed));
+                    setAppliedDiscount(match || null);
+                    setNotice(match ? `קוד ${match.code} הופעל בהצלחה.` : '');
+                    setError(match ? '' : 'קוד ההנחה אינו תקין או שכבר נוצל.');
+                  }}>הפעל</button></div>
+                </div>
                 <div className="auth-checkout-summary">
                   <span>לתשלום כעת</span>
-                  <strong>₪{MEMBERSHIP_PRICES[selectedPlan]}</strong>
+                  <strong>₪{(() => {
+                    const base = isFamilyPlan ? ({2: 550, 3: 750, 4: 920, 5: 1100}[familyMembersCount] || 550) : MEMBERSHIP_PRICES[selectedPlan];
+                    const discount = appliedDiscount?.discountPercent ? Math.round(base * appliedDiscount.discountPercent / 100) : (appliedDiscount?.discountAmount || 0);
+                    return Math.max(0, base - discount);
+                  })()}</strong>
                 </div>
                 <small className="auth-mock-note">פרטי האשראי יוזנו רק בעמוד המאובטח של Cardcom ולא יישמרו ב־BALY.</small>
                 {!isCardcomConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}

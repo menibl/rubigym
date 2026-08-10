@@ -1066,6 +1066,53 @@ option {
   display: none;
 }
 
+.booking-view-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--app-line);
+  border-radius: 14px;
+  background: var(--app-surface);
+}
+
+.booking-view-toggle button {
+  min-height: 42px;
+  border-radius: 10px;
+  color: var(--app-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.booking-view-toggle button.active {
+  background: var(--app-gold);
+  color: #171810;
+}
+
+.auth-family-options,
+.auth-discount-box {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--app-line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.auth-discount-box > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.auth-discount-box button {
+  min-width: 76px;
+  border-radius: 12px;
+  background: var(--app-gold);
+  color: #171810;
+  font-weight: 900;
+}
+
 .mobile-card-capacity {
   display: none;
 }
@@ -1260,9 +1307,13 @@ option {
     color: #171810;
   }
 
-  .desktop-weekly-calendar,
   .mobile-session-hidden {
     display: none !important;
+  }
+
+  .trainee-weekly-calendar {
+    margin-inline: -12px;
+    overflow-x: auto;
   }
 
   #trainee-dashboard [id^="booking-card-"] {
