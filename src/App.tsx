@@ -475,9 +475,12 @@ export default function App() {
     );
   }
 
-  const renderCoachWorkspace = (mode: 'TRAINING' | 'PLANNING') => (
+  const renderCoachWorkspace = (
+    mode: 'TRAINING' | 'PLANNING',
+    initialPlanningTab: 'programs' | 'nutrition' = 'programs'
+  ) => (
     <CoachDashboard
-      key={`${activeUser.id}-${mode}`}
+      key={`${activeUser.id}-${mode}-${initialPlanningTab}`}
       users={users}
       sessions={sessions}
       openGymSessions={openGymSessions}
@@ -511,6 +514,7 @@ export default function App() {
       onUpdateGroupWorkoutPrograms={setGroupWorkoutPrograms}
       activeUser={activeUser}
       initialMode={mode}
+      initialPlanningTab={initialPlanningTab}
       hideModeSwitcher
     />
   );
@@ -519,7 +523,9 @@ export default function App() {
     ? 'classes'
     : workspaceView === 'MY_PROGRAM'
       ? 'workout'
-      : 'membership';
+      : workspaceView === 'MY_NUTRITION'
+        ? 'nutrition'
+        : 'profile';
 
   const familyPayer = activeUser.familyPayerId
     ? users.find(user => user.id === activeUser.familyPayerId)
@@ -621,7 +627,12 @@ export default function App() {
             <RoleWorkspaceLanding
               activeUser={activeUser}
               onSelect={setWorkspaceView}
+              onOpenProfile={() => {
+                setUserToEdit(activeUser);
+                setIsSettingsOpen(true);
+              }}
               users={users}
+              sessions={sessions}
               announcements={announcements}
               messages={messages}
               onSendMessage={handleSendMessage}
@@ -683,9 +694,11 @@ export default function App() {
 
           {activeUser.role === UserRole.MANAGER && workspaceView === 'TRAINING' && renderCoachWorkspace('TRAINING')}
           {activeUser.role === UserRole.MANAGER && workspaceView === 'WORKOUT_PLANNING' && renderCoachWorkspace('PLANNING')}
+          {activeUser.role === UserRole.MANAGER && workspaceView === 'NUTRITION_PLANNING' && renderCoachWorkspace('PLANNING', 'nutrition')}
 
           {activeUser.role === UserRole.COACH && workspaceView === 'TRAINING' && renderCoachWorkspace('TRAINING')}
           {activeUser.role === UserRole.COACH && workspaceView === 'WORKOUT_PLANNING' && renderCoachWorkspace('PLANNING')}
+          {activeUser.role === UserRole.COACH && workspaceView === 'NUTRITION_PLANNING' && renderCoachWorkspace('PLANNING', 'nutrition')}
 
           {activeUser.role === UserRole.TRAINEE && workspaceView && (
             <TraineeDashboard
@@ -713,6 +726,7 @@ export default function App() {
                 setUserToEdit(activeUser);
                 setIsSettingsOpen(true);
               }}
+              onHome={() => setWorkspaceView(null)}
               onLogout={handleLogout}
               initialTab={traineeInitialTab}
             />

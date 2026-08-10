@@ -1430,6 +1430,520 @@ option {
 
 }
 
+/* Role-aware mobile home */
+.mobile-role-home {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.mobile-date-jump {
+  display: none;
+}
+
+.role-home-summary {
+  padding: 22px;
+  border: 1px solid var(--app-line);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(201, 168, 103, 0.16), transparent 48%),
+    linear-gradient(145deg, var(--app-surface-2), var(--app-surface));
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.22);
+}
+
+.role-home-greeting,
+.role-home-next,
+.role-home-panel-title,
+.role-home-management-link {
+  display: flex;
+  align-items: center;
+}
+
+.role-home-greeting {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.role-home-greeting span,
+.role-home-next span,
+.role-home-panel-title p {
+  color: var(--app-muted);
+  font-size: 12px;
+}
+
+.role-home-greeting h2 {
+  margin-top: 2px;
+  font-size: clamp(24px, 6vw, 32px);
+  font-weight: 800;
+}
+
+.role-home-greeting img {
+  width: 52px;
+  height: 52px;
+  border: 1px solid rgba(201, 168, 103, 0.5);
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.role-home-next {
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-line);
+  color: var(--app-gold);
+}
+
+.role-home-next > div {
+  display: grid;
+  gap: 3px;
+}
+
+.role-home-next strong {
+  color: var(--app-text);
+  font-size: 15px;
+}
+
+.role-home-management-link {
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 14px;
+  border: 1px solid rgba(201, 168, 103, 0.35);
+  border-radius: 13px;
+  background: rgba(201, 168, 103, 0.08);
+  color: var(--app-gold);
+  font-weight: 700;
+}
+
+.role-home-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.role-home-actions > button {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 154px;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid var(--app-line);
+  border-radius: 20px;
+  background: var(--app-surface);
+  color: var(--app-text);
+  text-align: right;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.role-home-actions > button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(201, 168, 103, 0.5);
+  background: var(--app-surface-2);
+}
+
+.role-home-action-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 14px;
+  place-items: center;
+  border-radius: 15px;
+  background: rgba(201, 168, 103, 0.12);
+  color: var(--app-gold);
+}
+
+.role-home-actions strong {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.role-home-actions small {
+  margin-top: 4px;
+  color: var(--app-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.role-home-action-arrow {
+  position: absolute;
+  bottom: 15px;
+  left: 15px;
+  color: var(--app-gold);
+}
+
+.role-home-communications {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--app-line);
+  border-radius: 24px;
+  background: rgba(28, 31, 39, 0.74);
+}
+
+.role-home-panel {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--app-line);
+  border-radius: 18px;
+  background: var(--app-surface);
+}
+
+.role-home-panel-title {
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--app-gold);
+}
+
+.role-home-panel-title > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.role-home-panel-title h3,
+.role-home-panel-title p,
+.role-home-feed h4,
+.role-home-feed p {
+  margin: 0;
+}
+
+.role-home-panel-title select,
+.role-home-staff-compose select,
+.role-home-staff-compose input,
+.role-home-announcement-form input,
+.role-home-announcement-form textarea,
+.role-home-compose input {
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--app-line);
+  border-radius: 11px;
+  background: #15171d;
+  color: var(--app-text);
+  font: inherit;
+}
+
+.role-home-panel-title select {
+  max-width: 130px;
+  padding: 8px;
+  font-size: 11px;
+}
+
+.role-home-feed,
+.role-home-chat-messages {
+  display: grid;
+  gap: 9px;
+}
+
+.role-home-feed article {
+  padding: 12px;
+  border: 1px solid var(--app-line);
+  border-radius: 13px;
+  background: rgba(20, 22, 28, 0.72);
+}
+
+.role-home-feed article.unread {
+  border-color: rgba(201, 168, 103, 0.45);
+}
+
+.role-home-feed article > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--app-muted);
+  font-size: 10px;
+}
+
+.role-home-feed h4 {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.role-home-feed p {
+  margin-top: 4px;
+  color: var(--app-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.role-home-empty {
+  padding: 20px 10px;
+  color: var(--app-muted);
+  text-align: center;
+  font-size: 11px;
+}
+
+.role-home-chat-messages {
+  min-height: 124px;
+  align-content: end;
+  padding: 11px;
+  border-radius: 14px;
+  background: #15171d;
+}
+
+.role-home-chat-messages > div:not(.role-home-empty) {
+  display: grid;
+  max-width: 86%;
+  gap: 2px;
+  justify-self: start;
+  padding: 8px 10px;
+  border-radius: 12px 12px 12px 4px;
+  background: var(--app-surface-2);
+  font-size: 11px;
+}
+
+.role-home-chat-messages > div.mine {
+  justify-self: end;
+  border-radius: 12px 12px 4px 12px;
+  background: var(--app-gold);
+  color: #171810;
+}
+
+.role-home-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.role-home-compose input,
+.role-home-staff-compose input,
+.role-home-announcement-form input,
+.role-home-announcement-form textarea {
+  padding: 9px 11px;
+}
+
+.role-home-compose button,
+.role-home-staff-compose button,
+.role-home-announcement-form button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--app-gold);
+  color: #171810;
+  font-weight: 800;
+}
+
+.role-home-compose button:disabled,
+.role-home-staff-compose button:disabled,
+.role-home-announcement-form button:disabled {
+  opacity: 0.45;
+}
+
+.role-home-staff-compose,
+.role-home-announcement-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.role-home-staff-compose {
+  grid-template-columns: minmax(110px, 0.45fr) minmax(0, 1fr) auto;
+}
+
+.role-home-staff-compose select {
+  padding: 8px;
+}
+
+.role-home-announcement-form textarea {
+  resize: vertical;
+}
+
+.role-home-announcement-form > div,
+.role-home-item-actions {
+  display: flex;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.role-home-announcement-form button {
+  padding: 8px 12px;
+}
+
+.role-home-announcement-form button.secondary,
+.role-home-item-actions button {
+  border: 1px solid var(--app-line);
+  background: transparent;
+  color: var(--app-muted);
+}
+
+.role-home-item-actions button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 8px;
+}
+
+@media (max-width: 720px) {
+  .app-main {
+    padding-inline: 12px !important;
+    padding-top: 14px !important;
+  }
+
+  .mobile-role-home {
+    padding-bottom: 20px;
+  }
+
+  .role-home-summary {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .role-home-actions {
+    gap: 9px;
+  }
+
+  .role-home-actions > button {
+    min-height: 146px;
+    padding: 14px;
+    border-radius: 17px;
+  }
+
+  .role-home-action-icon {
+    width: 42px;
+    height: 42px;
+    margin-bottom: 11px;
+  }
+
+  .role-home-actions strong {
+    font-size: 14px;
+  }
+
+  .role-home-communications {
+    grid-template-columns: 1fr;
+    padding: 10px;
+    border-radius: 20px;
+  }
+
+  .role-home-panel {
+    padding: 13px;
+  }
+
+  .role-home-panel-title {
+    flex-wrap: wrap;
+  }
+
+  .role-home-panel-title select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .role-home-staff-compose {
+    grid-template-columns: 1fr;
+  }
+
+  .home-quick-actions,
+  .profile-more-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-quick-actions button {
+    grid-template-columns: 1fr;
+    justify-items: start;
+    min-height: 112px;
+  }
+
+  .home-quick-actions button > svg:last-child {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+  }
+
+  .home-quick-actions button {
+    position: relative;
+  }
+
+  .profile-more-actions {
+    padding: 11px;
+  }
+
+  .profile-more-actions button {
+    min-height: 82px;
+    flex-direction: column;
+    padding: 10px 7px;
+    text-align: center;
+  }
+
+  .mobile-date-jump {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 44px;
+    margin-top: 10px;
+    padding: 7px 10px;
+    border: 1px solid var(--app-line);
+    border-radius: 12px;
+    background: var(--app-surface);
+    color: var(--app-muted);
+    font-size: 11px;
+  }
+
+  .mobile-date-jump input {
+    min-height: 34px;
+    border: 0;
+    background: transparent;
+    color: var(--app-text);
+    font: inherit;
+  }
+
+  /* Coach planning: touch-friendly controls and one-column editing on phones. */
+  #coach-dashboard > .bg-slate-900 {
+    align-items: stretch !important;
+    padding: 12px !important;
+  }
+
+  #coach-dashboard > .bg-slate-900 > .flex:last-child {
+    width: 100%;
+    flex-wrap: nowrap !important;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  #coach-dashboard > .bg-slate-900 > .flex:last-child::-webkit-scrollbar {
+    display: none;
+  }
+
+  #coach-dashboard > .bg-slate-900 > .flex:last-child button {
+    min-height: 44px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  #coach-dashboard > .p-6 {
+    padding: 12px !important;
+  }
+
+  #coach-dashboard form .grid-cols-2,
+  #coach-dashboard form .grid-cols-3,
+  #coach-dashboard form .grid-cols-4,
+  #coach-dashboard .md\:grid-cols-2,
+  #coach-dashboard .md\:grid-cols-3,
+  #coach-dashboard .sm\:grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  #coach-dashboard form input,
+  #coach-dashboard form select,
+  #coach-dashboard form textarea {
+    min-height: 44px;
+  }
+
+  #role-switcher-container {
+    margin-bottom: 12px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

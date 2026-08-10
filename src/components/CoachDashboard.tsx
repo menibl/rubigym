@@ -101,6 +101,7 @@ interface CoachDashboardProps {
   initialWorkoutSessionId?: string;
   onInitialWorkoutSessionHandled?: () => void;
   initialMode?: 'TRAINING' | 'PLANNING';
+  initialPlanningTab?: 'programs' | 'nutrition';
   hideModeSwitcher?: boolean;
 }
 
@@ -140,9 +141,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   initialWorkoutSessionId,
   onInitialWorkoutSessionHandled,
   initialMode,
+  initialPlanningTab = 'programs',
   hideModeSwitcher = false
 }) => {
-  const [activeTab, setActiveTab] = useState<'programs' | 'group-programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>('programs');
+  const [activeTab, setActiveTab] = useState<'programs' | 'group-programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>(initialPlanningTab);
   const [coachMode, setCoachMode] = useState<'TRAINING' | 'PLANNING'>(() => initialMode || (activeUser.role === UserRole.COACH ? 'TRAINING' : 'PLANNING'));
   const [groupProgramSessionId, setGroupProgramSessionId] = useState('');
 

@@ -48,7 +48,8 @@ import {
   Pencil,
   UserRound,
   WalletCards,
-  MonitorPlay
+  MonitorPlay,
+  HeartPulse
 } from 'lucide-react';
 import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
 import { ExerciseMedia } from './ExerciseMedia';
@@ -87,6 +88,7 @@ interface TraineeDashboardProps {
   onOpenSettings: () => void;
   onLogout: () => void;
   initialTab?: 'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership';
+  onHome?: () => void;
 }
 
 const PRIMARY_MEMBERSHIP_PLANS = [
@@ -127,7 +129,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   onSendMessage,
   onOpenSettings,
   onLogout,
-  initialTab = 'home'
+  initialTab = 'home',
+  onHome
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>(initialTab);
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
@@ -1223,7 +1226,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       {/* Trainee Navigation Links */}
       <div className="flex bg-slate-900 p-1.5 rounded-xl gap-1 overflow-x-auto border border-slate-800" id="trainee-tabs">
         <button
-          onClick={() => setActiveTab('home')}
+          onClick={() => onHome ? onHome() : setActiveTab('home')}
           className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
             activeTab === 'home' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
           }`}
@@ -1345,6 +1348,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <span><strong>פרופיל ומנוי</strong><small>עריכה, עדכון ותשלום</small></span>
                 <ChevronRight size={17} />
               </button>
+              <button onClick={() => openPaidFeature('workout')}>
+                <Dumbbell size={21} />
+                <span><strong>תוכנית אימון</strong><small>צפייה והפעלת האימון</small></span>
+                <ChevronRight size={17} />
+              </button>
+              <button onClick={() => openPaidFeature('nutrition')}>
+                <Apple size={21} />
+                <span><strong>תוכנית תזונה</strong><small>ארוחות ויעדים אישיים</small></span>
+                <ChevronRight size={17} />
+              </button>
             </section>
 
             <section className="home-section">
@@ -1391,6 +1404,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   </button>
                 ))}
               </div>
+              <label className="mobile-date-jump">
+                <CalendarIcon size={15} /> מעבר לתאריך אחר
+                <input
+                  type="date"
+                  value={selectedBookingDate}
+                  onChange={event => setSelectedBookingDate(event.target.value)}
+                  aria-label="בחירת תאריך מלוח חודשי"
+                />
+              </label>
             </div>
 
             {/* WEEKLY CALENDAR FOR TRAINEE */}
@@ -2173,6 +2195,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             </section>
 
             <section className="profile-more-actions">
+              <button onClick={onOpenSettings}><HeartPulse size={18} /> הצהרת בריאות וחתימה</button>
               <button onClick={() => setActiveTab('workout')}><Dumbbell size={18} /> תוכנית האימונים שלי</button>
               <button onClick={() => setActiveTab('membership')}><WalletCards size={18} /> ניהול מסלול ותשלומים</button>
               <button onClick={() => setActiveTab('card')}><QrCode size={18} /> כרטיס דיגיטלי וצ'ק־אין</button>
