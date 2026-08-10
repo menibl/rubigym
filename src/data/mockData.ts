@@ -227,15 +227,24 @@ export const INITIAL_WORKOUT_PLANS: WorkoutPlan[] = [
     coachName: 'רובי',
     lastUpdated: dateFromToday(-2),
     status: 'APPROVED_ASSIGNED',
+    trainingDaysPerWeek: 2,
+    dayLabels: ['יום כוח עליון', 'יום רגליים וליבה'],
     exercises: [
-      { id: 'ex-1', name: 'לחיצת חזה', category: 'כוח', muscleGroup: MuscleGroup.UPPER, sets: 4, reps: '8-10', weight: '60 ק״ג' },
-      { id: 'ex-2', name: 'סקוואט', category: 'כוח', muscleGroup: MuscleGroup.LEGS, sets: 4, reps: '10', weight: '70 ק״ג' },
-      { id: 'ex-3', name: 'חתירה', category: 'כוח', muscleGroup: MuscleGroup.BACK, sets: 3, reps: '12', weight: '45 ק״ג' },
-      { id: 'ex-4', name: 'לחיצת כתפיים', category: 'כוח', muscleGroup: MuscleGroup.SHOULDERS, sets: 3, reps: '10', weight: '22 ק״ג' }
+      { id: 'ex-1', name: 'לחיצת חזה', category: 'כוח', muscleGroup: MuscleGroup.UPPER, sets: 4, reps: '8-10', weight: '60 ק״ג', dayNumber: 1, notes: 'שכמות צמודות לספסל ותנועה מבוקרת.' },
+      { id: 'ex-2', name: 'סקוואט', category: 'כוח', muscleGroup: MuscleGroup.LEGS, sets: 4, reps: '10', weight: '70 ק״ג', dayNumber: 2, notes: 'ברכיים בקו כפות הרגליים ושמירה על גב ניטרלי.' },
+      { id: 'ex-3', name: 'חתירה', category: 'כוח', muscleGroup: MuscleGroup.BACK, sets: 3, reps: '12', weight: '45 ק״ג', dayNumber: 1 },
+      { id: 'ex-4', name: 'לחיצת כתפיים', category: 'כוח', muscleGroup: MuscleGroup.SHOULDERS, sets: 3, reps: '10', weight: '22 ק״ג', dayNumber: 2 }
     ]
   }
 ];
-export const INITIAL_NUTRITION_PLANS: NutritionPlan[] = [];
+export const INITIAL_NUTRITION_PLANS: NutritionPlan[] = [{
+  id: 'nutrition-meni', traineeId: 'trainee-meni', coachId: 'user-robi', coachName: 'רובי', lastUpdated: dateFromToday(-1), dailyCalories: 2200, proteinGrams: 150, carbsGrams: 230, fatGrams: 70, mealsDescription: 'להעדיף מזון טרי, לשתות לאורך היום ולהתאים את הארוחה סביב האימון.', goal: 'ירידה מתונה באחוזי שומן ושמירה על מסת שריר', hydrationLiters: 2.8, fiberGrams: 30, active: true, isPaid: true, paymentStatus: 'PAID', categories: [
+    { id: 'meal-breakfast', title: 'ארוחת בוקר', suggestedTime: '07:00–09:00', foods: 'יוגורט עשיר בחלבון, שיבולת שועל, פרי וכף שקדים', calories: 520, proteinGrams: 35, carbsGrams: 58, fatGrams: 16 },
+    { id: 'meal-lunch', title: 'ארוחת צהריים', suggestedTime: '12:00–15:00', foods: 'חזה עוף/טופו, אורז מלא, ירקות וכף שמן זית', calories: 760, proteinGrams: 55, carbsGrams: 82, fatGrams: 22 },
+    { id: 'meal-snack', title: 'ארוחת ביניים', suggestedTime: 'לפני אימון', foods: 'פרי, גביע חלבון או תחליף צמחי ו־2 פריכיות', calories: 300, proteinGrams: 20, carbsGrams: 42, fatGrams: 6 },
+    { id: 'meal-dinner', title: 'ארוחת ערב', suggestedTime: '19:00–21:00', foods: 'ביצים/טונה, לחם מלא, סלט וטחינה', calories: 620, proteinGrams: 40, carbsGrams: 48, fatGrams: 26 }
+  ]
+}];
 export const INITIAL_BLACK_POINTS: BlackPoint[] = [];
 export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
   {

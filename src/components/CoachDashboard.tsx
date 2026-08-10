@@ -16,6 +16,7 @@ import {
   Announcement,
   WorkoutPlan,
   NutritionPlan,
+  NutritionMealCategory,
   Message,
   SystemSettings,
   TraineeMemoryEntry,
@@ -37,6 +38,7 @@ import { TraineeMemoryPanel } from './TraineeMemoryPanel';
 import { GymEquipmentPanel } from './GymEquipmentPanel';
 import { CoachPdfLibraryPanel } from './CoachPdfLibraryPanel';
 import { WorkoutAssistantPanel } from './WorkoutAssistantPanel';
+import { NutritionAssistantPanel } from './NutritionAssistantPanel';
 import { GroupWorkoutProgramManager } from './GroupWorkoutProgramManager';
 import { CoachTrainingMode } from './CoachTrainingMode';
 import { ExerciseMedia } from './ExerciseMedia';
@@ -371,6 +373,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   // New Exercise Form State
   const [showAddExercise, setShowAddExercise] = useState(false);
+  const [selectedWorkoutDay, setSelectedWorkoutDay] = useState(1);
+  const [editingExerciseId, setEditingExerciseId] = useState('');
   const [newExerciseMediaFile, setNewExerciseMediaFile] = useState<File | null>(null);
   const [editingExerciseMediaId, setEditingExerciseMediaId] = useState('');
   const [editingExerciseMediaUrl, setEditingExerciseMediaUrl] = useState('');
@@ -398,7 +402,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     proteinGrams: 140,
     carbsGrams: 200,
     fatGrams: 70,
-    mealsDescription: ''
+    mealsDescription: '',
+    goal: '',
+    hydrationLiters: 2.5,
+    fiberGrams: 30,
+    coachNotes: '',
+    categories: [] as NutritionMealCategory[],
+    assistantMessages: [] as NonNullable<NutritionPlan['assistantMessages']>
   });
 
   // Direct Message State
@@ -491,7 +501,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         proteinGrams: currentNutrition.proteinGrams,
         carbsGrams: currentNutrition.carbsGrams,
         fatGrams: currentNutrition.fatGrams,
-        mealsDescription: currentNutrition.mealsDescription
+        mealsDescription: currentNutrition.mealsDescription,
+        goal: currentNutrition.goal || '',
+        hydrationLiters: currentNutrition.hydrationLiters || 2.5,
+        fiberGrams: currentNutrition.fiberGrams || 30,
+        coachNotes: currentNutrition.coachNotes || '',
+        categories: currentNutrition.categories || [],
+        assistantMessages: currentNutrition.assistantMessages || []
       });
     } else {
       setNutritionForm({
@@ -499,7 +515,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         proteinGrams: 130,
         carbsGrams: 180,
         fatGrams: 60,
-        mealsDescription: 'ארוחת בוקר:\n-\n\nארוחת צהריים:\n-\n\nארוחת ערב:\n-'
+        mealsDescription: 'ארוחת בוקר:\n-\n\nארוחת צהריים:\n-\n\nארוחת ערב:\n-',
+        goal: selectedTraineeProfile?.primaryGoal || '',
+        hydrationLiters: 2.5,
+        fiberGrams: 30,
+        coachNotes: '',
+        categories: [],
+        assistantMessages: []
       });
     }
     setIsEditingNutrition(true);
@@ -519,7 +541,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
             proteinGrams: Number(nutritionForm.proteinGrams),
             carbsGrams: Number(nutritionForm.carbsGrams),
             fatGrams: Number(nutritionForm.fatGrams),
-            mealsDescription: nutritionForm.mealsDescription
+            mealsDescription: nutritionForm.mealsDescription,
+            goal: nutritionForm.goal,
+            hydrationLiters: Number(nutritionForm.hydrationLiters),
+            fiberGrams: Number(nutritionForm.fiberGrams),
+            coachNotes: nutritionForm.coachNotes,
+            categories: nutritionForm.categories,
+            assistantMessages: nutritionForm.assistantMessages
           };
         }
         return np;
@@ -536,6 +564,12 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         carbsGrams: Number(nutritionForm.carbsGrams),
         fatGrams: Number(nutritionForm.fatGrams),
         mealsDescription: nutritionForm.mealsDescription,
+        goal: nutritionForm.goal,
+        hydrationLiters: Number(nutritionForm.hydrationLiters),
+        fiberGrams: Number(nutritionForm.fiberGrams),
+        coachNotes: nutritionForm.coachNotes,
+        categories: nutritionForm.categories,
+        assistantMessages: nutritionForm.assistantMessages,
         active: true
       };
       updatedPlans = [newPlan, ...nutritionPlans];
@@ -591,7 +625,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       mediaUrl: newExercise.mediaUrl,
       mediaType: resolvedMediaType,
       mediaStorageId,
-      notes: newExercise.notes
+      notes: newExercise.notes,
+      dayNumber: selectedWorkoutDay
     };
 
     let updatedPlans: WorkoutPlan[];
@@ -602,6 +637,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
           return {
             ...wp,
             lastUpdated: new Date().toISOString().split('T')[0],
+            trainingDaysPerWeek: Math.max(wp.trainingDaysPerWeek || 1, selectedWorkoutDay),
             exercises: [...wp.exercises, exerciseToAdd]
           };
         }
@@ -614,6 +650,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         coachId: activeUser.id,
         coachName: activeUser.name,
         lastUpdated: new Date().toISOString().split('T')[0],
+        trainingDaysPerWeek: selectedWorkoutDay,
         exercises: [exerciseToAdd]
       };
       updatedPlans = [newPlan, ...workoutPlans];
@@ -652,6 +689,16 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       return wp;
     });
     onUpdateWorkoutPlans(updatedPlans);
+  };
+
+  const handleUpdateExercise = (exerciseId: string, changes: Partial<Exercise>) => {
+    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId && !plan.sessionId
+      ? {
+          ...plan,
+          lastUpdated: new Date().toISOString().split('T')[0],
+          exercises: plan.exercises.map(exercise => exercise.id === exerciseId ? { ...exercise, ...changes } : exercise)
+        }
+      : plan));
   };
 
   const startEditingExerciseMedia = (exercise: Exercise) => {
@@ -788,6 +835,46 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   };
 
   const traineeWorkoutPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId && !wp.sessionId);
+  const workoutDays = Math.max(1, traineeWorkoutPlan?.trainingDaysPerWeek || 1);
+  const exerciseLibrary = Array.from(new Map<string, Exercise>(
+    workoutPlans.flatMap(plan => plan.exercises).map(exercise => [exercise.name.trim().toLowerCase(), exercise])
+  ).values()).slice(0, 24);
+
+  const handleSetWorkoutDays = (days: number) => {
+    const normalizedDays = Math.min(7, Math.max(1, days));
+    setSelectedWorkoutDay(day => Math.min(day, normalizedDays));
+    if (traineeWorkoutPlan) {
+      onUpdateWorkoutPlans(workoutPlans.map(plan => plan.id === traineeWorkoutPlan.id
+        ? {
+            ...plan,
+            trainingDaysPerWeek: normalizedDays,
+            dayLabels: Array.from({ length: normalizedDays }, (_, index) => plan.dayLabels?.[index] || `יום אימון ${index + 1}`),
+            exercises: plan.exercises.map(exercise => ({ ...exercise, dayNumber: Math.min(exercise.dayNumber || 1, normalizedDays) })),
+            lastUpdated: new Date().toISOString().split('T')[0]
+          }
+        : plan));
+      return;
+    }
+    const emptyPlan: WorkoutPlan = {
+      id: `plan-${Date.now()}`,
+      traineeId: selectedTraineeId,
+      coachId: activeUser.id,
+      coachName: activeUser.name,
+      lastUpdated: new Date().toISOString().split('T')[0],
+      trainingDaysPerWeek: normalizedDays,
+      dayLabels: Array.from({ length: normalizedDays }, (_, index) => `יום אימון ${index + 1}`),
+      exercises: []
+    };
+    onUpdateWorkoutPlans([emptyPlan, ...workoutPlans]);
+  };
+
+  const handleAddExerciseFromLibrary = (source: Exercise) => {
+    if (!traineeWorkoutPlan) return;
+    const cloned: Exercise = { ...source, id: `library-ex-${Date.now()}`, dayNumber: selectedWorkoutDay };
+    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.id === traineeWorkoutPlan.id
+      ? { ...plan, exercises: [...plan.exercises, cloned], lastUpdated: new Date().toISOString().split('T')[0] }
+      : plan));
+  };
   const selectedHasWorkoutPlanAccess = Boolean(
     selectedTrainee?.secondaryMemberships?.includes(MembershipType.WORKOUT_PLAN) ||
     (selectedTrainee?.membershipType && MEMBERSHIP_TYPE_LABELS[selectedTrainee.membershipType]?.includesWorkoutPlan &&
@@ -825,6 +912,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       coachName: activeUser.name,
       lastUpdated: new Date().toISOString().split('T')[0],
       exercises: draft.exercises.map(exercise => ({ ...exercise })),
+      trainingDaysPerWeek: draft.trainingDaysPerWeek || 1,
+      dayLabels: draft.dayLabels,
       status: 'APPROVED_ASSIGNED',
       isRequested: false
     };
@@ -1013,6 +1102,46 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   </div>
                 </div>
 
+                <section className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">חלוקת התוכנית לימי אימון</h4>
+                      <p className="mt-1 text-xs text-slate-600">הגדר כמה פעמים בשבוע המתאמן מתאמן ושייך כל תרגיל ליום המתאים.</p>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                      ימים בשבוע
+                      <select value={workoutDays} onChange={event => handleSetWorkoutDays(Number(event.target.value))} className="rounded-lg border border-indigo-200 bg-white px-3 py-2">
+                        {[1, 2, 3, 4, 5, 6, 7].map(day => <option key={day} value={day}>{day}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {Array.from({ length: workoutDays }, (_, index) => index + 1).map(day => (
+                      <button key={day} onClick={() => setSelectedWorkoutDay(day)} className={`rounded-xl px-4 py-2 text-xs font-black ${selectedWorkoutDay === day ? 'bg-indigo-600 text-white shadow-sm' : 'border border-indigo-200 bg-white text-indigo-800'}`}>
+                        {traineeWorkoutPlan?.dayLabels?.[day - 1] || `יום ${day}`}
+                        <span className="mr-1 opacity-70">({traineeWorkoutPlan?.exercises.filter(exercise => (exercise.dayNumber || 1) === day).length || 0})</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                {exerciseLibrary.length > 0 && (
+                  <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div><h4 className="text-sm font-black text-slate-900">מאגר התרגילים של המאמנים</h4><p className="text-[11px] text-slate-500">המאגר נבנה אוטומטית מתרגילים שנשמרו בתוכניות קודמות ומשמש גם את הצ׳אט.</p></div>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{exerciseLibrary.length} תרגילים</span>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {exerciseLibrary.map(exercise => (
+                        <button key={`${exercise.name}-${exercise.muscleGroup}`} onClick={() => handleAddExerciseFromLibrary(exercise)} className="flex items-center justify-between rounded-xl border border-slate-200 p-3 text-right hover:border-indigo-300 hover:bg-indigo-50">
+                          <span><strong className="block text-xs text-slate-900">{exercise.name}</strong><small className="text-[10px] text-slate-500">{exercise.sets} סטים · {exercise.reps}</small></span>
+                          <Plus size={15} className="text-indigo-600" />
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
                 <TraineeMemoryPanel
                   trainee={selectedTrainee}
                   activeUser={activeUser}
@@ -1064,6 +1193,12 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs text-slate-600 font-medium mb-1">יום אימון</label>
+                        <select value={selectedWorkoutDay} onChange={event => setSelectedWorkoutDay(Number(event.target.value))} className="w-full border border-slate-200 rounded-lg p-2 text-xs bg-white">
+                          {Array.from({ length: workoutDays }, (_, index) => index + 1).map(day => <option key={day} value={day}>{traineeWorkoutPlan?.dayLabels?.[day - 1] || `יום אימון ${day}`}</option>)}
+                        </select>
+                      </div>
                       <div>
                         <label className="block text-xs text-slate-600 font-medium mb-1">שם התרגיל</label>
                         <input
@@ -1214,7 +1349,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 {/* EXERCISES DISPLAY LIST */}
                 {traineeWorkoutPlan && traineeWorkoutPlan.exercises.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {traineeWorkoutPlan.exercises.map(ex => (
+                    {traineeWorkoutPlan.exercises.filter(exercise => (exercise.dayNumber || 1) === selectedWorkoutDay).map(ex => (
                       <div key={ex.id} className="border border-slate-150 rounded-xl p-4 bg-slate-50 flex flex-col justify-between relative" id={`exercise-card-${ex.id}`}>
                         <button
                           onClick={() => handleDeleteExercise(ex.id)}
@@ -1223,6 +1358,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                         >
                           <Trash2 size={14} />
                         </button>
+                        <button onClick={() => setEditingExerciseId(editingExerciseId === ex.id ? '' : ex.id)} className="absolute left-10 top-3 text-slate-400 hover:text-indigo-600 transition" title="ערוך תרגיל"><Edit3 size={14} /></button>
 
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
@@ -1268,6 +1404,19 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                             <p className="text-xs text-slate-500 italic bg-white p-2 rounded border border-slate-50/50 mb-3">
                               💡 {ex.notes}
                             </p>
+                          )}
+                          {editingExerciseId === ex.id && (
+                            <div className="mb-3 grid gap-2 rounded-xl border border-indigo-200 bg-white p-3 sm:grid-cols-2">
+                              <label className="text-[10px] font-bold text-slate-500 sm:col-span-2">שם התרגיל<input value={ex.name} onChange={event => handleUpdateExercise(ex.id, { name: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900" /></label>
+                              <label className="text-[10px] font-bold text-slate-500">יום<select value={ex.dayNumber || 1} onChange={event => handleUpdateExercise(ex.id, { dayNumber: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900">{Array.from({ length: workoutDays }, (_, index) => index + 1).map(day => <option key={day} value={day}>יום {day}</option>)}</select></label>
+                              <label className="text-[10px] font-bold text-slate-500">סטים<input type="number" min={1} value={ex.sets} onChange={event => handleUpdateExercise(ex.id, { sets: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900" /></label>
+                              <label className="text-[10px] font-bold text-slate-500">חזרות / זמן<input value={ex.reps} onChange={event => handleUpdateExercise(ex.id, { reps: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900" /></label>
+                              <label className="text-[10px] font-bold text-slate-500">משקל מומלץ<input value={ex.weight || ''} onChange={event => handleUpdateExercise(ex.id, { weight: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900" /></label>
+                              <label className="text-[10px] font-bold text-slate-500">זמן עבודה<input value={ex.workDuration || ''} onChange={event => handleUpdateExercise(ex.id, { workDuration: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900" /></label>
+                              <label className="text-[10px] font-bold text-slate-500">זמן מנוחה<input value={ex.restDuration || ''} onChange={event => handleUpdateExercise(ex.id, { restDuration: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900" /></label>
+                              <label className="text-[10px] font-bold text-slate-500 sm:col-span-2">הערות ודגשים<textarea value={ex.notes || ''} onChange={event => handleUpdateExercise(ex.id, { notes: event.target.value })} rows={2} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900" /></label>
+                              <button onClick={() => setEditingExerciseId('')} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white sm:col-span-2">סיום עריכה</button>
+                            </div>
                           )}
                           {(ex.mediaUrl || ex.mediaStorageId) && <ExerciseMedia exercise={ex} compact className="mt-3" controls />}
                           <button onClick={() => startEditingExerciseMedia(ex)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-fuchsia-300 bg-fuchsia-50 px-3 py-2.5 text-xs font-black text-fuchsia-700">
@@ -1357,6 +1506,21 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   )}
                 </div>
 
+                <NutritionAssistantPanel
+                  trainee={selectedTrainee}
+                  profile={selectedTraineeProfile}
+                  dailyCalories={Number(nutritionForm.dailyCalories)}
+                  proteinGrams={Number(nutritionForm.proteinGrams)}
+                  carbsGrams={Number(nutritionForm.carbsGrams)}
+                  fatGrams={Number(nutritionForm.fatGrams)}
+                  messages={nutritionForm.assistantMessages}
+                  onUpdateMessages={assistantMessages => setNutritionForm(current => ({ ...current, assistantMessages }))}
+                  onApplyCategories={categories => {
+                    setNutritionForm(current => ({ ...current, categories }));
+                    setIsEditingNutrition(true);
+                  }}
+                />
+
                 {/* Nutrition Payment Status Banner */}
                 {(selectedTrainee.nutritionPlanPaid || currentNutrition?.isPaid) ? (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-900 font-semibold flex items-center justify-between">
@@ -1379,6 +1543,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
                 {isEditingNutrition ? (
                   <form onSubmit={handleSaveNutrition} className="bg-slate-50 border border-slate-100 rounded-lg p-5 space-y-4" id="nutrition-form">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <label className="text-xs font-medium text-slate-600">מטרת התוכנית<input value={nutritionForm.goal} onChange={event => setNutritionForm({ ...nutritionForm, goal: event.target.value })} placeholder="ירידה במשקל, חיזוק, התאוששות..." className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs" /></label>
+                      <label className="text-xs font-medium text-slate-600">מים ביום (ליטר)<input type="number" step="0.1" min="0" value={nutritionForm.hydrationLiters} onChange={event => setNutritionForm({ ...nutritionForm, hydrationLiters: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs" /></label>
+                      <label className="text-xs font-medium text-slate-600">סיבים ביום (גרם)<input type="number" min="0" value={nutritionForm.fiberGrams} onChange={event => setNutritionForm({ ...nutritionForm, fiberGrams: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs" /></label>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <div>
                         <label className="block text-xs text-slate-600 font-medium mb-1">קלוריות יומיות</label>
@@ -1422,6 +1591,18 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       </div>
                     </div>
 
+                    <div className="space-y-3 rounded-2xl border border-emerald-200 bg-white p-4">
+                      <div className="flex items-center justify-between"><div><h4 className="text-xs font-black text-slate-900">קטגוריות וארוחות</h4><p className="text-[10px] text-slate-500">כל ארוחה כוללת מזונות מומלצים וערכים תזונתיים משלה.</p></div><button type="button" onClick={() => setNutritionForm(current => ({ ...current, categories: [...current.categories, { id: `meal-${Date.now()}`, title: 'ארוחה חדשה', suggestedTime: '', foods: '', calories: 0, proteinGrams: 0, carbsGrams: 0, fatGrams: 0, notes: '' }] }))} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white"><Plus size={13} className="ml-1 inline" /> הוסף ארוחה</button></div>
+                      {nutritionForm.categories.map((meal, index) => (
+                        <article key={meal.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="mb-2 flex items-center gap-2"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-700">{index + 1}</span><input value={meal.title} onChange={event => setNutritionForm(current => ({ ...current, categories: current.categories.map(item => item.id === meal.id ? { ...item, title: event.target.value } : item) }))} className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white p-2 text-xs font-bold" /><input value={meal.suggestedTime || ''} onChange={event => setNutritionForm(current => ({ ...current, categories: current.categories.map(item => item.id === meal.id ? { ...item, suggestedTime: event.target.value } : item) }))} placeholder="שעה מומלצת" className="w-28 rounded-lg border border-slate-200 bg-white p-2 text-xs" /><button type="button" onClick={() => setNutritionForm(current => ({ ...current, categories: current.categories.filter(item => item.id !== meal.id) }))} className="text-rose-500"><Trash2 size={14} /></button></div>
+                          <textarea value={meal.foods} onChange={event => setNutritionForm(current => ({ ...current, categories: current.categories.map(item => item.id === meal.id ? { ...item, foods: event.target.value } : item) }))} rows={2} placeholder="מזונות וכמויות מומלצות" className="mb-2 w-full rounded-lg border border-slate-200 bg-white p-2 text-xs" />
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{([['קלוריות','calories'],['חלבון','proteinGrams'],['פחמימה','carbsGrams'],['שומן','fatGrams']] as const).map(([label, key]) => <label key={key} className="text-[9px] font-bold text-slate-500">{label}<input type="number" min="0" value={meal[key]} onChange={event => setNutritionForm(current => ({ ...current, categories: current.categories.map(item => item.id === meal.id ? { ...item, [key]: Number(event.target.value) } : item) }))} className="mt-1 w-full rounded border border-slate-200 bg-white p-1.5 text-xs" /></label>)}</div>
+                        </article>
+                      ))}
+                      {nutritionForm.categories.length === 0 && <p className="rounded-xl border border-dashed border-slate-200 p-5 text-center text-xs text-slate-400">הוסף ארוחה ידנית או בקש מעוזר התזונה ליצור חלוקה ראשונית.</p>}
+                    </div>
+
                     <div>
                       <label className="block text-xs text-slate-600 font-medium mb-1">פירוט הארוחות וההנחיות</label>
                       <textarea
@@ -1433,6 +1614,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                         className="w-full border border-slate-200 rounded-lg p-2.5 text-xs focus:outline-none focus:border-emerald-500 leading-relaxed font-sans"
                       />
                     </div>
+                    <label className="block text-xs font-medium text-slate-600">דגשים כלליים של המאמן<textarea value={nutritionForm.coachNotes} onChange={event => setNutritionForm({ ...nutritionForm, coachNotes: event.target.value })} rows={2} className="mt-1 w-full rounded-lg border border-slate-200 p-2.5 text-xs" /></label>
 
                     <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
                       <button
@@ -1470,6 +1652,12 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                         <div className="text-md font-bold font-mono text-slate-800">{currentNutrition.fatGrams}g</div>
                       </div>
                     </div>
+
+                    {currentNutrition.categories && currentNutrition.categories.length > 0 && (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {currentNutrition.categories.map(meal => <article key={meal.id} className="rounded-xl border border-emerald-100 bg-white p-4"><div className="flex items-center justify-between"><h4 className="text-sm font-black text-slate-900">{meal.title}</h4><span className="text-[10px] text-slate-500">{meal.suggestedTime}</span></div><p className="mt-2 whitespace-pre-wrap text-xs text-slate-600">{meal.foods}</p><div className="mt-3 grid grid-cols-4 gap-1 text-center text-[9px]"><span>{meal.calories} קל׳</span><span>{meal.proteinGrams}g חלבון</span><span>{meal.carbsGrams}g פחמ׳</span><span>{meal.fatGrams}g שומן</span></div></article>)}
+                      </div>
+                    )}
 
                     <div className="border-t border-slate-200 pt-4">
                       <span className="block text-xs font-bold text-slate-700 mb-2">תפריט יומי מפורט:</span>

@@ -48,7 +48,9 @@ const REGISTRATION_PLANS = [
   MembershipType.GROUP_ANNUAL,
   MembershipType.OPEN_MONTHLY,
   MembershipType.OPEN_ANNUAL,
-  MembershipType.OPEN_PUNCH_CARD
+  MembershipType.OPEN_PUNCH_CARD,
+  MembershipType.WEIGHT_LOSS_HALF_YEAR,
+  MembershipType.POSTPARTUM_HALF_YEAR
 ];
 
 const calculateAge = (birthDate: string) => {
@@ -258,7 +260,8 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, onLogin, onRegi
     const age = calculateAge(registerBirthDate);
     const expiryDate = new Date();
     const isAnnual = selectedPlan === MembershipType.GROUP_ANNUAL || selectedPlan === MembershipType.OPEN_ANNUAL;
-    expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 6 : 1));
+    const isHalfYear = selectedPlan === MembershipType.WEIGHT_LOSS_HALF_YEAR || selectedPlan === MembershipType.POSTPARTUM_HALF_YEAR;
+    expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : isHalfYear || selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 6 : 1));
     const now = Date.now();
     const newUser: User = {
       id: `user-${now}`,

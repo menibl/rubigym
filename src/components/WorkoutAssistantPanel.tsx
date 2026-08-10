@@ -8,6 +8,7 @@ import {
   Dumbbell,
   Loader2,
   MessageSquareText,
+  Plus,
   RotateCcw,
   Send,
   Sparkles,
@@ -107,6 +108,8 @@ const buildLocalDraft = (
     .filter(item => !hasLowerBodyCaution || item.group !== MuscleGroup.LEGS || /רגל|ברך/.test(normalizedPrompt));
 
   const exerciseCount = /קצר|30/.test(normalizedPrompt) ? 4 : /ארוך|60/.test(normalizedPrompt) ? 7 : 6;
+  const requestedDays = Number(normalizedPrompt.match(/([1-7])\s*(?:ימים|פעמים)/)?.[1]);
+  const trainingDaysPerWeek = Math.min(7, Math.max(1, requestedDays || profile?.weeklySessions || 2));
   const sets = beginner ? 2 : strength ? 4 : 3;
   const exercises: Exercise[] = candidates.slice(0, exerciseCount).map((item, index) => ({
     id: `assistant-ex-${Date.now()}-${index}`,
@@ -118,7 +121,8 @@ const buildLocalDraft = (
     weight: beginner ? 'קל, לפי RPE 5-6' : strength ? 'לפי RPE 7-8' : 'לפי RPE 6-7',
     workDuration: timed ? '40 שניות' : '',
     restDuration: timed ? '20 שניות' : strength ? '90 שניות' : '60 שניות',
-    notes: `${index === 0 ? 'חימום ספציפי לפני הסט הראשון. ' : ''}לעצור במקרה של כאב ולבצע התאמה מקצועית.`
+    notes: `${index === 0 ? 'חימום ספציפי לפני הסט הראשון. ' : ''}לעצור במקרה של כאב ולבצע התאמה מקצועית.`,
+    dayNumber: (index % trainingDaysPerWeek) + 1
   }));
 
   return {
@@ -131,6 +135,8 @@ const buildLocalDraft = (
       ? `המערכת זיהתה מגבלות/כאבים בפרופיל ובזיכרון: ${limitations}. נדרש אישור והתאמה של המאמן.`
       : 'טיוטה אוטומטית. יש לבדוק עומסים, טכניקה והתאמה אישית לפני פרסום.'}${rememberedPreferences ? ` העדפות ומטרות שנשמרו: ${rememberedPreferences}.` : ''}`,
     exercises,
+    trainingDaysPerWeek,
+    dayLabels: Array.from({ length: trainingDaysPerWeek }, (_, index) => `יום אימון ${index + 1}`),
     sourceDocumentIds,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -256,6 +262,23 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
     });
   };
 
+  const addBlankExercise = () => {
+    if (!draft) return;
+    const exercise: Exercise = {
+      id: `assistant-manual-${Date.now()}`,
+      name: 'תרגיל חדש',
+      category: 'תרגיל מותאם',
+      muscleGroup: MuscleGroup.FUNCTIONAL,
+      sets: 3,
+      reps: '10-12',
+      weight: 'לפי יכולת',
+      restDuration: '60 שניות',
+      dayNumber: 1,
+      notes: ''
+    };
+    onUpdateDraft({ ...draft, exercises: [...draft.exercises, exercise], updatedAt: new Date().toISOString(), status: 'DRAFT' });
+  };
+
   const clearConversation = () => {
     if (!window.confirm(`למחוק את זיכרון השיחה עבור ${trainee.name}?`)) return;
     onUpdateMessages(messages.filter(message => message.traineeId !== trainee.id));
@@ -353,6 +376,13 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
           ) : (
             <div className="space-y-3">
               <label className="block text-xs font-bold text-slate-700">מטרת התוכנית<textarea value={draft.objective} onChange={event => onUpdateDraft({ ...draft, objective: event.target.value, updatedAt: new Date().toISOString(), status: 'DRAFT' })} rows={2} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" /></label>
+              <div className="flex items-end justify-between gap-3 rounded-xl border border-violet-100 bg-violet-50 p-3">
+                <label className="text-xs font-bold text-slate-700">מספר ימי אימון בשבוע<select value={draft.trainingDaysPerWeek || 1} onChange={event => {
+                  const days = Number(event.target.value);
+                  onUpdateDraft({ ...draft, trainingDaysPerWeek: days, dayLabels: Array.from({ length: days }, (_, index) => draft.dayLabels?.[index] || `יום אימון ${index + 1}`), exercises: draft.exercises.map(exercise => ({ ...exercise, dayNumber: Math.min(exercise.dayNumber || 1, days) })), updatedAt: new Date().toISOString(), status: 'DRAFT' });
+                }} className="mr-2 rounded-lg border border-violet-200 bg-white px-3 py-2">{[1,2,3,4,5,6,7].map(day => <option key={day} value={day}>{day}</option>)}</select></label>
+                <button onClick={addBlankExercise} className="flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white"><Plus size={14} /> הוסף תרגיל</button>
+              </div>
               <div className="max-h-[390px] space-y-2 overflow-y-auto pl-1">
                 {draft.exercises.map((exercise, index) => (
                   <article key={exercise.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -362,6 +392,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
                       <label className="text-[9px] font-bold text-slate-500">חזרות / זמן<input value={exercise.reps} onChange={event => updateExercise(exercise.id, { reps: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>
                       <label className="text-[9px] font-bold text-slate-500">משקל<input value={exercise.weight || ''} onChange={event => updateExercise(exercise.id, { weight: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>
                       <label className="text-[9px] font-bold text-slate-500">מנוחה<input value={exercise.restDuration || ''} onChange={event => updateExercise(exercise.id, { restDuration: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>
+                      <label className="text-[9px] font-bold text-slate-500">יום אימון<select value={exercise.dayNumber || 1} onChange={event => updateExercise(exercise.id, { dayNumber: Number(event.target.value) })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800">{Array.from({ length: draft.trainingDaysPerWeek || 1 }, (_, index) => index + 1).map(day => <option key={day} value={day}>יום {day}</option>)}</select></label>
                     </div>
                     <p className="mt-2 text-[10px] text-slate-500">{muscleGroupLabels[exercise.muscleGroup]} · {exercise.notes}</p>
                   </article>

@@ -18,6 +18,7 @@ import {
   AttendanceLog,
   SystemSettings,
   MuscleGroup,
+  Exercise,
   Gender,
   MembershipStatus,
   MembershipType,
@@ -93,7 +94,9 @@ const PRIMARY_MEMBERSHIP_PLANS = [
   MembershipType.GROUP_ANNUAL,
   MembershipType.OPEN_MONTHLY,
   MembershipType.OPEN_ANNUAL,
-  MembershipType.OPEN_PUNCH_CARD
+  MembershipType.OPEN_PUNCH_CARD,
+  MembershipType.WEIGHT_LOSS_HALF_YEAR,
+  MembershipType.POSTPARTUM_HALF_YEAR
 ];
 
 const MEMBERSHIP_ADD_ONS = [
@@ -130,6 +133,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
   const [paymentStarting, setPaymentStarting] = useState(false);
+  const [selectedWorkoutDay, setSelectedWorkoutDay] = useState(1);
+  const [demoExercise, setDemoExercise] = useState<Exercise | null>(null);
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [showPunchCardModal, setShowPunchCardModal] = useState<boolean>(false);
   const [selectedPunchCardPackage, setSelectedPunchCardPackage] = useState<{ count: number; price: number; months: number }>({
@@ -189,9 +194,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       if (mode === 'PRIMARY') {
         const expiryDate = new Date();
         const isAnnual = purchasedType === MembershipType.GROUP_ANNUAL || purchasedType === MembershipType.OPEN_ANNUAL;
+        const isHalfYear = purchasedType === MembershipType.WEIGHT_LOSS_HALF_YEAR || purchasedType === MembershipType.POSTPARTUM_HALF_YEAR;
         const punchCount = purchaseVariant ? Number(purchaseVariant.replace('PUNCH_', '')) : 10;
         const punchMonths = punchCount === 5 ? 3 : punchCount === 20 ? 12 : 6;
-        expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : purchasedType === MembershipType.OPEN_PUNCH_CARD ? punchMonths : 1));
+        expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : isHalfYear ? 6 : purchasedType === MembershipType.OPEN_PUNCH_CARD ? punchMonths : 1));
         return {
           ...user,
           membershipType: purchasedType,
@@ -374,10 +380,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     ].filter(Boolean) as MembershipType[];
 
     const hasGroupAccess = userMemberships.some(m => 
-      [MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL].includes(m)
+      [MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL, MembershipType.WEIGHT_LOSS_HALF_YEAR, MembershipType.POSTPARTUM_HALF_YEAR].includes(m)
     );
 
     const hasPersonalAccess = userMemberships.includes(MembershipType.PERSONAL_TRAINING);
+    const dedicatedMemberships = userMemberships.filter(membership => [MembershipType.WEIGHT_LOSS_HALF_YEAR, MembershipType.POSTPARTUM_HALF_YEAR].includes(membership));
+
+    if (dedicatedMemberships.length > 0 && !session.isPersonalTraining && !session.allowedMemberships?.some(membership => dedicatedMemberships.includes(membership))) {
+      return { eligible: false, reason: 'האימון אינו שייך לקבוצה הייעודית החצי־שנתית שלך.' };
+    }
 
     // Personal Training session check
     if (session.isPersonalTraining && !hasPersonalAccess) {
@@ -549,6 +560,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // BOOK / JOIN WAITLIST (Section 5.1 & 5.2)
   const handleBookSession = (session: TrainingSession) => {
+    if (session.isPersonalTraining && !activeUser.secondaryMemberships?.includes(MembershipType.PERSONAL_TRAINING)) {
+      openMembershipCheckout(MembershipType.PERSONAL_TRAINING, 'ADDON');
+      setActiveTab('membership');
+      return;
+    }
     const check = checkBookingEligibility(session);
     if (!check.eligible) {
       showFeedback(check.reason || 'אין הרשאה להרשם לאימון זה', 'error');
@@ -929,6 +945,31 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     (activeUser.membershipType && MEMBERSHIP_TYPE_LABELS[activeUser.membershipType]?.includesWorkoutPlan &&
       (activeUser.membershipStatus === MembershipStatus.ACTIVE || activeUser.offlinePaymentApproved))
   );
+  const hasNutritionAccess = Boolean(
+    activeUser.nutritionPlanPaid ||
+    traineeNutrition?.isPaid ||
+    activeUser.secondaryMemberships?.includes(MembershipType.NUTRITION_PLAN)
+  );
+  const openPaidFeature = (tab: 'workout' | 'nutrition') => {
+    if (tab === 'workout' && !hasWorkoutPlanAccess) {
+      openMembershipCheckout(MembershipType.WORKOUT_PLAN, 'ADDON');
+      setActiveTab('membership');
+      return;
+    }
+    if (tab === 'nutrition' && !hasNutritionAccess) {
+      openMembershipCheckout(MembershipType.NUTRITION_PLAN, 'ADDON');
+      setActiveTab('membership');
+      return;
+    }
+    setActiveTab(tab);
+  };
+  useEffect(() => {
+    if (initialTab === 'workout' && !hasWorkoutPlanAccess) {
+      setSelectedMembershipPurchase(MembershipType.WORKOUT_PLAN);
+      setMembershipPurchaseMode('ADDON');
+      setActiveTab('membership');
+    }
+  }, [hasWorkoutPlanAccess, initialTab]);
   const openPersonalWorkoutDisplay = () => {
     if (!traineeWorkout) return;
     const displayUrl = `${window.location.origin}${window.location.pathname}#personal-workout-display=${encodeURIComponent(activeUser.id)}`;
@@ -1207,7 +1248,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           🏋️ Open Gym
         </button>
         <button
-          onClick={() => setActiveTab('workout')}
+          onClick={() => openPaidFeature('workout')}
           className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
             activeTab === 'workout' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
           }`}
@@ -1215,7 +1256,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           💪 תוכנית אימונים
         </button>
         <button
-          onClick={() => setActiveTab('nutrition')}
+          onClick={() => openPaidFeature('nutrition')}
           className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
             activeTab === 'nutrition' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
           }`}
@@ -1697,22 +1738,24 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {traineeWorkout.exercises.map(ex => (
-                    <div key={ex.id} className="border border-slate-150 rounded-xl p-4 bg-white flex flex-col justify-between hover:shadow-md transition">
+                <div className="flex flex-wrap gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+                  {Array.from({ length: Math.max(1, traineeWorkout.trainingDaysPerWeek || 1) }, (_, index) => index + 1).map(day => (
+                    <button key={day} onClick={() => setSelectedWorkoutDay(day)} className={`rounded-lg px-4 py-2 text-xs font-black ${selectedWorkoutDay === day ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-800 border border-indigo-200'}`}>
+                      {traineeWorkout.dayLabels?.[day - 1] || `יום אימון ${day}`}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {traineeWorkout.exercises.filter(exercise => (exercise.dayNumber || 1) === selectedWorkoutDay).map((ex, index) => (
+                    <div key={ex.id} className="border border-slate-200 rounded-xl p-3 bg-white hover:shadow-md transition">
                       <div>
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="bg-slate-100 text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded">
-                            {ex.category}
-                          </span>
-                          <span className="bg-emerald-50 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded border border-emerald-100">
-                            {ex.muscleGroup}
-                          </span>
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                          <div className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-black text-indigo-700">{index + 1}</span><div className="min-w-0"><h4 className="truncate font-black text-slate-900 text-sm">{ex.name}</h4><span className="text-[9px] text-slate-500">{ex.category} · {ex.muscleGroup}</span></div></div>
+                          {(ex.mediaUrl || ex.mediaStorageId) && <button onClick={() => setDemoExercise(ex)} className="shrink-0 rounded-lg bg-fuchsia-50 px-3 py-2 text-[10px] font-black text-fuchsia-700 border border-fuchsia-200"><MonitorPlay size={13} className="ml-1 inline" /> הדגמה</button>}
                         </div>
 
-                        <h4 className="font-bold text-slate-800 text-sm">{ex.name}</h4>
-
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-50 rounded-lg p-2 my-3 text-center border border-slate-100">
+                        <div className="grid grid-cols-5 gap-1 bg-slate-50 rounded-lg p-2 my-2 text-center border border-slate-100">
                           <div>
                             <span className="text-[9px] text-slate-400 block font-sans">סטים</span>
                             <span className="font-bold font-mono text-slate-800 text-xs">{ex.sets}</span>
@@ -1742,10 +1785,20 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                         )}
                       </div>
 
-                      {(ex.mediaUrl || ex.mediaStorageId) && <ExerciseMedia exercise={ex} compact controls className="mt-2 border-slate-200" />}
                     </div>
                   ))}
                 </div>
+                {traineeWorkout.exercises.filter(exercise => (exercise.dayNumber || 1) === selectedWorkoutDay).length === 0 && <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-400">עדיין לא שובצו תרגילים ליום זה.</div>}
+
+                {demoExercise && (
+                  <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 p-4" onClick={() => setDemoExercise(null)}>
+                    <div className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-2xl" onClick={event => event.stopPropagation()}>
+                      <div className="mb-3 flex items-center justify-between"><div><h4 className="font-black text-slate-900">{demoExercise.name}</h4><p className="text-xs text-slate-500">הדגמת ביצוע ודגשי המאמן</p></div><button onClick={() => setDemoExercise(null)} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold">סגור</button></div>
+                      <ExerciseMedia exercise={demoExercise} controls className="border-slate-200" />
+                      {demoExercise.notes && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">💡 {demoExercise.notes}</p>}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-12 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
@@ -1815,6 +1868,21 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <div className="text-lg font-bold font-mono text-rose-950 mt-1">{traineeNutrition.fatGrams} גרם</div>
                   </div>
                 </div>
+
+                {traineeNutrition.categories && traineeNutrition.categories.length > 0 && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {traineeNutrition.categories.map((meal, index) => (
+                      <article key={meal.id} className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                        <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-700">{index + 1}</span><h4 className="font-black text-slate-900">{meal.title}</h4></div><span className="text-[10px] font-bold text-emerald-700">{meal.suggestedTime}</span></div>
+                        <p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{meal.foods}</p>
+                        <div className="mt-3 grid grid-cols-4 gap-1 rounded-xl bg-slate-50 p-2 text-center text-[9px] text-slate-600"><span><b className="block text-slate-900">{meal.calories}</b>קל׳</span><span><b className="block text-slate-900">{meal.proteinGrams}g</b>חלבון</span><span><b className="block text-slate-900">{meal.carbsGrams}g</b>פחמימה</span><span><b className="block text-slate-900">{meal.fatGrams}g</b>שומן</span></div>
+                        {meal.notes && <p className="mt-2 text-[10px] text-slate-500">{meal.notes}</p>}
+                      </article>
+                    ))}
+                  </div>
+                )}
+
+                {(traineeNutrition.goal || traineeNutrition.hydrationLiters || traineeNutrition.fiberGrams) && <div className="grid gap-2 sm:grid-cols-3"><div className="rounded-xl bg-slate-50 p-3 text-xs"><small className="block text-slate-400">מטרה</small><b>{traineeNutrition.goal || 'לא הוגדרה'}</b></div><div className="rounded-xl bg-sky-50 p-3 text-xs"><small className="block text-sky-600">מים</small><b>{traineeNutrition.hydrationLiters || 0} ליטר ביום</b></div><div className="rounded-xl bg-amber-50 p-3 text-xs"><small className="block text-amber-600">סיבים</small><b>{traineeNutrition.fiberGrams || 0} גרם ביום</b></div></div>}
 
                 <div className="bg-slate-50 border border-slate-150 rounded-xl p-5">
                   <span className="block text-xs font-bold text-slate-700 mb-3">חלוקת ארוחות והנחיות מיוחדות מהמאמן:</span>

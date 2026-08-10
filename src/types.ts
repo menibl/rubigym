@@ -23,7 +23,9 @@ export enum MembershipType {
   OPEN_PUNCH_CARD = 'OPEN_PUNCH_CARD', // פתוח - כרטיסייה
   PERSONAL_TRAINING = 'PERSONAL_TRAINING', // אימון אישי
   NUTRITION_PLAN = 'NUTRITION_PLAN', // תוכנית תזונה
-  WORKOUT_PLAN = 'WORKOUT_PLAN' // תוכנית אימון
+  WORKOUT_PLAN = 'WORKOUT_PLAN', // תוכנית אימון
+  WEIGHT_LOSS_HALF_YEAR = 'WEIGHT_LOSS_HALF_YEAR',
+  POSTPARTUM_HALF_YEAR = 'POSTPARTUM_HALF_YEAR'
 }
 
 export const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, { label: string; badgeColor: string; description: string; includesWorkoutPlan?: boolean }> = {
@@ -68,6 +70,16 @@ export const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, { label: string; bad
     label: 'תוכנית אימון',
     badgeColor: 'bg-blue-100 text-blue-800 border-blue-300',
     description: 'תוכנית אימונים אישית (כלול בפתוח חודשי/שנתי, או להוספה)'
+  },
+  [MembershipType.WEIGHT_LOSS_HALF_YEAR]: {
+    label: 'קבוצת הרזיה – חצי שנתי',
+    badgeColor: 'bg-lime-100 text-lime-800 border-lime-300',
+    description: 'קבוצה ייעודית לתהליך הרזיה למשך שישה חודשים, בתשלום מלא מראש'
+  },
+  [MembershipType.POSTPARTUM_HALF_YEAR]: {
+    label: 'נשים אחרי לידה – חצי שנתי',
+    badgeColor: 'bg-pink-100 text-pink-800 border-pink-300',
+    description: 'קבוצה ייעודית לנשים אחרי לידה למשך שישה חודשים, בתשלום מלא מראש'
   }
 };
 
@@ -79,7 +91,9 @@ export const MEMBERSHIP_PRICES: Record<MembershipType, number> = {
   [MembershipType.OPEN_PUNCH_CARD]: 400,
   [MembershipType.PERSONAL_TRAINING]: 450,
   [MembershipType.NUTRITION_PLAN]: 200,
-  [MembershipType.WORKOUT_PLAN]: 150
+  [MembershipType.WORKOUT_PLAN]: 150,
+  [MembershipType.WEIGHT_LOSS_HALF_YEAR]: 1800,
+  [MembershipType.POSTPARTUM_HALF_YEAR]: 1800
 };
 
 export interface DiscountCode {
@@ -230,6 +244,7 @@ export interface Exercise {
   mediaType?: 'IMAGE' | 'GIF' | 'VIDEO';
   mediaStorageId?: string; // device-local uploaded media in the demo version
   notes?: string;
+  dayNumber?: number; // 1-based training day within a weekly personal plan
 }
 
 export interface WorkoutPlan {
@@ -242,6 +257,8 @@ export interface WorkoutPlan {
   coachName: string;
   lastUpdated: string; // YYYY-MM-DD
   exercises: Exercise[];
+  trainingDaysPerWeek?: number;
+  dayLabels?: string[];
   status?: 'REQUIRED_OPEN_GYM' | 'REQUESTED_BY_TRAINEE' | 'APPROVED_ASSIGNED';
   isRequested?: boolean;
 }
@@ -342,6 +359,8 @@ export interface WorkoutAssistantDraft {
   objective: string;
   coachNotes: string;
   exercises: Exercise[];
+  trainingDaysPerWeek?: number;
+  dayLabels?: string[];
   sourceDocumentIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -404,10 +423,35 @@ export interface NutritionPlan {
   carbsGrams: number;
   fatGrams: number;
   mealsDescription: string; // Multi-line plan
+  goal?: string;
+  hydrationLiters?: number;
+  fiberGrams?: number;
+  categories?: NutritionMealCategory[];
+  coachNotes?: string;
+  assistantMessages?: NutritionAssistantMessage[];
   active: boolean;
   isPaid?: boolean; // Paid individual fee
   price?: number; // Fee amount (e.g., 150 ILS)
   paymentStatus?: 'UNPAID' | 'PAID' | 'WAIVED';
+}
+
+export interface NutritionMealCategory {
+  id: string;
+  title: string;
+  suggestedTime?: string;
+  foods: string;
+  calories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
+  notes?: string;
+}
+
+export interface NutritionAssistantMessage {
+  id: string;
+  role: 'COACH' | 'ASSISTANT';
+  content: string;
+  createdAt: string;
 }
 
 export interface BlackPoint {

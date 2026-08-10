@@ -8,7 +8,9 @@ const membershipPrices = {
   OPEN_PUNCH_CARD: 400,
   PERSONAL_TRAINING: 450,
   NUTRITION_PLAN: 200,
-  WORKOUT_PLAN: 150
+  WORKOUT_PLAN: 150,
+  WEIGHT_LOSS_HALF_YEAR: 1800,
+  POSTPARTUM_HALF_YEAR: 1800
 };
 
 const membershipLabels = {
@@ -19,7 +21,9 @@ const membershipLabels = {
   OPEN_PUNCH_CARD: 'כרטיסיית Open Gym',
   PERSONAL_TRAINING: 'אימון אישי',
   NUTRITION_PLAN: 'תוכנית תזונה',
-  WORKOUT_PLAN: 'תוכנית אימון אישית'
+  WORKOUT_PLAN: 'תוכנית אימון אישית',
+  WEIGHT_LOSS_HALF_YEAR: 'קבוצת הרזיה – חצי שנתי',
+  POSTPARTUM_HALF_YEAR: 'נשים אחרי לידה – חצי שנתי'
 };
 
 const punchCardVariants = {
