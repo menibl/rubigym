@@ -8,9 +8,10 @@
   --app-surface-2: #262a35;
   --app-gold: #c9a867;
   --app-gold-strong: #d8b873;
-  --app-copper: #b8734f;
+  --app-copper: #8f5135;
   --app-text: #edece4;
-  --app-muted: #8b8d97;
+  --app-muted: #a6a8b1;
+  --app-muted-soft: #92959f;
   --app-line: #2e313d;
 }
 
@@ -41,6 +42,12 @@ body {
 
 .bg-slate-25, .bg-slate-200 {
   background-color: #303440 !important;
+}
+
+[class*="bg-slate-50/"],
+[class*="bg-slate-100/"],
+[class*="bg-slate-200/"] {
+  background-color: var(--app-surface-2) !important;
 }
 
 /* Text Overrides */
@@ -75,7 +82,8 @@ body {
   color: var(--app-gold) !important;
 }
 
-.text-emerald-700, .text-emerald-800 {
+.text-emerald-700, .text-emerald-800,
+.text-emerald-900, .text-emerald-950 {
   color: var(--app-gold) !important;
 }
 
@@ -90,6 +98,11 @@ body {
 .bg-emerald-100 {
   background-color: rgba(201, 168, 103, 0.18) !important;
   color: var(--app-gold) !important;
+}
+
+[class*="bg-emerald-50/"],
+[class*="bg-emerald-100/"] {
+  background-color: rgba(201, 168, 103, 0.16) !important;
 }
 
 .text-emerald-800 {
@@ -273,9 +286,25 @@ option {
   color: var(--app-muted) !important;
 }
 
+/* Filled gold actions need ink, not white. Keep this after the generic
+   text-white override so every legacy Tailwind combination stays legible. */
+.bg-emerald-500.text-white,
+.bg-emerald-600.text-white,
+.bg-emerald-700.text-white,
+.bg-emerald-500 .text-white,
+.bg-emerald-600 .text-white,
+.bg-emerald-700 .text-white {
+  color: #171810 !important;
+}
+
 .bg-amber-600,
 .bg-amber-500 {
   background: var(--app-copper) !important;
+}
+
+.hover\:bg-amber-600:hover,
+.hover\:bg-amber-700:hover {
+  background: #7d442d !important;
 }
 
 .text-amber-300,
@@ -303,11 +332,36 @@ option {
 
 .bg-sky-50,
 .bg-sky-100,
+.bg-blue-50,
+.bg-blue-100,
 .bg-indigo-50,
 .bg-indigo-100,
 .bg-purple-50,
-.bg-purple-100 {
+.bg-purple-100,
+.bg-green-50,
+.bg-green-100,
+.bg-lime-50,
+.bg-lime-100,
+.bg-rose-50,
+.bg-rose-100,
+.bg-red-50,
+.bg-red-100,
+.bg-orange-50,
+.bg-orange-100,
+.bg-yellow-50,
+.bg-yellow-100 {
   background: rgba(201, 168, 103, 0.08) !important;
+}
+
+.text-sky-500,
+.text-sky-600,
+.text-blue-500,
+.text-blue-600,
+.text-indigo-500,
+.text-indigo-600,
+.text-purple-500,
+.text-purple-600 {
+  color: #aebcf4 !important;
 }
 
 .text-sky-700,
@@ -322,6 +376,56 @@ option {
 .text-purple-900,
 .text-purple-950 {
   color: #d7c6a3 !important;
+}
+
+.text-green-500,
+.text-green-600,
+.text-green-700,
+.text-green-800,
+.text-lime-500,
+.text-lime-600,
+.text-lime-700,
+.text-lime-800 {
+  color: #9bd9b9 !important;
+}
+
+.text-rose-500,
+.text-rose-600,
+.text-rose-700,
+.text-rose-800,
+.text-red-500,
+.text-red-600,
+.text-red-700,
+.text-red-800 {
+  color: #ff9da9 !important;
+}
+
+.text-orange-500,
+.text-orange-600,
+.text-orange-700,
+.text-yellow-500,
+.text-yellow-600,
+.text-yellow-700 {
+  color: #e6bd78 !important;
+}
+
+/* Medium accent fills are darkened slightly for comfortable white text. */
+.bg-sky-500,
+.bg-sky-600,
+.bg-sky-700 {
+  background-color: #176c91 !important;
+}
+
+.bg-rose-500,
+.bg-rose-600,
+.bg-rose-700 {
+  background-color: #9f3448 !important;
+}
+
+.bg-red-500,
+.bg-red-600,
+.bg-red-700 {
+  background-color: #a8363b !important;
 }
 
 .border-sky-100,
@@ -794,7 +898,7 @@ option {
 }
 .auth-kicker { margin-top: 38px; color: #c9a867; font-size: 12px; }
 .auth-hero h1 { margin-top: 10px; font-size: clamp(38px, 11vw, 58px); font-weight: 900; line-height: .98; }
-.auth-hero > p { margin-top: 20px; color: #aaa99f; font-size: 14px; line-height: 1.75; }
+.auth-hero > p { margin-top: 20px; color: #c2c1b8; font-size: 14px; line-height: 1.75; }
 
 .auth-benefits {
   display: grid;
@@ -827,8 +931,8 @@ option {
 
 .auth-primary { background: #c9a867; color: #171810; }
 .auth-secondary { border: 1px solid #4b4a43; color: #f4f1e8; }
-.auth-legal { display: block; margin-top: 16px; color: #77776f; font-size: 9px; line-height: 1.6; }
-.auth-back { display: flex; align-items: center; gap: 5px; color: #aaa99f; font-size: 12px; }
+.auth-legal { display: block; margin-top: 16px; color: #aaa9a1; font-size: 10px; line-height: 1.6; }
+.auth-back { display: flex; align-items: center; gap: 5px; color: #c0bfb6; font-size: 12px; }
 .auth-mini-brand {
   margin-top: 22px;
   color: #f4f1e8;
@@ -838,7 +942,7 @@ option {
   letter-spacing: .14em;
 }
 .auth-panel h1 { margin-top: 26px; font-size: 27px; font-weight: 900; }
-.auth-panel > p { margin-top: 4px; color: #99988f; font-size: 12px; }
+.auth-panel > p { margin-top: 4px; color: #b7b6ad; font-size: 12px; }
 
 .auth-method-tabs {
   display: grid;
@@ -857,7 +961,7 @@ option {
   justify-content: center;
   gap: 6px;
   border-radius: 10px;
-  color: #8d8d84;
+  color: #b2b1a8;
   font-size: 11px;
 }
 
@@ -917,7 +1021,7 @@ option {
 }
 
 .auth-plan-card strong { font-size: 12px; }
-.auth-plan-card small { color: #99988f; font-size: 9px; line-height: 1.45; }
+.auth-plan-card small { color: #b6b5ad; font-size: 10px; line-height: 1.45; }
 .auth-plan-card b { color: #d9bc7f; font-size: 15px; white-space: nowrap; }
 
 .auth-checkout-summary {
@@ -934,7 +1038,7 @@ option {
 
 .auth-checkout-summary strong { color: #d9bc7f; font-size: 20px; }
 .auth-payment-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.auth-mock-note { color: #99988f; font-size: 9px; }
+.auth-mock-note { color: #b3b2aa; font-size: 10px; }
 .auth-gender { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .auth-gender button { min-height: 42px; border: 1px solid #41423b; border-radius: 11px; color: #a3a299; }
 .auth-gender button.active { border-color: #c9a867; background: rgba(201, 168, 103, .12); color: #e0c68d; }
