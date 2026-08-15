@@ -154,6 +154,7 @@ export default function App() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'profile' | 'health' | 'family'>('profile');
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     const savedUserId = getSavedAuthUserId();
@@ -434,6 +435,7 @@ export default function App() {
   const handleCloseSettings = () => {
     setIsSettingsOpen(false);
     setUserToEdit(null);
+    setSettingsInitialSection('profile');
   };
 
   if (clubWorkoutDisplay) return <ClubWorkoutDisplay />;
@@ -532,7 +534,11 @@ export default function App() {
       ? 'workout'
       : workspaceView === 'MY_NUTRITION'
         ? 'nutrition'
-        : 'profile';
+        : workspaceView === 'MY_MEMBERSHIP'
+          ? 'membership'
+          : workspaceView === 'CHECK_IN'
+            ? 'card'
+            : 'profile';
 
   const familyPayer = activeUser.familyPayerId
     ? users.find(user => user.id === activeUser.familyPayerId)
@@ -548,6 +554,7 @@ export default function App() {
   if (healthExpiresAt) healthExpiresAt.setFullYear(healthExpiresAt.getFullYear() + 1);
   const hasValidHealthDeclaration = Boolean(
     activeUser.healthDeclarationSigned
+    && (!activeUser.healthDeclarationRequiresMedicalCertificate || activeUser.healthDeclarationMedicalCertificateApproved)
     && healthExpiresAt
     && Number.isFinite(healthExpiresAt.getTime())
     && Date.now() <= healthExpiresAt.getTime()
@@ -597,6 +604,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setUserToEdit(activeUser);
+                  setSettingsInitialSection('profile');
                   setIsSettingsOpen(true);
                 }}
                 className="mr-2 p-1.5 bg-zinc-800 hover:bg-zinc-700 text-amber-400 rounded-lg transition border border-zinc-700 cursor-pointer"
@@ -636,6 +644,7 @@ export default function App() {
               onSelect={setWorkspaceView}
               onOpenProfile={() => {
                 setUserToEdit(activeUser);
+                setSettingsInitialSection('profile');
                 setIsSettingsOpen(true);
               }}
               users={users}
@@ -729,8 +738,9 @@ export default function App() {
               onUpdateBlackPoints={setBlackPoints}
               onUpdatePayments={setPayments}
               onSendMessage={handleSendMessage}
-              onOpenSettings={() => {
+              onOpenSettings={(section = 'profile') => {
                 setUserToEdit(activeUser);
+                setSettingsInitialSection(section);
                 setIsSettingsOpen(true);
               }}
               onHome={() => setWorkspaceView(null)}
@@ -782,6 +792,8 @@ export default function App() {
         discountCodes={discountCodes}
         onUpdateDiscountCodes={setDiscountCodes}
         isAdminMode={activeUser.role === UserRole.MANAGER && userToEdit?.id !== activeUser.id}
+        initialSection={settingsInitialSection}
+        onOpenFamilyPurchase={activeUser.role === UserRole.TRAINEE ? () => setWorkspaceView('MY_MEMBERSHIP') : undefined}
       />
 
       {showBlockingAlert && (
@@ -800,14 +812,14 @@ export default function App() {
               {!hasValidPayment && (
                 <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
                   <div className="flex gap-3"><CreditCard className="shrink-0 text-amber-400" size={22} /><div><h3 className="font-black">המנוי אינו משולם או אינו פעיל</h3><p className="mt-1 text-xs leading-5 text-zinc-400">יש לבחור מסלול או להסדיר את התשלום לפני הרשמה לאימון.</p></div></div>
-                  <button type="button" onClick={() => { setWorkspaceView('MY_ACCOUNT'); setShowTraineeAccessAlert(false); }} className="mt-3 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-zinc-950">להסדרת מנוי ותשלום</button>
+                  <button type="button" onClick={() => { setWorkspaceView('MY_MEMBERSHIP'); setShowTraineeAccessAlert(false); }} className="mt-3 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-zinc-950">להסדרת מנוי ותשלום</button>
                 </div>
               )}
 
               {!hasValidHealthDeclaration && (
                 <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4">
                   <div className="flex gap-3"><HeartPulse className="shrink-0 text-rose-400" size={22} /><div><h3 className="font-black">הצהרת הבריאות חסרה או פגה</h3><p className="mt-1 text-xs leading-5 text-zinc-400">תוקף ההצהרה הוא שנה. לאחר מכן נדרשת חתימה מחדש.</p></div></div>
-                  <button type="button" onClick={() => { setUserToEdit(activeUser); setIsSettingsOpen(true); setShowTraineeAccessAlert(false); }} className="mt-3 w-full rounded-xl bg-rose-500 px-4 py-3 text-sm font-black text-white">לחתימה על הצהרת בריאות</button>
+                  <button type="button" onClick={() => { setUserToEdit(activeUser); setSettingsInitialSection('health'); setIsSettingsOpen(true); setShowTraineeAccessAlert(false); }} className="mt-3 w-full rounded-xl bg-rose-500 px-4 py-3 text-sm font-black text-white">לחתימה על הצהרת בריאות</button>
                 </div>
               )}
             </div>

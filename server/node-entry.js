@@ -29,7 +29,7 @@ const mimeTypes = new Map([
 const securityHeaders = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Resource-Policy': 'same-site',
-  'Permissions-Policy': 'camera=(), geolocation=(), microphone=()',
+  'Permissions-Policy': 'camera=(self), geolocation=(), microphone=()',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',

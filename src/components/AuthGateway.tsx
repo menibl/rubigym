@@ -9,9 +9,12 @@ import {
   MessageSquareText,
   Phone,
   ShieldCheck,
-  UserPlus
+  UserPlus,
+  BellRing,
+  HeartPulse
 } from 'lucide-react';
 import { RubisLogo } from './RubisLogo';
+import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
 import {
   Gender,
   DiscountCode,
@@ -81,7 +84,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [registerBirthDate, setRegisterBirthDate] = useState('');
   const [registerGender, setRegisterGender] = useState<Gender>(Gender.FEMALE);
   const [healthApproved, setHealthApproved] = useState(false);
+  const [healthDeclaration, setHealthDeclaration] = useState<HealthDeclarationResult | null>(null);
+  const [showHealthDeclaration, setShowHealthDeclaration] = useState(false);
   const [agreementApproved, setAgreementApproved] = useState(false);
+  const [pushApproved, setPushApproved] = useState(false);
+  const [pushWorkoutReminders, setPushWorkoutReminders] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
   const [isFamilyPlan, setIsFamilyPlan] = useState(false);
   const [familyName, setFamilyName] = useState('');
@@ -224,7 +231,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     setRegisterStep(3);
   };
 
-  const handleRegistrationDetails = (event: React.FormEvent) => {
+  const handleRegistrationDetails = async (event: React.FormEvent) => {
     event.preventDefault();
     resetMessages();
     if (!registerName.trim() || !registerUsername.trim() || !registerPassword || !registerBirthDate) {
@@ -240,7 +247,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       return;
     }
     if (!healthApproved) {
-      setError('יש לאשר את הצהרת הבריאות כדי להשלים הרשמה.');
+      setError('יש למלא ולחתום על שאלון הצהרת הבריאות כדי להשלים הרשמה.');
       return;
     }
     if (!agreementApproved) {
@@ -251,6 +258,15 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     if (age < 16) {
       setError('פתיחת חשבון עצמאי אפשרית מגיל 16. מתחת לגיל 16 יש להצטרף כבן משפחה באמצעות חשבון משפחתי.');
       return;
+    }
+
+    if (pushApproved && 'Notification' in window && Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setPushApproved(false);
+        setPushWorkoutReminders(false);
+        setNotice('הדפדפן לא אישר התראות. ניתן להפעיל אותן מאוחר יותר בפרופיל.');
+      }
     }
 
     setRegisterStep(4);
@@ -284,10 +300,16 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       birthDate: registerBirthDate,
       healthDeclarationSigned: true,
       healthDeclarationDate: new Date().toISOString().split('T')[0],
+      healthDeclarationAnswers: healthDeclaration?.answers,
+      healthDeclarationRequiresMedicalCertificate: healthDeclaration?.requiresMedicalCertificate,
+      healthDeclarationMedicalCertificateApproved: false,
+      healthDeclarationParentConsent: healthDeclaration?.parentConsent,
+      healthDeclarationParentName: healthDeclaration?.parentName,
+      healthDeclarationSignatureName: healthDeclaration?.signatureName,
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
-      pushNotificationsEnabled: false,
-      workoutRemindersEnabled: false,
+      pushNotificationsEnabled: pushApproved && (!('Notification' in window) || Notification.permission === 'granted'),
+      workoutRemindersEnabled: pushApproved && pushWorkoutReminders,
       membershipType: selectedPlan,
       membershipStatus: MembershipStatus.ACTIVE,
       membershipExpiry: expiryDate.toISOString().split('T')[0],
@@ -312,6 +334,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         membershipType: selectedPlan,
         mode: 'REGISTRATION',
         familyMembersCount: isFamilyPlan ? familyMembersCount : undefined,
+        familyName: isFamilyPlan ? newUser.familyName : undefined,
         discountCode: appliedDiscount?.code,
         registrationDraft: { user: newUser }
       });
@@ -420,14 +443,38 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   <button type="button" className={registerGender === Gender.FEMALE ? 'active' : ''} onClick={() => setRegisterGender(Gender.FEMALE)}>אישה</button>
                   <button type="button" className={registerGender === Gender.MALE ? 'active' : ''} onClick={() => setRegisterGender(Gender.MALE)}>גבר</button>
                 </div>
-                <label className="auth-checkbox">
-                  <input type="checkbox" checked={healthApproved} onChange={event => setHealthApproved(event.target.checked)} />
-                  <span>קראתי, חתמתי ואישרתי את הצהרת הבריאות (בתוקף לשנה).</span>
-                </label>
+                <button type="button" className={`auth-health-launch ${healthApproved ? 'complete' : ''}`} onClick={() => setShowHealthDeclaration(current => !current)}>
+                  <HeartPulse size={18} />
+                  <span><strong>{healthApproved ? 'הצהרת הבריאות נחתמה' : 'מילוי וחתימה על הצהרת הבריאות'}</strong><small>{healthApproved ? 'ההצהרה בתוקף לשנה' : 'שאלון רפואי לפי הטופס המצורף'}</small></span>
+                  <CheckCircle2 size={18} />
+                </button>
+                {showHealthDeclaration && (
+                  <HealthDeclarationForm
+                    fullName={registerName}
+                    age={calculateAge(registerBirthDate)}
+                    onComplete={result => {
+                      setHealthDeclaration(result);
+                      setHealthApproved(result.signed);
+                      if (result.signed) {
+                        setShowHealthDeclaration(false);
+                        setError('');
+                        setNotice('הצהרת הבריאות נחתמה ונשמרה בהצלחה.');
+                      } else {
+                        setError('נדרשת תעודה רפואית ואישור המועדון לפני שניתן להשלים את ההרשמה.');
+                      }
+                    }}
+                  />
+                )}
                 <label className="auth-checkbox">
                   <input type="checkbox" checked={agreementApproved} onChange={event => setAgreementApproved(event.target.checked)} />
                   <span>קראתי וחתמתי על הסכם ההצטרפות, התקנון, מדיניות הביטולים והפרטיות.</span>
                 </label>
+                <div className="auth-push-consent">
+                  <div><BellRing size={18} /><span><strong>התראות PUSH</strong><small>אישור התראות ועדכונים במכשיר הזה</small></span></div>
+                  <label className="auth-checkbox"><input type="checkbox" checked={pushApproved} onChange={event => setPushApproved(event.target.checked)} /><span>אני מאשר/ת קבלת התראות PUSH מהמועדון.</span></label>
+                  <label className="auth-checkbox"><input type="checkbox" checked={pushWorkoutReminders} disabled={!pushApproved} onChange={event => setPushWorkoutReminders(event.target.checked)} /><span>שליחת תזכורות לפני אימונים שנרשמתי אליהם.</span></label>
+                  <small>ניתן לבטל את ההתראות בכל עת דרך הפרופיל.</small>
+                </div>
                 <button className="auth-primary" type="submit"><CheckCircle2 size={18} /> המשך לבחירת מסלול</button>
               </form>
             )}

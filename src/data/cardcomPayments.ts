@@ -12,6 +12,7 @@ export interface PendingCardcomPayment {
   createdAt: string;
   registrationDraft?: Record<string, unknown>;
   familyMembersCount?: number;
+  familyName?: string;
   discountCode?: string;
 }
 
@@ -25,6 +26,7 @@ interface CreatePaymentRequest {
   purchaseVariant?: PendingCardcomPayment['purchaseVariant'];
   registrationDraft?: Record<string, unknown>;
   familyMembersCount?: number;
+  familyName?: string;
   discountCode?: string;
 }
 
@@ -37,6 +39,7 @@ export interface VerifiedCardcomPayment {
   last4Digits?: string;
   mode: PendingCardcomPayment['mode'];
   purchaseVariant?: PendingCardcomPayment['purchaseVariant'];
+  familyMembersCount?: number;
 }
 
 const paymentApiBase = () => (import.meta.env.VITE_PAYMENT_API_URL || '').replace(/\/$/, '');
@@ -72,7 +75,9 @@ export const startCardcomPayment = async (request: CreatePaymentRequest) => {
     mode: request.mode,
     purchaseVariant: request.purchaseVariant,
     createdAt: new Date().toISOString(),
-    registrationDraft: request.registrationDraft
+    registrationDraft: request.registrationDraft,
+    familyMembersCount: request.familyMembersCount,
+    familyName: request.familyName
   };
   sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
   window.location.assign(result.url);
@@ -102,6 +107,7 @@ export const verifyPendingCardcomPayment = async (pending: PendingCardcomPayment
   if (result.membershipType !== pending.membershipType) throw new Error('פרטי העסקה אינם תואמים למסלול שנבחר.');
   if (result.mode !== pending.mode) throw new Error('סוג העסקה אינו תואם לפעולה שנבחרה.');
   if ((result.purchaseVariant || undefined) !== pending.purchaseVariant) throw new Error('חבילת התשלום אינה תואמת לחבילה שנבחרה.');
+  if ((result.familyMembersCount || undefined) !== pending.familyMembersCount) throw new Error('פרטי החבילה המשפחתית אינם תואמים לעסקה.');
   return result as VerifiedCardcomPayment;
 };
 

@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, Gender, DiscountCode, MEMBERSHIP_PRICES } from '../types';
 import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
+import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -17,6 +18,8 @@ interface UserSettingsModalProps {
   discountCodes?: DiscountCode[];
   onUpdateDiscountCodes?: (discountCodes: DiscountCode[]) => void;
   isAdminMode?: boolean; // If opened from admin panel to edit another user
+  initialSection?: 'profile' | 'health' | 'family';
+  onOpenFamilyPurchase?: () => void;
 }
 
 export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
@@ -28,9 +31,12 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   onUpdateAllUsers,
   discountCodes = [],
   onUpdateDiscountCodes,
-  isAdminMode = false
+  isAdminMode = false,
+  initialSection = 'profile',
+  onOpenFamilyPurchase
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'family'>('profile');
+  const [showHealthDeclaration, setShowHealthDeclaration] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Form states
@@ -67,10 +73,14 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [subGender, setSubGender] = useState<Gender>(Gender.MALE);
   const [subMembership, setSubMembership] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
   const [subHealthApproved, setSubHealthApproved] = useState(false);
+  const [subHealthDeclaration, setSubHealthDeclaration] = useState<HealthDeclarationResult | null>(null);
+  const [showSubHealthForm, setShowSubHealthForm] = useState(false);
   const [subAgreementApproved, setSubAgreementApproved] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
+      setActiveTab(initialSection === 'family' ? 'family' : 'profile');
+      setShowHealthDeclaration(initialSection === 'health');
       setName(currentUser.name || '');
       setUsername(currentUser.username || currentUser.name || '');
       setPassword(currentUser.password || '');
@@ -92,7 +102,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setAppliedCoupon(null);
       setCouponMsg('');
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, initialSection]);
 
   if (!isOpen) return null;
 
@@ -242,17 +252,38 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     setPushEnabled(true);
   };
 
-  const handleRenewHealthDeclaration = () => {
+  const handleRenewHealthDeclaration = (result: HealthDeclarationResult) => {
     const updated: User = {
       ...currentUser,
-      healthDeclarationSigned: true,
-      healthDeclarationDate: new Date().toISOString().split('T')[0]
+      healthDeclarationSigned: result.signed,
+      healthDeclarationDate: new Date().toISOString().split('T')[0],
+      healthDeclarationAnswers: result.answers,
+      healthDeclarationRequiresMedicalCertificate: result.requiresMedicalCertificate,
+      healthDeclarationMedicalCertificateApproved: false,
+      healthDeclarationParentConsent: result.parentConsent,
+      healthDeclarationParentName: result.parentName,
+      healthDeclarationSignatureName: result.signatureName
     };
     onUpdateUser(updated);
     if (onUpdateAllUsers) {
       onUpdateAllUsers(allUsers.map(user => user.id === updated.id ? updated : user));
     }
-    setMsg({ type: 'success', text: 'הצהרת הבריאות נחתמה מחדש ותוקפה הוארך בשנה.' });
+    setShowHealthDeclaration(false);
+    setMsg(result.signed
+      ? { type: 'success', text: 'הצהרת הבריאות נחתמה מחדש ותוקפה הוארך בשנה.' }
+      : { type: 'error', text: 'השאלון נשמר. נדרשת תעודה רפואית ואישור המועדון לפני כניסה לאימונים.' });
+  };
+
+  const handleApproveMedicalCertificate = () => {
+    const updated: User = {
+      ...currentUser,
+      healthDeclarationSigned: true,
+      healthDeclarationMedicalCertificateApproved: true,
+      healthDeclarationDate: new Date().toISOString().split('T')[0]
+    };
+    onUpdateUser(updated);
+    onUpdateAllUsers?.(allUsers.map(user => user.id === updated.id ? updated : user));
+    setMsg({ type: 'success', text: 'קבלת התעודה הרפואית אושרה והצהרת הבריאות הופעלה לשנה.' });
   };
 
   const handleEnableFamilyAccount = () => {
@@ -260,24 +291,14 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setMsg({ type: 'error', text: 'אנא הזן שם למשפחה' });
       return;
     }
-
-    const famId = currentUser.familyId || `fam-${Date.now()}`;
-    const updated: User = {
-      ...currentUser,
-      familyId: famId,
-      familyName: familyName.trim(),
-      isFamilyPayer: true,
-      familyMembersCount: familyQuota,
-      familyTrackName: `מסלול משפחתי (${familyQuota} מנויים)`
-    };
-
-    if (onUpdateAllUsers) {
-      onUpdateAllUsers(allUsers.map(u => u.id === updated.id ? updated : u));
+    if (!onOpenFamilyPurchase) {
+      setMsg({ type: 'error', text: 'רכישת מסלול משפחתי מתבצעת מתוך חשבון המתאמן המשלם.' });
+      return;
     }
-    onUpdateUser(updated);
-    setFamilyName(updated.familyName || '');
-    setFamilyQuota(updated.familyMembersCount || familyQuota);
-    setMsg({ type: 'success', text: `חשבון משפחתי (${familyName}) הוגדר בהצלחה!` });
+
+    sessionStorage.setItem('baly_family_purchase_draft_v1', JSON.stringify({ familyName: familyName.trim(), familyQuota }));
+    onClose();
+    onOpenFamilyPurchase?.();
   };
 
   const handleAddFamilyMember = (e: React.FormEvent) => {
@@ -315,8 +336,14 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       gender: subGender,
       age: Math.max(0, subAge),
       birthDate: subBirthDate,
-      healthDeclarationSigned: true,
+      healthDeclarationSigned: subHealthDeclaration?.signed ?? false,
       healthDeclarationDate: new Date().toISOString().split('T')[0],
+      healthDeclarationAnswers: subHealthDeclaration?.answers,
+      healthDeclarationRequiresMedicalCertificate: subHealthDeclaration?.requiresMedicalCertificate,
+      healthDeclarationMedicalCertificateApproved: false,
+      healthDeclarationParentConsent: subHealthDeclaration?.parentConsent,
+      healthDeclarationParentName: subHealthDeclaration?.parentName,
+      healthDeclarationSignatureName: subHealthDeclaration?.signatureName,
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
       membershipType: subMembership,
@@ -343,6 +370,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     setSubPhone('');
     setSubBirthDate('');
     setSubHealthApproved(false);
+    setSubHealthDeclaration(null);
+    setShowSubHealthForm(false);
     setSubAgreementApproved(false);
     setMsg({ type: 'success', text: `בן המשפחה ${newSubUser.name} נוסף בהצלחה!` });
   };
@@ -492,11 +521,25 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 </p>
                 <button
                   type="button"
-                  onClick={handleRenewHealthDeclaration}
+                  onClick={() => setShowHealthDeclaration(current => !current)}
                   className="px-3 py-2 rounded-lg bg-emerald-700 text-white font-bold text-[11px]"
                 >
                   חתימה מחדש על הצהרת הבריאות
                 </button>
+                {showHealthDeclaration && (
+                  <div className="mt-3 rounded-2xl bg-slate-950 p-4">
+                    <HealthDeclarationForm
+                      fullName={currentUser.name}
+                      age={currentUser.age}
+                      onComplete={handleRenewHealthDeclaration}
+                    />
+                  </div>
+                )}
+                {isAdminMode && currentUser.healthDeclarationRequiresMedicalCertificate && !currentUser.healthDeclarationMedicalCertificateApproved && (
+                  <button type="button" onClick={handleApproveMedicalCertificate} className="mr-2 rounded-lg bg-amber-600 px-3 py-2 text-[11px] font-bold text-white">
+                    אישור מנהל: התקבלה תעודה רפואית תקפה
+                  </button>
+                )}
               </div>
 
               <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 space-y-3">
@@ -643,7 +686,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                         onClick={handleEnableFamilyAccount}
                         className="bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl hover:bg-indigo-700 transition cursor-pointer"
                       >
-                        הגדר חשבון משפחתי
+                        מעבר לבחירה ולתשלום על מסלול משפחתי
                       </button>
                     </div>
                   )}
@@ -742,10 +785,27 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                             </label>
                           </div>
 
-                          <label className="flex items-start gap-2 text-[11px] text-slate-700">
-                            <input type="checkbox" checked={subHealthApproved} onChange={event => setSubHealthApproved(event.target.checked)} />
-                            <span>אני מאשר/ת וחותם/ת על הצהרת הבריאות השנתית עבור בן המשפחה.</span>
-                          </label>
+                          <button type="button" onClick={() => setShowSubHealthForm(current => !current)} className={`w-full rounded-xl border p-3 text-right font-bold ${subHealthApproved ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}>
+                            {subHealthApproved ? '✓ הצהרת הבריאות של בן המשפחה נחתמה' : 'מילוי הצהרת בריאות עבור בן המשפחה'}
+                          </button>
+                          {showSubHealthForm && (
+                            <div className="rounded-2xl bg-slate-950 p-4">
+                              <HealthDeclarationForm
+                                fullName={subName}
+                                age={subBirthDate ? Math.max(0, new Date().getFullYear() - new Date(subBirthDate).getFullYear()) : 0}
+                                onComplete={result => {
+                                  setSubHealthDeclaration(result);
+                                  setSubHealthApproved(result.signed);
+                                  if (result.signed) {
+                                    setShowSubHealthForm(false);
+                                    setMsg({ type: 'success', text: 'הצהרת הבריאות של בן המשפחה נשמרה.' });
+                                  } else {
+                                    setMsg({ type: 'error', text: 'נדרשת תעודה רפואית עבור בן המשפחה לפני הפעלת החשבון.' });
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
                           <label className="flex items-start gap-2 text-[11px] text-slate-700">
                             <input type="checkbox" checked={subAgreementApproved} onChange={event => setSubAgreementApproved(event.target.checked)} />
                             <span>אני מאשר/ת וחותם/ת על הסכם ההצטרפות והתקנון עבור בן המשפחה.</span>

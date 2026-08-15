@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import {
   User,
@@ -49,7 +49,8 @@ import {
   UserRound,
   WalletCards,
   MonitorPlay,
-  HeartPulse
+  HeartPulse,
+  Camera
 } from 'lucide-react';
 import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
 import { ExerciseMedia } from './ExerciseMedia';
@@ -85,7 +86,7 @@ interface TraineeDashboardProps {
   onUpdateBlackPoints: (points: BlackPoint[]) => void;
   onUpdatePayments: (payments: Payment[]) => void;
   onSendMessage: (content: string, receiverId: string) => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (section?: 'profile' | 'health' | 'family') => void;
   onLogout: () => void;
   initialTab?: 'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership';
   onHome?: () => void;
@@ -136,6 +137,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
   const [paymentStarting, setPaymentStarting] = useState(false);
+  const familyDraft = (() => {
+    try { return JSON.parse(sessionStorage.getItem('baly_family_purchase_draft_v1') || 'null'); } catch { return null; }
+  })();
+  const [familyPurchaseName, setFamilyPurchaseName] = useState(familyDraft?.familyName || activeUser.familyName || `משפחת ${activeUser.name.split(' ')[0]}`);
+  const [familyPurchaseCount, setFamilyPurchaseCount] = useState<number>(familyDraft?.familyQuota || activeUser.familyMembersCount || 2);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState('');
+  const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerStreamRef = useRef<MediaStream | null>(null);
   const [selectedWorkoutDay, setSelectedWorkoutDay] = useState(1);
   const [demoExercise, setDemoExercise] = useState<Exercise | null>(null);
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -191,7 +201,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     purchasedType: MembershipType,
     mode: 'PRIMARY' | 'ADDON',
     verified: VerifiedCardcomPayment,
-    purchaseVariant?: 'PUNCH_5' | 'PUNCH_10' | 'PUNCH_20'
+    purchaseVariant?: 'PUNCH_5' | 'PUNCH_10' | 'PUNCH_20',
+    familyMembersCount?: number,
+    familyName?: string
   ) => {
     onUpdateUsers(users.map(user => {
       if (user.id !== activeUser.id) return user;
@@ -213,7 +225,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           isMembershipFrozen: false,
           membershipFrozenUntil: undefined,
           isCancelledEarly: false,
-          offlinePaymentApproved: false
+          offlinePaymentApproved: false,
+          ...(familyMembersCount ? {
+            familyId: user.familyId || `fam-${Date.now()}`,
+            familyName: familyName || user.familyName || `משפחת ${user.name.split(' ')[0]}`,
+            isFamilyPayer: true,
+            familyPayerId: undefined,
+            familyMembersCount,
+            familyTrackName: `מסלול משפחתי (${familyMembersCount} מנויים)`
+          } : {})
         };
       }
 
@@ -259,13 +279,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       .then(verified => {
         const transactionKey = verified.transactionId || verified.lowProfileId;
         if (!wasTransactionProcessed(transactionKey)) {
-          applyVerifiedMembershipPayment(pending.membershipType, purchaseMode, verified, pending.purchaseVariant);
+          applyVerifiedMembershipPayment(pending.membershipType, purchaseMode, verified, pending.purchaseVariant, pending.familyMembersCount, pending.familyName);
           markTransactionProcessed(transactionKey);
         }
         clearPendingCardcomPayment();
         clearCardcomReturnParams();
         setActiveTab('membership');
         setSelectedMembershipPurchase(null);
+        if (pending.familyMembersCount) sessionStorage.removeItem('baly_family_purchase_draft_v1');
         showFeedback(`${MEMBERSHIP_TYPE_LABELS[pending.membershipType].label} נרכש והופעל בהצלחה.`);
       })
       .catch(error => {
@@ -288,6 +309,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   const isHealthDeclarationValid = () => {
     if (!activeUser.healthDeclarationSigned || !activeUser.healthDeclarationDate) return false;
+    if (activeUser.healthDeclarationRequiresMedicalCertificate && !activeUser.healthDeclarationMedicalCertificateApproved) return false;
     const signedAt = new Date(`${activeUser.healthDeclarationDate}T00:00:00`);
     if (!Number.isFinite(signedAt.getTime())) return false;
     const expiresAt = new Date(signedAt);
@@ -542,6 +564,27 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
   };
 
+  const handleFamilyCheckout = async () => {
+    if (!familyPurchaseName.trim()) return showFeedback('יש להזין שם למשפחה.', 'error');
+    if (!isCardcomConfigured()) return showFeedback('שרת התשלומים טרם הוגדר.', 'error');
+    setPaymentStarting(true);
+    try {
+      await startCardcomPayment({
+        userId: activeUser.id,
+        userName: activeUser.name,
+        email: activeUser.email,
+        phone: activeUser.phone,
+        membershipType: MembershipType.GROUP_MONTHLY,
+        mode: 'PRIMARY',
+        familyMembersCount: familyPurchaseCount,
+        familyName: familyPurchaseName.trim()
+      });
+    } catch (error) {
+      setPaymentStarting(false);
+      showFeedback(error instanceof Error ? error.message : 'לא ניתן לפתוח את דף התשלום המשפחתי.', 'error');
+    }
+  };
+
   // REQUEST WORKOUT PLAN (For non-Open Gym subscribers or upon request)
   const handleRequestWorkoutPlan = () => {
     if (onUpdateUsers) {
@@ -571,6 +614,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
     const check = checkBookingEligibility(session);
     if (!check.eligible) {
+      if (!isHealthDeclarationValid()) {
+        onOpenSettings('health');
+      } else if (/מנוי|תשלום|כרטיסייה|ניקובים|מסלול/.test(check.reason || '')) {
+        const recommended = session.isPersonalTraining ? MembershipType.PERSONAL_TRAINING : MembershipType.GROUP_MONTHLY;
+        setActiveTab('membership');
+        openMembershipCheckout(recommended, session.isPersonalTraining ? 'ADDON' : 'PRIMARY');
+      }
       showFeedback(check.reason || 'אין הרשאה להרשם לאימון זה', 'error');
       return;
     }
@@ -737,7 +787,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
 
     if (!isHealthDeclarationValid()) {
-      showFeedback('הצהרת הבריאות חסרה או שתוקפה השנתי פג. יש לחתום מחדש בפרופיל לפני הרשמה ל-Open Gym.', 'error');
+      onOpenSettings('health');
       return;
     }
 
@@ -747,7 +797,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved));
 
     if (!isPaid) {
-      showFeedback('תשלום מראש חובה! ההרשמה ל-Open Gym חסומה - לא בוצע תשלום מראש באפליקציה או אישור חריג מנהל.', 'error');
+      setActiveTab('membership');
+      openMembershipCheckout(MembershipType.GROUP_MONTHLY, 'PRIMARY');
       return;
     }
 
@@ -759,7 +810,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const effectiveExpiry = payer?.membershipExpiry || activeUser.membershipExpiry;
     const today = new Date().toISOString().split('T')[0];
     if (!effectiveExpiry || effectiveExpiry < today) {
-      showFeedback('תוקף המנוי פג. יש לחדש את המנוי לפני הרשמה ל-Open Gym.', 'error');
+      setActiveTab('membership');
+      openMembershipCheckout(MembershipType.GROUP_MONTHLY, 'PRIMARY');
       return;
     }
 
@@ -795,13 +847,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const usesPunchCard = !includedOpenGymAccess && memberships.includes(MembershipType.OPEN_PUNCH_CARD);
 
     if (!includedOpenGymAccess && !usesPunchCard) {
-      showFeedback('המנוי שלך אינו כולל כניסה ל-Open Gym. ניתן לעדכן מנוי או לרכוש כרטיסייה.', 'error');
+      setActiveTab('membership');
+      openMembershipCheckout(MembershipType.GROUP_MONTHLY, 'PRIMARY');
       return;
     }
 
     if (usesPunchCard) {
       if ((activeUser.punchCardRemaining ?? 0) <= 0) {
-        showFeedback('אזלו הניקובים בכרטיסייה ל-Open Gym! יש לבצע טעינת כרטיסייה חדשה באפליקציה.', 'error');
+        setActiveTab('membership');
+        openMembershipCheckout(MembershipType.OPEN_PUNCH_CARD, 'PRIMARY');
         return;
       }
     }
@@ -894,8 +948,117 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     onUpdateOpenGym(updatedOpenGym);
   };
 
-  // CHECK-IN / SCANNER SIMULATION (Section 9)
+  const getCheckInEligibility = (requestedType?: 'SESSION' | 'OPEN_GYM', requestedId?: string) => {
+    if (!isHealthDeclarationValid()) return { allowed: false, reason: 'הצהרת הבריאות חסרה או אינה בתוקף. יש לחתום עליה לפני הכניסה למועדון.' };
+    const payer = activeUser.familyPayerId ? users.find(user => user.id === activeUser.familyPayerId) : undefined;
+    const isPaid = activeUser.membershipStatus === MembershipStatus.ACTIVE || activeUser.offlinePaymentApproved
+      || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved));
+    if (!isPaid) return { allowed: false, reason: 'המנוי אינו פעיל או לא שולם. יש להסדיר מסלול לפני הכניסה.' };
+    if (activeUser.isMembershipFrozen) return { allowed: false, reason: 'המנוי מוקפא ולכן הכניסה למועדון חסומה.' };
+
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const eligibleSession = sessions.find(session => {
+      if (requestedType && (requestedType !== 'SESSION' || requestedId !== session.id)) return false;
+      if (session.date !== today || !session.registeredUsers.includes(activeUser.id)) return false;
+      const start = timeToMinutes(session.time);
+      return nowMinutes >= start - 30 && nowMinutes <= start + session.durationMinutes;
+    });
+    if (eligibleSession) {
+      const alreadyCheckedIn = attendanceLogs.some(log => log.traineeId === activeUser.id && log.type === 'SESSION' && log.targetId === eligibleSession.id && log.date === today);
+      return alreadyCheckedIn
+        ? { allowed: false, reason: `הכניסה עבור ${eligibleSession.title} כבר אושרה היום.` }
+        : { allowed: true, type: 'SESSION' as const, id: eligibleSession.id, title: eligibleSession.title };
+    }
+
+    const eligibleOpenGym = openGymSessions.find(session => {
+      if (requestedType && (requestedType !== 'OPEN_GYM' || requestedId !== session.id)) return false;
+      if (session.date !== today || !session.registeredUsers.includes(activeUser.id)) return false;
+      const [start, end] = session.timeSlot.split('-').map(timeToMinutes);
+      return nowMinutes >= start && nowMinutes <= end;
+    });
+    if (eligibleOpenGym) {
+      const alreadyCheckedIn = attendanceLogs.some(log => log.traineeId === activeUser.id && log.type === 'OPEN_GYM' && log.targetId === eligibleOpenGym.id && log.date === today);
+      return alreadyCheckedIn
+        ? { allowed: false, reason: 'הכניסה למשבצת Open Gym זו כבר אושרה היום.' }
+        : { allowed: true, type: 'OPEN_GYM' as const, id: eligibleOpenGym.id, title: `Open Gym ${eligibleOpenGym.timeSlot}` };
+    }
+
+    return { allowed: false, reason: 'אין כרגע אימון פעיל שאליו נרשמת. הכניסה נפתחת 30 דקות לפני אימון קבוצתי, או בשעות משבצת ה־Open Gym שנקבעה.' };
+  };
+
+  const stopScanner = () => {
+    scannerStreamRef.current?.getTracks().forEach(track => track.stop());
+    scannerStreamRef.current = null;
+    setScannerOpen(false);
+  };
+
+  useEffect(() => () => scannerStreamRef.current?.getTracks().forEach(track => track.stop()), []);
+
+  const completeClubScan = () => {
+    const eligibility = getCheckInEligibility();
+    if (!eligibility.allowed || !eligibility.type || !eligibility.id || !eligibility.title) {
+      setScannerError(eligibility.reason || 'הכניסה אינה זמינה כעת.');
+      return;
+    }
+    handleSimulateCheckIn(eligibility.type, eligibility.id, eligibility.title);
+    stopScanner();
+  };
+
+  const startClubScanner = async () => {
+    setScannerError('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScannerOpen(true);
+      setScannerError('המצלמה אינה זמינה בדפדפן זה. ניתן להשתמש בכפתור בדיקת הסריקה.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      scannerStreamRef.current = stream;
+      setScannerOpen(true);
+      window.setTimeout(async () => {
+        const video = scannerVideoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play().catch(() => undefined);
+        const Detector = (window as unknown as { BarcodeDetector?: new (options: { formats: string[] }) => { detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>> } }).BarcodeDetector;
+        if (!Detector) {
+          setScannerError('סריקה אוטומטית אינה נתמכת בדפדפן זה. כוון את המצלמה ולחץ על “אישור סריקת בדיקה”.');
+          return;
+        }
+        const detector = new Detector({ formats: ['qr_code', 'code_128', 'ean_13'] });
+        const scanFrame = async () => {
+          if (!scannerStreamRef.current || !scannerVideoRef.current) return;
+          try {
+            const codes = await detector.detect(scannerVideoRef.current);
+            if (codes.length) {
+              completeClubScan();
+              return;
+            }
+          } catch { /* keep scanning */ }
+          window.requestAnimationFrame(scanFrame);
+        };
+        window.requestAnimationFrame(scanFrame);
+      }, 0);
+    } catch {
+      setScannerOpen(true);
+      setScannerError('לא התקבל אישור למצלמה. יש לאפשר מצלמה בהגדרות האתר ולנסות שוב.');
+    }
+  };
+
+  // CHECK-IN / SCANNER (Section 9)
   const handleSimulateCheckIn = (targetType: 'SESSION' | 'OPEN_GYM', targetId: string, title: string) => {
+    const eligibility = getCheckInEligibility(targetType, targetId);
+    if (!eligibility.allowed) {
+      if (!isHealthDeclarationValid()) onOpenSettings('health');
+      else if (/מנוי|שולם|מסלול/.test(eligibility.reason || '')) {
+        setActiveTab('membership');
+        openMembershipCheckout(MembershipType.GROUP_MONTHLY, 'PRIMARY');
+      }
+      showFeedback(eligibility.reason || 'הכניסה אינה מאושרת כעת.', 'error');
+      return;
+    }
     // 1. Record Attendance Log
     const now = new Date();
     const log: AttendanceLog = {
@@ -2091,6 +2254,29 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </section>
             ) : (
               <>
+                <section className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <span className="text-[11px] font-black text-indigo-700">חשבון משפחתי</span>
+                      <h3 className="mt-1 font-black text-slate-900">מסלול אחד, פרופיל אישי לכל בן משפחה</h3>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">לאחר אישור התשלום ייפתח ניהול המשפחה ותוכל להוסיף משתמשים נפרדים עד למכסת החבילה.</p>
+                    </div>
+                    {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                    <label className="text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
+                    <label className="text-xs font-bold text-slate-700">מספר מנויים<select value={familyPurchaseCount} onChange={event => setFamilyPurchaseCount(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5">
+                      <option value={2}>2 מנויים — ₪550 לחודש</option>
+                      <option value={3}>3 מנויים — ₪750 לחודש</option>
+                      <option value={4}>4 מנויים — ₪920 לחודש</option>
+                      <option value={5}>5 מנויים — ₪1,100 לחודש</option>
+                    </select></label>
+                    <button type="button" onClick={() => void handleFamilyCheckout()} disabled={paymentStarting || !isCardcomConfigured()} className="self-end rounded-xl bg-indigo-700 px-4 py-3 text-xs font-black text-white disabled:opacity-50">
+                      {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ותשלום' : 'רכישה ותשלום'}
+                    </button>
+                  </div>
+                </section>
+
                 <section>
                   <div className="mb-3">
                     <h3 className="font-black text-slate-900">בחירת מסלול ראשי</h3>
@@ -2137,7 +2323,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 </section>
 
                 <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button className="rounded-2xl border border-slate-200 bg-white p-4 text-right" onClick={onOpenSettings}>
+                  <button className="rounded-2xl border border-slate-200 bg-white p-4 text-right" onClick={() => onOpenSettings('family')}>
                     <strong className="block text-sm text-slate-900">הוספת בן משפחה</strong>
                     <span className="text-[11px] text-slate-500 mt-1 block">פתיחת הגדרות המשפחה, הוספת משתמש ובחירת מסלול עבורו.</span>
                   </button>
@@ -2175,7 +2361,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <h3>{activeUser.name}</h3>
                 <p>@{activeUser.username || activeUser.email}</p>
               </div>
-              <button onClick={onOpenSettings}><Pencil size={16} /> עריכת פרופיל</button>
+              <button onClick={() => onOpenSettings('profile')}><Pencil size={16} /> עריכת פרופיל</button>
             </section>
 
             <section className="member-profile-grid">
@@ -2187,7 +2373,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <div><dt>גיל</dt><dd>{activeUser.age}</dd></div>
                   <div><dt>הצהרת בריאות</dt><dd>{isHealthDeclarationValid() ? 'בתוקף' : 'נדרשת חתימה מחדש'}</dd></div>
                 </dl>
-                <button className="profile-outline-action" onClick={onOpenSettings}><Pencil size={15} /> שינוי פרטים וסיסמה</button>
+                <button className="profile-outline-action" onClick={() => onOpenSettings('profile')}><Pencil size={15} /> שינוי פרטים וסיסמה</button>
               </article>
 
               <article>
@@ -2204,7 +2390,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             </section>
 
             <section className="profile-more-actions">
-              <button onClick={onOpenSettings}><HeartPulse size={18} /> הצהרת בריאות וחתימה</button>
+              <button onClick={() => onOpenSettings('health')}><HeartPulse size={18} /> הצהרת בריאות וחתימה</button>
               <button onClick={() => setActiveTab('workout')}><Dumbbell size={18} /> תוכנית האימונים שלי</button>
               <button onClick={() => setActiveTab('membership')}><WalletCards size={18} /> ניהול מסלול ותשלומים</button>
               <button onClick={() => setActiveTab('card')}><QrCode size={18} /> כרטיס דיגיטלי וצ'ק־אין</button>
@@ -2222,7 +2408,29 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {/* TAB 7: DIGITAL CARD & BARCODE (Section 9) */}
         {activeTab === 'card' && (
           <div className="space-y-6 flex flex-col items-center justify-center py-6 text-center">
-            <h3 className="text-sm font-bold text-slate-800">כרטיס מנוי דיגיטלי וצ'ק-אין PWA</h3>
+            <div>
+              <h3 className="text-base font-black text-slate-900">סריקת ברקוד וכניסה למועדון</h3>
+              <p className="mt-1 text-xs text-slate-500">הכניסה תאושר רק בזמן אימון פעיל שאליו נרשמת ובהתקיים מנוי והצהרת בריאות תקינים.</p>
+            </div>
+
+            <div className={`check-in-status ${getCheckInEligibility().allowed ? 'allowed' : 'blocked'}`}>
+              {getCheckInEligibility().allowed ? `ניתן להיכנס כעת עבור ${getCheckInEligibility().title}.` : getCheckInEligibility().reason}
+            </div>
+
+            {!scannerOpen ? (
+              <button type="button" onClick={() => void startClubScanner()} className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 text-sm font-black text-slate-950">
+                <Camera size={18} /> פתיחת מצלמה וסריקת ברקוד המועדון
+              </button>
+            ) : (
+              <div className="club-barcode-scanner">
+                <div className="scanner-frame"><video ref={scannerVideoRef} muted playsInline /></div>
+                {scannerError && <p className="mt-3 text-xs leading-5 text-amber-200">{scannerError}</p>}
+                <div className="scanner-actions">
+                  <button type="button" onClick={completeClubScan}>אישור סריקת בדיקה</button>
+                  <button type="button" className="secondary" onClick={stopScanner}>סגירה</button>
+                </div>
+              </div>
+            )}
             
             {/* Simulation card layout */}
             <div className="w-72 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-xl p-6 border border-slate-700 relative overflow-hidden" id="digital-pwa-card">
@@ -2264,9 +2472,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </div>
             </div>
 
-            {/* Simulating QR Checkin click buttons for testing */}
+            {/* Registered bookings are also available for controlled demo checks. */}
             <div className="w-full max-w-sm bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-3">
-              <span className="text-xs font-bold text-slate-700 block">סימולטור סורק נוכחות (Check-in) בכניסה</span>
+              <span className="text-xs font-bold text-slate-700 block">בדיקת כניסה לפי אימון רשום</span>
               <p className="text-[10px] text-slate-400">
                 סמל סריקה דיגיטלית של המנוי שלך בקבלה. לחיצה על הכפתורים מטה מדמה סריקת כרטיס עבור אימון שרשום אליו:
               </p>

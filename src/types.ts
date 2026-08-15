@@ -138,6 +138,12 @@ export interface User {
   healthDeclarationSigned?: boolean;
   healthDeclarationSignatureUrl?: string;
   healthDeclarationDate?: string;
+  healthDeclarationAnswers?: Record<string, 'YES' | 'NO'>;
+  healthDeclarationRequiresMedicalCertificate?: boolean;
+  healthDeclarationMedicalCertificateApproved?: boolean;
+  healthDeclarationParentConsent?: boolean;
+  healthDeclarationParentName?: string;
+  healthDeclarationSignatureName?: string;
   clubAgreementSigned?: boolean;
   clubAgreementDate?: string;
 

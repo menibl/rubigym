@@ -206,6 +206,7 @@ const handleVerifyPayment = async (request, env) => {
       membershipType: order.m,
       mode: order.d,
       purchaseVariant: order.v,
+      familyMembersCount: order.f,
       amount: order.a,
       transactionId: `demo-${order.o}`,
       last4Digits: '1111'
@@ -218,6 +219,7 @@ const handleVerifyPayment = async (request, env) => {
     membershipType: order.m,
     mode: order.d,
     purchaseVariant: order.v,
+    familyMembersCount: order.f,
     amount: order.a,
     transactionId: String(result.TranzactionId || result.TranzactionInfo?.TranzactionId || ''),
     last4Digits: result.TranzactionInfo?.Last4CardDigitsString || result.TranzactionInfo?.Last4CardDigits

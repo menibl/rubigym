@@ -11,6 +11,7 @@ import {
   Inbox,
   MessageCircle,
   Megaphone,
+  QrCode,
   Send,
   Settings2,
   Trash2,
@@ -26,7 +27,9 @@ export type WorkspaceView =
   | 'BOOKING'
   | 'MY_PROGRAM'
   | 'MY_NUTRITION'
-  | 'MY_ACCOUNT';
+  | 'MY_ACCOUNT'
+  | 'MY_MEMBERSHIP'
+  | 'CHECK_IN';
 
 interface RoleWorkspaceLandingProps {
   activeUser: User;
@@ -224,6 +227,14 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
           );
         })}
       </section>
+
+      {isTrainee && (
+        <button type="button" className="check-in-home-strip" onClick={() => onSelect('CHECK_IN')}>
+          <span><QrCode size={23} /></span>
+          <span><strong>סריקת ברקוד לכניסה למועדון</strong><small>פתיחת המצלמה ואישור כניסה לפי האימון והלו״ז שלך</small></span>
+          <ChevronLeft size={18} />
+        </button>
+      )}
 
       <section className="role-home-communications">
         {isTrainee ? (

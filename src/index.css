@@ -2109,3 +2109,65 @@ option {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Official health declaration flow */
+.health-declaration-form { display: grid; gap: 14px; color: #e8e9ed; }
+.health-declaration-form > header { display: flex; align-items: flex-start; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid #343640; }
+.health-declaration-form > header > span { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border-radius: 14px; background: rgba(190, 67, 74, .16); color: #ff9da3; }
+.health-declaration-form h3 { margin: 0; font-size: 17px; font-weight: 900; color: #fff; }
+.health-declaration-form header p, .health-declaration-form p { margin: 4px 0 0; font-size: 12px; line-height: 1.7; color: #b9bbc4; }
+.health-instructions, .health-guidance, .health-signature-block, .health-parent-consent { padding: 14px; border: 1px solid #363945; border-radius: 16px; background: #20232b; }
+.health-instructions strong, .health-guidance strong, .health-signature-block > strong, .health-parent-consent > strong { color: #e1c579; font-size: 13px; }
+.health-question-list { display: grid; gap: 9px; }
+.health-question-list fieldset { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 0; padding: 12px 14px; border: 1px solid #333640; border-radius: 14px; background: #1b1e25; }
+.health-question-list legend { display: contents; font-size: 12px; line-height: 1.65; color: #e0e1e5; }
+.health-question-list fieldset > div { display: flex; gap: 7px; }
+.health-question-list label { display: flex; align-items: center; gap: 5px; min-width: 54px; padding: 7px 9px; border: 1px solid #444754; border-radius: 10px; color: #c5c7ce; cursor: pointer; }
+.health-question-list label.selected.no { border-color: #3e8f6c; background: rgba(62, 143, 108, .16); color: #a8e2c5; }
+.health-question-list label.selected.yes { border-color: #b66b42; background: rgba(182, 107, 66, .18); color: #ffc09d; }
+.health-guidance { display: flex; gap: 10px; }
+.health-guidance > svg { flex: 0 0 auto; color: #d8ba68; }
+.health-guidance.requires-certificate { border-color: #744932; background: #2a211d; }
+.health-signature-block, .health-parent-consent { display: grid; gap: 10px; }
+.health-signature-block label:not(.health-consent), .health-parent-consent label:not(.health-consent) { display: grid; gap: 6px; font-size: 12px; font-weight: 700; color: #d8d9de; }
+.health-signature-block input:not([type="checkbox"]), .health-parent-consent input:not([type="checkbox"]) { width: 100%; border: 1px solid #444754; border-radius: 11px; background: #15171d; color: #fff; padding: 10px 12px; }
+.health-consent { display: flex !important; align-items: flex-start; gap: 9px !important; font-size: 12px; color: #d8d9de; }
+.health-consent input { margin-top: 3px; }
+.health-certificate-warning, .health-form-error { display: flex; align-items: flex-start; gap: 8px; padding: 11px 13px; border: 1px solid #7a463c; border-radius: 12px; background: rgba(153, 60, 51, .16); color: #ffc2b9; font-size: 12px; line-height: 1.6; }
+.health-form-error { display: block; }
+.health-submit { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 13px 16px; border: 0; border-radius: 13px; background: #d1b363; color: #171810; font-size: 13px; font-weight: 900; cursor: pointer; }
+.auth-health-launch { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px; border: 1px solid #4b4e59; border-radius: 14px; background: #20232b; color: #fff; text-align: right; }
+.auth-health-launch > span { flex: 1; }
+.auth-health-launch strong, .auth-health-launch small { display: block; }
+.auth-health-launch small { margin-top: 2px; color: #aeb0b9; }
+.auth-health-launch > svg:last-child { color: #71747e; }
+.auth-health-launch.complete { border-color: #397b5e; background: rgba(57,123,94,.13); }
+.auth-health-launch.complete > svg:last-child { color: #7ed1a5; }
+.auth-push-consent { display: grid; gap: 10px; padding: 13px; border: 1px solid #383b46; border-radius: 14px; background: #1c1f26; }
+.auth-push-consent > div { display: flex; align-items: center; gap: 9px; }
+.auth-push-consent > div > span { display: grid; }
+.auth-push-consent strong { color: #fff; }
+.auth-push-consent small { color: #aeb0b9; line-height: 1.5; }
+.auth-form .health-declaration-form { margin: 4px 0; padding: 14px; border: 1px solid #3b3e49; border-radius: 18px; background: #14161b; max-height: 65vh; overflow-y: auto; }
+
+.check-in-home-strip { display: flex; align-items: center; gap: 13px; width: 100%; margin-top: 12px; padding: 14px 16px; border: 1px solid rgba(209, 179, 99, .34); border-radius: 17px; background: linear-gradient(135deg, #20232b, #191b21); color: #fff; text-align: right; }
+.check-in-home-strip > span:first-child { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border-radius: 13px; background: rgba(209, 179, 99, .14); color: #d9bd70; }
+.check-in-home-strip strong, .check-in-home-strip small { display: block; }
+.check-in-home-strip small { margin-top: 2px; color: #aaaeb8; }
+.check-in-home-strip > svg:last-child { margin-right: auto; color: #d9bd70; }
+.club-barcode-scanner { width: min(100%, 420px); padding: 16px; border: 1px solid #343743; border-radius: 18px; background: #171920; color: #fff; }
+.club-barcode-scanner video { width: 100%; aspect-ratio: 4 / 3; border-radius: 13px; background: #090a0d; object-fit: cover; }
+.club-barcode-scanner .scanner-frame { position: relative; overflow: hidden; border-radius: 13px; }
+.club-barcode-scanner .scanner-frame::after { content: ''; position: absolute; inset: 24% 10%; border: 2px solid #d8ba68; border-radius: 12px; box-shadow: 0 0 0 999px rgba(0,0,0,.22); pointer-events: none; }
+.club-barcode-scanner .scanner-actions { display: flex; gap: 8px; margin-top: 12px; }
+.club-barcode-scanner .scanner-actions button { flex: 1; padding: 10px; border-radius: 11px; background: #d1b363; color: #171810; font-size: 12px; font-weight: 900; }
+.club-barcode-scanner .scanner-actions button.secondary { background: #2a2d36; color: #d9dae0; }
+.check-in-status { width: min(100%, 420px); padding: 13px; border-radius: 14px; font-size: 12px; line-height: 1.65; }
+.check-in-status.allowed { border: 1px solid #397b5e; background: rgba(57,123,94,.14); color: #b8e5cc; }
+.check-in-status.blocked { border: 1px solid #714338; background: rgba(113,67,56,.14); color: #ffc3b4; }
+
+@media (max-width: 640px) {
+  .health-question-list fieldset { grid-template-columns: 1fr; }
+  .health-question-list fieldset > div { justify-content: stretch; }
+  .health-question-list label { flex: 1; justify-content: center; min-height: 42px; }
+}
