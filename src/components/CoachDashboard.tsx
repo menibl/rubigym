@@ -41,6 +41,7 @@ import { WorkoutAssistantPanel } from './WorkoutAssistantPanel';
 import { NutritionAssistantPanel } from './NutritionAssistantPanel';
 import { GroupWorkoutProgramManager } from './GroupWorkoutProgramManager';
 import { CoachTrainingMode } from './CoachTrainingMode';
+import { WorkoutPlanningNavigator, WorkoutPlanningRoute } from './WorkoutPlanningNavigator';
 import { ExerciseMedia } from './ExerciseMedia';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import {
@@ -147,6 +148,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'programs' | 'group-programs' | 'equipment' | 'pdf-library' | 'nutrition' | 'messages' | 'sessions' | 'personal' | 'penalties'>(initialPlanningTab);
   const [coachMode, setCoachMode] = useState<'TRAINING' | 'PLANNING'>(() => initialMode || (activeUser.role === UserRole.COACH ? 'TRAINING' : 'PLANNING'));
   const [groupProgramSessionId, setGroupProgramSessionId] = useState('');
+  const [groupProgramId, setGroupProgramId] = useState('');
+  const [groupProgramAudience, setGroupProgramAudience] = useState('');
+  const [workoutPlanningRoute, setWorkoutPlanningRoute] = useState<WorkoutPlanningRoute | 'PERSONAL_BUILDER' | 'GROUP_BUILDER' | 'PDF_LIBRARY'>('HOME');
 
   useEffect(() => {
     if (initialMode) setCoachMode(initialMode);
@@ -360,10 +364,12 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       const traineeId = session.targetTraineeId || session.registeredUsers[0] || session.coTrainees?.[0];
       if (traineeId) setSelectedTraineeId(traineeId);
       setActiveTab('programs');
+      setWorkoutPlanningRoute('PERSONAL_BUILDER');
       return;
     }
     setGroupProgramSessionId(session.id);
     setActiveTab('group-programs');
+    setWorkoutPlanningRoute('GROUP_BUILDER');
   };
 
   React.useEffect(() => {
@@ -953,11 +959,72 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     </div>;
   }
 
+  const guidedWorkoutPlanning = initialPlanningTab === 'programs';
+  const navigatorRoutes: WorkoutPlanningRoute[] = [
+    'HOME', 'PERSONAL', 'PERSONAL_TRAINEE', 'PERSONAL_SESSION', 'PERSONAL_EXISTING',
+    'GROUP', 'GROUP_SESSION', 'GROUP_AUDIENCE', 'GROUP_EXISTING',
+    'LIBRARY', 'LIBRARY_NEW', 'LIBRARY_EXISTING', 'ASSIGN'
+  ];
+
+  const openPersonalBuilder = (traineeId: string) => {
+    setSelectedTraineeId(traineeId);
+    setActiveTab('programs');
+    setWorkoutPlanningRoute('PERSONAL_BUILDER');
+  };
+
+  const openGroupBuilder = (options: { sessionId?: string; programId?: string; audience?: string } = {}) => {
+    setGroupProgramSessionId(options.sessionId || '');
+    setGroupProgramId(options.programId || '');
+    setGroupProgramAudience(options.audience || '');
+    setActiveTab('group-programs');
+    setWorkoutPlanningRoute('GROUP_BUILDER');
+  };
+
+  if (guidedWorkoutPlanning && navigatorRoutes.includes(workoutPlanningRoute as WorkoutPlanningRoute)) {
+    return <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-md" id="coach-dashboard">
+      {modeSwitcher}
+      <WorkoutPlanningNavigator
+        route={workoutPlanningRoute as WorkoutPlanningRoute}
+        onRouteChange={setWorkoutPlanningRoute}
+        trainees={traineesOnly}
+        sessions={sessions}
+        workoutPlans={workoutPlans}
+        groupPrograms={groupWorkoutPrograms}
+        onOpenPersonalTrainee={openPersonalBuilder}
+        onOpenPersonalSession={openWorkoutProgramFromCalendar}
+        onOpenPersonalPlan={plan => openPersonalBuilder(plan.traineeId)}
+        onOpenGroupSession={session => openGroupBuilder({ sessionId: session.id })}
+        onOpenGroupAudience={audience => openGroupBuilder({ audience })}
+        onOpenGroupProgram={program => openGroupBuilder({ programId: program.id })}
+        onOpenPdfLibrary={() => { setActiveTab('pdf-library'); setWorkoutPlanningRoute('PDF_LIBRARY'); }}
+        assignmentContent={<CoachTrainingMode
+          activeUser={activeUser}
+          users={users}
+          sessions={sessions}
+          workoutPlans={workoutPlans}
+          onUpdateWorkoutPlans={onUpdateWorkoutPlans}
+          groupWorkoutPrograms={groupWorkoutPrograms}
+          onUpdateGroupWorkoutPrograms={onUpdateGroupWorkoutPrograms}
+          onOpenProgram={openWorkoutProgramFromCalendar}
+        />}
+      />
+    </div>;
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="coach-dashboard">
       {modeSwitcher}
       {/* Tab Header */}
-      <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-wrap justify-between items-center gap-4">
+      {guidedWorkoutPlanning && <div className="planning-builder-context" dir="rtl">
+        <button type="button" onClick={() => setWorkoutPlanningRoute(activeTab === 'group-programs' ? 'GROUP' : activeTab === 'pdf-library' ? 'LIBRARY' : 'PERSONAL')}>
+          <Calendar size={17} /> חזרה לבחירת סוג תוכנית
+        </button>
+        <div>
+          <span>{activeTab === 'group-programs' ? 'תוכנית קבוצתית' : activeTab === 'pdf-library' ? 'ספריית PDF' : 'תוכנית אישית'}</span>
+          <strong>{activeTab === 'programs' ? selectedTrainee?.name || 'בחירת מתאמן' : activeTab === 'group-programs' ? 'בנייה, עריכה ופרסום' : 'מקורות לתכנון בעזרת AI'}</strong>
+        </div>
+      </div>}
+      <div className={`${guidedWorkoutPlanning ? 'hidden' : 'flex'} bg-slate-900 border-b border-slate-800 p-4 flex-wrap justify-between items-center gap-4`}>
         <div className="flex items-center gap-2">
           <Sparkles className="text-sky-400 animate-pulse" size={20} />
           <h1 className="text-lg font-extrabold text-white">פאנל מאמנים – {activeUser.name}</h1>
@@ -1069,7 +1136,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         </div>
       </div>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         {selectedTrainee ? (
           <div>
             {/* TAB 1: WORKOUT PROGRAMS BUILDER */}
@@ -1103,6 +1170,21 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     </button>
                   </div>
                 </div>
+
+                <WorkoutAssistantPanel
+                  activeUser={activeUser}
+                  trainee={selectedTrainee}
+                  profile={selectedTraineeProfile}
+                  memoryEntries={selectedTraineeMemoryEntries}
+                  equipment={gymEquipment}
+                  pdfDocuments={coachPdfDocuments}
+                  messages={workoutAssistantMessages}
+                  draft={selectedAssistantDraft}
+                  canPublish={selectedHasWorkoutPlanAccess}
+                  onUpdateMessages={onUpdateWorkoutAssistantMessages}
+                  onUpdateDraft={handleUpdateAssistantDraft}
+                  onPublish={handlePublishAssistantDraft}
+                />
 
                 <section className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1152,21 +1234,6 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   onSaveProfile={handleSaveTraineeProfile}
                   onAddEntry={entry => onUpdateTraineeMemoryEntries([entry, ...traineeMemoryEntries])}
                   onDeleteEntry={entryId => onUpdateTraineeMemoryEntries(traineeMemoryEntries.filter(entry => entry.id !== entryId))}
-                />
-
-                <WorkoutAssistantPanel
-                  activeUser={activeUser}
-                  trainee={selectedTrainee}
-                  profile={selectedTraineeProfile}
-                  memoryEntries={selectedTraineeMemoryEntries}
-                  equipment={gymEquipment}
-                  pdfDocuments={coachPdfDocuments}
-                  messages={workoutAssistantMessages}
-                  draft={selectedAssistantDraft}
-                  canPublish={selectedHasWorkoutPlanAccess}
-                  onUpdateMessages={onUpdateWorkoutAssistantMessages}
-                  onUpdateDraft={handleUpdateAssistantDraft}
-                  onPublish={handlePublishAssistantDraft}
                 />
 
                 {/* Membership & Request Notice */}
@@ -1479,6 +1546,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 sessions={sessions}
                 initialSessionId={groupProgramSessionId}
                 onInitialSessionHandled={() => setGroupProgramSessionId('')}
+                initialProgramId={groupProgramId}
+                initialAudience={groupProgramAudience}
+                onInitialProgramHandled={() => { setGroupProgramId(''); setGroupProgramAudience(''); }}
               />
             )}
 

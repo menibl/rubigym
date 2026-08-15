@@ -2171,3 +2171,143 @@ option {
   .health-question-list fieldset > div { justify-content: stretch; }
   .health-question-list label { flex: 1; justify-content: center; min-height: 42px; }
 }
+/* Guided workout planning — mobile-first tile navigation */
+.workout-planning-navigator {
+  padding: clamp(0.75rem, 2.5vw, 1.5rem);
+  min-height: 32rem;
+  color: #0f172a;
+}
+
+.planning-navigation-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+  padding: 1.1rem;
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  border-radius: 1.25rem;
+  background: linear-gradient(135deg, #09090b, #18181b 65%, #292016);
+  color: #fff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.13);
+}
+
+.planning-navigation-header > button,
+.planning-builder-context > button {
+  display: inline-flex;
+  min-height: 2.65rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.55rem 0.8rem;
+  color: #f4f4f5;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.planning-navigation-header > div { min-width: 0; }
+.planning-navigation-header span {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #fbbf24;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+.planning-navigation-header h2 { margin-top: 0.25rem; font-size: clamp(1.25rem, 4vw, 1.75rem); font-weight: 950; }
+.planning-navigation-header p { margin-top: 0.2rem; color: #d4d4d8; font-size: 0.76rem; }
+
+.planning-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.planning-nav-tile {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 9.25rem;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  overflow: hidden;
+  border: 1px solid #e4e4e7;
+  border-radius: 1.2rem;
+  background: #fff;
+  padding: 1rem;
+  text-align: right;
+  box-shadow: 0 7px 24px rgba(15, 23, 42, 0.06);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.planning-nav-tile:hover { transform: translateY(-2px); border-color: #d4a853; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.11); }
+.planning-nav-icon { display: grid; width: 3rem; height: 3rem; place-items: center; border-radius: 1rem; background: #f4f4f5; color: #27272a; }
+.planning-nav-copy { display: block; min-width: 0; padding-left: 0.75rem; }
+.planning-nav-copy strong { display: block; color: #18181b; font-size: 0.9rem; line-height: 1.25; }
+.planning-nav-copy small { display: block; margin-top: 0.3rem; color: #71717a; font-size: 0.67rem; line-height: 1.45; }
+.planning-nav-arrow { position: absolute; bottom: 0.95rem; left: 0.8rem; color: #a1a1aa; }
+.planning-nav-tile.tone-gold .planning-nav-icon { background: #fef3c7; color: #a16207; }
+.planning-nav-tile.tone-indigo .planning-nav-icon { background: #e0e7ff; color: #4338ca; }
+.planning-nav-tile.tone-emerald .planning-nav-icon { background: #d1fae5; color: #047857; }
+
+.planning-selection-list { display: grid; gap: 0.65rem; }
+.planning-selection-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 4.8rem;
+  align-items: center;
+  gap: 0.8rem;
+  border: 1px solid #e4e4e7;
+  border-radius: 1rem;
+  background: #fff;
+  padding: 0.75rem;
+  text-align: right;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+}
+.planning-selection-card:hover { border-color: #d4a853; background: #fffdf7; }
+.planning-selection-card img { width: 3rem; height: 3rem; border-radius: 0.9rem; object-fit: cover; }
+.planning-selection-card span { min-width: 0; }
+.planning-selection-card strong { display: block; overflow: hidden; color: #18181b; font-size: 0.85rem; text-overflow: ellipsis; white-space: nowrap; }
+.planning-selection-card small { display: block; margin-top: 0.25rem; overflow: hidden; color: #71717a; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
+.planning-date-badge, .planning-list-icon { display: grid; min-width: 3.4rem; min-height: 3rem; place-content: center; border-radius: 0.85rem; background: #f4f4f5; color: #3f3f46; text-align: center; }
+.planning-date-badge strong { font-size: 0.8rem; }
+.planning-date-badge small { margin-top: 0.05rem; font-size: 0.58rem; }
+.planning-list-icon { min-width: 3rem; color: #7c3aed; }
+.planning-empty { display: grid; min-height: 12rem; place-items: center; align-content: center; gap: 0.4rem; border: 1px dashed #d4d4d8; border-radius: 1.1rem; background: #fafafa; color: #a1a1aa; text-align: center; }
+.planning-empty strong { color: #52525b; font-size: 0.85rem; }
+.planning-empty span { font-size: 0.7rem; }
+.planning-section-title { margin: 0 0 0.65rem; color: #27272a; font-size: 0.85rem; font-weight: 950; }
+.planning-assignment-shell { overflow: hidden; border: 1px solid #e4e4e7; border-radius: 1.1rem; background: #fff; }
+
+.planning-builder-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid #3f3f46;
+  background: linear-gradient(135deg, #09090b, #272016);
+  padding: 0.8rem 1rem;
+  color: #fff;
+}
+.planning-builder-context > div { min-width: 0; text-align: left; }
+.planning-builder-context span { display: block; color: #fbbf24; font-size: 0.62rem; font-weight: 900; }
+.planning-builder-context strong { display: block; overflow: hidden; margin-top: 0.15rem; font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (min-width: 720px) {
+  .planning-tile-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .planning-nav-tile { min-height: 11rem; }
+  .planning-selection-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 420px) {
+  .planning-navigation-header { padding: 0.85rem; }
+  .planning-navigation-header > button { padding-inline: 0.6rem; }
+  .planning-nav-tile { min-height: 8.7rem; padding: 0.85rem; }
+  .planning-nav-copy strong { font-size: 0.82rem; }
+  .planning-nav-copy small { font-size: 0.62rem; }
+  .planning-builder-context { align-items: flex-start; flex-direction: column; }
+  .planning-builder-context > div { width: 100%; text-align: right; }
+}

@@ -103,7 +103,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
     : [
         { key: 'training', title: 'אימונים ולו״ז', description: 'האימונים הקרובים והפעלת מסך', icon: CalendarClock, view: 'TRAINING' },
         { key: 'profile', title: 'פרופיל', description: 'פרטים והגדרות חשבון', icon: UserRound, onClick: onOpenProfile },
-        { key: 'workout-planning', title: 'קביעת תוכנית אימון', description: 'צ׳אט, טיוטה ופרסום למתאמן', icon: ClipboardList, view: 'WORKOUT_PLANNING' },
+        { key: 'workout-planning', title: 'בניית תוכניות אימון', description: 'אישי, קבוצתי, מאגר ושיבוץ ליומן', icon: ClipboardList, view: 'WORKOUT_PLANNING' },
         { key: 'nutrition-planning', title: 'קביעת תוכנית תזונה', description: 'יעדים, ארוחות ופרסום', icon: Apple, view: 'NUTRITION_PLANNING' }
       ];
 

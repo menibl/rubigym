@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -7,12 +7,14 @@ import {
   Dumbbell,
   ExternalLink,
   ImagePlus,
+  MessageCircle,
   MonitorPlay,
   Pause,
   Play,
   Plus,
   RotateCcw,
   Save,
+  Send,
   SkipForward,
   TimerReset,
   Trash2,
@@ -31,6 +33,9 @@ interface GroupWorkoutProgramManagerProps {
   sessions: TrainingSession[];
   initialSessionId?: string;
   onInitialSessionHandled?: () => void;
+  initialProgramId?: string;
+  initialAudience?: string;
+  onInitialProgramHandled?: () => void;
 }
 
 const createExercise = (index: number, workSeconds: number, restSeconds: number): GroupWorkoutExercise => ({
@@ -82,12 +87,20 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   trainees,
   sessions,
   initialSessionId,
-  onInitialSessionHandled
+  onInitialSessionHandled,
+  initialProgramId,
+  initialAudience,
+  onInitialProgramHandled
 }) => {
   const [selectedProgramId, setSelectedProgramId] = useState(programs[0]?.id || '');
   const [selectedSessionId, setSelectedSessionId] = useState(initialSessionId || '');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [liveStatus, setLiveStatus] = useState<GroupWorkoutLiveStatus>();
+  const [assistantInput, setAssistantInput] = useState('');
+  const [assistantMessages, setAssistantMessages] = useState<string[]>([
+    'בחרו תוכנית או צרו חדשה, ואז כתבו כיצד תרצו לבנות או לשנות את האימון.'
+  ]);
+  const handledInitialAudienceRef = useRef('');
   const selectedProgram = programs.find(program => program.id === selectedProgramId);
   const groupSessions = useMemo(() => sessions
     .filter(session => !session.isPersonalTraining)
@@ -149,7 +162,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       : program));
   };
 
-  const createProgram = (sessionId = selectedSessionId) => {
+  const createProgram = (sessionId = selectedSessionId, audienceName = '') => {
     const now = new Date().toISOString();
     const session = sessions.find(item => item.id === sessionId && !item.isPersonalTraining);
     const participants = session ? participantsFromSession(session) : [];
@@ -158,8 +171,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       sessionId: session?.id,
       sessionDate: session?.date,
       sessionTime: session?.time,
-      groupName: session?.title || 'קבוצה חדשה',
-      title: session ? `תוכנית · ${session.title}` : 'אימון קבוצתי',
+      groupName: session?.title || audienceName || 'קבוצה חדשה',
+      title: session ? `תוכנית · ${session.title}` : audienceName ? `תוכנית · ${audienceName}` : 'אימון קבוצתי',
       description: '',
       coachId: activeUser.id,
       coachName: activeUser.name,
@@ -222,6 +235,20 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     else createProgram(initialSessionId);
     onInitialSessionHandled?.();
   }, [initialSessionId]);
+
+  useEffect(() => {
+    if (!initialProgramId) return;
+    if (programs.some(program => program.id === initialProgramId)) setSelectedProgramId(initialProgramId);
+    onInitialProgramHandled?.();
+  }, [initialProgramId]);
+
+  useEffect(() => {
+    if (!initialAudience || handledInitialAudienceRef.current === initialAudience) return;
+    handledInitialAudienceRef.current = initialAudience;
+    setSelectedSessionId('');
+    createProgram('', initialAudience === 'קבוצה מותאמת' ? 'קבוצה חדשה' : initialAudience);
+    onInitialProgramHandled?.();
+  }, [initialAudience]);
 
   useEffect(() => {
     if (!selectedProgram?.sessionId) return;
@@ -433,6 +460,47 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     updateProgram({ status: 'PUBLISHED', publishedAt: new Date().toISOString() });
   };
 
+  const runAssistantCommand = (request: string) => {
+    if (!selectedProgram) {
+      setAssistantMessages(messages => [...messages, 'יש לבחור תוכנית קיימת או ליצור תוכנית חדשה לפני ביצוע השינוי.']);
+      return;
+    }
+    const normalized = request.trim();
+    const seconds = Number(normalized.match(/\d+/)?.[0] || 0);
+    let response = 'הבקשה נשמרה כהנחיה למאמן. אפשר לבצע עריכה ידנית בכל שדה מתחת לצ׳אט.';
+    if (normalized.includes('תחנ')) {
+      enableRotatingGroups();
+      response = 'האימון הוגדר כאימון תחנות עם תתי־קבוצות. אפשר לערוך את התחנות והסבבים בהמשך המסך.';
+    } else if (normalized.includes('מנוח') && seconds > 0) {
+      updateProgram({ defaultRestSeconds: seconds });
+      response = `זמן המנוחה המשותף עודכן ל־${seconds} שניות.`;
+    } else if (normalized.includes('עבודה') && seconds > 0) {
+      updateProgram({ defaultWorkSeconds: seconds });
+      response = `זמן העבודה המשותף עודכן ל־${seconds} שניות.`;
+    } else if (normalized.includes('הוסף') && normalized.includes('תרגיל')) {
+      if (selectedProgram.mode === 'ROTATING_GROUPS' && selectedProgram.stations?.[0]) addStationExercise(selectedProgram.stations[0]);
+      else addExercise();
+      response = 'נוסף תרגיל ריק לטיוטה. אפשר לבחור לו שם, זמנים ומדיה באזור העריכה.';
+    } else if (normalized.includes('מחק') || normalized.includes('נקה')) {
+      if (window.confirm('לנקות את כל התרגילים מהטיוטה הנוכחית?')) {
+        updateProgram({ exercises: [], stations: (selectedProgram.stations || []).map(station => ({ ...station, exercises: [] })) });
+        response = 'כל התרגילים הוסרו מהטיוטה. התוכנית עצמה נשמרה.';
+      } else response = 'המחיקה בוטלה ולא בוצע שינוי.';
+    } else if (normalized.includes('פרסם')) {
+      publishProgram();
+      response = programExerciseCount(selectedProgram) > 0 ? 'בקשת הפרסום בוצעה. יש לוודא שכל התרגילים קיבלו שם.' : 'לא ניתן לפרסם תוכנית ללא תרגילים.';
+    }
+    setAssistantMessages(messages => [...messages, `מאמן: ${normalized}`, response].slice(-8));
+  };
+
+  const submitAssistant = (event: React.FormEvent) => {
+    event.preventDefault();
+    const request = assistantInput.trim();
+    if (!request) return;
+    setAssistantInput('');
+    runAssistantCommand(request);
+  };
+
   return (
     <section className="space-y-5" dir="rtl">
       <div className="rounded-2xl bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-lg">
@@ -445,6 +513,23 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
           <button onClick={() => { setSelectedSessionId(''); createProgram(''); }} className="flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-black text-white hover:bg-indigo-400"><Plus size={18} /> תוכנית חדשה למאגר</button>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-violet-200 bg-gradient-to-b from-violet-50 to-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2"><span className="rounded-xl bg-violet-600 p-2 text-white"><MessageCircle size={19} /></span><div><h3 className="text-sm font-black text-slate-900">עוזר בניית אימון קבוצתי</h3><p className="text-[10px] text-slate-500">הצ׳אט מעדכן את הטיוטה, והמאמן מאשר ומפרסם</p></div></div>
+          <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black text-amber-800">DEMO מקומי</span>
+        </div>
+        <div className="mt-3 max-h-40 space-y-2 overflow-auto rounded-xl bg-white p-3">
+          {assistantMessages.map((message, index) => <p key={`${index}-${message}`} className={`rounded-lg px-3 py-2 text-xs leading-5 ${message.startsWith('מאמן:') ? 'mr-8 bg-slate-900 text-white' : 'ml-5 bg-violet-50 text-slate-700'}`}>{message}</p>)}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {['הפוך לאימון תחנות', 'הוסף תרגיל', 'מנוחה 30 שניות', 'עבודה 45 שניות'].map(suggestion => <button key={suggestion} type="button" onClick={() => runAssistantCommand(suggestion)} className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-[10px] font-bold text-violet-800">{suggestion}</button>)}
+        </div>
+        <form onSubmit={submitAssistant} className="mt-3 flex gap-2">
+          <input value={assistantInput} onChange={event => setAssistantInput(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-violet-200 bg-white px-3 text-xs text-slate-900" placeholder="לדוגמה: חלק את האימון לתחנות ושנה את המנוחה ל־30 שניות" />
+          <button type="submit" disabled={!assistantInput.trim()} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-violet-600 px-4 text-xs font-black text-white disabled:opacity-40"><Send size={15} /> שלח</button>
+        </form>
+      </section>
 
       <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-2">
