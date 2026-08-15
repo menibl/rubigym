@@ -4,10 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "sync:ai-prompt": "node scripts/sync-workout-ai-prompt.mjs",
+    "predev": "npm run sync:ai-prompt",
+    "prebuild": "npm run sync:ai-prompt",
+    "prebuild:pages": "npm run sync:ai-prompt",
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build && node scripts/prepare-sites-build.mjs",
     "build:pages": "vite build --base=/rubigym/",
     "preview": "vite preview",
+    "test:ai": "npm run sync:ai-prompt && node scripts/test-workout-ai.mjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },

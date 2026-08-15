@@ -28,6 +28,7 @@ import {
   WorkoutAssistantMessage
 } from '../types';
 import { getPdfDocumentContent } from '../data/pdfLibraryStorage';
+import { generatePersonalWorkoutWithAi } from '../data/workoutAi';
 
 interface WorkoutAssistantPanelProps {
   activeUser: User;
@@ -54,13 +55,163 @@ const muscleGroupLabels: Record<MuscleGroup, string> = {
 };
 
 const fallbackExercises: Array<{ name: string; group: MuscleGroup; category: string }> = [
-  { name: 'סקוואט לכיסא', group: MuscleGroup.LEGS, category: 'כוח בסיסי' },
+  { name: 'סקוואט', group: MuscleGroup.LEGS, category: 'כוח בסיסי' },
+  { name: 'מכרעים לאחור', group: MuscleGroup.LEGS, category: 'כוח רגליים' },
+  { name: 'הרמת אגן', group: MuscleGroup.LEGS, category: 'ישבן וירך אחורית' },
   { name: 'חתירה בעמידה עם גומייה', group: MuscleGroup.BACK, category: 'כוח בסיסי' },
+  { name: 'משיכת פולי עליון', group: MuscleGroup.BACK, category: 'משיכה' },
   { name: 'לחיצת חזה בשיפוע', group: MuscleGroup.UPPER, category: 'כוח בסיסי' },
+  { name: 'שכיבות סמיכה', group: MuscleGroup.UPPER, category: 'דחיפה' },
   { name: 'לחיצת כתפיים בישיבה', group: MuscleGroup.SHOULDERS, category: 'כוח בסיסי' },
   { name: 'Dead Bug', group: MuscleGroup.CORE, category: 'ליבה ויציבות' },
+  { name: 'פלאנק', group: MuscleGroup.CORE, category: 'בטן וליבה' },
+  { name: 'Pallof Press', group: MuscleGroup.CORE, category: 'ליבה נגד סיבוב' },
+  { name: 'Farmer Walk', group: MuscleGroup.FUNCTIONAL, category: 'כוח פונקציונלי' },
   { name: 'הליכה בקצב מתון', group: MuscleGroup.FUNCTIONAL, category: 'סבולת' }
 ];
+
+const hebrewDayNumbers: Record<string, number> = {
+  ראשון: 1, הראשונה: 1, אחד: 1, אחת: 1,
+  שני: 2, השני: 2, שנייה: 2, השנייה: 2, שניים: 2, שתיים: 2,
+  שלישי: 3, השלישי: 3, שלושה: 3, שלוש: 3,
+  רביעי: 4, הרביעי: 4, ארבעה: 4, ארבע: 4,
+  חמישי: 5, החמישי: 5, חמישה: 5, חמש: 5,
+  שישי: 6, השישי: 6, שישה: 6, שש: 6,
+  שביעי: 7, השביעי: 7, שבעה: 7, שבע: 7
+};
+
+const parseRequestedDays = (prompt: string) => {
+  const numeric = prompt.match(/([1-7])\s*(?:ימים|יום|פעמים)/)?.[1];
+  if (numeric) return Number(numeric);
+  const word = Object.entries(hebrewDayNumbers).find(([label]) => new RegExp(`${label}\\s*(?:ימים|פעמים)`).test(prompt));
+  return word?.[1];
+};
+
+const parseReferencedDay = (prompt: string) => {
+  const numeric = prompt.match(/(?:ביום|יום)\s*(?:ה)?([1-7])/i)?.[1];
+  if (numeric) return Number(numeric);
+  const match = Object.entries(hebrewDayNumbers).find(([label]) => prompt.includes(`יום ${label}`) || prompt.includes(`ביום ${label}`));
+  return match?.[1];
+};
+
+const inferMuscleGroup = (name: string): MuscleGroup => {
+  const normalized = name.toLowerCase();
+  if (/סקוואט|מכרע|רגל|אגן|ישבן/.test(normalized)) return MuscleGroup.LEGS;
+  if (/בטן|ליבה|פלאנק|dead bug|pallof/.test(normalized)) return MuscleGroup.CORE;
+  if (/חתירה|גב|פולי|משיכ/.test(normalized)) return MuscleGroup.BACK;
+  if (/כתפ/.test(normalized)) return MuscleGroup.SHOULDERS;
+  if (/חזה|שכיבות|דחיפ/.test(normalized)) return MuscleGroup.UPPER;
+  return MuscleGroup.FUNCTIONAL;
+};
+
+const exerciseMatches = (exercise: Exercise, query: string) => {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return false;
+  if (exercise.name.toLowerCase().includes(normalized) || normalized.includes(exercise.name.toLowerCase())) return true;
+  if (/בטן|ליבה/.test(normalized) && exercise.muscleGroup === MuscleGroup.CORE) return true;
+  if (/רגל|סקוואט/.test(normalized) && exercise.muscleGroup === MuscleGroup.LEGS) return true;
+  if (/גב|חתירה|משיכה/.test(normalized) && exercise.muscleGroup === MuscleGroup.BACK) return true;
+  if (/חזה|דחיפה/.test(normalized) && exercise.muscleGroup === MuscleGroup.UPPER) return true;
+  return false;
+};
+
+const dayLabelsFor = (days: number, strength: boolean) => Array.from({ length: days }, (_, index) => {
+  if (!strength) return `יום אימון ${index + 1}`;
+  const strengthLabels = ['דחיפה ופלג עליון', 'רגליים וליבה', 'משיכה וגוף מלא', 'כוח משולב'];
+  return `יום ${index + 1} · ${strengthLabels[index % strengthLabels.length]}`;
+});
+
+const applyPromptToDraft = (prompt: string, current: WorkoutAssistantDraft): { draft: WorkoutAssistantDraft; response: string } | undefined => {
+  const normalized = prompt.trim().toLowerCase();
+  const referencedDay = parseReferencedDay(normalized);
+  const requestedDays = parseRequestedDays(normalized);
+  const now = new Date().toISOString();
+
+  if (requestedDays && !/(?:בנה|צור|תכין).*(?:אימון|תוכנית)/.test(normalized) && /(?:שנה|עדכן|תעשה|תהיה|יהיו|ימים|פעמים)/.test(normalized)) {
+    const days = Math.min(7, Math.max(1, requestedDays));
+    return {
+      draft: {
+        ...current,
+        trainingDaysPerWeek: days,
+        dayLabels: dayLabelsFor(days, /כוח/.test(`${current.objective} ${normalized}`)),
+        exercises: current.exercises.map(exercise => ({ ...exercise, dayNumber: Math.min(exercise.dayNumber || 1, days) })),
+        updatedAt: now,
+        status: 'DRAFT'
+      },
+      response: `מספר ימי האימון עודכן ל־${days}. אפשר לבקש ממני להוסיף או להחליף תרגילים בכל יום בנפרד.`
+    };
+  }
+
+  const replacement = normalized.match(/(?:תחליף|החלף)(?:\s+את)?\s+(.+?)\s+ב(?:-|־)?\s*(.+?)(?:\s+ביום|$)/);
+  if (replacement) {
+    const [, fromQuery, toNameRaw] = replacement;
+    const day = referencedDay || 1;
+    const candidates = current.exercises.filter(exercise => (exercise.dayNumber || 1) === day);
+    const target = candidates.find(exercise => exerciseMatches(exercise, fromQuery)) || candidates[0];
+    if (!target) return { draft: current, response: `לא מצאתי תרגיל מתאים ביום ${day}. אפשר לציין את שם התרגיל כפי שהוא מופיע בטיוטה.` };
+    const toName = toNameRaw.replace(/\s+(?:ביום|יום)\s+.+$/, '').trim();
+    return {
+      draft: {
+        ...current,
+        exercises: current.exercises.map(exercise => exercise.id === target.id ? {
+          ...exercise,
+          name: toName,
+          muscleGroup: inferMuscleGroup(toName),
+          category: 'תרגיל שהוחלף בצ׳אט'
+        } : exercise),
+        updatedAt: now,
+        status: 'DRAFT'
+      },
+      response: `ביום ${day} החלפתי את „${target.name}” ב„${toName}”. הטיוטה עודכנה ואפשר להמשיך לערוך.`
+    };
+  }
+
+  const removal = normalized.match(/(?:מחק|הסר)(?:\s+את)?\s+(.+?)(?:\s+מיום|\s+ביום|$)/);
+  if (removal) {
+    const day = referencedDay || 1;
+    const target = current.exercises.find(exercise => (exercise.dayNumber || 1) === day && exerciseMatches(exercise, removal[1]));
+    if (!target) return { draft: current, response: `לא מצאתי את התרגיל שביקשת להסיר ביום ${day}.` };
+    return {
+      draft: { ...current, exercises: current.exercises.filter(exercise => exercise.id !== target.id), updatedAt: now, status: 'DRAFT' },
+      response: `הסרתי את „${target.name}” מיום ${day}.`
+    };
+  }
+
+  const addition = normalized.match(/(?:הוסף|תוסיף)(?:\s+את)?\s+(.+?)(?:\s+ליום|\s+ביום|$)/);
+  if (addition) {
+    const day = Math.min(current.trainingDaysPerWeek || 1, referencedDay || 1);
+    const name = addition[1].trim();
+    const exercise: Exercise = {
+      id: `assistant-chat-${Date.now()}`,
+      name,
+      category: 'תרגיל שנוסף בצ׳אט',
+      muscleGroup: inferMuscleGroup(name),
+      sets: 3,
+      reps: '10-12',
+      weight: 'לפי יכולת',
+      restDuration: '60 שניות',
+      dayNumber: day,
+      notes: 'נוסף לפי בקשת המאמן; יש לאשר עומס וטכניקה.'
+    };
+    return {
+      draft: { ...current, exercises: [...current.exercises, exercise], updatedAt: now, status: 'DRAFT' },
+      response: `הוספתי את „${name}” ליום ${day}.`
+    };
+  }
+
+  const move = normalized.match(/(?:העבר|תעביר)(?:\s+את)?\s+(.+?)\s+ליום/);
+  if (move && referencedDay) {
+    const target = current.exercises.find(exercise => exerciseMatches(exercise, move[1]));
+    if (!target) return { draft: current, response: 'לא מצאתי את התרגיל שביקשת להעביר.' };
+    const day = Math.min(current.trainingDaysPerWeek || 1, referencedDay);
+    return {
+      draft: { ...current, exercises: current.exercises.map(exercise => exercise.id === target.id ? { ...exercise, dayNumber: day } : exercise), updatedAt: now, status: 'DRAFT' },
+      response: `העברתי את „${target.name}” ליום ${day}.`
+    };
+  }
+
+  return undefined;
+};
 
 const buildLocalDraft = (
   prompt: string,
@@ -107,23 +258,28 @@ const buildLocalDraft = (
     .filter((item, index, all) => all.findIndex(candidate => candidate.name === item.name) === index)
     .filter(item => !hasLowerBodyCaution || item.group !== MuscleGroup.LEGS || /רגל|ברך/.test(normalizedPrompt));
 
-  const exerciseCount = /קצר|30/.test(normalizedPrompt) ? 4 : /ארוך|60/.test(normalizedPrompt) ? 7 : 6;
-  const requestedDays = Number(normalizedPrompt.match(/([1-7])\s*(?:ימים|פעמים)/)?.[1]);
+  const exercisesPerDay = /קצר|30/.test(normalizedPrompt) ? 4 : /ארוך|60/.test(normalizedPrompt) ? 7 : 5;
+  const requestedDays = parseRequestedDays(normalizedPrompt);
   const trainingDaysPerWeek = Math.min(7, Math.max(1, requestedDays || profile?.weeklySessions || 2));
   const sets = beginner ? 2 : strength ? 4 : 3;
-  const exercises: Exercise[] = candidates.slice(0, exerciseCount).map((item, index) => ({
-    id: `assistant-ex-${Date.now()}-${index}`,
-    name: item.name,
-    category: item.category,
-    muscleGroup: item.group,
-    sets,
-    reps: timed ? '40 שניות' : strength ? '6-10' : beginner ? '10-12' : '10-15',
-    weight: beginner ? 'קל, לפי RPE 5-6' : strength ? 'לפי RPE 7-8' : 'לפי RPE 6-7',
-    workDuration: timed ? '40 שניות' : '',
-    restDuration: timed ? '20 שניות' : strength ? '90 שניות' : '60 שניות',
-    notes: `${index === 0 ? 'חימום ספציפי לפני הסט הראשון. ' : ''}לעצור במקרה של כאב ולבצע התאמה מקצועית.`,
-    dayNumber: (index % trainingDaysPerWeek) + 1
-  }));
+  const exercises: Exercise[] = Array.from({ length: trainingDaysPerWeek }).flatMap((_, dayIndex) =>
+    Array.from({ length: exercisesPerDay }, (_, exerciseIndex) => {
+      const item = candidates[(dayIndex * exercisesPerDay + exerciseIndex) % candidates.length];
+      return {
+        id: `assistant-ex-${Date.now()}-${dayIndex}-${exerciseIndex}`,
+        name: item.name,
+        category: item.category,
+        muscleGroup: item.group,
+        sets,
+        reps: timed ? '40 שניות' : strength ? '6-10' : beginner ? '10-12' : '10-15',
+        weight: beginner ? 'קל, לפי RPE 5-6' : strength ? 'לפי RPE 7-8' : 'לפי RPE 6-7',
+        workDuration: timed ? '40 שניות' : '',
+        restDuration: timed ? '20 שניות' : strength ? '90 שניות' : '60 שניות',
+        notes: `${exerciseIndex === 0 ? 'חימום ספציפי לפני הסט הראשון. ' : ''}לעצור במקרה של כאב ולבצע התאמה מקצועית.`,
+        dayNumber: dayIndex + 1
+      };
+    })
+  );
 
   return {
     id: `assistant-draft-${Date.now()}`,
@@ -136,7 +292,7 @@ const buildLocalDraft = (
       : 'טיוטה אוטומטית. יש לבדוק עומסים, טכניקה והתאמה אישית לפני פרסום.'}${rememberedPreferences ? ` העדפות ומטרות שנשמרו: ${rememberedPreferences}.` : ''}`,
     exercises,
     trainingDaysPerWeek,
-    dayLabels: Array.from({ length: trainingDaysPerWeek }, (_, index) => `יום אימון ${index + 1}`),
+    dayLabels: dayLabelsFor(trainingDaysPerWeek, strength),
     sourceDocumentIds,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -162,6 +318,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [showContext, setShowContext] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [selectedDraftDay, setSelectedDraftDay] = useState(1);
   const endRef = useRef<HTMLDivElement>(null);
 
   const traineeMessages = useMemo(
@@ -182,6 +339,10 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [traineeMessages.length, isGenerating]);
+
+  useEffect(() => {
+    setSelectedDraftDay(day => Math.min(Math.max(1, day), draft?.trainingDaysPerWeek || 1));
+  }, [draft?.trainingDaysPerWeek, trainee.id]);
 
   const handleSend = async (event?: React.FormEvent, suggestedPrompt?: string) => {
     event?.preventDefault();
@@ -205,17 +366,61 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
     try {
       const sourceContents = await Promise.all(selectedSourceIds.map(id => getPdfDocumentContent(id).catch(() => undefined)));
       const readableSourceIds = selectedSourceIds.filter((_, index) => Boolean(sourceContents[index]));
-      const sourceText = sourceContents
-        .filter(Boolean)
-        .flatMap(content => content!.pages)
-        .map(page => page.text)
-        .join(' ')
-        .slice(0, 20_000);
-      const nextDraft = buildLocalDraft(prompt, trainee, activeUser, profile, memoryEntries, availableEquipment, sourceText, readableSourceIds);
+      const sourceDocuments = readableSourceIds.map(id => {
+        const source = readySources.find(document => document.id === id)!;
+        const content = sourceContents[selectedSourceIds.indexOf(id)];
+        return {
+          id: source.id,
+          title: source.title,
+          category: source.category,
+          tags: source.tags,
+          text: content?.pages.map(page => page.text).join('\n').slice(0, 20_000) || ''
+        };
+      });
+      const { result } = await generatePersonalWorkoutWithAi({
+        message: prompt,
+        actor: activeUser,
+        trainee,
+        professionalProfile: profile,
+        confirmedMemory,
+        equipment: availableEquipment,
+        sourceDocuments,
+        conversation: [...traineeMessages, coachMessage],
+        currentDraft: draft
+      });
+      const now = new Date().toISOString();
+      const trainingDays = Math.min(7, Math.max(1, Math.round(result.trainingDaysPerWeek || 1)));
+      const nextDraft: WorkoutAssistantDraft = {
+        id: draft?.id || `assistant-draft-${Date.now()}`,
+        traineeId: trainee.id,
+        coachId: activeUser.id,
+        coachName: activeUser.name,
+        objective: result.objective,
+        coachNotes: result.coachNotes,
+        exercises: result.exercises.slice(0, 60).map((exercise, index) => {
+          const dayNumber = Math.min(trainingDays, Math.max(1, Math.round(exercise.dayNumber || 1)));
+          const existing = draft?.exercises.find(item => item.dayNumber === dayNumber && item.name === exercise.name);
+          return {
+            ...exercise,
+            name: exercise.name.trim() || `תרגיל ${index + 1}`,
+            sets: Math.min(20, Math.max(1, Math.round(exercise.sets || 1))),
+            dayNumber,
+            id: existing?.id || `assistant-ai-ex-${Date.now()}-${index}`,
+            mediaUrl: existing?.mediaUrl,
+            mediaType: existing?.mediaType,
+            mediaStorageId: existing?.mediaStorageId
+          };
+        }),
+        trainingDaysPerWeek: trainingDays,
+        dayLabels: Array.from({ length: trainingDays }, (_, index) => result.dayLabels[index]?.trim() || `יום ${index + 1}`),
+        sourceDocumentIds: readableSourceIds,
+        createdAt: draft?.createdAt || now,
+        updatedAt: now,
+        status: 'DRAFT'
+      };
       onUpdateDraft(nextDraft);
+      setSelectedDraftDay(Math.min(nextDraft.trainingDaysPerWeek || 1, Math.max(1, result.focusDay)));
 
-      const sourceNames = readySources.filter(source => readableSourceIds.includes(source.id)).map(source => source.title);
-      const limitationNote = profile?.limitations || profile?.painAreas || profile?.prohibitedExercises;
       const assistantMessage: WorkoutAssistantMessage = {
         id: `assistant-message-${Date.now()}-assistant`,
         traineeId: trainee.id,
@@ -224,10 +429,10 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         role: 'ASSISTANT',
         createdAt: new Date().toISOString(),
         sourceDocumentIds: readableSourceIds,
-        content: `הכנתי טיוטה של ${nextDraft.exercises.length} תרגילים עבור ${trainee.name}. ${sourceNames.length ? `השתמשתי גם במקורות: ${sourceNames.join(', ')}.` : 'לא נבחר מקור PDF, לכן הטיוטה מבוססת על פרופיל המתאמן והציוד הזמין.'}${limitationNote ? ' זיהיתי מגבלות בפרופיל וסימנתי למאמן לבצע התאמה מקצועית.' : ''} הטיוטה עדיין לא פורסמה למתאמן.`
+        content: result.assistantMessage
       };
       onUpdateMessages([...messages, coachMessage, assistantMessage]);
-    } catch {
+    } catch (error) {
       onUpdateMessages([...messages, coachMessage, {
         id: `assistant-message-${Date.now()}-error`,
         traineeId: trainee.id,
@@ -235,7 +440,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         coachName: activeUser.name,
         role: 'ASSISTANT',
         createdAt: new Date().toISOString(),
-        content: 'לא הצלחתי לקרוא את אחד המקורות. אפשר לבטל את בחירתו ולנסות שוב.'
+        content: error instanceof Error ? error.message : 'שירות ה־AI אינו זמין כרגע. נסו שוב מאוחר יותר.'
       }]);
     } finally {
       setIsGenerating(false);
@@ -273,7 +478,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
       reps: '10-12',
       weight: 'לפי יכולת',
       restDuration: '60 שניות',
-      dayNumber: 1,
+      dayNumber: selectedDraftDay,
       notes: ''
     };
     onUpdateDraft({ ...draft, exercises: [...draft.exercises, exercise], updatedAt: new Date().toISOString(), status: 'DRAFT' });
@@ -291,8 +496,8 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-violet-500/20 p-2 text-violet-300"><Bot size={24} /></div>
             <div>
-              <div className="flex items-center gap-2"><h3 className="font-black">עוזר בניית תוכנית</h3><span className="rounded-full bg-amber-300 px-2 py-0.5 text-[10px] font-black text-slate-900">DEMO מקומי</span></div>
-              <p className="mt-0.5 text-xs text-slate-300">זיכרון נפרד עבור {trainee.name} · שום מידע לא נשלח לשירות חיצוני</p>
+              <div className="flex items-center gap-2"><h3 className="font-black">עוזר בניית תוכנית</h3><span className="rounded-full bg-emerald-300 px-2 py-0.5 text-[10px] font-black text-slate-900">OpenAI</span></div>
+              <p className="mt-0.5 text-xs text-slate-300">הקשר נפרד עבור {trainee.name} · פרופיל, מגבלות, ציוד ומקורות נבחרים</p>
             </div>
           </div>
           <button onClick={clearConversation} className="flex items-center justify-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-white/10"><RotateCcw size={14} /> איפוס שיחה</button>
@@ -353,12 +558,12 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
           </div>
           <div className="border-t border-slate-200 bg-white p-3">
             <div className="mb-2 flex flex-wrap gap-1.5">
-              {['בנה אימון כוח של 45 דקות למתחיל', 'הכן אימון קצר עם הציוד הזמין', 'צור אימון סבולת במחזורים'].map(suggestion => (
+              {['בנה תוכנית כוח ל־3 ימים בשבוע', 'ביום השני החלף את הבטן בסקוואט', 'הוסף פלאנק ליום השלישי'].map(suggestion => (
                 <button key={suggestion} onClick={() => handleSend(undefined, suggestion)} className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100">{suggestion}</button>
               ))}
             </div>
             <form onSubmit={handleSend} className="flex gap-2">
-              <textarea value={input} onChange={event => setInput(event.target.value)} rows={2} className="min-w-0 flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2 text-xs" placeholder="לדוגמה: תבנה אימון כוח של 45 דקות, בלי עומס גבוה על הברכיים..." />
+              <textarea value={input} onChange={event => setInput(event.target.value)} rows={2} className="min-w-0 flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2 text-xs" placeholder="לדוגמה: תבנה תוכנית כוח ל־3 ימים, וביום השני תחליף את הבטן בסקוואט..." />
               <button disabled={!input.trim() || isGenerating} className="self-stretch rounded-xl bg-violet-600 px-3 text-white disabled:opacity-40"><Send size={18} /></button>
             </form>
           </div>
@@ -377,14 +582,14 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
             <div className="space-y-3">
               <label className="block text-xs font-bold text-slate-700">מטרת התוכנית<textarea value={draft.objective} onChange={event => onUpdateDraft({ ...draft, objective: event.target.value, updatedAt: new Date().toISOString(), status: 'DRAFT' })} rows={2} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" /></label>
               <div className="flex items-end justify-between gap-3 rounded-xl border border-violet-100 bg-violet-50 p-3">
-                <label className="text-xs font-bold text-slate-700">מספר ימי אימון בשבוע<select value={draft.trainingDaysPerWeek || 1} onChange={event => {
-                  const days = Number(event.target.value);
-                  onUpdateDraft({ ...draft, trainingDaysPerWeek: days, dayLabels: Array.from({ length: days }, (_, index) => draft.dayLabels?.[index] || `יום אימון ${index + 1}`), exercises: draft.exercises.map(exercise => ({ ...exercise, dayNumber: Math.min(exercise.dayNumber || 1, days) })), updatedAt: new Date().toISOString(), status: 'DRAFT' });
-                }} className="mr-2 rounded-lg border border-violet-200 bg-white px-3 py-2">{[1,2,3,4,5,6,7].map(day => <option key={day} value={day}>{day}</option>)}</select></label>
+                <div><span className="block text-[10px] font-bold text-slate-500">מבנה שנוצר מתוך הצ׳אט</span><strong className="text-sm text-slate-900">{draft.trainingDaysPerWeek || 1} ימים בשבוע</strong><small className="mt-0.5 block text-[9px] text-violet-700">לשינוי כתבו בצ׳אט: “שנה ל־4 ימים”</small></div>
                 <button onClick={addBlankExercise} className="flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white"><Plus size={14} /> הוסף תרגיל</button>
               </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {Array.from({ length: draft.trainingDaysPerWeek || 1 }, (_, index) => index + 1).map(day => <button key={day} type="button" onClick={() => setSelectedDraftDay(day)} className={`min-w-fit rounded-xl px-3 py-2 text-[10px] font-black ${selectedDraftDay === day ? 'bg-violet-600 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>{draft.dayLabels?.[day - 1] || `יום ${day}`} <span className="opacity-70">({draft.exercises.filter(exercise => (exercise.dayNumber || 1) === day).length})</span></button>)}
+              </div>
               <div className="max-h-[390px] space-y-2 overflow-y-auto pl-1">
-                {draft.exercises.map((exercise, index) => (
+                {draft.exercises.filter(exercise => (exercise.dayNumber || 1) === selectedDraftDay).map((exercise, index) => (
                   <article key={exercise.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <div className="mb-2 flex items-center gap-2"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[10px] font-black text-violet-700">{index + 1}</span><input value={exercise.name} onChange={event => updateExercise(exercise.id, { name: event.target.value })} className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-bold" /><button onClick={() => removeExercise(exercise.id)} className="text-red-500"><Trash2 size={14} /></button></div>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

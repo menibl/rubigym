@@ -20,10 +20,11 @@ import {
   Trash2,
   UsersRound
 } from 'lucide-react';
-import { GroupWorkoutExercise, GroupWorkoutParticipant, GroupWorkoutProgram, GroupWorkoutStation, MuscleGroup, TrainingSession, User } from '../types';
+import { GroupWorkoutExercise, GroupWorkoutParticipant, GroupWorkoutProgram, GroupWorkoutStation, GymEquipment, MuscleGroup, TraineeMemoryEntry, TraineeProfessionalProfile, TrainingSession, User } from '../types';
 import { ExerciseMedia } from './ExerciseMedia';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import { getGroupWorkoutStatus, GroupWorkoutLiveStatus, sendGroupWorkoutCommand, subscribeToGroupWorkoutStatus } from '../data/groupWorkoutRemote';
+import { generateGroupWorkoutWithAi } from '../data/workoutAi';
 
 interface GroupWorkoutProgramManagerProps {
   activeUser: User;
@@ -31,6 +32,9 @@ interface GroupWorkoutProgramManagerProps {
   onUpdatePrograms: (programs: GroupWorkoutProgram[]) => void;
   trainees: User[];
   sessions: TrainingSession[];
+  equipment: GymEquipment[];
+  traineeProfiles: TraineeProfessionalProfile[];
+  memoryEntries: TraineeMemoryEntry[];
   initialSessionId?: string;
   onInitialSessionHandled?: () => void;
   initialProgramId?: string;
@@ -86,6 +90,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   onUpdatePrograms,
   trainees,
   sessions,
+  equipment,
+  traineeProfiles,
+  memoryEntries,
   initialSessionId,
   onInitialSessionHandled,
   initialProgramId,
@@ -97,6 +104,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [liveStatus, setLiveStatus] = useState<GroupWorkoutLiveStatus>();
   const [assistantInput, setAssistantInput] = useState('');
+  const [isAssistantGenerating, setIsAssistantGenerating] = useState(false);
   const [assistantMessages, setAssistantMessages] = useState<string[]>([
     'בחרו תוכנית או צרו חדשה, ואז כתבו כיצד תרצו לבנות או לשנות את האימון.'
   ]);
@@ -460,37 +468,93 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     updateProgram({ status: 'PUBLISHED', publishedAt: new Date().toISOString() });
   };
 
-  const runAssistantCommand = (request: string) => {
+  const runAssistantCommand = async (request: string) => {
     if (!selectedProgram) {
       setAssistantMessages(messages => [...messages, 'יש לבחור תוכנית קיימת או ליצור תוכנית חדשה לפני ביצוע השינוי.']);
       return;
     }
-    const normalized = request.trim();
-    const seconds = Number(normalized.match(/\d+/)?.[0] || 0);
-    let response = 'הבקשה נשמרה כהנחיה למאמן. אפשר לבצע עריכה ידנית בכל שדה מתחת לצ׳אט.';
-    if (normalized.includes('תחנ')) {
-      enableRotatingGroups();
-      response = 'האימון הוגדר כאימון תחנות עם תתי־קבוצות. אפשר לערוך את התחנות והסבבים בהמשך המסך.';
-    } else if (normalized.includes('מנוח') && seconds > 0) {
-      updateProgram({ defaultRestSeconds: seconds });
-      response = `זמן המנוחה המשותף עודכן ל־${seconds} שניות.`;
-    } else if (normalized.includes('עבודה') && seconds > 0) {
-      updateProgram({ defaultWorkSeconds: seconds });
-      response = `זמן העבודה המשותף עודכן ל־${seconds} שניות.`;
-    } else if (normalized.includes('הוסף') && normalized.includes('תרגיל')) {
-      if (selectedProgram.mode === 'ROTATING_GROUPS' && selectedProgram.stations?.[0]) addStationExercise(selectedProgram.stations[0]);
-      else addExercise();
-      response = 'נוסף תרגיל ריק לטיוטה. אפשר לבחור לו שם, זמנים ומדיה באזור העריכה.';
-    } else if (normalized.includes('מחק') || normalized.includes('נקה')) {
-      if (window.confirm('לנקות את כל התרגילים מהטיוטה הנוכחית?')) {
-        updateProgram({ exercises: [], stations: (selectedProgram.stations || []).map(station => ({ ...station, exercises: [] })) });
-        response = 'כל התרגילים הוסרו מהטיוטה. התוכנית עצמה נשמרה.';
-      } else response = 'המחיקה בוטלה ולא בוצע שינוי.';
-    } else if (normalized.includes('פרסם')) {
-      publishProgram();
-      response = programExerciseCount(selectedProgram) > 0 ? 'בקשת הפרסום בוצעה. יש לוודא שכל התרגילים קיבלו שם.' : 'לא ניתן לפרסם תוכנית ללא תרגילים.';
+    if (isAssistantGenerating) return;
+    const coachLine = `מאמן: ${request.trim()}`;
+    setAssistantMessages(messages => [...messages, coachLine].slice(-8));
+    setIsAssistantGenerating(true);
+    try {
+      const linkedSession = sessions.find(session => session.id === selectedProgram.sessionId);
+      const participantIds = selectedProgram.participants?.map(participant => participant.id)
+        || linkedSession?.registeredUsers
+        || [];
+      const groupParticipants = participantIds
+        .map(id => trainees.find(trainee => trainee.id === id))
+        .filter((trainee): trainee is User => Boolean(trainee))
+        .map(trainee => ({
+          user: { id: trainee.id, name: trainee.name, age: trainee.age, gender: trainee.gender },
+          professionalProfile: traineeProfiles.find(profile => profile.traineeId === trainee.id),
+          confirmedMemory: memoryEntries.filter(entry => entry.traineeId === trainee.id && entry.confirmed)
+        }));
+      const conversation = assistantMessages.map(message => ({
+        role: message.startsWith('מאמן:') ? 'COACH' as const : 'ASSISTANT' as const,
+        content: message.replace(/^מאמן:\s*/, '')
+      }));
+      const { result } = await generateGroupWorkoutWithAi({
+        message: request,
+        actor: activeUser,
+        equipment: equipment.filter(item => item.status !== 'OUT_OF_SERVICE' && item.quantity > 0),
+        conversation: [...conversation, { role: 'COACH', content: request }],
+        currentDraft: selectedProgram,
+        groupParticipants
+      });
+      const createAiExercise = (exercise: typeof result.exercises[number], index: number, prefix: string): GroupWorkoutExercise => {
+        const existing = (selectedProgram.mode === 'ROTATING_GROUPS'
+          ? (selectedProgram.stations || []).flatMap(station => station.exercises)
+          : selectedProgram.exercises
+        ).find(item => item.name === exercise.name);
+        return {
+          ...exercise,
+          name: exercise.name.trim() || `תרגיל ${index + 1}`,
+          sets: Math.min(20, Math.max(1, Math.round(exercise.sets || 1))),
+          dayNumber: 1,
+          workSeconds: Math.min(900, Math.max(5, Math.round(exercise.workSeconds || result.defaultWorkSeconds || 40))),
+          restSeconds: Math.min(900, Math.max(0, Math.round(exercise.restSeconds ?? result.defaultRestSeconds ?? 20))),
+          rounds: Math.min(20, Math.max(1, Math.round(exercise.rounds || 1))),
+          id: existing?.id || `${prefix}-${Date.now()}-${index}`,
+          mediaUrl: existing?.mediaUrl,
+          mediaType: existing?.mediaType,
+          mediaStorageId: existing?.mediaStorageId
+        };
+      };
+      const updatedProgram: GroupWorkoutProgram = {
+        ...selectedProgram,
+        title: result.title,
+        description: result.description,
+        mode: result.mode,
+        participantCount: Math.min(100, Math.max(1, Math.round(result.participantCount || selectedProgram.participantCount || 1))),
+        defaultWorkSeconds: Math.min(900, Math.max(5, Math.round(result.defaultWorkSeconds || 40))),
+        defaultRestSeconds: Math.min(900, Math.max(0, Math.round(result.defaultRestSeconds || 0))),
+        preparationSeconds: Math.min(900, Math.max(0, Math.round(result.preparationSeconds || 0))),
+        roundsPerStation: Math.min(20, Math.max(1, Math.round(result.roundsPerStation || 1))),
+        transitionSeconds: Math.min(900, Math.max(0, Math.round(result.transitionSeconds || 0))),
+        exercises: result.mode === 'LINEAR'
+          ? result.exercises.slice(0, 60).map((exercise, index) => createAiExercise(exercise, index, 'group-ai-exercise'))
+          : [],
+        stations: result.mode === 'ROTATING_GROUPS'
+          ? result.stations.slice(0, 12).map((station, stationIndex) => ({
+              id: selectedProgram.stations?.[stationIndex]?.id || `group-ai-station-${Date.now()}-${stationIndex}`,
+              name: station.name,
+              exercises: station.exercises.slice(0, 30).map((exercise, index) => createAiExercise(exercise, index, `group-ai-station-${stationIndex}`))
+            }))
+          : [],
+        participantGroupNames: result.mode === 'ROTATING_GROUPS'
+          ? result.stations.slice(0, 12).map((_, index) => selectedProgram.participantGroupNames?.[index] || `קבוצה ${index + 1}`)
+          : selectedProgram.participantGroupNames,
+        status: 'DRAFT',
+        updatedAt: new Date().toISOString()
+      };
+      onUpdatePrograms(programs.map(program => program.id === updatedProgram.id ? updatedProgram : program));
+      setAssistantMessages(messages => [...messages, result.assistantMessage].slice(-8));
+    } catch (error) {
+      setAssistantMessages(messages => [...messages, error instanceof Error ? error.message : 'שירות ה־AI אינו זמין כרגע.'].slice(-8));
+    } finally {
+      setIsAssistantGenerating(false);
     }
-    setAssistantMessages(messages => [...messages, `מאמן: ${normalized}`, response].slice(-8));
   };
 
   const submitAssistant = (event: React.FormEvent) => {
@@ -498,7 +562,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     const request = assistantInput.trim();
     if (!request) return;
     setAssistantInput('');
-    runAssistantCommand(request);
+    void runAssistantCommand(request);
   };
 
   return (
@@ -517,17 +581,17 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       <section className="rounded-2xl border border-amber-400/25 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2"><span className="rounded-xl bg-amber-400/15 p-2 text-amber-300"><MessageCircle size={19} /></span><div><h3 className="text-sm font-black text-white">עוזר בניית אימון קבוצתי</h3><p className="text-[10px] text-zinc-400">הצ׳אט מעדכן את הטיוטה, והמאמן מאשר ומפרסם</p></div></div>
-          <span className="rounded-full bg-amber-400/15 px-2 py-1 text-[9px] font-black text-amber-300">DEMO מקומי</span>
+          <span className="rounded-full bg-emerald-400/15 px-2 py-1 text-[9px] font-black text-emerald-300">OpenAI</span>
         </div>
         <div className="mt-3 max-h-40 space-y-2 overflow-auto rounded-xl border border-zinc-700 bg-zinc-950 p-3">
           {assistantMessages.map((message, index) => <p key={`${index}-${message}`} className={`rounded-lg px-3 py-2 text-xs leading-5 ${message.startsWith('מאמן:') ? 'mr-8 bg-amber-400 text-zinc-950' : 'ml-5 bg-zinc-800 text-zinc-200'}`}>{message}</p>)}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          {['הפוך לאימון תחנות', 'הוסף תרגיל', 'מנוחה 30 שניות', 'עבודה 45 שניות'].map(suggestion => <button key={suggestion} type="button" onClick={() => runAssistantCommand(suggestion)} className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-[10px] font-bold text-zinc-200 hover:border-amber-400 hover:text-amber-300">{suggestion}</button>)}
+          {['בנה אימון כוח עם 12 תרגילים ב־3 תחנות', 'החלף סקוואט במכרעים', 'הוסף פלאנק לתחנה 2', 'מנוחה 30 שניות'].map(suggestion => <button key={suggestion} type="button" disabled={isAssistantGenerating} onClick={() => void runAssistantCommand(suggestion)} className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-[10px] font-bold text-zinc-200 hover:border-amber-400 hover:text-amber-300 disabled:opacity-40">{suggestion}</button>)}
         </div>
         <form onSubmit={submitAssistant} className="mt-3 flex gap-2">
-          <input value={assistantInput} onChange={event => setAssistantInput(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-xs text-white placeholder:text-zinc-500" placeholder="לדוגמה: חלק את האימון לתחנות ושנה את המנוחה ל־30 שניות" />
-          <button type="submit" disabled={!assistantInput.trim()} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-amber-400 px-4 text-xs font-black text-zinc-950 disabled:opacity-40"><Send size={15} /> שלח</button>
+          <input value={assistantInput} onChange={event => setAssistantInput(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-xs text-white placeholder:text-zinc-500" placeholder="לדוגמה: בנה אימון כוח עם 12 תרגילים ב־3 תחנות" />
+          <button type="submit" disabled={!assistantInput.trim() || isAssistantGenerating} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-amber-400 px-4 text-xs font-black text-zinc-950 disabled:opacity-40"><Send size={15} /> {isAssistantGenerating ? 'חושב...' : 'שלח'}</button>
         </form>
       </section>
 

@@ -117,7 +117,7 @@ const server = createServer(async (incoming, outgoing) => {
   }
 });
 
-server.requestTimeout = 15_000;
+server.requestTimeout = 90_000;
 server.headersTimeout = 10_000;
 server.keepAliveTimeout = 5_000;
 server.listen(port, '0.0.0.0', () => console.log(`GymFlow listening on port ${port}`));

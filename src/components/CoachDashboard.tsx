@@ -850,34 +850,6 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     workoutPlans.flatMap(plan => plan.exercises).map(exercise => [exercise.name.trim().toLowerCase(), exercise])
   ).values()).slice(0, 24);
 
-  const handleSetWorkoutDays = (days: number) => {
-    const normalizedDays = Math.min(7, Math.max(1, days));
-    setSelectedWorkoutDay(day => Math.min(day, normalizedDays));
-    if (traineeWorkoutPlan) {
-      onUpdateWorkoutPlans(workoutPlans.map(plan => plan.id === traineeWorkoutPlan.id
-        ? {
-            ...plan,
-            trainingDaysPerWeek: normalizedDays,
-            dayLabels: Array.from({ length: normalizedDays }, (_, index) => plan.dayLabels?.[index] || `יום אימון ${index + 1}`),
-            exercises: plan.exercises.map(exercise => ({ ...exercise, dayNumber: Math.min(exercise.dayNumber || 1, normalizedDays) })),
-            lastUpdated: new Date().toISOString().split('T')[0]
-          }
-        : plan));
-      return;
-    }
-    const emptyPlan: WorkoutPlan = {
-      id: `plan-${Date.now()}`,
-      traineeId: selectedTraineeId,
-      coachId: activeUser.id,
-      coachName: activeUser.name,
-      lastUpdated: new Date().toISOString().split('T')[0],
-      trainingDaysPerWeek: normalizedDays,
-      dayLabels: Array.from({ length: normalizedDays }, (_, index) => `יום אימון ${index + 1}`),
-      exercises: []
-    };
-    onUpdateWorkoutPlans([emptyPlan, ...workoutPlans]);
-  };
-
   const handleAddExerciseFromLibrary = (source: Exercise) => {
     if (!traineeWorkoutPlan) return;
     const cloned: Exercise = { ...source, id: `library-ex-${Date.now()}`, dayNumber: selectedWorkoutDay };
@@ -1202,12 +1174,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       <h4 className="text-sm font-black text-white">ימי התוכנית</h4>
                       <p className="mt-1 text-xs text-zinc-400">בחרו יום כדי לראות ולערוך את התרגילים שלו.</p>
                     </div>
-                    <label className="flex items-center gap-2 text-xs font-bold text-zinc-300">
-                      ימים בשבוע
-                      <select value={workoutDays} onChange={event => handleSetWorkoutDays(Number(event.target.value))} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
-                        {[1, 2, 3, 4, 5, 6, 7].map(day => <option key={day} value={day}>{day}</option>)}
-                      </select>
-                    </label>
+                    <div className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-left"><strong className="block text-xs text-amber-300">{workoutDays} ימים בשבוע</strong><small className="block text-[9px] text-zinc-400">מספר הימים נקבע ומתעדכן מתוך הצ׳אט</small></div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {Array.from({ length: workoutDays }, (_, index) => index + 1).map(day => (
@@ -1560,6 +1527,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 onUpdatePrograms={onUpdateGroupWorkoutPrograms}
                 trainees={users.filter(user => user.role === UserRole.TRAINEE)}
                 sessions={sessions}
+                equipment={gymEquipment}
+                traineeProfiles={traineeProfiles}
+                memoryEntries={traineeMemoryEntries}
                 initialSessionId={groupProgramSessionId}
                 onInitialSessionHandled={() => setGroupProgramSessionId('')}
                 initialProgramId={groupProgramId}

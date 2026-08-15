@@ -1,3 +1,5 @@
+import { handleWorkoutAi } from './workout-ai.js';
+
 const CARDCOM_BASE_URL = 'https://secure.cardcom.solutions/api/v11';
 const liveDisplayState = { program: null, commands: new Map(), statuses: new Map() };
 
@@ -290,6 +292,7 @@ const handleApi = async (request, env, url) => {
       const result = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', body.payload, body.expectedRevision);
       return result.conflict ? json(result, 409, headers) : json(result, 200, headers);
     }
+    if (request.method === 'POST' && url.pathname === '/api/ai/workout-plan') return await handleWorkoutAi(request, env, headers, json);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/create') return await handleCreatePayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/verify') return await handleVerifyPayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/webhook') return await handleWebhook(request, env);
