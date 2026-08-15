@@ -364,6 +364,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       const traineeId = session.targetTraineeId || session.registeredUsers[0] || session.coTrainees?.[0];
       if (traineeId) setSelectedTraineeId(traineeId);
       setActiveTab('programs');
+      setPersonalBuilderPanel('WORKOUT');
       setWorkoutPlanningRoute('PERSONAL_BUILDER');
       return;
     }
@@ -382,6 +383,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   // New Exercise Form State
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [selectedWorkoutDay, setSelectedWorkoutDay] = useState(1);
+  const [personalBuilderPanel, setPersonalBuilderPanel] = useState<'WORKOUT' | 'PROFILE' | 'LIBRARY' | 'SETTINGS'>('WORKOUT');
   const [editingExerciseId, setEditingExerciseId] = useState('');
   const [newExerciseMediaFile, setNewExerciseMediaFile] = useState<File | null>(null);
   const [editingExerciseMediaId, setEditingExerciseMediaId] = useState('');
@@ -969,6 +971,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const openPersonalBuilder = (traineeId: string) => {
     setSelectedTraineeId(traineeId);
     setActiveTab('programs');
+    setPersonalBuilderPanel('WORKOUT');
     setWorkoutPlanningRoute('PERSONAL_BUILDER');
   };
 
@@ -1162,7 +1165,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       </button>
                     )}
                     <button
-                      onClick={() => setShowAddExercise(!showAddExercise)}
+                      onClick={() => { setPersonalBuilderPanel('WORKOUT'); setShowAddExercise(!showAddExercise); }}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1 transition"
                     >
                       <Plus size={14} />
@@ -1171,62 +1174,69 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   </div>
                 </div>
 
-                <WorkoutAssistantPanel
-                  activeUser={activeUser}
-                  trainee={selectedTrainee}
-                  profile={selectedTraineeProfile}
-                  memoryEntries={selectedTraineeMemoryEntries}
-                  equipment={gymEquipment}
-                  pdfDocuments={coachPdfDocuments}
-                  messages={workoutAssistantMessages}
-                  draft={selectedAssistantDraft}
-                  canPublish={selectedHasWorkoutPlanAccess}
-                  onUpdateMessages={onUpdateWorkoutAssistantMessages}
-                  onUpdateDraft={handleUpdateAssistantDraft}
-                  onPublish={handlePublishAssistantDraft}
-                />
+                <nav className="personal-builder-menu" aria-label="אזורי בניית תוכנית אישית">
+                  <button type="button" onClick={() => setPersonalBuilderPanel('WORKOUT')} className={personalBuilderPanel === 'WORKOUT' ? 'active' : ''}><Dumbbell size={18} /><span><strong>התוכנית והצ׳אט</strong><small>צפייה, בנייה ועריכה</small></span></button>
+                  <button type="button" onClick={() => setPersonalBuilderPanel('PROFILE')} className={personalBuilderPanel === 'PROFILE' ? 'active' : ''}><UserCheck size={18} /><span><strong>נתוני המתאמן</strong><small>מטרות, מגבלות וזיכרון</small></span></button>
+                  <button type="button" onClick={() => setPersonalBuilderPanel('LIBRARY')} className={personalBuilderPanel === 'LIBRARY' ? 'active' : ''}><BookOpen size={18} /><span><strong>מאגר תרגילים</strong><small>הוספה מהירה לתוכנית</small></span></button>
+                  <button type="button" onClick={() => setPersonalBuilderPanel('SETTINGS')} className={personalBuilderPanel === 'SETTINGS' ? 'active' : ''}><Wrench size={18} /><span><strong>הגדרות</strong><small>זכאות וכלי תכנון</small></span></button>
+                </nav>
 
-                <section className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4">
+                {personalBuilderPanel === 'WORKOUT' && <WorkoutAssistantPanel
+                    activeUser={activeUser}
+                    trainee={selectedTrainee}
+                    profile={selectedTraineeProfile}
+                    memoryEntries={selectedTraineeMemoryEntries}
+                    equipment={gymEquipment}
+                    pdfDocuments={coachPdfDocuments}
+                    messages={workoutAssistantMessages}
+                    draft={selectedAssistantDraft}
+                    canPublish={selectedHasWorkoutPlanAccess}
+                    onUpdateMessages={onUpdateWorkoutAssistantMessages}
+                    onUpdateDraft={handleUpdateAssistantDraft}
+                    onPublish={handlePublishAssistantDraft}
+                  />}
+
+                {personalBuilderPanel === 'WORKOUT' && <section className="rounded-2xl border border-amber-300/30 bg-zinc-900 p-3 text-white">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <h4 className="text-sm font-black text-slate-900">חלוקת התוכנית לימי אימון</h4>
-                      <p className="mt-1 text-xs text-slate-600">הגדר כמה פעמים בשבוע המתאמן מתאמן ושייך כל תרגיל ליום המתאים.</p>
+                      <h4 className="text-sm font-black text-white">ימי התוכנית</h4>
+                      <p className="mt-1 text-xs text-zinc-400">בחרו יום כדי לראות ולערוך את התרגילים שלו.</p>
                     </div>
-                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                    <label className="flex items-center gap-2 text-xs font-bold text-zinc-300">
                       ימים בשבוע
-                      <select value={workoutDays} onChange={event => handleSetWorkoutDays(Number(event.target.value))} className="rounded-lg border border-indigo-200 bg-white px-3 py-2">
+                      <select value={workoutDays} onChange={event => handleSetWorkoutDays(Number(event.target.value))} className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-white">
                         {[1, 2, 3, 4, 5, 6, 7].map(day => <option key={day} value={day}>{day}</option>)}
                       </select>
                     </label>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {Array.from({ length: workoutDays }, (_, index) => index + 1).map(day => (
-                      <button key={day} onClick={() => setSelectedWorkoutDay(day)} className={`rounded-xl px-4 py-2 text-xs font-black ${selectedWorkoutDay === day ? 'bg-indigo-600 text-white shadow-sm' : 'border border-indigo-200 bg-white text-indigo-800'}`}>
+                      <button key={day} onClick={() => setSelectedWorkoutDay(day)} className={`rounded-xl px-4 py-2 text-xs font-black ${selectedWorkoutDay === day ? 'bg-amber-400 text-zinc-950 shadow-sm' : 'border border-zinc-700 bg-zinc-800 text-zinc-200'}`}>
                         {traineeWorkoutPlan?.dayLabels?.[day - 1] || `יום ${day}`}
                         <span className="mr-1 opacity-70">({traineeWorkoutPlan?.exercises.filter(exercise => (exercise.dayNumber || 1) === day).length || 0})</span>
                       </button>
                     ))}
                   </div>
-                </section>
+                </section>}
 
-                {exerciseLibrary.length > 0 && (
-                  <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                {personalBuilderPanel === 'LIBRARY' && exerciseLibrary.length > 0 && (
+                  <section className="rounded-2xl border border-zinc-700 bg-zinc-900 p-4 text-white">
                     <div className="mb-3 flex items-center justify-between gap-3">
-                      <div><h4 className="text-sm font-black text-slate-900">מאגר התרגילים של המאמנים</h4><p className="text-[11px] text-slate-500">המאגר נבנה אוטומטית מתרגילים שנשמרו בתוכניות קודמות ומשמש גם את הצ׳אט.</p></div>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{exerciseLibrary.length} תרגילים</span>
+                      <div><h4 className="text-sm font-black text-white">מאגר התרגילים של המאמנים</h4><p className="text-[11px] text-zinc-400">לחצו על תרגיל כדי להוסיף אותו ליום שנבחר בתוכנית.</p></div>
+                      <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-[10px] font-bold text-amber-300">{exerciseLibrary.length} תרגילים</span>
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                       {exerciseLibrary.map(exercise => (
-                        <button key={`${exercise.name}-${exercise.muscleGroup}`} onClick={() => handleAddExerciseFromLibrary(exercise)} className="flex items-center justify-between rounded-xl border border-slate-200 p-3 text-right hover:border-indigo-300 hover:bg-indigo-50">
-                          <span><strong className="block text-xs text-slate-900">{exercise.name}</strong><small className="text-[10px] text-slate-500">{exercise.sets} סטים · {exercise.reps}</small></span>
-                          <Plus size={15} className="text-indigo-600" />
+                        <button key={`${exercise.name}-${exercise.muscleGroup}`} onClick={() => handleAddExerciseFromLibrary(exercise)} className="flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-950 p-3 text-right hover:border-amber-400">
+                          <span><strong className="block text-xs text-white">{exercise.name}</strong><small className="text-[10px] text-zinc-400">{exercise.sets} סטים · {exercise.reps}</small></span>
+                          <Plus size={15} className="text-amber-400" />
                         </button>
                       ))}
                     </div>
                   </section>
                 )}
 
-                <TraineeMemoryPanel
+                {personalBuilderPanel === 'PROFILE' && <TraineeMemoryPanel
                   trainee={selectedTrainee}
                   activeUser={activeUser}
                   profile={selectedTraineeProfile}
@@ -1234,27 +1244,34 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   onSaveProfile={handleSaveTraineeProfile}
                   onAddEntry={entry => onUpdateTraineeMemoryEntries([entry, ...traineeMemoryEntries])}
                   onDeleteEntry={entryId => onUpdateTraineeMemoryEntries(traineeMemoryEntries.filter(entry => entry.id !== entryId))}
-                />
+                />}
 
                 {/* Membership & Request Notice */}
-                {selectedHasWorkoutPlanAccess ? (
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-900">
+                {personalBuilderPanel === 'SETTINGS' && (selectedHasWorkoutPlanAccess ? (
+                  <div className="rounded-xl border border-emerald-500/30 bg-zinc-900 p-4 text-xs text-zinc-200">
                     <span className="font-bold">✅ הגישה לתוכנית שולמה או כלולה במנוי:</span>
                     <span className="mr-1">התוכנית שתיבנה כאן תוצג למתאמן מיד לאחר השמירה.</span>
                   </div>
                 ) : selectedTrainee.requestedWorkoutPlan ? (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900">
+                  <div className="rounded-xl border border-amber-400/40 bg-zinc-900 p-4 text-xs text-amber-200">
                     <span className="font-bold">📩 בקשת תוכנית אימונים ממתינה לתשלום:</span>
                     <span className="mr-1">אפשר לבנות את התוכנית מראש, אך היא תישאר חסומה למתאמן עד להסדרת התשלום.</span>
                   </div>
                 ) : (
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600">
+                  <div className="rounded-xl border border-zinc-700 bg-zinc-900 p-4 text-xs text-zinc-300">
                     ניתן להכין את התוכנית מראש. היא תוצג למתאמן רק לאחר רכישת תוכנית אימון או במסגרת מנוי הכולל אותה.
                   </div>
-                )}
+                ))}
+
+                {personalBuilderPanel === 'SETTINGS' && <div className="grid grid-cols-2 gap-3">
+                  <button type="button" onClick={() => { setActiveTab('pdf-library'); setWorkoutPlanningRoute('PDF_LIBRARY'); }} className="flex min-h-24 flex-col items-start justify-between rounded-xl border border-zinc-700 bg-zinc-900 p-4 text-right text-white hover:border-amber-400"><FileText size={22} className="text-amber-300" /><span><strong className="block text-sm">ספריית PDF</strong><small className="mt-1 block text-[10px] text-zinc-400">מקורות לבניית תוכניות</small></span></button>
+                  <button type="button" onClick={() => setActiveTab('equipment')} className="flex min-h-24 flex-col items-start justify-between rounded-xl border border-zinc-700 bg-zinc-900 p-4 text-right text-white hover:border-amber-400"><Wrench size={22} className="text-amber-300" /><span><strong className="block text-sm">ציוד ומכשירים</strong><small className="mt-1 block text-[10px] text-zinc-400">עדכון הציוד הזמין לצ׳אט</small></span></button>
+                </div>}
+
+                {personalBuilderPanel === 'LIBRARY' && exerciseLibrary.length === 0 && <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900 p-8 text-center text-xs text-zinc-400">המאגר עדיין ריק. תרגילים שתשמרו בתוכניות יופיעו כאן לשימוש חוזר.</div>}
 
                 {/* ADD EXERCISE FORM */}
-                {showAddExercise && (
+                {personalBuilderPanel === 'WORKOUT' && showAddExercise && (
                   <form onSubmit={handleAddExerciseToPlan} className="bg-slate-50 border border-slate-100 rounded-lg p-5 space-y-4" id="add-exercise-form">
                     <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                       <h4 className="text-xs font-bold text-slate-800">הוספת תרגיל ובחירת קטגוריות / קבוצת שרירים</h4>
@@ -1416,25 +1433,23 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 )}
 
                 {/* EXERCISES DISPLAY LIST */}
-                {traineeWorkoutPlan && traineeWorkoutPlan.exercises.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {personalBuilderPanel === 'WORKOUT' && (traineeWorkoutPlan && traineeWorkoutPlan.exercises.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {traineeWorkoutPlan.exercises.filter(exercise => (exercise.dayNumber || 1) === selectedWorkoutDay).map(ex => (
-                      <div key={ex.id} className="border border-slate-150 rounded-xl p-4 bg-slate-50 flex flex-col justify-between relative" id={`exercise-card-${ex.id}`}>
+                      <div key={ex.id} className="relative flex flex-col justify-between rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-white" id={`exercise-card-${ex.id}`}>
                         <button
                           onClick={() => handleDeleteExercise(ex.id)}
-                          className="absolute left-3 top-3 text-slate-400 hover:text-rose-500 transition"
+                          className="absolute left-3 top-3 text-zinc-500 transition hover:text-rose-400"
                           title="מחק תרגיל"
                         >
                           <Trash2 size={14} />
                         </button>
-                        <button onClick={() => setEditingExerciseId(editingExerciseId === ex.id ? '' : ex.id)} className="absolute left-10 top-3 text-slate-400 hover:text-indigo-600 transition" title="ערוך תרגיל"><Edit3 size={14} /></button>
-
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
-                            <span className="bg-sky-100 text-sky-800 text-[9px] font-bold px-2 py-0.5 rounded">
+                            <span className="rounded bg-amber-400/15 px-2 py-0.5 text-[9px] font-bold text-amber-300">
                               {ex.category}
                             </span>
-                            <span className="bg-slate-200 text-slate-700 text-[9px] font-bold px-2 py-0.5 rounded">
+                            <span className="rounded bg-zinc-800 px-2 py-0.5 text-[9px] font-bold text-zinc-300">
                               {ex.muscleGroup === MuscleGroup.UPPER && 'פלג גוף עליון'}
                               {ex.muscleGroup === MuscleGroup.LEGS && 'רגליים וישבן'}
                               {ex.muscleGroup === MuscleGroup.BACK && 'גב'}
@@ -1444,36 +1459,37 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                             </span>
                           </div>
 
-                          <h4 className="font-bold text-slate-800 text-sm">{ex.name}</h4>
+                          <h4 className="text-sm font-bold text-white">{ex.name}</h4>
 
-                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-white rounded-lg p-2.5 my-3 border border-slate-100 text-center font-mono">
+                          <div className="my-2 grid grid-cols-5 gap-1 rounded-lg border border-zinc-700 bg-zinc-950 p-2 text-center font-mono">
                             <div>
-                              <div className="text-[10px] text-slate-400">סטים</div>
-                              <div className="font-bold text-slate-800 text-xs">{ex.sets}</div>
+                              <div className="text-[9px] text-zinc-500">סטים</div>
+                              <div className="text-[11px] font-bold text-white">{ex.sets}</div>
                             </div>
                             <div>
-                              <div className="text-[10px] text-slate-400">חזרות</div>
-                              <div className="font-bold text-slate-800 text-xs">{ex.reps}</div>
+                              <div className="text-[9px] text-zinc-500">חזרות</div>
+                              <div className="truncate text-[11px] font-bold text-white">{ex.reps}</div>
                             </div>
                             <div>
-                              <div className="text-[10px] text-slate-400">משקל</div>
-                              <div className="font-bold text-emerald-600 text-xs truncate">{ex.weight || 'גוף'}</div>
+                              <div className="text-[9px] text-zinc-500">משקל</div>
+                              <div className="truncate text-[11px] font-bold text-amber-300">{ex.weight || 'גוף'}</div>
                             </div>
                             <div>
-                              <div className="text-[10px] text-slate-400">עבודה</div>
-                              <div className="font-bold text-slate-800 text-xs">{ex.workDuration || '—'}</div>
+                              <div className="text-[9px] text-zinc-500">עבודה</div>
+                              <div className="truncate text-[11px] font-bold text-white">{ex.workDuration || '—'}</div>
                             </div>
                             <div>
-                              <div className="text-[10px] text-slate-400">מנוחה</div>
-                              <div className="font-bold text-slate-800 text-xs">{ex.restDuration || '—'}</div>
+                              <div className="text-[9px] text-zinc-500">מנוחה</div>
+                              <div className="truncate text-[11px] font-bold text-white">{ex.restDuration || '—'}</div>
                             </div>
                           </div>
 
                           {ex.notes && (
-                            <p className="text-xs text-slate-500 italic bg-white p-2 rounded border border-slate-50/50 mb-3">
+                            <p className="mb-2 rounded border border-zinc-700 bg-zinc-950 p-2 text-[11px] italic text-zinc-400">
                               💡 {ex.notes}
                             </p>
                           )}
+                          <button onClick={() => setEditingExerciseId(editingExerciseId === ex.id ? '' : ex.id)} className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs font-black text-zinc-200 hover:border-amber-400 hover:text-amber-300"><Edit3 size={14} /> {editingExerciseId === ex.id ? 'סגור עריכה' : 'עריכה והדגמה'}</button>
                           {editingExerciseId === ex.id && (
                             <div className="mb-3 grid gap-2 rounded-xl border border-indigo-200 bg-white p-3 sm:grid-cols-2">
                               <label className="text-[10px] font-bold text-slate-500 sm:col-span-2">שם התרגיל<input value={ex.name} onChange={event => handleUpdateExercise(ex.id, { name: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900" /></label>
@@ -1487,10 +1503,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                               <button onClick={() => setEditingExerciseId('')} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white sm:col-span-2">סיום עריכה</button>
                             </div>
                           )}
-                          {(ex.mediaUrl || ex.mediaStorageId) && <ExerciseMedia exercise={ex} compact className="mt-3" controls />}
-                          <button onClick={() => startEditingExerciseMedia(ex)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-fuchsia-300 bg-fuchsia-50 px-3 py-2.5 text-xs font-black text-fuchsia-700">
+                          {editingExerciseId === ex.id && (ex.mediaUrl || ex.mediaStorageId) && <ExerciseMedia exercise={ex} compact className="mt-3" controls />}
+                          {editingExerciseId === ex.id && <button onClick={() => startEditingExerciseMedia(ex)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-amber-400/50 bg-amber-400/10 px-3 py-2.5 text-xs font-black text-amber-300">
                             <ImagePlus size={16} /> {ex.mediaUrl || ex.mediaStorageId ? 'שנה תמונה / GIF / סרטון' : 'העלה תמונה / GIF / סרטון לתרגיל'}
-                          </button>
+                          </button>}
                           {editingExerciseMediaId === ex.id && (
                             <div className="mt-2 space-y-2 rounded-xl border border-sky-200 bg-white p-3">
                               <div className="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
@@ -1507,7 +1523,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                           )}
                         </div>
 
-                        {ex.mediaUrl && (
+                        {editingExerciseId === ex.id && ex.mediaUrl && (
                           <a
                             href={ex.mediaUrl}
                             target="_blank"
@@ -1525,7 +1541,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   <div className="text-center p-8 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
                     אין תרגילים בתוכנית כעת. לחץ על "הוסף תרגיל חדש" כדי להתחיל לתכנת!
                   </div>
-                )}
+                ))}
               </div>
             )}
 

@@ -514,33 +514,33 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         </div>
       </div>
 
-      <section className="rounded-2xl border border-violet-200 bg-gradient-to-b from-violet-50 to-white p-4 shadow-sm">
+      <section className="rounded-2xl border border-amber-400/25 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2"><span className="rounded-xl bg-violet-600 p-2 text-white"><MessageCircle size={19} /></span><div><h3 className="text-sm font-black text-slate-900">עוזר בניית אימון קבוצתי</h3><p className="text-[10px] text-slate-500">הצ׳אט מעדכן את הטיוטה, והמאמן מאשר ומפרסם</p></div></div>
-          <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black text-amber-800">DEMO מקומי</span>
+          <div className="flex items-center gap-2"><span className="rounded-xl bg-amber-400/15 p-2 text-amber-300"><MessageCircle size={19} /></span><div><h3 className="text-sm font-black text-white">עוזר בניית אימון קבוצתי</h3><p className="text-[10px] text-zinc-400">הצ׳אט מעדכן את הטיוטה, והמאמן מאשר ומפרסם</p></div></div>
+          <span className="rounded-full bg-amber-400/15 px-2 py-1 text-[9px] font-black text-amber-300">DEMO מקומי</span>
         </div>
-        <div className="mt-3 max-h-40 space-y-2 overflow-auto rounded-xl bg-white p-3">
-          {assistantMessages.map((message, index) => <p key={`${index}-${message}`} className={`rounded-lg px-3 py-2 text-xs leading-5 ${message.startsWith('מאמן:') ? 'mr-8 bg-slate-900 text-white' : 'ml-5 bg-violet-50 text-slate-700'}`}>{message}</p>)}
+        <div className="mt-3 max-h-40 space-y-2 overflow-auto rounded-xl border border-zinc-700 bg-zinc-950 p-3">
+          {assistantMessages.map((message, index) => <p key={`${index}-${message}`} className={`rounded-lg px-3 py-2 text-xs leading-5 ${message.startsWith('מאמן:') ? 'mr-8 bg-amber-400 text-zinc-950' : 'ml-5 bg-zinc-800 text-zinc-200'}`}>{message}</p>)}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          {['הפוך לאימון תחנות', 'הוסף תרגיל', 'מנוחה 30 שניות', 'עבודה 45 שניות'].map(suggestion => <button key={suggestion} type="button" onClick={() => runAssistantCommand(suggestion)} className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-[10px] font-bold text-violet-800">{suggestion}</button>)}
+          {['הפוך לאימון תחנות', 'הוסף תרגיל', 'מנוחה 30 שניות', 'עבודה 45 שניות'].map(suggestion => <button key={suggestion} type="button" onClick={() => runAssistantCommand(suggestion)} className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-[10px] font-bold text-zinc-200 hover:border-amber-400 hover:text-amber-300">{suggestion}</button>)}
         </div>
         <form onSubmit={submitAssistant} className="mt-3 flex gap-2">
-          <input value={assistantInput} onChange={event => setAssistantInput(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-violet-200 bg-white px-3 text-xs text-slate-900" placeholder="לדוגמה: חלק את האימון לתחנות ושנה את המנוחה ל־30 שניות" />
-          <button type="submit" disabled={!assistantInput.trim()} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-violet-600 px-4 text-xs font-black text-white disabled:opacity-40"><Send size={15} /> שלח</button>
+          <input value={assistantInput} onChange={event => setAssistantInput(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-xs text-white placeholder:text-zinc-500" placeholder="לדוגמה: חלק את האימון לתחנות ושנה את המנוחה ל־30 שניות" />
+          <button type="submit" disabled={!assistantInput.trim()} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-amber-400 px-4 text-xs font-black text-zinc-950 disabled:opacity-40"><Send size={15} /> שלח</button>
         </form>
       </section>
 
-      <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+      <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="grid gap-3 md:grid-cols-2">
-          <label className="min-w-0 flex-1 text-xs font-black text-slate-800">בחרו אימון מהיומן
-            <select value={selectedSessionId} onChange={event => setSelectedSessionId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-3 text-sm font-bold">
+          <label className="min-w-0 flex-1 text-xs font-black text-zinc-200">בחרו אימון מהיומן
+            <select value={selectedSessionId} onChange={event => setSelectedSessionId(event.target.value)} className="mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm font-bold text-white">
               <option value="">בחר אימון קבוצתי...</option>
               {groupSessions.map(session => <option key={session.id} value={session.id}>{session.date} · {session.time} · {session.title} ({session.registeredUsers.length} נרשמים)</option>)}
             </select>
           </label>
-          <label className="min-w-0 flex-1 text-xs font-black text-slate-800">תוכנית מוכנה מהמאגר
-            <select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-3 text-sm font-bold">
+          <label className="min-w-0 flex-1 text-xs font-black text-zinc-200">תוכנית מוכנה מהמאגר
+            <select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm font-bold text-white">
               <option value="">ללא תבנית — אימון חדש</option>
               {templatePrograms.map(program => <option key={program.id} value={program.id}>{program.title} · {programExerciseCount(program)} תרגילים</option>)}
             </select>
@@ -550,10 +550,10 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
             if (existing) setSelectedProgramId(existing.id);
             else if (selectedTemplateId) assignTemplateToSession(selectedTemplateId, selectedSessionId);
             else createProgram(selectedSessionId);
-          }} disabled={!selectedSessionId} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white disabled:opacity-40">{programs.some(program => program.sessionId === selectedSessionId) ? 'פתח תוכנית קיימת' : selectedTemplateId ? 'שבץ עותק מהמאגר' : 'צור תוכנית חדשה'}</button>
-          <button onClick={() => { setSelectedSessionId(''); createProgram(''); }} className="rounded-xl border border-indigo-300 bg-white px-5 py-3 text-sm font-black text-indigo-800">צור תוכנית למאגר</button>
+          }} disabled={!selectedSessionId} className="rounded-xl bg-amber-400 px-5 py-3 text-sm font-black text-zinc-950 disabled:opacity-40">{programs.some(program => program.sessionId === selectedSessionId) ? 'פתח תוכנית קיימת' : selectedTemplateId ? 'שבץ עותק מהמאגר' : 'צור תוכנית חדשה'}</button>
+          <button onClick={() => { setSelectedSessionId(''); createProgram(''); }} className="rounded-xl border border-zinc-600 bg-zinc-800 px-5 py-3 text-sm font-black text-zinc-100">צור תוכנית למאגר</button>
         </div>
-        <p className="mt-2 text-xs text-indigo-800">אפשר להכין מראש מאגר לשבוע או לחודש. השיבוץ יוצר עותק נפרד לאירוע ורשימת המתאמנים מגיעה אוטומטית מהיומן.</p>
+        <p className="mt-2 text-xs text-zinc-400">אפשר להכין מראש מאגר לשבוע או לחודש. השיבוץ יוצר עותק נפרד לאירוע ורשימת המתאמנים מגיעה אוטומטית מהיומן.</p>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
