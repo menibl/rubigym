@@ -4,9 +4,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, Gender, DiscountCode, MEMBERSHIP_PRICES } from '../types';
+import { User, UserRole, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, Gender, DiscountCode, MEMBERSHIP_PRICES, CURRENT_PRIMARY_MEMBERSHIP_PLANS, CURRENT_MEMBERSHIP_ADD_ONS, FAMILY_MEMBERSHIP_PRICES } from '../types';
 import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
 import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
+import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -253,6 +254,15 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   };
 
   const handleRenewHealthDeclaration = (result: HealthDeclarationResult) => {
+    const record = createHealthDeclarationRecord({
+      signed: result.signed,
+      answers: result.answers,
+      requiresMedicalCertificate: result.requiresMedicalCertificate,
+      medicalCertificateApproved: false,
+      parentConsent: result.parentConsent,
+      parentName: result.parentName,
+      signatureName: result.signatureName
+    });
     const updated: User = {
       ...currentUser,
       healthDeclarationSigned: result.signed,
@@ -262,7 +272,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       healthDeclarationMedicalCertificateApproved: false,
       healthDeclarationParentConsent: result.parentConsent,
       healthDeclarationParentName: result.parentName,
-      healthDeclarationSignatureName: result.signatureName
+      healthDeclarationSignatureName: result.signatureName,
+      healthDeclarationHistory: [record, ...(currentUser.healthDeclarationHistory || [])]
     };
     onUpdateUser(updated);
     if (onUpdateAllUsers) {
@@ -279,7 +290,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       ...currentUser,
       healthDeclarationSigned: true,
       healthDeclarationMedicalCertificateApproved: true,
-      healthDeclarationDate: new Date().toISOString().split('T')[0]
+      healthDeclarationDate: new Date().toISOString().split('T')[0],
+      healthDeclarationHistory: currentUser.healthDeclarationHistory?.map((record, index) => index === 0
+        ? { ...record, signed: true, medicalCertificateApproved: true }
+        : record)
     };
     onUpdateUser(updated);
     onUpdateAllUsers?.(allUsers.map(user => user.id === updated.id ? updated : user));
@@ -344,6 +358,15 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       healthDeclarationParentConsent: subHealthDeclaration?.parentConsent,
       healthDeclarationParentName: subHealthDeclaration?.parentName,
       healthDeclarationSignatureName: subHealthDeclaration?.signatureName,
+      healthDeclarationHistory: [createHealthDeclarationRecord({
+        signed: subHealthDeclaration?.signed ?? false,
+        answers: subHealthDeclaration?.answers,
+        requiresMedicalCertificate: subHealthDeclaration?.requiresMedicalCertificate,
+        medicalCertificateApproved: false,
+        parentConsent: subHealthDeclaration?.parentConsent,
+        parentName: subHealthDeclaration?.parentName,
+        signatureName: subHealthDeclaration?.signatureName
+      })],
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
       membershipType: subMembership,
@@ -753,9 +776,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                               onChange={(e) => setSubMembership(e.target.value as MembershipType)}
                               className="w-full p-2 border rounded-lg text-xs bg-white font-bold"
                             >
-                              {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, label]) => (
+                              {[...CURRENT_PRIMARY_MEMBERSHIP_PLANS, ...CURRENT_MEMBERSHIP_ADD_ONS].map(typeKey => (
                                 <option key={typeKey} value={typeKey}>
-                                  {label} (₪{MEMBERSHIP_PRICES[typeKey as MembershipType] || 350}/חודש)
+                                  {MEMBERSHIP_TYPE_LABELS[typeKey].label} (₪{MEMBERSHIP_PRICES[typeKey]})
                                 </option>
                               ))}
                             </select>
@@ -868,9 +891,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                                 onChange={(e) => handleChangeMemberTrack(m.id, e.target.value as MembershipType)}
                                 className="px-2.5 py-1 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 text-[11px] focus:outline-none focus:border-indigo-500"
                               >
-                                {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, label]) => (
+                                {[...CURRENT_PRIMARY_MEMBERSHIP_PLANS, ...CURRENT_MEMBERSHIP_ADD_ONS].map(typeKey => (
                                   <option key={typeKey} value={typeKey}>
-                                    {label} (₪{MEMBERSHIP_PRICES[typeKey as MembershipType] || 350})
+                                    {MEMBERSHIP_TYPE_LABELS[typeKey].label} (₪{MEMBERSHIP_PRICES[typeKey]})
                                   </option>
                                 ))}
                               </select>
@@ -881,20 +904,17 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
                       {/* Full Billing Calculation & Discount Codes Engine */}
                       {(() => {
-                        const baseSubtotal = familyMembersList.reduce(
-                          (sum, m) => sum + (MEMBERSHIP_PRICES[m.membershipType] || 350),
-                          0
-                        );
-                        const familyDiscount = familyMembersList.length >= 2 ? Math.round(baseSubtotal * 0.1) : 0;
+                        const pricedCount = Math.min(6, Math.max(2, currentUser.familyMembersCount || familyMembersList.length));
+                        const baseSubtotal = FAMILY_MEMBERSHIP_PRICES[pricedCount];
                         let couponDiscount = 0;
                         if (appliedCoupon) {
                           if (appliedCoupon.discountPercent > 0) {
-                            couponDiscount = Math.round((baseSubtotal - familyDiscount) * (appliedCoupon.discountPercent / 100));
+                            couponDiscount = Math.round(baseSubtotal * (appliedCoupon.discountPercent / 100));
                           } else if (appliedCoupon.discountAmount) {
                             couponDiscount = appliedCoupon.discountAmount;
                           }
                         }
-                        const finalTotal = Math.max(0, baseSubtotal - familyDiscount - couponDiscount);
+                        const finalTotal = Math.max(0, baseSubtotal - couponDiscount);
 
                         return (
                           <div className="bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-950 text-white rounded-2xl p-4 mt-4 space-y-3 shadow-lg">
@@ -942,12 +962,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                                 <span>סיכום מסלולים אישיים ({familyMembersList.length} נפשות):</span>
                                 <span className="font-mono">₪{baseSubtotal}</span>
                               </div>
-                              {familyDiscount > 0 && (
-                                <div className="flex justify-between text-emerald-400 font-bold">
-                                  <span>הנחת חבילה משפחתית (10%-):</span>
-                                  <span className="font-mono">-₪{familyDiscount}</span>
-                                </div>
-                              )}
                               {couponDiscount > 0 && (
                                 <div className="flex justify-between text-amber-400 font-bold">
                                   <span>הנחת קוד קופון ({appliedCoupon?.code}):</span>

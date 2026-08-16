@@ -4,12 +4,22 @@ const CARDCOM_BASE_URL = 'https://secure.cardcom.solutions/api/v11';
 const liveDisplayState = { program: null, commands: new Map(), statuses: new Map() };
 
 const membershipPrices = {
+  OPEN_GYM: 280,
+  NUTRITION_COACHING: 350,
+  WORKOUT_COACHING: 350,
+  OPEN_GYM_WITH_PLAN: 450,
+  CORE_GROUPS: 500,
+  DUO_TRAINING: 350,
+  YOUTH_TWICE_WEEKLY: 500,
+  YOUTH_ONCE_WEEKLY: 300,
+  DEDICATED_GROUP_HALF_YEAR: 3600,
+  FAMILY_MEMBERSHIP: 900,
   GROUP_MONTHLY: 350,
   GROUP_ANNUAL: 290,
   OPEN_MONTHLY: 300,
   OPEN_ANNUAL: 250,
   OPEN_PUNCH_CARD: 400,
-  PERSONAL_TRAINING: 450,
+  PERSONAL_TRAINING: 200,
   NUTRITION_PLAN: 200,
   WORKOUT_PLAN: 150,
   WEIGHT_LOSS_HALF_YEAR: 1800,
@@ -17,6 +27,16 @@ const membershipPrices = {
 };
 
 const membershipLabels = {
+  OPEN_GYM: 'Open Gym',
+  NUTRITION_COACHING: 'תוכנית תזונה + ליווי אישי',
+  WORKOUT_COACHING: 'תוכנית אימון + ליווי אישי',
+  OPEN_GYM_WITH_PLAN: 'Open Gym + תוכנית',
+  CORE_GROUPS: 'קבוצות (ליבה)',
+  DUO_TRAINING: 'אימון זוגי',
+  YOUTH_TWICE_WEEKLY: 'נוער – פעמיים בשבוע',
+  YOUTH_ONCE_WEEKLY: 'נוער – פעם בשבוע',
+  DEDICATED_GROUP_HALF_YEAR: 'קבוצה ייעודית – חצי שנתי',
+  FAMILY_MEMBERSHIP: 'מנוי משפחתי',
   GROUP_MONTHLY: 'מנוי קבוצתי חודשי',
   GROUP_ANNUAL: 'מנוי קבוצתי שנתי',
   OPEN_MONTHLY: 'Open Gym חודשי',
@@ -29,13 +49,16 @@ const membershipLabels = {
   POSTPARTUM_HALF_YEAR: 'נשים אחרי לידה – חצי שנתי'
 };
 
-const punchCardVariants = {
-  PUNCH_5: { amount: 250, label: 'כרטיסיית 5 אימונים' },
-  PUNCH_10: { amount: 450, label: 'כרטיסיית 10 אימונים' },
-  PUNCH_20: { amount: 800, label: 'כרטיסיית 20 אימונים' }
+const trainingCardVariants = {
+  PERSONAL_4: { amount: 800, label: 'כרטיסיית 4 אימונים אישיים', membershipType: 'PERSONAL_TRAINING' },
+  PERSONAL_8: { amount: 1600, label: 'כרטיסיית 8 אימונים אישיים', membershipType: 'PERSONAL_TRAINING' },
+  PERSONAL_12: { amount: 2400, label: 'כרטיסיית 12 אימונים אישיים', membershipType: 'PERSONAL_TRAINING' },
+  DUO_4: { amount: 1400, label: 'כרטיסיית 4 אימונים זוגיים', membershipType: 'DUO_TRAINING' },
+  DUO_8: { amount: 2800, label: 'כרטיסיית 8 אימונים זוגיים', membershipType: 'DUO_TRAINING' },
+  DUO_12: { amount: 4200, label: 'כרטיסיית 12 אימונים זוגיים', membershipType: 'DUO_TRAINING' }
 };
 
-const familyPrices = { 2: 550, 3: 750, 4: 920, 5: 1100 };
+const familyPrices = { 2: 900, 3: 1350, 4: 1800, 5: 2250, 6: 2700 };
 const discountCodes = {
   RUBI10: { percent: 10 },
   FAMILY15: { percent: 15 },
@@ -45,14 +68,14 @@ const discountCodes = {
 const resolvePurchase = body => {
   if (body.familyMembersCount) {
     const familyAmount = familyPrices[Number(body.familyMembersCount)];
-    if (!familyAmount || body.membershipType !== 'GROUP_MONTHLY') throw new Error('INVALID_FAMILY_PLAN');
+    if (!familyAmount || body.membershipType !== 'FAMILY_MEMBERSHIP') throw new Error('INVALID_FAMILY_PLAN');
     const discount = body.discountCode ? discountCodes[String(body.discountCode).toUpperCase()] : undefined;
     const amount = discount?.percent ? Math.round(familyAmount * (1 - discount.percent / 100)) : Math.max(0, familyAmount - (discount?.amount || 0));
     return { amount, label: `מנוי משפחתי ${body.familyMembersCount} מנויים` };
   }
-  if (body.membershipType === 'OPEN_PUNCH_CARD' && body.purchaseVariant) {
-    const variant = punchCardVariants[body.purchaseVariant];
-    if (!variant) throw new Error('INVALID_VARIANT');
+  if (body.purchaseVariant) {
+    const variant = trainingCardVariants[body.purchaseVariant];
+    if (!variant || variant.membershipType !== body.membershipType) throw new Error('INVALID_VARIANT');
     return variant;
   }
   const amount = membershipPrices[body.membershipType];
@@ -292,14 +315,17 @@ const handleApi = async (request, env, url) => {
       const result = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', body.payload, body.expectedRevision);
       return result.conflict ? json(result, 409, headers) : json(result, 200, headers);
     }
+    if (request.method === 'GET' && url.pathname === '/api/ai/status') {
+      return json({ configured: Boolean(env.OPENAI_API_KEY), model: env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini' }, 200, headers);
+    }
     if (request.method === 'POST' && url.pathname === '/api/ai/workout-plan') return await handleWorkoutAi(request, env, headers, json);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/create') return await handleCreatePayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/verify') return await handleVerifyPayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/webhook') return await handleWebhook(request, env);
     return json({ message: 'Not found' }, 404, headers);
   } catch (error) {
-    console.error('Cardcom payment error', error instanceof Error ? error.message : error);
-    return json({ message: 'שירות התשלום אינו זמין כרגע. נסו שוב מאוחר יותר.' }, 502, headers);
+    console.error('API request error', error instanceof Error ? error.message : error);
+    return json({ message: 'שירות השרת אינו זמין כרגע. נסו שוב מאוחר יותר.' }, 502, headers);
   }
 };
 

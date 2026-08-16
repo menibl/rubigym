@@ -4,8 +4,9 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { User, UserRole, Gender, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS } from '../types';
+import { User, UserRole, Gender, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, MEMBERSHIP_PRICES, CURRENT_PRIMARY_MEMBERSHIP_PLANS, CURRENT_MEMBERSHIP_ADD_ONS, FAMILY_MEMBERSHIP_PRICES, TRAINING_CARD_SIZES, TrainingCardSize } from '../types';
 import { X, Check, ShieldCheck, CreditCard, UserPlus, FileText, HeartPulse, Sparkles, Users, Lock, Phone, Calendar, User as UserIcon } from 'lucide-react';
+import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 
 interface RegisterModalProps {
   isOpen: boolean;
@@ -40,8 +41,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
   // Step 3: Membership
   const [isFamilyTrack, setIsFamilyTrack] = useState(false);
-  const [selectedMembership, setSelectedMembership] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
-  const [familyMembersQuota, setFamilyMembersQuota] = useState<number>(2); // 2 to 5
+  const [selectedMembership, setSelectedMembership] = useState<MembershipType>(MembershipType.OPEN_GYM);
+  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(4);
+  const [familyMembersQuota, setFamilyMembersQuota] = useState<number>(2);
   const [familyName, setFamilyName] = useState('');
 
   // Step 4: Payment
@@ -76,7 +78,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       setHealthConfirmed(false);
       setSignatureDataUrl('');
       setIsFamilyTrack(false);
-      setSelectedMembership(MembershipType.GROUP_MONTHLY);
+      setSelectedMembership(MembershipType.OPEN_GYM);
+      setTrainingCardSize(4);
       setFamilyMembersQuota(2);
       setFamilyName('');
       setCardHolder('');
@@ -214,11 +217,18 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       healthDeclarationSigned: true,
       healthDeclarationSignatureUrl: signatureDataUrl,
       healthDeclarationDate: new Date().toISOString().split('T')[0],
-      membershipType: isFamilyTrack ? MembershipType.GROUP_MONTHLY : selectedMembership,
+      healthDeclarationHistory: [createHealthDeclarationRecord({ signed: true, signatureUrl: signatureDataUrl })],
+      membershipType: isFamilyTrack ? MembershipType.FAMILY_MEMBERSHIP : selectedMembership,
       secondaryMemberships: [],
       membershipStatus: MembershipStatus.ACTIVE,
       membershipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       priorityScore: 100,
+      personalTrainingCardSize: selectedMembership === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
+      personalTrainingRemaining: selectedMembership === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
+      duoTrainingCardSize: selectedMembership === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
+      duoTrainingRemaining: selectedMembership === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
+      nutritionPlanPaid: selectedMembership === MembershipType.NUTRITION_COACHING,
+      requestedWorkoutPlan: selectedMembership === MembershipType.WORKOUT_COACHING || selectedMembership === MembershipType.OPEN_GYM_WITH_PLAN,
       imageUrl: gender === Gender.FEMALE
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
@@ -270,7 +280,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         birthDate: sub.birthDate,
         healthDeclarationSigned: true,
         healthDeclarationDate: new Date().toISOString().split('T')[0],
-        membershipType: MembershipType.GROUP_MONTHLY,
+        healthDeclarationHistory: [createHealthDeclarationRecord({ signed: true })],
+        membershipType: MembershipType.FAMILY_MEMBERSHIP,
         membershipStatus: MembershipStatus.ACTIVE,
         membershipExpiry: primaryUser.membershipExpiry,
         priorityScore: 100,
@@ -589,74 +600,22 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               </div>
 
               {!isFamilyTrack ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div
-                    onClick={() => setSelectedMembership(MembershipType.GROUP_MONTHLY)}
-                    className={`p-4 border-2 rounded-2xl cursor-pointer transition relative ${
-                      selectedMembership === MembershipType.GROUP_MONTHLY
-                        ? 'border-emerald-500 bg-emerald-50/50'
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-bold text-sm text-slate-900">קבוצתי חודשי</div>
-                        <div className="text-xs text-slate-500 mt-1">אימונים קבוצתיים ללא הגבלה</div>
-                      </div>
-                      <span className="font-bold text-emerald-600 text-sm">₪350 / חודש</span>
-                    </div>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {[...CURRENT_PRIMARY_MEMBERSHIP_PLANS, ...CURRENT_MEMBERSHIP_ADD_ONS].map(plan => (
+                      <button type="button" key={plan} onClick={() => setSelectedMembership(plan)} className={`p-4 border-2 rounded-2xl text-right transition ${selectedMembership === plan ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}>
+                        <div className="flex justify-between items-start gap-3">
+                          <div><div className="font-bold text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[plan].label}</div><div className="text-xs text-slate-500 mt-1">{MEMBERSHIP_TYPE_LABELS[plan].description}</div></div>
+                          <span className="font-bold text-emerald-700 text-sm shrink-0">₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : ''}</span>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-
-                  <div
-                    onClick={() => setSelectedMembership(MembershipType.GROUP_ANNUAL)}
-                    className={`p-4 border-2 rounded-2xl cursor-pointer transition relative ${
-                      selectedMembership === MembershipType.GROUP_ANNUAL
-                        ? 'border-emerald-500 bg-emerald-50/50'
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-bold text-sm text-slate-900">קבוצתי שנתי (מוזל)</div>
-                        <div className="text-xs text-slate-500 mt-1">התחייבות לשנה בהנחה מיוחדת</div>
-                      </div>
-                      <span className="font-bold text-emerald-600 text-sm">₪290 / חודש</span>
-                    </div>
-                  </div>
-
-                  <div
-                    onClick={() => setSelectedMembership(MembershipType.OPEN_MONTHLY)}
-                    className={`p-4 border-2 rounded-2xl cursor-pointer transition relative ${
-                      selectedMembership === MembershipType.OPEN_MONTHLY
-                        ? 'border-emerald-500 bg-emerald-50/50'
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-bold text-sm text-slate-900">פתוח + תוכנית אימון</div>
-                        <div className="text-xs text-slate-500 mt-1">Open Gym חופשי + תוכנית אישית</div>
-                      </div>
-                      <span className="font-bold text-emerald-600 text-sm">₪300 / חודש</span>
-                    </div>
-                  </div>
-
-                  <div
-                    onClick={() => setSelectedMembership(MembershipType.OPEN_PUNCH_CARD)}
-                    className={`p-4 border-2 rounded-2xl cursor-pointer transition relative ${
-                      selectedMembership === MembershipType.OPEN_PUNCH_CARD
-                        ? 'border-emerald-500 bg-emerald-50/50'
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-bold text-sm text-slate-900">כרטיסיית ניקובים (10 כניסות)</div>
-                        <div className="text-xs text-slate-500 mt-1">גמישות מלאה לפי כניסה</div>
-                      </div>
-                      <span className="font-bold text-emerald-600 text-sm">₪400 חד-פעמי</span>
-                    </div>
-                  </div>
+                  {(selectedMembership === MembershipType.PERSONAL_TRAINING || selectedMembership === MembershipType.DUO_TRAINING) && (
+                    <label className="block text-xs font-bold text-slate-800">גודל כרטיסייה<select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)} className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
+                      {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size} אימונים — ₪{size * MEMBERSHIP_PRICES[selectedMembership]}</option>)}
+                    </select></label>
+                  )}
                 </div>
               ) : (
                 /* FAMILY TRACK SETUP */
@@ -674,9 +633,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-800 mb-2">כמות מנויים כלולה במסלול המשפחתי:</label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {[2, 3, 4, 5].map((count) => {
-                        const price = count === 2 ? 550 : count === 3 ? 750 : count === 4 ? 920 : 1100;
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {[2, 3, 4, 5, 6].map((count) => {
+                        const price = FAMILY_MEMBERSHIP_PRICES[count];
                         return (
                           <button
                             type="button"
@@ -756,8 +715,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 </div>
                 <div className="font-bold text-emerald-700 text-sm">
                   {isFamilyTrack
-                    ? `₪${familyMembersQuota === 2 ? 550 : familyMembersQuota === 3 ? 750 : familyMembersQuota === 4 ? 920 : 1100}`
-                    : selectedMembership === MembershipType.GROUP_ANNUAL ? '₪290' : selectedMembership === MembershipType.OPEN_PUNCH_CARD ? '₪400' : '₪350'}
+                    ? `₪${FAMILY_MEMBERSHIP_PRICES[familyMembersQuota].toLocaleString('he-IL')}`
+                    : `₪${(MEMBERSHIP_PRICES[selectedMembership] * ((selectedMembership === MembershipType.PERSONAL_TRAINING || selectedMembership === MembershipType.DUO_TRAINING) ? trainingCardSize : 1)).toLocaleString('he-IL')}`}
                 </div>
               </div>
 

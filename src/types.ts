@@ -16,6 +16,17 @@ export enum Gender {
 }
 
 export enum MembershipType {
+  OPEN_GYM = 'OPEN_GYM',
+  NUTRITION_COACHING = 'NUTRITION_COACHING',
+  WORKOUT_COACHING = 'WORKOUT_COACHING',
+  OPEN_GYM_WITH_PLAN = 'OPEN_GYM_WITH_PLAN',
+  CORE_GROUPS = 'CORE_GROUPS',
+  DUO_TRAINING = 'DUO_TRAINING',
+  YOUTH_TWICE_WEEKLY = 'YOUTH_TWICE_WEEKLY',
+  YOUTH_ONCE_WEEKLY = 'YOUTH_ONCE_WEEKLY',
+  DEDICATED_GROUP_HALF_YEAR = 'DEDICATED_GROUP_HALF_YEAR',
+  FAMILY_MEMBERSHIP = 'FAMILY_MEMBERSHIP',
+  // Legacy values are retained only so existing accounts can be migrated safely.
   GROUP_MONTHLY = 'GROUP_MONTHLY', // קבוצתי חודשי
   GROUP_ANNUAL = 'GROUP_ANNUAL', // קבוצתי שנתי
   OPEN_MONTHLY = 'OPEN_MONTHLY', // פתוח - חודשי (כולל תוכנית אימון)
@@ -29,6 +40,58 @@ export enum MembershipType {
 }
 
 export const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, { label: string; badgeColor: string; description: string; includesWorkoutPlan?: boolean }> = {
+  [MembershipType.OPEN_GYM]: {
+    label: 'Open Gym',
+    badgeColor: 'bg-purple-100 text-purple-800 border-purple-300',
+    description: 'אימון עצמאי בשעות הפתוחות, בהשגחה'
+  },
+  [MembershipType.NUTRITION_COACHING]: {
+    label: 'תוכנית תזונה + ליווי אישי',
+    badgeColor: 'bg-rose-100 text-rose-800 border-rose-300',
+    description: 'תוכנית תזונה אישית וליווי מקצועי'
+  },
+  [MembershipType.WORKOUT_COACHING]: {
+    label: 'תוכנית אימון + ליווי אישי',
+    badgeColor: 'bg-blue-100 text-blue-800 border-blue-300',
+    description: 'תוכנית אימון אישית ומעקב אחת לחודשיים, ללא אימון חי',
+    includesWorkoutPlan: true
+  },
+  [MembershipType.OPEN_GYM_WITH_PLAN]: {
+    label: 'Open Gym + תוכנית',
+    badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+    description: 'אימון חופשי + תוכנית אימון אישית',
+    includesWorkoutPlan: true
+  },
+  [MembershipType.CORE_GROUPS]: {
+    label: 'קבוצות (ליבה)',
+    badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    description: 'קבוצות ללא הגבלה + גישה חופשית ל־Open Gym'
+  },
+  [MembershipType.DUO_TRAINING]: {
+    label: 'אימון זוגי',
+    badgeColor: 'bg-cyan-100 text-cyan-800 border-cyan-300',
+    description: 'כרטיסיית 4, 8 או 12 אימונים זוגיים'
+  },
+  [MembershipType.YOUTH_TWICE_WEEKLY]: {
+    label: 'נוער – פעמיים בשבוע',
+    badgeColor: 'bg-orange-100 text-orange-800 border-orange-300',
+    description: 'עד שני אימוני נוער בכל שבוע'
+  },
+  [MembershipType.YOUTH_ONCE_WEEKLY]: {
+    label: 'נוער – פעם בשבוע',
+    badgeColor: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+    description: 'עד אימון נוער אחד בכל שבוע'
+  },
+  [MembershipType.DEDICATED_GROUP_HALF_YEAR]: {
+    label: 'קבוצה ייעודית – חצי שנתי',
+    badgeColor: 'bg-lime-100 text-lime-800 border-lime-300',
+    description: 'מסלול חצי שנתי לקבוצת מטרה ייעודית, בתשלום מראש'
+  },
+  [MembershipType.FAMILY_MEMBERSHIP]: {
+    label: 'מנוי משפחתי',
+    badgeColor: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300',
+    description: 'חשבון משלם אחד ופרופיל אישי לכל בן משפחה'
+  },
   [MembershipType.GROUP_MONTHLY]: {
     label: 'קבוצתי חודשי',
     badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
@@ -59,7 +122,7 @@ export const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, { label: string; bad
   [MembershipType.PERSONAL_TRAINING]: {
     label: 'אימון אישי',
     badgeColor: 'bg-sky-100 text-sky-800 border-sky-300',
-    description: 'אימונים אישיים 1-על-1 (ניתן לשלב במקביל עם כל מנוי)'
+    description: 'כרטיסיית 4, 8 או 12 אימונים אישיים'
   },
   [MembershipType.NUTRITION_PLAN]: {
     label: 'תוכנית תזונה',
@@ -84,17 +147,61 @@ export const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, { label: string; bad
 };
 
 export const MEMBERSHIP_PRICES: Record<MembershipType, number> = {
+  [MembershipType.OPEN_GYM]: 280,
+  [MembershipType.NUTRITION_COACHING]: 350,
+  [MembershipType.WORKOUT_COACHING]: 350,
+  [MembershipType.OPEN_GYM_WITH_PLAN]: 450,
+  [MembershipType.CORE_GROUPS]: 500,
+  [MembershipType.DUO_TRAINING]: 350,
+  [MembershipType.YOUTH_TWICE_WEEKLY]: 500,
+  [MembershipType.YOUTH_ONCE_WEEKLY]: 300,
+  [MembershipType.DEDICATED_GROUP_HALF_YEAR]: 3600,
+  [MembershipType.FAMILY_MEMBERSHIP]: 900,
   [MembershipType.GROUP_MONTHLY]: 350,
   [MembershipType.GROUP_ANNUAL]: 290,
   [MembershipType.OPEN_MONTHLY]: 300,
   [MembershipType.OPEN_ANNUAL]: 250,
   [MembershipType.OPEN_PUNCH_CARD]: 400,
-  [MembershipType.PERSONAL_TRAINING]: 450,
+  [MembershipType.PERSONAL_TRAINING]: 200,
   [MembershipType.NUTRITION_PLAN]: 200,
   [MembershipType.WORKOUT_PLAN]: 150,
   [MembershipType.WEIGHT_LOSS_HALF_YEAR]: 1800,
   [MembershipType.POSTPARTUM_HALF_YEAR]: 1800
 };
+
+export const CURRENT_PRIMARY_MEMBERSHIP_PLANS: MembershipType[] = [
+  MembershipType.OPEN_GYM,
+  MembershipType.OPEN_GYM_WITH_PLAN,
+  MembershipType.CORE_GROUPS,
+  MembershipType.YOUTH_TWICE_WEEKLY,
+  MembershipType.YOUTH_ONCE_WEEKLY,
+  MembershipType.DEDICATED_GROUP_HALF_YEAR
+];
+
+export const CURRENT_MEMBERSHIP_ADD_ONS: MembershipType[] = [
+  MembershipType.NUTRITION_COACHING,
+  MembershipType.WORKOUT_COACHING,
+  MembershipType.PERSONAL_TRAINING,
+  MembershipType.DUO_TRAINING
+];
+
+export const CURRENT_MEMBERSHIP_CATALOG: MembershipType[] = [
+  ...CURRENT_PRIMARY_MEMBERSHIP_PLANS,
+  ...CURRENT_MEMBERSHIP_ADD_ONS,
+  MembershipType.FAMILY_MEMBERSHIP
+];
+
+export const FAMILY_MEMBERSHIP_PRICES: Record<number, number> = {
+  2: 900,
+  3: 1350,
+  4: 1800,
+  5: 2250,
+  6: 2700
+};
+
+export const TRAINING_CARD_SIZES = [4, 8, 12] as const;
+export type TrainingCardSize = typeof TRAINING_CARD_SIZES[number];
+export type PaymentPurchaseVariant = 'PERSONAL_4' | 'PERSONAL_8' | 'PERSONAL_12' | 'DUO_4' | 'DUO_8' | 'DUO_12';
 
 export interface DiscountCode {
   id: string;
@@ -122,6 +229,20 @@ export enum MuscleGroup {
   FUNCTIONAL = 'FUNCTIONAL' // אימון פונקציונלי
 }
 
+export interface HealthDeclarationRecord {
+  id: string;
+  signedAt: string;
+  validUntil: string;
+  signed: boolean;
+  answers?: Record<string, 'YES' | 'NO'>;
+  requiresMedicalCertificate?: boolean;
+  medicalCertificateApproved?: boolean;
+  parentConsent?: boolean;
+  parentName?: string;
+  signatureName?: string;
+  signatureUrl?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -144,6 +265,7 @@ export interface User {
   healthDeclarationParentConsent?: boolean;
   healthDeclarationParentName?: string;
   healthDeclarationSignatureName?: string;
+  healthDeclarationHistory?: HealthDeclarationRecord[];
   clubAgreementSigned?: boolean;
   clubAgreementDate?: string;
 
@@ -158,6 +280,10 @@ export interface User {
   membershipStatus?: MembershipStatus;
   membershipExpiry?: string; // ISO date string
   punchCardRemaining?: number; // for punch card membership
+  personalTrainingCardSize?: TrainingCardSize;
+  personalTrainingRemaining?: number;
+  duoTrainingCardSize?: TrainingCardSize;
+  duoTrainingRemaining?: number;
   priorityScore: number; // 0 to 100, drops when trainee accumulates too many black points
 
   // Family Membership fields (מנוי משפחתי)

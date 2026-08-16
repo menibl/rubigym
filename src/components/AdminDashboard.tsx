@@ -20,6 +20,7 @@ import {
   MuscleGroup,
   Gender,
   MembershipType,
+  CURRENT_MEMBERSHIP_CATALOG,
   MEMBERSHIP_TYPE_LABELS,
   MembershipStatus,
   UserRole,
@@ -33,8 +34,10 @@ import {
   CoachPdfDocument,
   WorkoutAssistantDraft,
   WorkoutAssistantMessage,
-  GroupWorkoutProgram
+  GroupWorkoutProgram,
+  AttendanceLog
 } from '../types';
+import { ClubCheckInBarcode } from './ClubCheckInBarcode';
 import {
   Calendar,
   Settings,
@@ -53,7 +56,10 @@ import {
   Tag,
   Percent,
   BookOpen,
-  UserPlus
+  UserPlus,
+  ClipboardCheck,
+  FileDown,
+  HeartPulse
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -63,6 +69,7 @@ interface AdminDashboardProps {
   blackPoints: BlackPoint[];
   announcements: Announcement[];
   payments: Payment[];
+  attendanceLogs: AttendanceLog[];
   settings: SystemSettings;
   discountCodes?: DiscountCode[];
   workoutPlans: WorkoutPlan[];
@@ -103,6 +110,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   blackPoints,
   announcements,
   payments,
+  attendanceLogs,
   settings,
   discountCodes = [],
   workoutPlans,
@@ -135,7 +143,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateGroupWorkoutPrograms,
   activeUser
 }) => {
-  const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
+  const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'records' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
   const [programSessionId, setProgramSessionId] = useState('');
 
   // Discount Codes form state
@@ -192,6 +200,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionViewMode, setSessionViewMode] = useState<'CALENDAR' | 'TABLE'>('CALENDAR');
   const [penaltySearch, setPenaltySearch] = useState('');
+
+  const downloadCsv = (fileName: string, headers: string[], rows: Array<Array<string | number | boolean | undefined>>) => {
+    const escapeCell = (value: string | number | boolean | undefined) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const content = `\uFEFF${[headers, ...rows].map(row => row.map(escapeCell).join(',')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const healthRecords = users.filter(user => user.role === UserRole.TRAINEE).flatMap(user => {
+    const records = user.healthDeclarationHistory?.length ? user.healthDeclarationHistory : user.healthDeclarationDate ? [{
+      id: `legacy-${user.id}`,
+      signedAt: `${user.healthDeclarationDate}T00:00:00.000Z`,
+      validUntil: (() => { const date = new Date(`${user.healthDeclarationDate}T00:00:00`); date.setFullYear(date.getFullYear() + 1); return date.toISOString().split('T')[0]; })(),
+      signed: Boolean(user.healthDeclarationSigned),
+      answers: user.healthDeclarationAnswers,
+      requiresMedicalCertificate: user.healthDeclarationRequiresMedicalCertificate,
+      medicalCertificateApproved: user.healthDeclarationMedicalCertificateApproved,
+      parentConsent: user.healthDeclarationParentConsent,
+      parentName: user.healthDeclarationParentName,
+      signatureName: user.healthDeclarationSignatureName,
+      signatureUrl: user.healthDeclarationSignatureUrl
+    }] : [];
+    return records.map(record => ({ user, record }));
+  }).sort((a, b) => b.record.signedAt.localeCompare(a.record.signedAt));
+
+  const today = new Date().toISOString().split('T')[0];
+  const traineesRequiringHealthDeclaration = users.filter(user => {
+    if (user.role !== UserRole.TRAINEE) return false;
+    const latest = healthRecords.find(item => item.user.id === user.id)?.record;
+    return !latest?.signed || latest.validUntil < today || (latest.requiresMedicalCertificate && !latest.medicalCertificateApproved);
+  }).length;
 
   const handleAddCoach = (event: React.FormEvent) => {
     event.preventDefault();
@@ -432,7 +475,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ageMin: '',
     ageMax: '',
     genderRestriction: Gender.ALL,
-    allowedMemberships: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+    allowedMemberships: [...CURRENT_MEMBERSHIP_CATALOG]
   });
 
   // Form states for creating a new bulletin announcement
@@ -443,7 +486,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     targetGender: Gender.ALL,
     targetAgeMin: '',
     targetAgeMax: '',
-    targetMembershipTypes: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+    targetMembershipTypes: [...CURRENT_MEMBERSHIP_CATALOG]
   });
 
   // Handle Session Creation
@@ -499,7 +542,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ageMin: '',
       ageMax: '',
       genderRestriction: Gender.ALL,
-      allowedMemberships: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+      allowedMemberships: [...CURRENT_MEMBERSHIP_CATALOG]
     });
   };
 
@@ -528,7 +571,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       targetGender: Gender.ALL,
       targetAgeMin: '',
       targetAgeMax: '',
-      targetMembershipTypes: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+      targetMembershipTypes: [...CURRENT_MEMBERSHIP_CATALOG]
     });
   };
 
@@ -677,6 +720,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             תוכניות אישיות
           </button>
           <button
+            onClick={() => setActiveTab('records')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === 'records' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+            }`}
+          >
+            <ClipboardCheck size={14} />
+            הצהרות וכניסות
+          </button>
+          <button
             onClick={() => setActiveTab('penalties')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer relative ${
               activeTab === 'penalties' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
@@ -767,6 +819,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             initialWorkoutSessionId={programSessionId}
             onInitialWorkoutSessionHandled={() => setProgramSessionId('')}
           />
+        )}
+
+        {activeTab === 'records' && (
+          <div className="space-y-6" dir="rtl">
+            <section className="grid gap-4 md:grid-cols-3">
+              <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><HeartPulse size={22} className="text-emerald-700" /><strong className="mt-3 block text-2xl text-emerald-950">{healthRecords.length}</strong><span className="text-xs text-emerald-800">הצהרות בריאות מתועדות</span></article>
+              <article className="rounded-2xl border border-sky-200 bg-sky-50 p-4"><ClipboardCheck size={22} className="text-sky-700" /><strong className="mt-3 block text-2xl text-sky-950">{attendanceLogs.length}</strong><span className="text-xs text-sky-800">כניסות וצ׳ק־אין מתועדים</span></article>
+              <article className="rounded-2xl border border-rose-200 bg-rose-50 p-4"><AlertTriangle size={22} className="text-rose-700" /><strong className="mt-3 block text-2xl text-rose-950">{traineesRequiringHealthDeclaration}</strong><span className="text-xs text-rose-800">מתאמנים חסומים עד להסדרת הצהרה</span></article>
+            </section>
+
+            <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_310px]">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-black text-slate-900">ארכיון הצהרות בריאות</h3><p className="mt-1 text-xs text-slate-500">כל חתימה נשמרת כרשומה נפרדת, כולל תוקף, תשובות ואישור רפואי.</p></div><button type="button" onClick={() => downloadCsv('baly-health-declarations.csv', ['מזהה', 'מתאמן', 'טלפון', 'תאריך חתימה', 'בתוקף עד', 'חתום', 'דורש אישור רפואי', 'אישור רפואי', 'שם חותם', 'תשובות'], healthRecords.map(({ user, record }) => [record.id, user.name, user.phone, record.signedAt, record.validUntil, record.signed, record.requiresMedicalCertificate, record.medicalCertificateApproved, record.signatureName, JSON.stringify(record.answers || {})]))} className="flex min-h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-black text-white"><FileDown size={15} /> ייצוא הצהרות</button></div>
+                <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-100">
+                  <table className="w-full min-w-[760px] text-right text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-600"><tr><th className="p-3">מתאמן</th><th className="p-3">חתימה</th><th className="p-3">תוקף</th><th className="p-3">שאלון</th><th className="p-3">אישור רפואי</th><th className="p-3">סטטוס</th></tr></thead><tbody>{healthRecords.map(({ user, record }) => {
+                    const yesAnswers = Object.values(record.answers || {}).filter(answer => answer === 'YES').length;
+                    const valid = record.signed && record.validUntil >= today && (!record.requiresMedicalCertificate || record.medicalCertificateApproved);
+                    return <tr key={`${user.id}-${record.id}`} className="border-t border-slate-100"><td className="p-3"><strong className="block text-slate-900">{user.name}</strong><span className="text-[10px] text-slate-500">{user.phone}</span></td><td className="p-3">{new Date(record.signedAt).toLocaleDateString('he-IL')}<small className="block text-slate-400">{record.signatureName || 'חתימה דיגיטלית'}</small></td><td className="p-3 font-mono">{record.validUntil}</td><td className="p-3">{Object.keys(record.answers || {}).length} תשובות · {yesAnswers} כן</td><td className="p-3">{record.requiresMedicalCertificate ? record.medicalCertificateApproved ? 'אושר' : 'ממתין' : 'לא נדרש'}</td><td className="p-3"><span className={`rounded-full px-2 py-1 text-[10px] font-black ${valid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{valid ? 'תקף' : 'חסום'}</span></td></tr>;
+                  })}{healthRecords.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">אין הצהרות מתועדות.</td></tr>}</tbody></table>
+                </div>
+              </div>
+              <ClubCheckInBarcode />
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-black text-slate-900">יומן כניסות למועדון</h3><p className="mt-1 text-xs text-slate-500">תיעוד מלא של צ׳ק־אין לאימונים ול־Open Gym.</p></div><button type="button" onClick={() => downloadCsv('baly-attendance-log.csv', ['מזהה', 'מתאמן', 'סוג כניסה', 'אימון', 'תאריך', 'שעה'], attendanceLogs.map(log => [log.id, log.traineeName, log.type, log.targetTitle, log.date, log.timestamp]))} className="flex min-h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-black text-white"><FileDown size={15} /> ייצוא כניסות</button></div>
+              <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-100"><table className="w-full min-w-[680px] text-right text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-600"><tr><th className="p-3">מתאמן</th><th className="p-3">סוג</th><th className="p-3">אימון/משבצת</th><th className="p-3">תאריך</th><th className="p-3">שעת כניסה</th></tr></thead><tbody>{attendanceLogs.map(log => <tr key={log.id} className="border-t border-slate-100"><td className="p-3 font-bold text-slate-900">{log.traineeName}</td><td className="p-3">{log.type === 'SESSION' ? 'אימון' : 'Open Gym'}</td><td className="p-3">{log.targetTitle}</td><td className="p-3 font-mono">{log.date}</td><td className="p-3 font-mono">{log.timestamp}</td></tr>)}{attendanceLogs.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">אין כניסות מתועדות.</td></tr>}</tbody></table></div>
+            </section>
+          </div>
         )}
 
         {/* TAB 1: SESSIONS MANAGEMENT */}
@@ -1034,8 +1115,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="border-t border-slate-200 pt-3">
                   <span className="block text-xs text-slate-600 font-medium mb-2">סוגי מנוי מורשים להירשם לאימון זה:</span>
                   <div className="flex flex-wrap gap-2">
-                    {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, info]) => {
-                      const typeEnum = typeKey as MembershipType;
+                    {CURRENT_MEMBERSHIP_CATALOG.map(typeEnum => {
+                      const info = MEMBERSHIP_TYPE_LABELS[typeEnum];
                       const isSelected = newSession.allowedMemberships.includes(typeEnum);
                       return (
                         <button
@@ -1465,9 +1546,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               className="border border-slate-200 rounded p-1 text-[10px] focus:outline-none bg-emerald-50 text-emerald-900 font-bold w-full"
                               title="שינוי סוג מנוי ראשי"
                             >
-                              {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, info]) => (
+                              {CURRENT_MEMBERSHIP_CATALOG.map(typeKey => (
                                 <option key={typeKey} value={typeKey}>
-                                  {info.label}
+                                  {MEMBERSHIP_TYPE_LABELS[typeKey].label}
                                 </option>
                               ))}
                             </select>
@@ -1764,13 +1845,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="border-t border-slate-200 pt-3">
                   <span className="block text-xs text-slate-600 font-medium mb-2">סינון לפי סוגי מנוי המורשים לצפות בהודעה:</span>
                   <div className="flex flex-wrap gap-2">
-                    {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, info]) => {
-                      const typeEnum = typeKey as MembershipType;
+                    {CURRENT_MEMBERSHIP_CATALOG.map(typeEnum => {
+                      const info = MEMBERSHIP_TYPE_LABELS[typeEnum];
                       const isSelected = newAnn.targetMembershipTypes.includes(typeEnum);
                       return (
                         <button
                           type="button"
-                          key={typeKey}
+                          key={typeEnum}
                           onClick={() => toggleMembershipSelection(typeEnum, 'announcement')}
                           className={`px-3 py-1.5 rounded-full text-[10px] font-medium border transition ${
                             isSelected

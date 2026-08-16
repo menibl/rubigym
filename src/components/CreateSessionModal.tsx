@@ -11,6 +11,7 @@ import {
   Gender,
   MembershipType,
   MEMBERSHIP_TYPE_LABELS,
+  CURRENT_MEMBERSHIP_CATALOG,
   WorkoutPlan,
   GroupWorkoutProgram
 } from '../types';
@@ -165,7 +166,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   const [ageMax, setAgeMax] = useState<string>('');
   const [genderRestriction, setGenderRestriction] = useState<Gender>(Gender.ALL);
   const [allowedMemberships, setAllowedMemberships] = useState<MembershipType[]>(
-    Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+    [...CURRENT_MEMBERSHIP_CATALOG]
   );
   const [targetTraineeId, setTargetTraineeId] = useState('');
   const [selectedProgramId, setSelectedProgramId] = useState('');
@@ -190,7 +191,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
       setAgeMin('');
       setAgeMax('');
       setGenderRestriction(Gender.ALL);
-      setAllowedMemberships(Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]);
+      setAllowedMemberships([...CURRENT_MEMBERSHIP_CATALOG]);
       setRecurringType('NONE');
       setTargetTraineeId('');
       setSelectedProgramId('');
@@ -588,13 +589,13 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
                 סוגי מנוי המורשים להירשם לאימון זה:
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, info]) => {
-                  const typeEnum = typeKey as MembershipType;
+                {CURRENT_MEMBERSHIP_CATALOG.map(typeEnum => {
+                  const info = MEMBERSHIP_TYPE_LABELS[typeEnum];
                   const isSelected = allowedMemberships.includes(typeEnum);
                   return (
                     <button
                       type="button"
-                      key={typeKey}
+                      key={typeEnum}
                       onClick={() => toggleMembership(typeEnum)}
                       className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
                         isSelected

@@ -22,8 +22,14 @@ import {
   Gender,
   MembershipStatus,
   MembershipType,
+  CURRENT_PRIMARY_MEMBERSHIP_PLANS,
+  CURRENT_MEMBERSHIP_ADD_ONS,
+  FAMILY_MEMBERSHIP_PRICES,
   MEMBERSHIP_TYPE_LABELS,
   MEMBERSHIP_PRICES,
+  PaymentPurchaseVariant,
+  TRAINING_CARD_SIZES,
+  TrainingCardSize,
   UserRole
 } from '../types';
 import {
@@ -54,6 +60,7 @@ import {
 } from 'lucide-react';
 import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
 import { ExerciseMedia } from './ExerciseMedia';
+import { CLUB_CHECK_IN_CODE } from './ClubCheckInBarcode';
 import {
   clearCardcomReturnParams,
   clearPendingCardcomPayment,
@@ -92,21 +99,8 @@ interface TraineeDashboardProps {
   onHome?: () => void;
 }
 
-const PRIMARY_MEMBERSHIP_PLANS = [
-  MembershipType.GROUP_MONTHLY,
-  MembershipType.GROUP_ANNUAL,
-  MembershipType.OPEN_MONTHLY,
-  MembershipType.OPEN_ANNUAL,
-  MembershipType.OPEN_PUNCH_CARD,
-  MembershipType.WEIGHT_LOSS_HALF_YEAR,
-  MembershipType.POSTPARTUM_HALF_YEAR
-];
-
-const MEMBERSHIP_ADD_ONS = [
-  MembershipType.PERSONAL_TRAINING,
-  MembershipType.NUTRITION_PLAN,
-  MembershipType.WORKOUT_PLAN
-];
+const PRIMARY_MEMBERSHIP_PLANS = CURRENT_PRIMARY_MEMBERSHIP_PLANS;
+const MEMBERSHIP_ADD_ONS = CURRENT_MEMBERSHIP_ADD_ONS;
 
 export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   activeUser,
@@ -136,6 +130,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>(initialTab);
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
+  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(4);
   const [paymentStarting, setPaymentStarting] = useState(false);
   const familyDraft = (() => {
     try { return JSON.parse(sessionStorage.getItem('baly_family_purchase_draft_v1') || 'null'); } catch { return null; }
@@ -150,36 +145,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [demoExercise, setDemoExercise] = useState<Exercise | null>(null);
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [bookingView, setBookingView] = useState<'DAY' | 'WEEK'>('DAY');
-  const [showPunchCardModal, setShowPunchCardModal] = useState<boolean>(false);
-  const [selectedPunchCardPackage, setSelectedPunchCardPackage] = useState<{ count: number; price: number; months: number }>({
-    count: 10,
-    price: 450,
-    months: 6
-  });
-
-  const handlePurchasePunchCard = async () => {
-    if (!isCardcomConfigured()) {
-      showFeedback('שרת התשלומים טרם הוגדר. לא ניתן לבצע חיוב בשלב זה.', 'error');
-      return;
-    }
-    const purchaseVariant = `PUNCH_${selectedPunchCardPackage.count}` as 'PUNCH_5' | 'PUNCH_10' | 'PUNCH_20';
-    setPaymentStarting(true);
-    try {
-      await startCardcomPayment({
-        userId: activeUser.id,
-        userName: activeUser.name,
-        email: activeUser.email,
-        phone: activeUser.phone,
-        membershipType: MembershipType.OPEN_PUNCH_CARD,
-        mode: 'PRIMARY',
-        purchaseVariant
-      });
-    } catch (error) {
-      setPaymentStarting(false);
-      showFeedback(error instanceof Error ? error.message : 'לא ניתן לפתוח את דף התשלום.', 'error');
-    }
-  };
-  
   // Notification banner for feedback
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -201,7 +166,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     purchasedType: MembershipType,
     mode: 'PRIMARY' | 'ADDON',
     verified: VerifiedCardcomPayment,
-    purchaseVariant?: 'PUNCH_5' | 'PUNCH_10' | 'PUNCH_20',
+    purchaseVariant?: PaymentPurchaseVariant,
     familyMembersCount?: number,
     familyName?: string
   ) => {
@@ -209,19 +174,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       if (user.id !== activeUser.id) return user;
       if (mode === 'PRIMARY') {
         const expiryDate = new Date();
-        const isAnnual = purchasedType === MembershipType.GROUP_ANNUAL || purchasedType === MembershipType.OPEN_ANNUAL;
-        const isHalfYear = purchasedType === MembershipType.WEIGHT_LOSS_HALF_YEAR || purchasedType === MembershipType.POSTPARTUM_HALF_YEAR;
-        const punchCount = purchaseVariant ? Number(purchaseVariant.replace('PUNCH_', '')) : 10;
-        const punchMonths = punchCount === 5 ? 3 : punchCount === 20 ? 12 : 6;
-        expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : isHalfYear ? 6 : purchasedType === MembershipType.OPEN_PUNCH_CARD ? punchMonths : 1));
+        const isHalfYear = purchasedType === MembershipType.DEDICATED_GROUP_HALF_YEAR;
+        expiryDate.setMonth(expiryDate.getMonth() + (isHalfYear ? 6 : 1));
         return {
           ...user,
           membershipType: purchasedType,
           membershipStatus: MembershipStatus.ACTIVE,
           membershipExpiry: expiryDate.toISOString().split('T')[0],
-          punchCardRemaining: purchasedType === MembershipType.OPEN_PUNCH_CARD
-            ? (user.punchCardRemaining || 0) + punchCount
-            : user.punchCardRemaining,
           isMembershipFrozen: false,
           membershipFrozenUntil: undefined,
           isCancelledEarly: false,
@@ -243,8 +202,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         secondaryMemberships: secondaryMemberships.includes(purchasedType)
           ? secondaryMemberships
           : [...secondaryMemberships, purchasedType],
-        nutritionPlanPaid: purchasedType === MembershipType.NUTRITION_PLAN ? true : user.nutritionPlanPaid,
-        requestedWorkoutPlan: purchasedType === MembershipType.WORKOUT_PLAN ? true : user.requestedWorkoutPlan
+        nutritionPlanPaid: purchasedType === MembershipType.NUTRITION_COACHING ? true : user.nutritionPlanPaid,
+        requestedWorkoutPlan: purchasedType === MembershipType.WORKOUT_COACHING ? true : user.requestedWorkoutPlan,
+        personalTrainingCardSize: purchaseVariant?.startsWith('PERSONAL_') ? Number(purchaseVariant.split('_')[1]) as TrainingCardSize : user.personalTrainingCardSize,
+        personalTrainingRemaining: purchaseVariant?.startsWith('PERSONAL_') ? (user.personalTrainingRemaining || 0) + Number(purchaseVariant.split('_')[1]) : user.personalTrainingRemaining,
+        duoTrainingCardSize: purchaseVariant?.startsWith('DUO_') ? Number(purchaseVariant.split('_')[1]) as TrainingCardSize : user.duoTrainingCardSize,
+        duoTrainingRemaining: purchaseVariant?.startsWith('DUO_') ? (user.duoTrainingRemaining || 0) + Number(purchaseVariant.split('_')[1]) : user.duoTrainingRemaining
       };
     }));
 
@@ -406,22 +369,27 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     ].filter(Boolean) as MembershipType[];
 
     const hasGroupAccess = userMemberships.some(m => 
-      [MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL, MembershipType.WEIGHT_LOSS_HALF_YEAR, MembershipType.POSTPARTUM_HALF_YEAR].includes(m)
+      [MembershipType.CORE_GROUPS, MembershipType.YOUTH_TWICE_WEEKLY, MembershipType.YOUTH_ONCE_WEEKLY, MembershipType.DEDICATED_GROUP_HALF_YEAR, MembershipType.FAMILY_MEMBERSHIP, MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL, MembershipType.WEIGHT_LOSS_HALF_YEAR, MembershipType.POSTPARTUM_HALF_YEAR].includes(m)
     );
 
     const hasPersonalAccess = userMemberships.includes(MembershipType.PERSONAL_TRAINING);
-    const dedicatedMemberships = userMemberships.filter(membership => [MembershipType.WEIGHT_LOSS_HALF_YEAR, MembershipType.POSTPARTUM_HALF_YEAR].includes(membership));
+    const hasDuoAccess = userMemberships.includes(MembershipType.DUO_TRAINING);
+    const isDuoSession = Boolean(session.isPersonalTraining && session.coTrainees?.length);
+    const dedicatedMemberships = userMemberships.filter(membership => [MembershipType.DEDICATED_GROUP_HALF_YEAR, MembershipType.WEIGHT_LOSS_HALF_YEAR, MembershipType.POSTPARTUM_HALF_YEAR].includes(membership));
 
     if (dedicatedMemberships.length > 0 && !session.isPersonalTraining && !session.allowedMemberships?.some(membership => dedicatedMemberships.includes(membership))) {
       return { eligible: false, reason: 'האימון אינו שייך לקבוצה הייעודית החצי־שנתית שלך.' };
     }
 
     // Personal Training session check
-    if (session.isPersonalTraining && !hasPersonalAccess) {
+    if (session.isPersonalTraining && ((isDuoSession && !hasDuoAccess) || (!isDuoSession && !hasPersonalAccess))) {
       return {
         eligible: false,
         reason: 'אימון אישי מצריך רכישת מסלול אימון אישי! (ניתן לרכוש אימון אישי במקביל לכל מנוי במערכת).'
       };
+    }
+    if (session.isPersonalTraining && ((isDuoSession ? activeUser.duoTrainingRemaining : activeUser.personalTrainingRemaining) ?? 0) <= 0) {
+      return { eligible: false, reason: `אזלה יתרת כרטיסיית האימון ${isDuoSession ? 'הזוגי' : 'האישי'}. יש לרכוש כרטיסייה חדשה.` };
     }
 
     // Group session check (non-Personal Training)
@@ -453,7 +421,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     ) {
       const isAllowed = session.allowedMemberships.some(m => userMemberships.includes(m)) ||
         (hasGroupAccess && !session.isPersonalTraining) ||
-        (hasPersonalAccess && session.isPersonalTraining);
+        ((hasPersonalAccess || hasDuoAccess) && session.isPersonalTraining);
 
       if (!isAllowed) {
         return {
@@ -550,13 +518,17 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
     setPaymentStarting(true);
     try {
+      const isTrainingCard = selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING;
       await startCardcomPayment({
         userId: activeUser.id,
         userName: activeUser.name,
         email: activeUser.email,
         phone: activeUser.phone,
         membershipType: selectedMembershipPurchase,
-        mode: membershipPurchaseMode
+        mode: membershipPurchaseMode,
+        purchaseVariant: isTrainingCard
+          ? `${selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING ? 'PERSONAL' : 'DUO'}_${trainingCardSize}` as PaymentPurchaseVariant
+          : undefined
       });
     } catch (error) {
       setPaymentStarting(false);
@@ -574,7 +546,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         userName: activeUser.name,
         email: activeUser.email,
         phone: activeUser.phone,
-        membershipType: MembershipType.GROUP_MONTHLY,
+        membershipType: MembershipType.FAMILY_MEMBERSHIP,
         mode: 'PRIMARY',
         familyMembersCount: familyPurchaseCount,
         familyName: familyPurchaseName.trim()
@@ -596,19 +568,21 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   const handlePayWorkoutPlan = () => {
     setActiveTab('membership');
-    openMembershipCheckout(MembershipType.WORKOUT_PLAN, 'ADDON');
+    openMembershipCheckout(MembershipType.WORKOUT_COACHING, 'ADDON');
   };
 
   // PAY FOR NUTRITION PLAN (150 ILS individual fee)
   const handlePayNutritionPlan = () => {
     setActiveTab('membership');
-    openMembershipCheckout(MembershipType.NUTRITION_PLAN, 'ADDON');
+    openMembershipCheckout(MembershipType.NUTRITION_COACHING, 'ADDON');
   };
 
   // BOOK / JOIN WAITLIST (Section 5.1 & 5.2)
   const handleBookSession = (session: TrainingSession) => {
-    if (session.isPersonalTraining && !activeUser.secondaryMemberships?.includes(MembershipType.PERSONAL_TRAINING)) {
-      openMembershipCheckout(MembershipType.PERSONAL_TRAINING, 'ADDON');
+    const isDuoSession = Boolean(session.isPersonalTraining && session.coTrainees?.length);
+    const requiredTrainingCard = isDuoSession ? MembershipType.DUO_TRAINING : MembershipType.PERSONAL_TRAINING;
+    if (session.isPersonalTraining && !activeUser.secondaryMemberships?.includes(requiredTrainingCard) && activeUser.membershipType !== requiredTrainingCard) {
+      openMembershipCheckout(requiredTrainingCard, 'ADDON');
       setActiveTab('membership');
       return;
     }
@@ -617,7 +591,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       if (!isHealthDeclarationValid()) {
         onOpenSettings('health');
       } else if (/מנוי|תשלום|כרטיסייה|ניקובים|מסלול/.test(check.reason || '')) {
-        const recommended = session.isPersonalTraining ? MembershipType.PERSONAL_TRAINING : MembershipType.GROUP_MONTHLY;
+        const recommended = session.isPersonalTraining ? MembershipType.PERSONAL_TRAINING : MembershipType.CORE_GROUPS;
         setActiveTab('membership');
         openMembershipCheckout(recommended, session.isPersonalTraining ? 'ADDON' : 'PRIMARY');
       }
@@ -761,6 +735,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         const remaining = (activeUser.punchCardRemaining ?? 0) + 1;
         const updatedUsers = users.map(u => u.id === activeUser.id ? { ...u, punchCardRemaining: remaining } : u);
         onUpdateUsers(updatedUsers);
+      } else if (isPersonal && onUpdateUsers && !penaltyApplied) {
+        const isDuoSession = Boolean(session.coTrainees?.length);
+        onUpdateUsers(users.map(user => user.id === activeUser.id
+          ? {
+              ...user,
+              personalTrainingRemaining: isDuoSession ? user.personalTrainingRemaining : (user.personalTrainingRemaining || 0) + 1,
+              duoTrainingRemaining: isDuoSession ? (user.duoTrainingRemaining || 0) + 1 : user.duoTrainingRemaining
+            }
+          : user));
       }
 
       if (penaltyApplied) {
@@ -772,7 +755,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       } else if (activeUser.membershipType === MembershipType.OPEN_PUNCH_CARD) {
         showFeedback('ההרשמה לאימון בוטלה והוחזר ניקוב ליתרת הכרטיסייה שלך! 🎟️');
       } else {
-        showFeedback('ההרשמה לאימון בוטלה בהצלחה ללא השלכות.');
+        showFeedback(isPersonal ? 'האימון בוטל בזמן והאימון הוחזר ליתרת הכרטיסייה.' : 'ההרשמה לאימון בוטלה בהצלחה ללא השלכות.');
       }
     }
 
@@ -798,7 +781,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
     if (!isPaid) {
       setActiveTab('membership');
-      openMembershipCheckout(MembershipType.GROUP_MONTHLY, 'PRIMARY');
+      openMembershipCheckout(MembershipType.OPEN_GYM, 'PRIMARY');
       return;
     }
 
@@ -811,7 +794,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const today = new Date().toISOString().split('T')[0];
     if (!effectiveExpiry || effectiveExpiry < today) {
       setActiveTab('membership');
-      openMembershipCheckout(MembershipType.GROUP_MONTHLY, 'PRIMARY');
+      openMembershipCheckout(MembershipType.OPEN_GYM, 'PRIMARY');
       return;
     }
 
@@ -839,7 +822,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       ...(activeUser.secondaryMemberships || [])
     ].filter(Boolean) as MembershipType[];
     const includedOpenGymAccess = memberships.some(type => [
-      MembershipType.GROUP_MONTHLY,
+      MembershipType.OPEN_GYM,
+      MembershipType.OPEN_GYM_WITH_PLAN,
+      MembershipType.CORE_GROUPS,
+      MembershipType.FAMILY_MEMBERSHIP,
       MembershipType.GROUP_ANNUAL,
       MembershipType.OPEN_MONTHLY,
       MembershipType.OPEN_ANNUAL
@@ -848,7 +834,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
     if (!includedOpenGymAccess && !usesPunchCard) {
       setActiveTab('membership');
-      openMembershipCheckout(MembershipType.GROUP_MONTHLY, 'PRIMARY');
+      openMembershipCheckout(MembershipType.OPEN_GYM, 'PRIMARY');
       return;
     }
 
@@ -898,6 +884,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       ...(activeUser.secondaryMemberships || [])
     ].filter(Boolean) as MembershipType[];
     const includedOpenGymAccess = memberships.some(type => [
+      MembershipType.OPEN_GYM,
+      MembershipType.OPEN_GYM_WITH_PLAN,
+      MembershipType.CORE_GROUPS,
+      MembershipType.FAMILY_MEMBERSHIP,
       MembershipType.GROUP_MONTHLY,
       MembershipType.GROUP_ANNUAL,
       MembershipType.OPEN_MONTHLY,
@@ -996,7 +986,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   useEffect(() => () => scannerStreamRef.current?.getTracks().forEach(track => track.stop()), []);
 
-  const completeClubScan = () => {
+  const completeClubScan = (scannedCode?: string) => {
+    if (scannedCode && scannedCode !== CLUB_CHECK_IN_CODE) {
+      setScannerError('הקוד שנסרק אינו קוד הכניסה של BALY WELLNESS. יש לסרוק את הקוד המוצג במועדון.');
+      return;
+    }
     const eligibility = getCheckInEligibility();
     if (!eligibility.allowed || !eligibility.type || !eligibility.id || !eligibility.title) {
       setScannerError(eligibility.reason || 'הכניסה אינה זמינה כעת.');
@@ -1027,13 +1021,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           setScannerError('סריקה אוטומטית אינה נתמכת בדפדפן זה. כוון את המצלמה ולחץ על “אישור סריקת בדיקה”.');
           return;
         }
-        const detector = new Detector({ formats: ['qr_code', 'code_128', 'ean_13'] });
+        const detector = new Detector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13'] });
         const scanFrame = async () => {
           if (!scannerStreamRef.current || !scannerVideoRef.current) return;
           try {
             const codes = await detector.detect(scannerVideoRef.current);
             if (codes.length) {
-              completeClubScan();
+              completeClubScan(codes[0].rawValue);
               return;
             }
           } catch { /* keep scanning */ }
@@ -1054,7 +1048,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       if (!isHealthDeclarationValid()) onOpenSettings('health');
       else if (/מנוי|שולם|מסלול/.test(eligibility.reason || '')) {
         setActiveTab('membership');
-        openMembershipCheckout(MembershipType.GROUP_MONTHLY, 'PRIMARY');
+        openMembershipCheckout(MembershipType.OPEN_GYM, 'PRIMARY');
       }
       showFeedback(eligibility.reason || 'הכניסה אינה מאושרת כעת.', 'error');
       return;
@@ -1108,6 +1102,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     || workoutPlans.find(wp => wp.traineeId === activeUser.id);
   const traineeNutrition = nutritionPlans.find(np => np.traineeId === activeUser.id);
   const hasWorkoutPlanAccess = Boolean(
+    activeUser.secondaryMemberships?.includes(MembershipType.WORKOUT_COACHING) ||
     activeUser.secondaryMemberships?.includes(MembershipType.WORKOUT_PLAN) ||
     (activeUser.membershipType && MEMBERSHIP_TYPE_LABELS[activeUser.membershipType]?.includesWorkoutPlan &&
       (activeUser.membershipStatus === MembershipStatus.ACTIVE || activeUser.offlinePaymentApproved))
@@ -1115,16 +1110,17 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const hasNutritionAccess = Boolean(
     activeUser.nutritionPlanPaid ||
     traineeNutrition?.isPaid ||
+    activeUser.secondaryMemberships?.includes(MembershipType.NUTRITION_COACHING) ||
     activeUser.secondaryMemberships?.includes(MembershipType.NUTRITION_PLAN)
   );
   const openPaidFeature = (tab: 'workout' | 'nutrition') => {
     if (tab === 'workout' && !hasWorkoutPlanAccess) {
-      openMembershipCheckout(MembershipType.WORKOUT_PLAN, 'ADDON');
+      openMembershipCheckout(MembershipType.WORKOUT_COACHING, 'ADDON');
       setActiveTab('membership');
       return;
     }
     if (tab === 'nutrition' && !hasNutritionAccess) {
-      openMembershipCheckout(MembershipType.NUTRITION_PLAN, 'ADDON');
+      openMembershipCheckout(MembershipType.NUTRITION_COACHING, 'ADDON');
       setActiveTab('membership');
       return;
     }
@@ -1132,7 +1128,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
   useEffect(() => {
     if (initialTab === 'workout' && !hasWorkoutPlanAccess) {
-      setSelectedMembershipPurchase(MembershipType.WORKOUT_PLAN);
+      setSelectedMembershipPurchase(MembershipType.WORKOUT_COACHING);
       setMembershipPurchaseMode('ADDON');
       setActiveTab('membership');
     }
@@ -1204,8 +1200,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               <h2 className="text-lg font-bold text-slate-800">{activeUser.name}</h2>
               
               {/* Primary Membership Badge */}
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.GROUP_MONTHLY]?.badgeColor || 'bg-slate-100 text-slate-700'}`}>
-                {MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.GROUP_MONTHLY]?.label}
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.OPEN_GYM]?.badgeColor || 'bg-slate-100 text-slate-700'}`}>
+                {MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.OPEN_GYM]?.label}
               </span>
 
               {/* Secondary Active Memberships */}
@@ -1352,24 +1348,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     </div>
                   </div>
                   <button
-                    onClick={() => setShowPunchCardModal(true)}
+                    onClick={() => { setSelectedMembershipPurchase(MembershipType.OPEN_GYM); setMembershipPurchaseMode('PRIMARY'); setActiveTab('membership'); }}
                     className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] py-1.5 px-3 rounded-md shadow-sm transition shrink-0"
                   >
-                    💳 טעינת כרטיסייה
+                    💳 מעבר למסלול Open Gym
                   </button>
                 </div>
               )}
 
-              {activeUser.membershipType !== MembershipType.OPEN_PUNCH_CARD && (
-                <div className="col-span-1 sm:col-span-2 mt-1">
-                  <button
-                    onClick={() => setShowPunchCardModal(true)}
-                    className="text-[10px] text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 font-semibold py-1 px-2.5 rounded-md transition inline-flex items-center gap-1"
-                  >
-                    🎟️ רכישת כרטיסיית אימונים מוגבלת (קבוצתיים / Open Gym)
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -1385,85 +1371,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             כרטיס דיגיטלי וסורק קוד 📱
           </button>
         </div>
-      </div>
-
-      {/* Trainee Navigation Links */}
-      <div className="flex bg-slate-900 p-1.5 rounded-xl gap-1 overflow-x-auto border border-slate-800" id="trainee-tabs">
-        <button
-          onClick={() => onHome ? onHome() : setActiveTab('home')}
-          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
-            activeTab === 'home' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Home size={16} />
-          <span>בית</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('classes')}
-          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
-            activeTab === 'classes' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          📅 הרשמה לאימונים
-        </button>
-        <button
-          onClick={() => setActiveTab('opengym')}
-          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
-            activeTab === 'opengym' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          🏋️ Open Gym
-        </button>
-        <button
-          onClick={() => openPaidFeature('workout')}
-          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
-            activeTab === 'workout' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          💪 תוכנית אימונים
-        </button>
-        <button
-          onClick={() => openPaidFeature('nutrition')}
-          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
-            activeTab === 'nutrition' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          🥑 תפריט תזונה
-        </button>
-        <button
-          onClick={() => setActiveTab('messages')}
-          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 relative cursor-pointer ${
-            activeTab === 'messages' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          💬 שיחה עם מאמן
-        </button>
-        <button
-          onClick={() => setActiveTab('notices')}
-          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 relative cursor-pointer ${
-            activeTab === 'notices' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          📢 הודעות ממוקדות ({targetedAnnouncements.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('card')}
-          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 relative cursor-pointer ${
-            activeTab === 'card' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <QrCode size={16} />
-          <span>כרטיס</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('profile')}
-          className={`flex-1 text-center py-2 rounded-lg text-xs font-bold transition shrink-0 relative cursor-pointer ${
-            activeTab === 'profile' ? 'bg-emerald-600 text-white shadow-md font-extrabold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <UserRound size={16} />
-          <span>פרופיל</span>
-        </button>
       </div>
 
       <div className="trainee-content bg-white rounded-xl p-6 shadow-md border border-slate-100 min-h-[400px]">
@@ -1504,7 +1411,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             <section className="home-quick-actions" aria-label="פעולות מהירות">
               <button onClick={() => setActiveTab('classes')}>
                 <CalendarIcon size={21} />
-                <span><strong>הרשמה לאימונים</strong><small>בחירת אימון ומקום פנוי</small></span>
+                <span><strong>קביעת אימון</strong><small>בחירת אימון ומקום פנוי</small></span>
                 <ChevronRight size={17} />
               </button>
               <button onClick={() => setActiveTab('profile')}>
@@ -1558,7 +1465,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             </div>
             {bookingView === 'DAY' && <>
             <div className="mobile-booking-header">
-              <h2>הרשמה לאימונים</h2>
+              <h2>קביעת אימון</h2>
               <p>בחר יום כדי לראות אימונים פנויים</p>
               <div className="mobile-day-picker">
                 {bookingDays.map(day => (
@@ -2217,7 +2124,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <div className="rounded-xl bg-white/5 border border-white/10 p-3 min-w-52">
                   <div className="flex justify-between gap-4 text-xs">
                     <span className="text-slate-400">מסלול נוכחי</span>
-                    <b>{MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.GROUP_MONTHLY].label}</b>
+                    <b>{MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.OPEN_GYM].label}</b>
                   </div>
                   <div className="flex justify-between gap-4 text-xs mt-2">
                     <span className="text-slate-400">תוקף</span>
@@ -2236,9 +2143,17 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <b className="block text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[selectedMembershipPurchase].label}</b>
                     <span className="text-[11px] text-slate-600">{membershipPurchaseMode === 'PRIMARY' ? 'מסלול ראשי' : 'שירות נוסף'}</span>
                   </div>
-                  <strong className="text-xl text-amber-800">₪{MEMBERSHIP_PRICES[selectedMembershipPurchase]}</strong>
+                  <strong className="text-xl text-amber-800">₪{MEMBERSHIP_PRICES[selectedMembershipPurchase] * ((selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) ? trainingCardSize : 1)}</strong>
                 </div>
                 <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
+                  {(selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) && (
+                    <label className="text-xs font-bold text-slate-700">בחרו גודל כרטיסייה
+                      <select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3">
+                        {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size} אימונים — ₪{(size * MEMBERSHIP_PRICES[selectedMembershipPurchase]).toLocaleString('he-IL')}</option>)}
+                      </select>
+                      <small className="mt-2 block font-normal text-slate-500">לאחר כל אימון היתרה תתעדכן. כשיישארו שני אימונים תישלח התראה למתאמן ולמאמן.</small>
+                    </label>
+                  )}
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
                     התשלום מתבצע בעמוד המאובטח של Cardcom. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
                   </div>
@@ -2266,10 +2181,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
                     <label className="text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
                     <label className="text-xs font-bold text-slate-700">מספר מנויים<select value={familyPurchaseCount} onChange={event => setFamilyPurchaseCount(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5">
-                      <option value={2}>2 מנויים — ₪550 לחודש</option>
-                      <option value={3}>3 מנויים — ₪750 לחודש</option>
-                      <option value={4}>4 מנויים — ₪920 לחודש</option>
-                      <option value={5}>5 מנויים — ₪1,100 לחודש</option>
+                      {Object.entries(FAMILY_MEMBERSHIP_PRICES).map(([count, price]) => <option key={count} value={count}>{count} מנויים — ₪{price.toLocaleString('he-IL')} לחודש</option>)}
                     </select></label>
                     <button type="button" onClick={() => void handleFamilyCheckout()} disabled={paymentStarting || !isCardcomConfigured()} className="self-end rounded-xl bg-indigo-700 px-4 py-3 text-xs font-black text-white disabled:opacity-50">
                       {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ותשלום' : 'רכישה ותשלום'}
@@ -2310,8 +2222,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                         <article key={plan} className="rounded-2xl border border-slate-200 p-4 bg-white">
                           <strong className="text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
                           <p className="text-[11px] text-slate-500 mt-2 min-h-10">{MEMBERSHIP_TYPE_LABELS[plan].description}</p>
+                          {plan === MembershipType.PERSONAL_TRAINING && activeUser.personalTrainingRemaining !== undefined && <p className="mt-2 text-[11px] font-bold text-amber-800">יתרה: {activeUser.personalTrainingRemaining} אימונים</p>}
+                          {plan === MembershipType.DUO_TRAINING && activeUser.duoTrainingRemaining !== undefined && <p className="mt-2 text-[11px] font-bold text-amber-800">יתרה: {activeUser.duoTrainingRemaining} אימונים</p>}
                           <div className="flex justify-between items-center mt-4">
-                            <b>₪{MEMBERSHIP_PRICES[plan]}</b>
+                            <b>₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : ''}</b>
                             <button className="rounded-lg border border-slate-300 text-xs font-bold px-3 py-2" onClick={() => openMembershipCheckout(plan, 'ADDON')}>
                               {alreadyPurchased ? 'רכישה נוספת' : 'הוספה ותשלום'}
                             </button>
@@ -2379,7 +2293,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               <article>
                 <div className="member-card-title"><WalletCards size={18} /><strong>המנוי שלי</strong></div>
                 <div className="membership-summary">
-                  <strong>{MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.GROUP_MONTHLY]?.label}</strong>
+                  <strong>{MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.OPEN_GYM]?.label}</strong>
                   <span className={activeUser.membershipStatus === MembershipStatus.ACTIVE ? 'active' : 'debt'}>
                     {activeUser.membershipStatus === MembershipStatus.ACTIVE ? 'פעיל' : 'דורש תשלום'}
                   </span>
@@ -2534,90 +2448,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
       </div>
 
-      {/* PUNCH CARD PURCHASE MODAL */}
-      {showPunchCardModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in duration-200 text-right" dir="rtl">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🎟️</span>
-                <h3 className="text-base font-bold text-slate-900">רכישת / טעינת כרטיסיית אימונים</h3>
-              </div>
-              <button
-                onClick={() => setShowPunchCardModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-lg"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              מנוי כרטיסייה מאפשר רכישה של מספר מוגבל של אימונים (אימונים קבוצתיים או Open Gym).
-              בכל הרשמה לאימון יורד ניקוב אחד. בביטול בזמן, הניקוב מוחזר אוטומטית ליתרה.
-            </p>
-
-            <div className="space-y-3">
-              <label className="text-xs font-bold text-slate-800 block">בחר חבילת כרטיסייה:</label>
-              
-              <div className="grid grid-cols-1 gap-2.5 text-xs">
-                {[
-                  { count: 5, price: 250, months: 3, label: 'כרטיסיית 5 אימונים', desc: '₪50 לאימון | תקפה ל-3 חודשים' },
-                  { count: 10, price: 450, months: 6, label: 'כרטיסיית 10 אימונים 🌟', desc: '₪45 לאימון | תקפה ל-6 חודשים (חבילה מומלצת)' },
-                  { count: 20, price: 800, months: 12, label: 'כרטיסיית 20 אימונים 🏆', desc: '₪40 לאימון | תקפה ל-12 חודשים' }
-                ].map((pkg) => (
-                  <label
-                    key={pkg.count}
-                    onClick={() => setSelectedPunchCardPackage({ count: pkg.count, price: pkg.price, months: pkg.months })}
-                    className={`border rounded-xl p-3.5 cursor-pointer transition flex items-center justify-between ${
-                      selectedPunchCardPackage.count === pkg.count
-                        ? 'border-amber-500 bg-amber-50/70 shadow-sm ring-2 ring-amber-400/50'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="punch_card_pkg"
-                        checked={selectedPunchCardPackage.count === pkg.count}
-                        onChange={() => {}}
-                        className="text-amber-600 focus:ring-amber-500"
-                      />
-                      <div>
-                        <div className="font-bold text-slate-900">{pkg.label}</div>
-                        <div className="text-[11px] text-slate-500">{pkg.desc}</div>
-                      </div>
-                    </div>
-                    <div className="text-left font-mono font-black text-amber-900 text-sm">
-                      ₪{pkg.price}
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-600 space-y-1">
-              <div>💳 <strong>אופן תשלום:</strong> מעבר לעמוד התשלום המאובטח של Cardcom.</div>
-              <div>✅ היתרה תתעדכן רק לאחר אימות העסקה מול Cardcom.</div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                onClick={() => setShowPunchCardModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
-              >
-                ביטול
-              </button>
-              <button
-                onClick={handlePurchasePunchCard}
-                disabled={paymentStarting || !isCardcomConfigured()}
-                className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <span>{paymentStarting ? 'פותח תשלום…' : `מעבר לתשלום Cardcom (₪${selectedPunchCardPackage.price})`}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

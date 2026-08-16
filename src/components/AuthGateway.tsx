@@ -18,11 +18,17 @@ import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarat
 import {
   Gender,
   DiscountCode,
+  CURRENT_MEMBERSHIP_ADD_ONS,
+  CURRENT_PRIMARY_MEMBERSHIP_PLANS,
+  FAMILY_MEMBERSHIP_PRICES,
   MEMBERSHIP_PRICES,
   MEMBERSHIP_TYPE_LABELS,
   MembershipStatus,
   MembershipType,
   Payment,
+  PaymentPurchaseVariant,
+  TRAINING_CARD_SIZES,
+  TrainingCardSize,
   User,
   UserRole
 } from '../types';
@@ -36,6 +42,7 @@ import {
   verifyPendingCardcomPayment,
   wasTransactionProcessed
 } from '../data/cardcomPayments';
+import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 
 interface AuthGatewayProps {
   users: User[];
@@ -48,15 +55,7 @@ type AuthScreen = 'welcome' | 'login' | 'register';
 type LoginMethod = 'password' | 'phone';
 
 const TEST_OTP = '1111';
-const REGISTRATION_PLANS = [
-  MembershipType.GROUP_MONTHLY,
-  MembershipType.GROUP_ANNUAL,
-  MembershipType.OPEN_MONTHLY,
-  MembershipType.OPEN_ANNUAL,
-  MembershipType.OPEN_PUNCH_CARD,
-  MembershipType.WEIGHT_LOSS_HALF_YEAR,
-  MembershipType.POSTPARTUM_HALF_YEAR
-];
+const REGISTRATION_PLANS = [...CURRENT_PRIMARY_MEMBERSHIP_PLANS, ...CURRENT_MEMBERSHIP_ADD_ONS];
 
 const calculateAge = (birthDate: string) => {
   const birth = new Date(birthDate);
@@ -89,7 +88,8 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [agreementApproved, setAgreementApproved] = useState(false);
   const [pushApproved, setPushApproved] = useState(false);
   const [pushWorkoutReminders, setPushWorkoutReminders] = useState(true);
-  const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
+  const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.OPEN_GYM);
+  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(4);
   const [isFamilyPlan, setIsFamilyPlan] = useState(false);
   const [familyName, setFamilyName] = useState('');
   const [familyMembersCount, setFamilyMembersCount] = useState(2);
@@ -282,11 +282,20 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
 
     const age = calculateAge(registerBirthDate);
     const expiryDate = new Date();
-    const isAnnual = selectedPlan === MembershipType.GROUP_ANNUAL || selectedPlan === MembershipType.OPEN_ANNUAL;
-    const isHalfYear = selectedPlan === MembershipType.WEIGHT_LOSS_HALF_YEAR || selectedPlan === MembershipType.POSTPARTUM_HALF_YEAR;
-    expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : isHalfYear || selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 6 : 1));
+    const isHalfYear = selectedPlan === MembershipType.DEDICATED_GROUP_HALF_YEAR;
+    const isTrainingCard = selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING;
+    expiryDate.setMonth(expiryDate.getMonth() + (isHalfYear ? 6 : isTrainingCard ? 12 : 1));
     const now = Date.now();
     const familyId = isFamilyPlan ? `fam-${now}` : undefined;
+    const healthRecord = createHealthDeclarationRecord({
+      signed: true,
+      answers: healthDeclaration?.answers,
+      requiresMedicalCertificate: healthDeclaration?.requiresMedicalCertificate,
+      medicalCertificateApproved: false,
+      parentConsent: healthDeclaration?.parentConsent,
+      parentName: healthDeclaration?.parentName,
+      signatureName: healthDeclaration?.signatureName
+    });
     const newUser: User = {
       id: `user-${now}`,
       name: registerName.trim(),
@@ -306,14 +315,20 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       healthDeclarationParentConsent: healthDeclaration?.parentConsent,
       healthDeclarationParentName: healthDeclaration?.parentName,
       healthDeclarationSignatureName: healthDeclaration?.signatureName,
+      healthDeclarationHistory: [healthRecord],
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
       pushNotificationsEnabled: pushApproved && (!('Notification' in window) || Notification.permission === 'granted'),
       workoutRemindersEnabled: pushApproved && pushWorkoutReminders,
-      membershipType: selectedPlan,
+      membershipType: isFamilyPlan ? MembershipType.FAMILY_MEMBERSHIP : selectedPlan,
       membershipStatus: MembershipStatus.ACTIVE,
       membershipExpiry: expiryDate.toISOString().split('T')[0],
-      punchCardRemaining: selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 10 : undefined,
+      personalTrainingCardSize: selectedPlan === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
+      personalTrainingRemaining: selectedPlan === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
+      duoTrainingCardSize: selectedPlan === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
+      duoTrainingRemaining: selectedPlan === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
+      nutritionPlanPaid: selectedPlan === MembershipType.NUTRITION_COACHING,
+      requestedWorkoutPlan: selectedPlan === MembershipType.WORKOUT_COACHING || selectedPlan === MembershipType.OPEN_GYM_WITH_PLAN,
       priorityScore: 100,
       familyId,
       familyName: isFamilyPlan ? (familyName.trim() || `משפחת ${registerName.trim().split(' ')[0]}`) : undefined,
@@ -331,8 +346,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         userName: newUser.name,
         email: newUser.email,
         phone: newUser.phone,
-        membershipType: selectedPlan,
+        membershipType: isFamilyPlan ? MembershipType.FAMILY_MEMBERSHIP : selectedPlan,
         mode: 'REGISTRATION',
+        purchaseVariant: isTrainingCard
+          ? `${selectedPlan === MembershipType.PERSONAL_TRAINING ? 'PERSONAL' : 'DUO'}_${trainingCardSize}` as PaymentPurchaseVariant
+          : undefined,
         familyMembersCount: isFamilyPlan ? familyMembersCount : undefined,
         familyName: isFamilyPlan ? newUser.familyName : undefined,
         discountCode: appliedDiscount?.code,
@@ -484,10 +502,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   <button
                     type="button"
                     className={`auth-plan-card ${isFamilyPlan ? 'active' : ''}`}
-                    onClick={() => { setIsFamilyPlan(true); setSelectedPlan(MembershipType.GROUP_MONTHLY); }}
+                    onClick={() => { setIsFamilyPlan(true); setSelectedPlan(MembershipType.FAMILY_MEMBERSHIP); }}
                   >
                     <span><strong>מנוי משפחתי</strong><small>חשבון משלם אחד, עם פרופיל נפרד לכל בן משפחה</small></span>
-                    <b>מ־₪550</b>
+                    <b>מ־₪900</b>
                   </button>
                   {REGISTRATION_PLANS.map(plan => (
                     <button
@@ -500,17 +518,22 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                         <strong>{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
                         <small>{MEMBERSHIP_TYPE_LABELS[plan].description}</small>
                       </span>
-                      <b>₪{MEMBERSHIP_PRICES[plan]}</b>
+                      <b>₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : ''}</b>
                     </button>
                   ))}
                 </div>
+                {!isFamilyPlan && (selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) && (
+                  <div className="auth-family-options">
+                    <label>גודל כרטיסייה<select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)}>
+                      {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size} אימונים — ₪{size * MEMBERSHIP_PRICES[selectedPlan]}</option>)}
+                    </select></label>
+                    <small>היתרה נשמרת בחשבון ותישלח התראה כאשר יישארו שני אימונים.</small>
+                  </div>
+                )}
                 {isFamilyPlan && <div className="auth-family-options">
                   <label>שם המשפחה<input value={familyName} onChange={event => setFamilyName(event.target.value)} placeholder={`משפחת ${registerName.trim().split(' ')[0] || 'ישראל'}`} /></label>
                   <label>מספר מנויים בחבילה<select value={familyMembersCount} onChange={event => setFamilyMembersCount(Number(event.target.value))}>
-                    <option value={2}>2 מנויים — ₪550 לחודש</option>
-                    <option value={3}>3 מנויים — ₪750 לחודש</option>
-                    <option value={4}>4 מנויים — ₪920 לחודש</option>
-                    <option value={5}>5 מנויים — ₪1,100 לחודש</option>
+                    {Object.entries(FAMILY_MEMBERSHIP_PRICES).map(([count, price]) => <option key={count} value={count}>{count} מנויים — ₪{price.toLocaleString('he-IL')} לחודש</option>)}
                   </select></label>
                   <small>לאחר התשלום ניתן להוסיף את בני המשפחה ולחתום עבור כל אחד בפרופיל.</small>
                 </div>}
@@ -527,7 +550,9 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 <div className="auth-checkout-summary">
                   <span>לתשלום כעת</span>
                   <strong>₪{(() => {
-                    const base = isFamilyPlan ? ({2: 550, 3: 750, 4: 920, 5: 1100}[familyMembersCount] || 550) : MEMBERSHIP_PRICES[selectedPlan];
+                    const base = isFamilyPlan
+                      ? (FAMILY_MEMBERSHIP_PRICES[familyMembersCount] || FAMILY_MEMBERSHIP_PRICES[2])
+                      : MEMBERSHIP_PRICES[selectedPlan] * ((selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) ? trainingCardSize : 1);
                     const discount = appliedDiscount?.discountPercent ? Math.round(base * appliedDiscount.discountPercent / 100) : (appliedDiscount?.discountAmount || 0);
                     return Math.max(0, base - discount);
                   })()}</strong>

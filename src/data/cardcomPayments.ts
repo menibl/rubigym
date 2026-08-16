@@ -1,4 +1,4 @@
-import { MembershipType } from '../types';
+import { MembershipType, PaymentPurchaseVariant } from '../types';
 
 const PENDING_PAYMENT_KEY = 'baly_cardcom_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_cardcom_processed_transactions_v1';
@@ -8,7 +8,7 @@ export interface PendingCardcomPayment {
   userId: string;
   membershipType: MembershipType;
   mode: 'PRIMARY' | 'ADDON' | 'REGISTRATION';
-  purchaseVariant?: 'PUNCH_5' | 'PUNCH_10' | 'PUNCH_20';
+  purchaseVariant?: PaymentPurchaseVariant;
   createdAt: string;
   registrationDraft?: Record<string, unknown>;
   familyMembersCount?: number;
@@ -42,7 +42,7 @@ export interface VerifiedCardcomPayment {
   familyMembersCount?: number;
 }
 
-const paymentApiBase = () => (import.meta.env.VITE_PAYMENT_API_URL || '').replace(/\/$/, '');
+const paymentApiBase = () => (import.meta.env.VITE_PAYMENT_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
 export const isCardcomConfigured = () => Boolean(paymentApiBase());
 

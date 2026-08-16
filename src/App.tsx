@@ -674,6 +674,7 @@ export default function App() {
               blackPoints={blackPoints}
               announcements={announcements}
               payments={payments}
+              attendanceLogs={attendanceLogs}
               settings={settings}
               discountCodes={discountCodes}
               workoutPlans={workoutPlans}
