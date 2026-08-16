@@ -70,7 +70,7 @@ export const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, { label: string; bad
   [MembershipType.DUO_TRAINING]: {
     label: 'אימון זוגי',
     badgeColor: 'bg-cyan-100 text-cyan-800 border-cyan-300',
-    description: 'כרטיסיית 4, 8 או 12 אימונים זוגיים'
+    description: 'אימון בודד או כרטיסיית 4, 8 או 12 אימונים זוגיים'
   },
   [MembershipType.YOUTH_TWICE_WEEKLY]: {
     label: 'נוער – פעמיים בשבוע',
@@ -122,7 +122,7 @@ export const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, { label: string; bad
   [MembershipType.PERSONAL_TRAINING]: {
     label: 'אימון אישי',
     badgeColor: 'bg-sky-100 text-sky-800 border-sky-300',
-    description: 'כרטיסיית 4, 8 או 12 אימונים אישיים'
+    description: 'אימון בודד או כרטיסיית 4, 8 או 12 אימונים אישיים'
   },
   [MembershipType.NUTRITION_PLAN]: {
     label: 'תוכנית תזונה',
@@ -199,9 +199,9 @@ export const FAMILY_MEMBERSHIP_PRICES: Record<number, number> = {
   6: 2700
 };
 
-export const TRAINING_CARD_SIZES = [4, 8, 12] as const;
+export const TRAINING_CARD_SIZES = [1, 4, 8, 12] as const;
 export type TrainingCardSize = typeof TRAINING_CARD_SIZES[number];
-export type PaymentPurchaseVariant = 'PERSONAL_4' | 'PERSONAL_8' | 'PERSONAL_12' | 'DUO_4' | 'DUO_8' | 'DUO_12';
+export type PaymentPurchaseVariant = 'PERSONAL_1' | 'PERSONAL_4' | 'PERSONAL_8' | 'PERSONAL_12' | 'DUO_1' | 'DUO_4' | 'DUO_8' | 'DUO_12';
 
 export interface DiscountCode {
   id: string;

@@ -42,7 +42,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   // Step 3: Membership
   const [isFamilyTrack, setIsFamilyTrack] = useState(false);
   const [selectedMembership, setSelectedMembership] = useState<MembershipType>(MembershipType.OPEN_GYM);
-  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(4);
+  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [familyMembersQuota, setFamilyMembersQuota] = useState<number>(2);
   const [familyName, setFamilyName] = useState('');
 
@@ -79,7 +79,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       setSignatureDataUrl('');
       setIsFamilyTrack(false);
       setSelectedMembership(MembershipType.OPEN_GYM);
-      setTrainingCardSize(4);
+      setTrainingCardSize(1);
       setFamilyMembersQuota(2);
       setFamilyName('');
       setCardHolder('');
@@ -613,7 +613,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   </div>
                   {(selectedMembership === MembershipType.PERSONAL_TRAINING || selectedMembership === MembershipType.DUO_TRAINING) && (
                     <label className="block text-xs font-bold text-slate-800">גודל כרטיסייה<select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)} className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
-                      {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size} אימונים — ₪{size * MEMBERSHIP_PRICES[selectedMembership]}</option>)}
+                      {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{size * MEMBERSHIP_PRICES[selectedMembership]}</option>)}
                     </select></label>
                   )}
                 </div>

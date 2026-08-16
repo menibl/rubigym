@@ -130,7 +130,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>(initialTab);
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
-  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(4);
+  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [paymentStarting, setPaymentStarting] = useState(false);
   const familyDraft = (() => {
     try { return JSON.parse(sessionStorage.getItem('baly_family_purchase_draft_v1') || 'null'); } catch { return null; }
@@ -2149,7 +2149,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   {(selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) && (
                     <label className="text-xs font-bold text-slate-700">בחרו גודל כרטיסייה
                       <select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3">
-                        {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size} אימונים — ₪{(size * MEMBERSHIP_PRICES[selectedMembershipPurchase]).toLocaleString('he-IL')}</option>)}
+                        {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{(size * MEMBERSHIP_PRICES[selectedMembershipPurchase]).toLocaleString('he-IL')}</option>)}
                       </select>
                       <small className="mt-2 block font-normal text-slate-500">לאחר כל אימון היתרה תתעדכן. כשיישארו שני אימונים תישלח התראה למתאמן ולמאמן.</small>
                     </label>

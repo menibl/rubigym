@@ -89,7 +89,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [pushApproved, setPushApproved] = useState(false);
   const [pushWorkoutReminders, setPushWorkoutReminders] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.OPEN_GYM);
-  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(4);
+  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [isFamilyPlan, setIsFamilyPlan] = useState(false);
   const [familyName, setFamilyName] = useState('');
   const [familyMembersCount, setFamilyMembersCount] = useState(2);
@@ -525,7 +525,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 {!isFamilyPlan && (selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) && (
                   <div className="auth-family-options">
                     <label>גודל כרטיסייה<select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)}>
-                      {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size} אימונים — ₪{size * MEMBERSHIP_PRICES[selectedPlan]}</option>)}
+                      {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{size * MEMBERSHIP_PRICES[selectedPlan]}</option>)}
                     </select></label>
                     <small>היתרה נשמרת בחשבון ותישלח התראה כאשר יישארו שני אימונים.</small>
                   </div>
