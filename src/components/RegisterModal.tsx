@@ -7,6 +7,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { User, UserRole, Gender, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, MEMBERSHIP_PRICES, CURRENT_PRIMARY_MEMBERSHIP_PLANS, CURRENT_MEMBERSHIP_ADD_ONS, FAMILY_MEMBERSHIP_PRICES, TRAINING_CARD_SIZES, TrainingCardSize } from '../types';
 import { X, Check, ShieldCheck, CreditCard, UserPlus, FileText, HeartPulse, Sparkles, Users, Lock, Phone, Calendar, User as UserIcon } from 'lucide-react';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
+import { createMembershipTerm } from '../data/membershipPolicy';
 
 interface RegisterModalProps {
   isOpen: boolean;
@@ -221,7 +222,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       membershipType: isFamilyTrack ? MembershipType.FAMILY_MEMBERSHIP : selectedMembership,
       secondaryMemberships: [],
       membershipStatus: MembershipStatus.ACTIVE,
-      membershipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      ...createMembershipTerm(isFamilyTrack ? MembershipType.FAMILY_MEMBERSHIP : selectedMembership),
       priorityScore: 100,
       personalTrainingCardSize: selectedMembership === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
       personalTrainingRemaining: selectedMembership === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
@@ -606,7 +607,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                       <button type="button" key={plan} onClick={() => setSelectedMembership(plan)} className={`p-4 border-2 rounded-2xl text-right transition ${selectedMembership === plan ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}>
                         <div className="flex justify-between items-start gap-3">
                           <div><div className="font-bold text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[plan].label}</div><div className="text-xs text-slate-500 mt-1">{MEMBERSHIP_TYPE_LABELS[plan].description}</div></div>
-                          <span className="font-bold text-emerald-700 text-sm shrink-0">₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : ''}</span>
+                          <span className="font-bold text-emerald-700 text-sm shrink-0">₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : plan === MembershipType.GROUP_MONTHLY || plan === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</span>
                         </div>
                       </button>
                     ))}

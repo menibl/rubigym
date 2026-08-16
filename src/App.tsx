@@ -55,6 +55,7 @@ import { UserSettingsModal } from './components/UserSettingsModal';
 import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
 import { ClubWorkoutDisplay } from './components/ClubWorkoutDisplay';
 import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
+import { isMembershipCancellationEffective } from './data/membershipPolicy';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const AUTH_SESSION_KEY = 'gym_auth_session_v1';
@@ -543,9 +544,9 @@ export default function App() {
   const familyPayer = activeUser.familyPayerId
     ? users.find(user => user.id === activeUser.familyPayerId)
     : undefined;
-  const hasValidPayment = activeUser.membershipStatus === MembershipStatus.ACTIVE
+  const hasValidPayment = (activeUser.membershipStatus === MembershipStatus.ACTIVE && !isMembershipCancellationEffective(activeUser))
     || Boolean(activeUser.offlinePaymentApproved)
-    || familyPayer?.membershipStatus === MembershipStatus.ACTIVE
+    || (familyPayer?.membershipStatus === MembershipStatus.ACTIVE && !isMembershipCancellationEffective(familyPayer))
     || Boolean(familyPayer?.offlinePaymentApproved);
   const healthSignedAt = activeUser.healthDeclarationDate
     ? new Date(`${activeUser.healthDeclarationDate}T00:00:00`)

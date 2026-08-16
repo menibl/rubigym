@@ -72,6 +72,14 @@ import {
   verifyPendingCardcomPayment,
   wasTransactionProcessed
 } from '../data/cardcomPayments';
+import {
+  addCalendarMonths,
+  canUseAnnualFreeze,
+  createMembershipTerm,
+  isMembershipCancellationEffective,
+  isMembershipFreezeActive,
+  toLocalIsoDate
+} from '../data/membershipPolicy';
 
 interface TraineeDashboardProps {
   activeUser: User;
@@ -162,6 +170,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }, 5000);
   };
 
+  const freezeActive = isMembershipFreezeActive(activeUser);
+  const freezeAvailable = canUseAnnualFreeze(activeUser);
+  const cancellationEffective = isMembershipCancellationEffective(activeUser);
+
   const applyVerifiedMembershipPayment = (
     purchasedType: MembershipType,
     mode: 'PRIMARY' | 'ADDON',
@@ -173,17 +185,19 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     onUpdateUsers(users.map(user => {
       if (user.id !== activeUser.id) return user;
       if (mode === 'PRIMARY') {
-        const expiryDate = new Date();
-        const isHalfYear = purchasedType === MembershipType.DEDICATED_GROUP_HALF_YEAR;
-        expiryDate.setMonth(expiryDate.getMonth() + (isHalfYear ? 6 : 1));
+        const membershipTerm = createMembershipTerm(purchasedType);
         return {
           ...user,
           membershipType: purchasedType,
           membershipStatus: MembershipStatus.ACTIVE,
-          membershipExpiry: expiryDate.toISOString().split('T')[0],
+          ...membershipTerm,
           isMembershipFrozen: false,
+          membershipFreezeStartedAt: undefined,
+          membershipFreezeUsedAt: undefined,
           membershipFrozenUntil: undefined,
           isCancelledEarly: false,
+          cancellationRequestedAt: undefined,
+          cancellationEffectiveDate: undefined,
           offlinePaymentApproved: false,
           ...(familyMembersCount ? {
             familyId: user.familyId || `fam-${Date.now()}`,
@@ -320,7 +334,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
 
     // 0. Frozen Membership check
-    if (activeUser.isMembershipFrozen) {
+    if (freezeActive) {
       return {
         eligible: false,
         reason: `המנוי שלך מוקפא כעת (עד ${activeUser.membershipFrozenUntil || 'תום תקופת ההקפאה'}). לא ניתן להירשם לאימונים במהלך הקפאת מנוי.`
@@ -328,10 +342,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
 
     // 1. Mandatory Pre-Payment check (including Family Payer inheritance)
-    let isPaid = activeUser.membershipStatus === MembershipStatus.ACTIVE || activeUser.offlinePaymentApproved;
+    let isPaid = (activeUser.membershipStatus === MembershipStatus.ACTIVE || activeUser.offlinePaymentApproved) && !cancellationEffective;
     if (!isPaid && activeUser.familyPayerId) {
       const payer = users.find(u => u.id === activeUser.familyPayerId);
-      if (payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved)) {
+      if (payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved) && !isMembershipCancellationEffective(payer)) {
         isPaid = true;
       }
     }
@@ -454,17 +468,25 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     return { eligible: true };
   };
 
-  // FREEZE MEMBERSHIP (Up to 1 month)
+  // FREEZE MEMBERSHIP (one continuous calendar month per rolling membership year)
   const handleFreezeMembership = () => {
-    if (confirm('האם ברצונך להקפיא את המנוי לתקופה של עד חודש אחד? ❄️\nבתקופת ההקפאה לא תבוצע גבייה כספית ולא ניתן להירשם לאימונים.')) {
-      const oneMonthLater = new Date();
-      oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
-      const frozenUntilStr = oneMonthLater.toISOString().split('T')[0];
+    if (!freezeAvailable) {
+      showFeedback(freezeActive
+        ? `המנוי כבר מוקפא עד ${activeUser.membershipFrozenUntil}. לא ניתן לקצר או לפצל את ההקפאה.`
+        : 'הקפאת החודש כבר נוצלה במהלך 12 החודשים האחרונים.', 'error');
+      return;
+    }
+    if (confirm('האם להפעיל הקפאה לחודש אחד רצוף? ❄️\nההקפאה מתחילה מיד, אינה ניתנת לפיצול או לביטול מוקדם, וניתנת למימוש פעם אחת בלבד בכל 12 חודשים.')) {
+      const startedAt = new Date();
+      const frozenUntilStr = toLocalIsoDate(addCalendarMonths(startedAt, 1));
+      const startedAtStr = toLocalIsoDate(startedAt);
 
       if (onUpdateUsers) {
         const updatedUsers = users.map(u => u.id === activeUser.id ? { 
           ...u, 
-          isMembershipFrozen: true, 
+          isMembershipFrozen: true,
+          membershipFreezeStartedAt: startedAtStr,
+          membershipFreezeUsedAt: startedAtStr,
           membershipFrozenUntil: frozenUntilStr 
         } : u);
         onUpdateUsers(updatedUsers);
@@ -473,34 +495,25 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
   };
 
-  // UNFREEZE MEMBERSHIP
-  const handleUnfreezeMembership = () => {
-    if (confirm('האם לבטל את הקפאת המנוי ולהחזיר אותו לפעילות מלאה? ☀️')) {
-      if (onUpdateUsers) {
-        const updatedUsers = users.map(u => u.id === activeUser.id ? { 
-          ...u, 
-          isMembershipFrozen: false, 
-          membershipFrozenUntil: undefined 
-        } : u);
-        onUpdateUsers(updatedUsers);
-      }
-      showFeedback('הקפאת המנוי בוטלה! המנוי שלך פעיל שוב בהצלחה. 🎉');
-    }
-  };
-
-  // CANCEL ANNUAL MEMBERSHIP (Penalty fee of 1 additional month = 500 ILS)
+  // CANCEL ANNUAL MEMBERSHIP (one full calendar month notice)
   const handleCancelAnnualMembership = () => {
-    if (confirm('ביטול מנוי שנתי כרוך בתשלום קנס יציאה בגובה חודש נוסף אחד (500 ₪). ⚠️\nהאם לבצע תשלום קנס בסך 500 ₪ ולבטל את המנוי?')) {
+    if (activeUser.cancellationEffectiveDate) {
+      showFeedback(`בקשת הביטול כבר נקלטה ותיכנס לתוקף בתאריך ${activeUser.cancellationEffectiveDate}.`, 'error');
+      return;
+    }
+    const requestedAt = new Date();
+    const effectiveDate = toLocalIsoDate(addCalendarMonths(requestedAt, 1));
+    if (confirm(`בקשת הביטול תיכנס לתוקף בעוד חודש, בתאריך ${effectiveDate}.\nעד מועד זה המנוי והוראת הקבע יישארו פעילים. האם להמשיך?`)) {
       if (onUpdateUsers) {
         const updatedUsers = users.map(u => u.id === activeUser.id ? { 
           ...u, 
-          isCancelledEarly: true, 
-          cancellationPenaltyPaid: true,
-          membershipStatus: MembershipStatus.EXPIRED 
+          isCancelledEarly: true,
+          cancellationRequestedAt: toLocalIsoDate(requestedAt),
+          cancellationEffectiveDate: effectiveDate
         } : u);
         onUpdateUsers(updatedUsers);
       }
-      showFeedback('בקשת ביטול המנוי התקבלה. שולם קנס יציאה בסך 500 ₪ והמנוי הופסק. 💳');
+      showFeedback(`בקשת הביטול התקבלה. המנוי יישאר פעיל עד ${effectiveDate}.`);
     }
   };
 
@@ -591,7 +604,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       if (!isHealthDeclarationValid()) {
         onOpenSettings('health');
       } else if (/מנוי|תשלום|כרטיסייה|ניקובים|מסלול/.test(check.reason || '')) {
-        const recommended = session.isPersonalTraining ? MembershipType.PERSONAL_TRAINING : MembershipType.CORE_GROUPS;
+        const recommended = session.isPersonalTraining ? MembershipType.PERSONAL_TRAINING : MembershipType.GROUP_MONTHLY;
         setActiveTab('membership');
         openMembershipCheckout(recommended, session.isPersonalTraining ? 'ADDON' : 'PRIMARY');
       }
@@ -775,9 +788,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
 
     const payer = activeUser.familyPayerId ? users.find(user => user.id === activeUser.familyPayerId) : undefined;
-    const isPaid = activeUser.membershipStatus === MembershipStatus.ACTIVE
+    const isPaid = (activeUser.membershipStatus === MembershipStatus.ACTIVE && !cancellationEffective)
       || activeUser.offlinePaymentApproved
-      || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved));
+      || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved) && !isMembershipCancellationEffective(payer));
 
     if (!isPaid) {
       setActiveTab('membership');
@@ -785,8 +798,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       return;
     }
 
-    if (activeUser.isMembershipFrozen) {
-      showFeedback('המנוי מוקפא כרגע. יש לבטל את ההקפאה לפני הרשמה ל-Open Gym.', 'error');
+    if (freezeActive) {
+      showFeedback(`המנוי מוקפא עד ${activeUser.membershipFrozenUntil}.`, 'error');
       return;
     }
 
@@ -941,10 +954,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const getCheckInEligibility = (requestedType?: 'SESSION' | 'OPEN_GYM', requestedId?: string) => {
     if (!isHealthDeclarationValid()) return { allowed: false, reason: 'הצהרת הבריאות חסרה או אינה בתוקף. יש לחתום עליה לפני הכניסה למועדון.' };
     const payer = activeUser.familyPayerId ? users.find(user => user.id === activeUser.familyPayerId) : undefined;
-    const isPaid = activeUser.membershipStatus === MembershipStatus.ACTIVE || activeUser.offlinePaymentApproved
-      || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved));
+    const isPaid = (activeUser.membershipStatus === MembershipStatus.ACTIVE && !cancellationEffective) || activeUser.offlinePaymentApproved
+      || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved) && !isMembershipCancellationEffective(payer));
     if (!isPaid) return { allowed: false, reason: 'המנוי אינו פעיל או לא שולם. יש להסדיר מסלול לפני הכניסה.' };
-    if (activeUser.isMembershipFrozen) return { allowed: false, reason: 'המנוי מוקפא ולכן הכניסה למועדון חסומה.' };
+    if (freezeActive) return { allowed: false, reason: `המנוי מוקפא עד ${activeUser.membershipFrozenUntil} ולכן הכניסה למועדון חסומה.` };
 
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -1299,7 +1312,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <div>
                       <span className="font-bold text-xs text-emerald-900 block">👥 קבוצתי חודשי – ללא התחייבות</span>
                       <p className="text-[10px] text-emerald-800 mt-0.5">
-                        מנוי חודשי מתחדש לאימונים קבוצתיים, כולל כניסה ל־Open Gym כחלק מהמנוי.
+                        ₪600 לחודש. מנוי חודשי מתחדש לאימונים קבוצתיים, כולל כניסה ל־Open Gym.
                       </p>
                     </div>
                     <button
@@ -1319,7 +1332,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <div>
                       <span className="font-bold text-xs text-sky-900 block">⭐ קבוצתי שנתי – התחייבות לשנה</span>
                       <p className="text-[10px] text-sky-800 mt-0.5">
-                        מנוי שנתי מוזל לאימונים קבוצתיים, כולל Open Gym וזכות להקפאת מנוי עד חודש אחד בשנה.
+                        ₪500 בכל חודש בהוראת קבע למשך 12 חודשים. כולל Open Gym והקפאה אחת של חודש רצוף בשנה.
                       </p>
                     </div>
                     <button
@@ -2143,7 +2156,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <b className="block text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[selectedMembershipPurchase].label}</b>
                     <span className="text-[11px] text-slate-600">{membershipPurchaseMode === 'PRIMARY' ? 'מסלול ראשי' : 'שירות נוסף'}</span>
                   </div>
-                  <strong className="text-xl text-amber-800">₪{MEMBERSHIP_PRICES[selectedMembershipPurchase] * ((selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) ? trainingCardSize : 1)}</strong>
+                  <strong className="text-xl text-amber-800">₪{MEMBERSHIP_PRICES[selectedMembershipPurchase] * ((selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) ? trainingCardSize : 1)}{selectedMembershipPurchase === MembershipType.GROUP_MONTHLY || selectedMembershipPurchase === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</strong>
                 </div>
                 <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
                   {(selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) && (
@@ -2157,6 +2170,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
                     התשלום מתבצע בעמוד המאובטח של Cardcom. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
                   </div>
+                  {selectedMembershipPurchase === MembershipType.GROUP_ANNUAL && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
+                    הוראת קבע חודשית בסך ₪500 למשך 12 חודשים. בקשת ביטול נכנסת לתוקף חודש לאחר הגשתה.
+                  </div>}
                   {!isCardcomConfigured() && (
                     <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
                       שירות התשלומים עדיין אינו מחובר לשרת הציבורי. לא יתבצע חיוב עד להשלמת הגדרת השרת.
@@ -2203,7 +2219,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                         </div>
                         <p className="text-[11px] text-slate-500 mt-2 leading-5 flex-1">{MEMBERSHIP_TYPE_LABELS[plan].description}</p>
                         <div className="flex items-end justify-between gap-3 mt-4">
-                          <b className="text-xl text-slate-950">₪{MEMBERSHIP_PRICES[plan]}</b>
+                          <b className="text-xl text-slate-950">₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.GROUP_MONTHLY || plan === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</b>
                           <button className="rounded-lg bg-slate-950 text-white text-xs font-bold px-3 py-2" onClick={() => openMembershipCheckout(plan, 'PRIMARY')}>
                             {activeUser.membershipType === plan ? 'חידוש מסלול' : 'בחירה ותשלום'}
                           </button>
@@ -2241,22 +2257,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <strong className="block text-sm text-slate-900">הוספת בן משפחה</strong>
                     <span className="text-[11px] text-slate-500 mt-1 block">פתיחת הגדרות המשפחה, הוספת משתמש ובחירת מסלול עבורו.</span>
                   </button>
-                  {activeUser.isMembershipFrozen
-                    ? (
-                      <button className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-right" onClick={handleUnfreezeMembership}>
-                        <strong className="block text-sm text-emerald-900">ביטול הקפאת מנוי</strong>
-                        <span className="text-[11px] text-emerald-700 mt-1 block">החזרת המנוי לפעילות.</span>
-                      </button>
-                    ) : (
-                      <button className="rounded-2xl border border-slate-200 bg-white p-4 text-right" onClick={handleFreezeMembership}>
-                        <strong className="block text-sm text-slate-900">הקפאת מנוי</strong>
-                        <span className="text-[11px] text-slate-500 mt-1 block">הקפאה לתקופה של עד חודש.</span>
-                      </button>
-                    )}
+                  <button disabled={!freezeAvailable} className={`rounded-2xl border p-4 text-right ${freezeActive ? 'border-sky-200 bg-sky-50' : freezeAvailable ? 'border-slate-200 bg-white' : 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-70'}`} onClick={handleFreezeMembership}>
+                    <strong className="block text-sm text-slate-900">{freezeActive ? 'המנוי מוקפא' : freezeAvailable ? 'הקפאת מנוי' : 'הקפאת השנה נוצלה'}</strong>
+                    <span className="text-[11px] text-slate-600 mt-1 block">{freezeActive ? `הקפאה רצופה עד ${activeUser.membershipFrozenUntil}; לא ניתן לבטל מוקדם.` : freezeAvailable ? 'חודש אחד רצוף, פעם אחת בכל 12 חודשים.' : 'ניתן להקפיא שוב לאחר שיחלפו 12 חודשים ממועד ההקפאה הקודמת.'}</span>
+                  </button>
                   {activeUser.membershipType === MembershipType.GROUP_ANNUAL && (
                     <button className="rounded-2xl border border-red-200 bg-red-50 p-4 text-right sm:col-span-2" onClick={handleCancelAnnualMembership}>
                       <strong className="block text-sm text-red-900">ביטול מנוי שנתי</strong>
-                      <span className="text-[11px] text-red-700 mt-1 block">הפעולה כפופה לתנאי הביטול ולקנס היציאה שהוגדר במערכת.</span>
+                      <span className="text-[11px] text-red-700 mt-1 block">{activeUser.cancellationEffectiveDate ? `הביטול נקבע לתאריך ${activeUser.cancellationEffectiveDate}.` : 'הביטול נכנס לתוקף חודש לאחר הגשת הבקשה.'}</span>
                     </button>
                   )}
                 </section>
@@ -2308,9 +2316,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               <button onClick={() => setActiveTab('workout')}><Dumbbell size={18} /> תוכנית האימונים שלי</button>
               <button onClick={() => setActiveTab('membership')}><WalletCards size={18} /> ניהול מסלול ותשלומים</button>
               <button onClick={() => setActiveTab('card')}><QrCode size={18} /> כרטיס דיגיטלי וצ'ק־אין</button>
-              {activeUser.isMembershipFrozen
-                ? <button onClick={handleUnfreezeMembership}>☀️ ביטול הקפאת מנוי</button>
-                : <button onClick={handleFreezeMembership}>❄️ הקפאת מנוי</button>}
+              <button disabled={!freezeAvailable} onClick={handleFreezeMembership}>❄️ {freezeActive ? `מוקפא עד ${activeUser.membershipFrozenUntil}` : freezeAvailable ? 'הקפאת מנוי לחודש' : 'הקפאת השנה נוצלה'}</button>
               {activeUser.membershipType === MembershipType.GROUP_ANNUAL && (
                 <button className="danger" onClick={handleCancelAnnualMembership}>ביטול מנוי שנתי</button>
               )}

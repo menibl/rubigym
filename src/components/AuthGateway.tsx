@@ -43,6 +43,7 @@ import {
   wasTransactionProcessed
 } from '../data/cardcomPayments';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
+import { createMembershipTerm } from '../data/membershipPolicy';
 
 interface AuthGatewayProps {
   users: User[];
@@ -281,10 +282,8 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     }
 
     const age = calculateAge(registerBirthDate);
-    const expiryDate = new Date();
-    const isHalfYear = selectedPlan === MembershipType.DEDICATED_GROUP_HALF_YEAR;
     const isTrainingCard = selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING;
-    expiryDate.setMonth(expiryDate.getMonth() + (isHalfYear ? 6 : isTrainingCard ? 12 : 1));
+    const membershipTerm = createMembershipTerm(isFamilyPlan ? MembershipType.FAMILY_MEMBERSHIP : selectedPlan);
     const now = Date.now();
     const familyId = isFamilyPlan ? `fam-${now}` : undefined;
     const healthRecord = createHealthDeclarationRecord({
@@ -322,7 +321,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       workoutRemindersEnabled: pushApproved && pushWorkoutReminders,
       membershipType: isFamilyPlan ? MembershipType.FAMILY_MEMBERSHIP : selectedPlan,
       membershipStatus: MembershipStatus.ACTIVE,
-      membershipExpiry: expiryDate.toISOString().split('T')[0],
+      ...membershipTerm,
       personalTrainingCardSize: selectedPlan === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
       personalTrainingRemaining: selectedPlan === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
       duoTrainingCardSize: selectedPlan === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
@@ -518,7 +517,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                         <strong>{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
                         <small>{MEMBERSHIP_TYPE_LABELS[plan].description}</small>
                       </span>
-                      <b>₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : ''}</b>
+                      <b>₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : plan === MembershipType.GROUP_MONTHLY || plan === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</b>
                     </button>
                   ))}
                 </div>
@@ -548,7 +547,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   }}>הפעל</button></div>
                 </div>
                 <div className="auth-checkout-summary">
-                  <span>לתשלום כעת</span>
+                  <span>{selectedPlan === MembershipType.GROUP_ANNUAL ? 'חיוב חודשי ראשון' : 'לתשלום כעת'}</span>
                   <strong>₪{(() => {
                     const base = isFamilyPlan
                       ? (FAMILY_MEMBERSHIP_PRICES[familyMembersCount] || FAMILY_MEMBERSHIP_PRICES[2])
@@ -557,6 +556,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                     return Math.max(0, base - discount);
                   })()}</strong>
                 </div>
+                {!isFamilyPlan && selectedPlan === MembershipType.GROUP_ANNUAL && <small className="auth-mock-note">₪500 בחודש בהוראת קבע למשך 12 חודשים. בקשת ביטול נכנסת לתוקף חודש קדימה.</small>}
                 <small className="auth-mock-note">פרטי האשראי יוזנו רק בעמוד המאובטח של Cardcom ולא יישמרו ב־BALY.</small>
                 {!isCardcomConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}
                 <button className="auth-primary" type="submit" disabled={paymentStarting || !isCardcomConfigured()}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>

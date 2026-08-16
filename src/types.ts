@@ -95,12 +95,12 @@ export const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, { label: string; bad
   [MembershipType.GROUP_MONTHLY]: {
     label: 'קבוצתי חודשי',
     badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-    description: 'מנוי חודשי לאימונים קבוצתיים'
+    description: 'קבוצות ללא הגבלה + Open Gym, בחיוב חודשי וללא התחייבות'
   },
   [MembershipType.GROUP_ANNUAL]: {
     label: 'קבוצתי שנתי',
     badgeColor: 'bg-teal-100 text-teal-800 border-teal-300',
-    description: 'מנוי שנתי מוזל לאימונים קבוצתיים'
+    description: 'קבוצות ללא הגבלה + Open Gym, ₪500 בחודש בהוראת קבע ובהתחייבות ל־12 חודשים'
   },
   [MembershipType.OPEN_MONTHLY]: {
     label: 'פתוח - חודשי',
@@ -157,8 +157,8 @@ export const MEMBERSHIP_PRICES: Record<MembershipType, number> = {
   [MembershipType.YOUTH_ONCE_WEEKLY]: 300,
   [MembershipType.DEDICATED_GROUP_HALF_YEAR]: 3600,
   [MembershipType.FAMILY_MEMBERSHIP]: 900,
-  [MembershipType.GROUP_MONTHLY]: 350,
-  [MembershipType.GROUP_ANNUAL]: 290,
+  [MembershipType.GROUP_MONTHLY]: 600,
+  [MembershipType.GROUP_ANNUAL]: 500,
   [MembershipType.OPEN_MONTHLY]: 300,
   [MembershipType.OPEN_ANNUAL]: 250,
   [MembershipType.OPEN_PUNCH_CARD]: 400,
@@ -172,7 +172,8 @@ export const MEMBERSHIP_PRICES: Record<MembershipType, number> = {
 export const CURRENT_PRIMARY_MEMBERSHIP_PLANS: MembershipType[] = [
   MembershipType.OPEN_GYM,
   MembershipType.OPEN_GYM_WITH_PLAN,
-  MembershipType.CORE_GROUPS,
+  MembershipType.GROUP_MONTHLY,
+  MembershipType.GROUP_ANNUAL,
   MembershipType.YOUTH_TWICE_WEEKLY,
   MembershipType.YOUTH_ONCE_WEEKLY,
   MembershipType.DEDICATED_GROUP_HALF_YEAR
@@ -279,6 +280,10 @@ export interface User {
   secondaryMemberships?: MembershipType[]; // Multiple active subscriptions (e.g. Group + Personal + Punch card)
   membershipStatus?: MembershipStatus;
   membershipExpiry?: string; // ISO date string
+  membershipStartedAt?: string;
+  membershipCommitmentEndsAt?: string;
+  recurringBillingMonths?: number;
+  monthlyBillingDay?: number;
   punchCardRemaining?: number; // for punch card membership
   personalTrainingCardSize?: TrainingCardSize;
   personalTrainingRemaining?: number;
@@ -308,9 +313,13 @@ export interface User {
 
   // Annual & Monthly membership commitment options
   isMembershipFrozen?: boolean; // Frozen for up to 1 month
+  membershipFreezeStartedAt?: string;
+  membershipFreezeUsedAt?: string;
   membershipFrozenUntil?: string; // ISO date string
   isCancelledEarly?: boolean; // Annual subscription cancelled early
   cancellationPenaltyPaid?: boolean; // 500 ILS penalty fee paid for early cancellation
+  cancellationRequestedAt?: string;
+  cancellationEffectiveDate?: string;
 
   // Custom metadata
   imageUrl?: string;

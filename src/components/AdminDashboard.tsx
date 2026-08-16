@@ -22,6 +22,7 @@ import {
   MembershipType,
   CURRENT_MEMBERSHIP_CATALOG,
   MEMBERSHIP_TYPE_LABELS,
+  MEMBERSHIP_PRICES,
   MembershipStatus,
   UserRole,
   DiscountCode,
@@ -38,6 +39,7 @@ import {
   AttendanceLog
 } from '../types';
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
+import { createMembershipTerm } from '../data/membershipPolicy';
 import {
   Calendar,
   Settings,
@@ -634,7 +636,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Record a Mock Payment to clear debt
   const handlePayDebt = (trainee: User) => {
-    const paymentAmount = 300;
+    const purchasedType = trainee.membershipType || MembershipType.GROUP_MONTHLY;
+    const paymentAmount = MEMBERSHIP_PRICES[purchasedType];
     const newPayment: Payment = {
       id: `pay-${Date.now()}`,
       traineeId: trainee.id,
@@ -642,7 +645,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       amount: paymentAmount,
       date: new Date().toISOString().split('T')[0],
       status: 'PAID',
-      membershipTypePurchased: trainee.membershipType || MembershipType.GROUP_MONTHLY,
+      membershipTypePurchased: purchasedType,
       paymentMethod: 'סליקה מדומה (כרטיס אשראי)',
       isMock: true
     };
@@ -652,10 +655,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     // Update status to ACTIVE
     const updatedUsers = users.map(u => {
       if (u.id === trainee.id) {
+        const term = createMembershipTerm(purchasedType);
         return {
           ...u,
           membershipStatus: MembershipStatus.ACTIVE,
-          membershipExpiry: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split('T')[0] // renewed for 30 days
+          ...(purchasedType === MembershipType.GROUP_ANNUAL && u.membershipCommitmentEndsAt
+            ? { membershipExpiry: u.membershipCommitmentEndsAt }
+            : term)
         };
       }
       return u;
