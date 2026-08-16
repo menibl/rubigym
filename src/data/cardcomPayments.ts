@@ -1,4 +1,4 @@
-import { MembershipType, PaymentPurchaseVariant } from '../types';
+import { FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, PaymentPurchaseVariant } from '../types';
 
 const PENDING_PAYMENT_KEY = 'baly_cardcom_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_cardcom_processed_transactions_v1';
@@ -13,6 +13,8 @@ export interface PendingCardcomPayment {
   registrationDraft?: Record<string, unknown>;
   familyMembersCount?: number;
   familyName?: string;
+  familyBillingMode?: FamilyBillingMode;
+  familyMemberPlans?: FamilyMemberPlanSelection[];
   discountCode?: string;
 }
 
@@ -27,6 +29,8 @@ interface CreatePaymentRequest {
   registrationDraft?: Record<string, unknown>;
   familyMembersCount?: number;
   familyName?: string;
+  familyBillingMode?: FamilyBillingMode;
+  familyMemberPlans?: FamilyMemberPlanSelection[];
   discountCode?: string;
 }
 
@@ -40,6 +44,8 @@ export interface VerifiedCardcomPayment {
   mode: PendingCardcomPayment['mode'];
   purchaseVariant?: PendingCardcomPayment['purchaseVariant'];
   familyMembersCount?: number;
+  familyBillingMode?: FamilyBillingMode;
+  familyMemberPlans?: FamilyMemberPlanSelection[];
 }
 
 const paymentApiBase = () => (import.meta.env.VITE_PAYMENT_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
@@ -61,6 +67,8 @@ export const startCardcomPayment = async (request: CreatePaymentRequest) => {
       mode: request.mode,
       purchaseVariant: request.purchaseVariant,
       familyMembersCount: request.familyMembersCount,
+      familyBillingMode: request.familyBillingMode,
+      familyMemberPlans: request.familyMemberPlans,
       discountCode: request.discountCode
     })
   });
@@ -77,7 +85,10 @@ export const startCardcomPayment = async (request: CreatePaymentRequest) => {
     createdAt: new Date().toISOString(),
     registrationDraft: request.registrationDraft,
     familyMembersCount: request.familyMembersCount,
-    familyName: request.familyName
+    familyName: request.familyName,
+    familyBillingMode: request.familyBillingMode,
+    familyMemberPlans: request.familyMemberPlans,
+    discountCode: request.discountCode
   };
   sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
   window.location.assign(result.url);
@@ -108,6 +119,8 @@ export const verifyPendingCardcomPayment = async (pending: PendingCardcomPayment
   if (result.mode !== pending.mode) throw new Error('סוג העסקה אינו תואם לפעולה שנבחרה.');
   if ((result.purchaseVariant || undefined) !== pending.purchaseVariant) throw new Error('חבילת התשלום אינה תואמת לחבילה שנבחרה.');
   if ((result.familyMembersCount || undefined) !== pending.familyMembersCount) throw new Error('פרטי החבילה המשפחתית אינם תואמים לעסקה.');
+  if ((result.familyBillingMode || undefined) !== pending.familyBillingMode) throw new Error('סוג החבילה המשפחתית אינו תואם לעסקה.');
+  if (JSON.stringify(result.familyMemberPlans || undefined) !== JSON.stringify(pending.familyMemberPlans || undefined)) throw new Error('הרכב המסלולים המשפחתי אינו תואם לעסקה.');
   return result as VerifiedCardcomPayment;
 };
 

@@ -676,8 +676,8 @@ export default function App() {
               announcements={announcements}
               payments={payments}
               attendanceLogs={attendanceLogs}
-              settings={settings}
               discountCodes={discountCodes}
+              settings={settings}
               workoutPlans={workoutPlans}
               nutritionPlans={nutritionPlans}
               messages={messages}
@@ -732,6 +732,7 @@ export default function App() {
               announcements={announcements}
               payments={payments}
               attendanceLogs={attendanceLogs}
+              discountCodes={discountCodes}
               settings={settings}
               onUpdateSessions={setSessions}
               onUpdateOpenGym={setOpenGymSessions}

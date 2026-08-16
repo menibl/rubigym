@@ -90,7 +90,7 @@ export const MEMBERSHIP_TYPE_LABELS: Record<MembershipType, { label: string; bad
   [MembershipType.FAMILY_MEMBERSHIP]: {
     label: 'מנוי משפחתי',
     badgeColor: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300',
-    description: 'חשבון משלם אחד ופרופיל אישי לכל בן משפחה'
+    description: 'שנתי לפי כמות נפשות, חודשי לפי מתאמן או הרכב מסלולים מותאם בחיוב מאוחד'
   },
   [MembershipType.GROUP_MONTHLY]: {
     label: 'קבוצתי חודשי',
@@ -200,6 +200,15 @@ export const FAMILY_MEMBERSHIP_PRICES: Record<number, number> = {
   6: 2700
 };
 
+export type FamilyBillingMode = 'ANNUAL_BY_SIZE' | 'MONTHLY_PER_MEMBER' | 'CUSTOM_COMBINED';
+
+export interface FamilyMemberPlanSelection {
+  memberId?: string;
+  memberName: string;
+  membershipType: MembershipType;
+  trainingSessionsCount?: number;
+}
+
 export const TRAINING_CARD_SIZES = [1, 4, 8, 12] as const;
 export type TrainingCardSize = typeof TRAINING_CARD_SIZES[number];
 export type PaymentPurchaseVariant = 'PERSONAL_1' | 'PERSONAL_4' | 'PERSONAL_8' | 'PERSONAL_12' | 'DUO_1' | 'DUO_4' | 'DUO_8' | 'DUO_12';
@@ -298,6 +307,9 @@ export interface User {
   familyPayerId?: string; // Reference to the paying user ID in the family
   familyMembersCount?: number; // Total members allowed in family package (e.g. 4)
   familyTrackName?: string; // e.g. "מסלול משפחתי 4 מנויים"
+  familyBillingMode?: FamilyBillingMode;
+  familyMemberPlans?: FamilyMemberPlanSelection[];
+  familyCombinedAmount?: number;
 
   // Personal Training & Membership configuration fields
   personalTrainingRate?: number; // Per-session cost set by coach (e.g. 150 ILS)

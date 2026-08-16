@@ -24,13 +24,15 @@ import {
   MembershipType,
   CURRENT_PRIMARY_MEMBERSHIP_PLANS,
   CURRENT_MEMBERSHIP_ADD_ONS,
-  FAMILY_MEMBERSHIP_PRICES,
   MEMBERSHIP_TYPE_LABELS,
   MEMBERSHIP_PRICES,
   PaymentPurchaseVariant,
   TRAINING_CARD_SIZES,
   TrainingCardSize,
-  UserRole
+  UserRole,
+  DiscountCode,
+  FamilyBillingMode,
+  FamilyMemberPlanSelection
 } from '../types';
 import {
   Calendar as CalendarIcon,
@@ -80,6 +82,9 @@ import {
   isMembershipFreezeActive,
   toLocalIsoDate
 } from '../data/membershipPolicy';
+import { DiscountCodeField } from './DiscountCodeField';
+import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
+import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 
 interface TraineeDashboardProps {
   activeUser: User;
@@ -93,6 +98,7 @@ interface TraineeDashboardProps {
   announcements: Announcement[];
   payments: Payment[];
   attendanceLogs: AttendanceLog[];
+  discountCodes: DiscountCode[];
   settings: SystemSettings;
   onUpdateSessions: (sessions: TrainingSession[]) => void;
   onUpdateOpenGym: (openGyms: OpenGymSession[]) => void;
@@ -122,6 +128,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   announcements,
   payments,
   attendanceLogs,
+  discountCodes,
   settings,
   onUpdateSessions,
   onUpdateOpenGym,
@@ -145,6 +152,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   })();
   const [familyPurchaseName, setFamilyPurchaseName] = useState(familyDraft?.familyName || activeUser.familyName || `משפחת ${activeUser.name.split(' ')[0]}`);
   const [familyPurchaseCount, setFamilyPurchaseCount] = useState<number>(familyDraft?.familyQuota || activeUser.familyMembersCount || 2);
+  const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>(familyDraft?.familyBillingMode || activeUser.familyBillingMode || 'ANNUAL_BY_SIZE');
+  const familyUsers = [activeUser, ...users.filter(user => user.id !== activeUser.id && activeUser.familyId && user.familyId === activeUser.familyId)];
+  const initialFamilyPlans = activeUser.familyMemberPlans?.length ? activeUser.familyMemberPlans : familyUsers.map(user => ({ memberId: user.id, memberName: user.name, membershipType: user.membershipType || MembershipType.OPEN_GYM }));
+  const [familyMemberPlans, setFamilyMemberPlans] = useState<FamilyMemberPlanSelection[]>(() => resizeFamilyPlans(initialFamilyPlans, familyPurchaseCount, activeUser.name, activeUser.id));
+  const [discountInput, setDiscountInput] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerError, setScannerError] = useState('');
   const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -173,6 +186,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const freezeActive = isMembershipFreezeActive(activeUser);
   const freezeAvailable = canUseAnnualFreeze(activeUser);
   const cancellationEffective = isMembershipCancellationEffective(activeUser);
+  const applySelectedDiscount = (amount: number) => appliedDiscount?.discountPercent
+    ? Math.round(amount * (1 - appliedDiscount.discountPercent / 100))
+    : Math.max(0, amount - (appliedDiscount?.discountAmount || 0));
 
   const applyVerifiedMembershipPayment = (
     purchasedType: MembershipType,
@@ -180,12 +196,44 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     verified: VerifiedCardcomPayment,
     purchaseVariant?: PaymentPurchaseVariant,
     familyMembersCount?: number,
-    familyName?: string
+    familyName?: string,
+    purchasedFamilyBillingMode?: FamilyBillingMode,
+    purchasedFamilyPlans?: FamilyMemberPlanSelection[]
   ) => {
     onUpdateUsers(users.map(user => {
+      if (familyMembersCount && purchasedFamilyBillingMode === 'CUSTOM_COMBINED') {
+        const plan = purchasedFamilyPlans?.find(item => item.memberId === user.id)
+          || (user.id === activeUser.id ? purchasedFamilyPlans?.[0] : undefined);
+        if (plan) {
+          const isPayer = user.id === activeUser.id;
+          const term = createMembershipTerm(plan.membershipType);
+          const familyId = activeUser.familyId || `fam-${Date.now()}`;
+          return {
+            ...user,
+            membershipType: plan.membershipType,
+            membershipStatus: MembershipStatus.ACTIVE,
+            ...term,
+            familyId,
+            familyName: familyName || activeUser.familyName || `משפחת ${activeUser.name.split(' ')[0]}`,
+            isFamilyPayer: isPayer || undefined,
+            familyPayerId: isPayer ? undefined : activeUser.id,
+            familyMembersCount,
+            familyBillingMode: purchasedFamilyBillingMode,
+            familyMemberPlans: purchasedFamilyPlans,
+            familyCombinedAmount: verified.amount,
+            familyTrackName: 'משפחתי מותאם – תשלום מאוחד',
+            personalTrainingCardSize: plan.membershipType === MembershipType.PERSONAL_TRAINING ? undefined : user.personalTrainingCardSize,
+            personalTrainingRemaining: plan.membershipType === MembershipType.PERSONAL_TRAINING ? plan.trainingSessionsCount : user.personalTrainingRemaining,
+            duoTrainingCardSize: plan.membershipType === MembershipType.DUO_TRAINING ? undefined : user.duoTrainingCardSize,
+            duoTrainingRemaining: plan.membershipType === MembershipType.DUO_TRAINING ? plan.trainingSessionsCount : user.duoTrainingRemaining,
+            nutritionPlanPaid: plan.membershipType === MembershipType.NUTRITION_COACHING ? true : user.nutritionPlanPaid,
+            requestedWorkoutPlan: [MembershipType.WORKOUT_COACHING, MembershipType.OPEN_GYM_WITH_PLAN].includes(plan.membershipType) ? true : user.requestedWorkoutPlan
+          };
+        }
+      }
       if (user.id !== activeUser.id) return user;
       if (mode === 'PRIMARY') {
-        const membershipTerm = createMembershipTerm(purchasedType);
+        const membershipTerm = createMembershipTerm(familyMembersCount && purchasedFamilyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : purchasedType);
         return {
           ...user,
           membershipType: purchasedType,
@@ -205,7 +253,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             isFamilyPayer: true,
             familyPayerId: undefined,
             familyMembersCount,
-            familyTrackName: `מסלול משפחתי (${familyMembersCount} מנויים)`
+            familyBillingMode: purchasedFamilyBillingMode || 'ANNUAL_BY_SIZE',
+            familyMemberPlans: purchasedFamilyPlans,
+            familyCombinedAmount: verified.amount,
+            familyTrackName: purchasedFamilyBillingMode === 'MONTHLY_PER_MEMBER' ? `משפחתי חודשי (${familyMembersCount} מתאמנים)` : `משפחתי שנתי (${familyMembersCount} מתאמנים)`
           } : {})
         };
       }
@@ -256,7 +307,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       .then(verified => {
         const transactionKey = verified.transactionId || verified.lowProfileId;
         if (!wasTransactionProcessed(transactionKey)) {
-          applyVerifiedMembershipPayment(pending.membershipType, purchaseMode, verified, pending.purchaseVariant, pending.familyMembersCount, pending.familyName);
+          applyVerifiedMembershipPayment(pending.membershipType, purchaseMode, verified, pending.purchaseVariant, pending.familyMembersCount, pending.familyName, pending.familyBillingMode, pending.familyMemberPlans);
           markTransactionProcessed(transactionKey);
         }
         clearPendingCardcomPayment();
@@ -541,7 +592,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         mode: membershipPurchaseMode,
         purchaseVariant: isTrainingCard
           ? `${selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING ? 'PERSONAL' : 'DUO'}_${trainingCardSize}` as PaymentPurchaseVariant
-          : undefined
+          : undefined,
+        discountCode: appliedDiscount?.code
       });
     } catch (error) {
       setPaymentStarting(false);
@@ -562,7 +614,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         membershipType: MembershipType.FAMILY_MEMBERSHIP,
         mode: 'PRIMARY',
         familyMembersCount: familyPurchaseCount,
-        familyName: familyPurchaseName.trim()
+        familyName: familyPurchaseName.trim(),
+        familyBillingMode,
+        familyMemberPlans: familyBillingMode === 'CUSTOM_COMBINED' ? resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id) : undefined,
+        discountCode: appliedDiscount?.code
       });
     } catch (error) {
       setPaymentStarting(false);
@@ -2156,7 +2211,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <b className="block text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[selectedMembershipPurchase].label}</b>
                     <span className="text-[11px] text-slate-600">{membershipPurchaseMode === 'PRIMARY' ? 'מסלול ראשי' : 'שירות נוסף'}</span>
                   </div>
-                  <strong className="text-xl text-amber-800">₪{MEMBERSHIP_PRICES[selectedMembershipPurchase] * ((selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) ? trainingCardSize : 1)}{selectedMembershipPurchase === MembershipType.GROUP_MONTHLY || selectedMembershipPurchase === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</strong>
+                  <strong className="text-xl text-amber-800">₪{applySelectedDiscount(MEMBERSHIP_PRICES[selectedMembershipPurchase] * ((selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) ? trainingCardSize : 1))}{selectedMembershipPurchase === MembershipType.GROUP_MONTHLY || selectedMembershipPurchase === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</strong>
                 </div>
                 <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
                   {(selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) && (
@@ -2167,6 +2222,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       <small className="mt-2 block font-normal text-slate-500">לאחר כל אימון היתרה תתעדכן. כשיישארו שני אימונים תישלח התראה למתאמן ולמאמן.</small>
                     </label>
                   )}
+                  <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
                     התשלום מתבצע בעמוד המאובטח של Cardcom. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
                   </div>
@@ -2185,7 +2241,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </section>
             ) : (
               <>
-                <section className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5">
+                <section className="space-y-4 rounded-2xl border border-indigo-200 bg-white p-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <span className="text-[11px] font-black text-indigo-700">חשבון משפחתי</span>
@@ -2194,13 +2250,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     </div>
                     {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-                    <label className="text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
-                    <label className="text-xs font-bold text-slate-700">מספר מנויים<select value={familyPurchaseCount} onChange={event => setFamilyPurchaseCount(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5">
-                      {Object.entries(FAMILY_MEMBERSHIP_PRICES).map(([count, price]) => <option key={count} value={count}>{count} מנויים — ₪{price.toLocaleString('he-IL')} לחודש</option>)}
-                    </select></label>
-                    <button type="button" onClick={() => void handleFamilyCheckout()} disabled={paymentStarting || !isCardcomConfigured()} className="self-end rounded-xl bg-indigo-700 px-4 py-3 text-xs font-black text-white disabled:opacity-50">
-                      {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ותשלום' : 'רכישה ותשלום'}
+                  <label className="block text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} />
+                  <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
+                  <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
+                    <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id))).toLocaleString('he-IL')}</strong></div>
+                    <button type="button" onClick={() => void handleFamilyCheckout()} disabled={paymentStarting || !isCardcomConfigured()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
+                      {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
                     </button>
                   </div>
                 </section>

@@ -4,23 +4,30 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { User, UserRole, Gender, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, MEMBERSHIP_PRICES, CURRENT_PRIMARY_MEMBERSHIP_PLANS, CURRENT_MEMBERSHIP_ADD_ONS, FAMILY_MEMBERSHIP_PRICES, TRAINING_CARD_SIZES, TrainingCardSize } from '../types';
+import { User, UserRole, Gender, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, MEMBERSHIP_PRICES, CURRENT_PRIMARY_MEMBERSHIP_PLANS, CURRENT_MEMBERSHIP_ADD_ONS, TRAINING_CARD_SIZES, TrainingCardSize, DiscountCode, FamilyBillingMode, FamilyMemberPlanSelection } from '../types';
 import { X, Check, ShieldCheck, CreditCard, UserPlus, FileText, HeartPulse, Sparkles, Users, Lock, Phone, Calendar, User as UserIcon } from 'lucide-react';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { createMembershipTerm } from '../data/membershipPolicy';
+import { DiscountCodeField } from './DiscountCodeField';
+import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
+import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 
 interface RegisterModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCompleteRegistration: (newUser: User, familyMembers?: User[]) => void;
   existingUsers: User[];
+  discountCodes: DiscountCode[];
+  onUpdateDiscountCodes?: (codes: DiscountCode[]) => void;
 }
 
 export const RegisterModal: React.FC<RegisterModalProps> = ({
   isOpen,
   onClose,
   onCompleteRegistration,
-  existingUsers
+  existingUsers,
+  discountCodes,
+  onUpdateDiscountCodes
 }) => {
   const [step, setStep] = useState<number>(1);
   const [error, setError] = useState<string>('');
@@ -46,6 +53,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [familyMembersQuota, setFamilyMembersQuota] = useState<number>(2);
   const [familyName, setFamilyName] = useState('');
+  const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>('ANNUAL_BY_SIZE');
+  const [familyMemberPlans, setFamilyMemberPlans] = useState<FamilyMemberPlanSelection[]>([]);
 
   // Step 4: Payment
   const [cardHolder, setCardHolder] = useState('');
@@ -53,6 +62,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
   const [cardId, setCardId] = useState('');
+  const [discountInput, setDiscountInput] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
 
   // Step 5: Family sub-members
   const [familySubMembers, setFamilySubMembers] = useState<Array<{
@@ -64,6 +75,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     gender: Gender;
     healthConfirmed: boolean;
   }>>([]);
+
+  const applySelectedDiscount = (amount: number) => appliedDiscount?.discountPercent
+    ? Math.round(amount * (1 - appliedDiscount.discountPercent / 100))
+    : Math.max(0, amount - (appliedDiscount?.discountAmount || 0));
 
   useEffect(() => {
     if (isOpen) {
@@ -83,11 +98,15 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       setTrainingCardSize(1);
       setFamilyMembersQuota(2);
       setFamilyName('');
+      setFamilyBillingMode('ANNUAL_BY_SIZE');
+      setFamilyMemberPlans([]);
       setCardHolder('');
       setCardNumber('');
       setCardExpiry('');
       setCardCvv('');
       setCardId('');
+      setDiscountInput('');
+      setAppliedDiscount(null);
       setFamilySubMembers([]);
     }
   }, [isOpen]);
@@ -203,6 +222,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     if (isFamilyTrack) {
       createdFamilyId = `fam-${Date.now()}`;
     }
+    const normalizedFamilyPlans = resizeFamilyPlans(familyMemberPlans, familyMembersQuota, name.trim() || 'המשלם הראשי');
+    const payerFamilyPlan = familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans[0] : undefined;
 
     const primaryUser: User = {
       id: newUserId,
@@ -219,17 +240,17 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       healthDeclarationSignatureUrl: signatureDataUrl,
       healthDeclarationDate: new Date().toISOString().split('T')[0],
       healthDeclarationHistory: [createHealthDeclarationRecord({ signed: true, signatureUrl: signatureDataUrl })],
-      membershipType: isFamilyTrack ? MembershipType.FAMILY_MEMBERSHIP : selectedMembership,
+      membershipType: isFamilyTrack ? payerFamilyPlan?.membershipType || MembershipType.FAMILY_MEMBERSHIP : selectedMembership,
       secondaryMemberships: [],
       membershipStatus: MembershipStatus.ACTIVE,
-      ...createMembershipTerm(isFamilyTrack ? MembershipType.FAMILY_MEMBERSHIP : selectedMembership),
+      ...createMembershipTerm(isFamilyTrack && familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : isFamilyTrack ? payerFamilyPlan?.membershipType || MembershipType.FAMILY_MEMBERSHIP : selectedMembership),
       priorityScore: 100,
-      personalTrainingCardSize: selectedMembership === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
-      personalTrainingRemaining: selectedMembership === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
-      duoTrainingCardSize: selectedMembership === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
-      duoTrainingRemaining: selectedMembership === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
-      nutritionPlanPaid: selectedMembership === MembershipType.NUTRITION_COACHING,
-      requestedWorkoutPlan: selectedMembership === MembershipType.WORKOUT_COACHING || selectedMembership === MembershipType.OPEN_GYM_WITH_PLAN,
+      personalTrainingCardSize: !isFamilyTrack && selectedMembership === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
+      personalTrainingRemaining: isFamilyTrack && payerFamilyPlan?.membershipType === MembershipType.PERSONAL_TRAINING ? payerFamilyPlan.trainingSessionsCount : !isFamilyTrack && selectedMembership === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
+      duoTrainingCardSize: !isFamilyTrack && selectedMembership === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
+      duoTrainingRemaining: isFamilyTrack && payerFamilyPlan?.membershipType === MembershipType.DUO_TRAINING ? payerFamilyPlan.trainingSessionsCount : !isFamilyTrack && selectedMembership === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
+      nutritionPlanPaid: (isFamilyTrack ? payerFamilyPlan?.membershipType : selectedMembership) === MembershipType.NUTRITION_COACHING,
+      requestedWorkoutPlan: [MembershipType.WORKOUT_COACHING, MembershipType.OPEN_GYM_WITH_PLAN].includes(isFamilyTrack ? payerFamilyPlan?.membershipType || MembershipType.FAMILY_MEMBERSHIP : selectedMembership),
       imageUrl: gender === Gender.FEMALE
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
@@ -237,7 +258,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       familyName: isFamilyTrack ? familyName.trim() : undefined,
       isFamilyPayer: isFamilyTrack ? true : undefined,
       familyMembersCount: isFamilyTrack ? familyMembersQuota : undefined,
-      familyTrackName: isFamilyTrack ? `חבילה משפחתית (${familyMembersQuota} מנויים)` : undefined
+      familyBillingMode: isFamilyTrack ? familyBillingMode : undefined,
+      familyMemberPlans: isFamilyTrack && familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans : undefined,
+      familyCombinedAmount: isFamilyTrack ? familyPurchaseAmount(familyBillingMode, familyMembersQuota, normalizedFamilyPlans) : undefined,
+      familyTrackName: isFamilyTrack ? familyBillingMode === 'ANNUAL_BY_SIZE' ? `משפחתי שנתי (${familyMembersQuota} מתאמנים)` : familyBillingMode === 'MONTHLY_PER_MEMBER' ? `משפחתי חודשי (${familyMembersQuota} מתאמנים)` : 'משפחתי מותאם – תשלום מאוחד' : undefined
     };
 
     if (isFamilyTrack && familyMembersQuota > 1) {
@@ -256,6 +280,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       // Temporary store primary user
       (window as any).__tempPrimaryUser = primaryUser;
     } else {
+      if (appliedDiscount?.isSingleUse && onUpdateDiscountCodes) onUpdateDiscountCodes(discountCodes.map(code => code.id === appliedDiscount.id ? { ...code, isUsed: true } : code));
       onCompleteRegistration(primaryUser);
       onClose();
     }
@@ -268,6 +293,17 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
     const familyUsers: User[] = familySubMembers.map((sub, idx) => {
       const subAge = calculateAge(sub.birthDate);
+      const assignedPlan = primaryUser.familyMemberPlans?.[idx + 1];
+      const assignedMembership = primaryUser.familyBillingMode === 'CUSTOM_COMBINED' ? assignedPlan?.membershipType || MembershipType.OPEN_GYM : MembershipType.FAMILY_MEMBERSHIP;
+      const assignedTerm = primaryUser.familyBillingMode === 'CUSTOM_COMBINED'
+        ? createMembershipTerm(assignedMembership)
+        : {
+            membershipStartedAt: primaryUser.membershipStartedAt,
+            membershipExpiry: primaryUser.membershipExpiry,
+            membershipCommitmentEndsAt: primaryUser.membershipCommitmentEndsAt,
+            recurringBillingMonths: primaryUser.recurringBillingMonths,
+            monthlyBillingDay: primaryUser.monthlyBillingDay
+          };
       return {
         id: `user-fam-${Date.now()}-${idx}`,
         name: sub.name.trim(),
@@ -282,9 +318,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         healthDeclarationSigned: true,
         healthDeclarationDate: new Date().toISOString().split('T')[0],
         healthDeclarationHistory: [createHealthDeclarationRecord({ signed: true })],
-        membershipType: MembershipType.FAMILY_MEMBERSHIP,
+        membershipType: assignedMembership,
         membershipStatus: MembershipStatus.ACTIVE,
-        membershipExpiry: primaryUser.membershipExpiry,
+        ...assignedTerm,
         priorityScore: 100,
         imageUrl: sub.gender === Gender.FEMALE
           ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
@@ -292,11 +328,18 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         familyId: primaryUser.familyId,
         familyName: primaryUser.familyName,
         isFamilyPayer: false,
-        familyPayerId: primaryUser.id
+        familyPayerId: primaryUser.id,
+        familyBillingMode: primaryUser.familyBillingMode,
+        familyMemberPlans: primaryUser.familyMemberPlans,
+        personalTrainingRemaining: assignedPlan?.membershipType === MembershipType.PERSONAL_TRAINING ? assignedPlan.trainingSessionsCount : undefined,
+        duoTrainingRemaining: assignedPlan?.membershipType === MembershipType.DUO_TRAINING ? assignedPlan.trainingSessionsCount : undefined,
+        nutritionPlanPaid: assignedMembership === MembershipType.NUTRITION_COACHING,
+        requestedWorkoutPlan: [MembershipType.WORKOUT_COACHING, MembershipType.OPEN_GYM_WITH_PLAN].includes(assignedMembership)
       };
     });
 
     delete (window as any).__tempPrimaryUser;
+    if (appliedDiscount?.isSingleUse && onUpdateDiscountCodes) onUpdateDiscountCodes(discountCodes.map(code => code.id === appliedDiscount.id ? { ...code, isUsed: true } : code));
     onCompleteRegistration(primaryUser, familyUsers);
     onClose();
   };
@@ -632,31 +675,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-2">כמות מנויים כלולה במסלול המשפחתי:</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                      {[2, 3, 4, 5, 6].map((count) => {
-                        const price = FAMILY_MEMBERSHIP_PRICES[count];
-                        return (
-                          <button
-                            type="button"
-                            key={count}
-                            onClick={() => setFamilyMembersQuota(count)}
-                            className={`p-3 rounded-xl border text-center transition cursor-pointer ${
-                              familyMembersQuota === count
-                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
-                                : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <div className="font-bold text-sm">{count} מנויים</div>
-                            <div className={`text-[11px] mt-0.5 ${familyMembersQuota === count ? 'text-indigo-200' : 'text-emerald-600 font-semibold'}`}>
-                              ₪{price}/חודש
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyMembersQuota} onCountChange={setFamilyMembersQuota} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={name.trim() || 'המשלם הראשי'} />
 
                   <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-indigo-100 flex items-center gap-2">
                     <Users size={14} className="text-indigo-600 shrink-0" />
@@ -716,10 +735,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 </div>
                 <div className="font-bold text-emerald-700 text-sm">
                   {isFamilyTrack
-                    ? `₪${FAMILY_MEMBERSHIP_PRICES[familyMembersQuota].toLocaleString('he-IL')}`
-                    : `₪${(MEMBERSHIP_PRICES[selectedMembership] * ((selectedMembership === MembershipType.PERSONAL_TRAINING || selectedMembership === MembershipType.DUO_TRAINING) ? trainingCardSize : 1)).toLocaleString('he-IL')}`}
+                    ? `₪${applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyMembersQuota, resizeFamilyPlans(familyMemberPlans, familyMembersQuota, name.trim() || 'המשלם הראשי'))).toLocaleString('he-IL')}`
+                    : `₪${applySelectedDiscount(MEMBERSHIP_PRICES[selectedMembership] * ((selectedMembership === MembershipType.PERSONAL_TRAINING || selectedMembership === MembershipType.DUO_TRAINING) ? trainingCardSize : 1)).toLocaleString('he-IL')}`}
                 </div>
               </div>
+
+              <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => setError(isError ? message : '')} />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
