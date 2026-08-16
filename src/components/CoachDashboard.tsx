@@ -43,6 +43,7 @@ import { GroupWorkoutProgramManager } from './GroupWorkoutProgramManager';
 import { CoachTrainingMode } from './CoachTrainingMode';
 import { WorkoutPlanningNavigator, WorkoutPlanningRoute } from './WorkoutPlanningNavigator';
 import { ExerciseMedia } from './ExerciseMedia';
+import { ProgramBriefPanel, ProgramSetupWizard, WizardAnswers, WizardQuestion } from './ProgramSetupWizard';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import {
   BookOpen,
@@ -365,6 +366,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       if (traineeId) setSelectedTraineeId(traineeId);
       setActiveTab('programs');
       setPersonalBuilderPanel('WORKOUT');
+      setPersonalSetupComplete(false);
+      setPersonalSetupAnswers({});
       setWorkoutPlanningRoute('PERSONAL_BUILDER');
       return;
     }
@@ -384,6 +387,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [selectedWorkoutDay, setSelectedWorkoutDay] = useState(1);
   const [personalBuilderPanel, setPersonalBuilderPanel] = useState<'WORKOUT' | 'PROFILE' | 'LIBRARY' | 'SETTINGS'>('WORKOUT');
+  const [personalSetupComplete, setPersonalSetupComplete] = useState(false);
+  const [personalSetupAnswers, setPersonalSetupAnswers] = useState<WizardAnswers>({});
+  const [nutritionSetupComplete, setNutritionSetupComplete] = useState(false);
+  const [nutritionSetupAnswers, setNutritionSetupAnswers] = useState<WizardAnswers>({});
   const [editingExerciseId, setEditingExerciseId] = useState('');
   const [newExerciseMediaFile, setNewExerciseMediaFile] = useState<File | null>(null);
   const [editingExerciseMediaId, setEditingExerciseMediaId] = useState('');
@@ -870,6 +877,97 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const selectedTraineeProfile = traineeProfiles.find(profile => profile.traineeId === selectedTraineeId);
   const selectedTraineeMemoryEntries = traineeMemoryEntries.filter(entry => entry.traineeId === selectedTraineeId);
   const selectedAssistantDraft = workoutAssistantDrafts.find(draft => draft.traineeId === selectedTraineeId);
+  const personalTemplatePlans = workoutPlans.filter(plan => !plan.sessionId && plan.traineeId !== selectedTraineeId);
+
+  const personalSetupQuestions: WizardQuestion[] = [
+    { id: 'updateProfile', label: 'האם לעדכן עכשיו את נתוני המתאמן?', description: 'הנתונים נשמרים בזיכרון המקצועי ומשמשים את הצ׳אט.', type: 'choice', required: true, options: [{ value: true, label: 'כן, לעדכן' }, { value: false, label: 'לא, להשתמש בקיים' }] },
+    { id: 'primaryGoal', label: 'מה המטרה העיקרית?', type: 'text', required: true, placeholder: 'לדוגמה: כוח, ירידה במשקל או שיקום', visibleWhen: answers => answers.updateProfile === true },
+    { id: 'experienceLevel', label: 'רמת ניסיון', type: 'choice', required: true, visibleWhen: answers => answers.updateProfile === true, options: [{ value: 'BEGINNER', label: 'מתחיל' }, { value: 'INTERMEDIATE', label: 'בינוני' }, { value: 'ADVANCED', label: 'מתקדם' }] },
+    { id: 'weeklySessions', label: 'כמה אימונים בשבוע?', type: 'number', min: 1, max: 7, required: true, visibleWhen: answers => answers.updateProfile === true },
+    { id: 'preferredWorkoutMinutes', label: 'משך אימון מועדף בדקות', type: 'number', min: 15, max: 180, required: true, visibleWhen: answers => answers.updateProfile === true },
+    { id: 'limitations', label: 'מגבלות, כאבים או תרגילים אסורים', type: 'textarea', placeholder: 'אם אין, כתבו: ללא', visibleWhen: answers => answers.updateProfile === true },
+    { id: 'sourceMode', label: 'איך להתחיל את התוכנית?', type: 'choice', required: true, options: [{ value: 'NEW', label: 'לבנות חדשה', description: 'הצ׳אט יתחיל מנתוני המתאמן' }, { value: 'LIBRARY', label: 'מהמאגר', description: 'נטען תוכנית קיימת כטיוטה' }] },
+    { id: 'templateId', label: 'בחירת תוכנית מהמאגר', type: 'select', required: true, visibleWhen: answers => answers.sourceMode === 'LIBRARY', options: personalTemplatePlans.map(plan => ({ value: plan.id, label: `${plan.coachName} · ${plan.trainingDaysPerWeek || 1} ימים · ${plan.exercises.length} תרגילים` })) },
+    { id: 'saveToLibrary', label: 'בסיום, לשמור עותק גם במאגר?', type: 'choice', required: true, options: [{ value: true, label: 'כן' }, { value: false, label: 'לא' }] }
+  ];
+
+  const completePersonalSetup = (answers: WizardAnswers) => {
+    if (!selectedTrainee) return;
+    const now = new Date().toISOString();
+    if (answers.updateProfile === true) {
+      handleSaveTraineeProfile({
+        traineeId: selectedTrainee.id,
+        primaryGoal: String(answers.primaryGoal || ''),
+        secondaryGoals: selectedTraineeProfile?.secondaryGoals || '',
+        experienceLevel: String(answers.experienceLevel || 'BEGINNER') as TraineeProfessionalProfile['experienceLevel'],
+        weeklySessions: Number(answers.weeklySessions || 1),
+        preferredWorkoutMinutes: Number(answers.preferredWorkoutMinutes || 60),
+        limitations: String(answers.limitations || ''),
+        painAreas: selectedTraineeProfile?.painAreas || '',
+        prohibitedExercises: selectedTraineeProfile?.prohibitedExercises || '',
+        preferredExercises: selectedTraineeProfile?.preferredExercises || '',
+        equipmentPreferences: selectedTraineeProfile?.equipmentPreferences || '',
+        coachSummary: selectedTraineeProfile?.coachSummary || '',
+        updatedAt: now,
+        updatedById: activeUser.id,
+        updatedByName: activeUser.name
+      });
+    }
+    const source = answers.sourceMode === 'LIBRARY' ? workoutPlans.find(plan => plan.id === answers.templateId) : undefined;
+    const baseDraft: WorkoutAssistantDraft = selectedAssistantDraft || {
+      id: `workout-draft-${Date.now()}`,
+      traineeId: selectedTrainee.id,
+      coachId: activeUser.id,
+      coachName: activeUser.name,
+      objective: '',
+      coachNotes: '',
+      exercises: [],
+      trainingDaysPerWeek: 1,
+      dayLabels: ['יום 1'],
+      sourceDocumentIds: [],
+      createdAt: now,
+      updatedAt: now,
+      status: 'DRAFT'
+    };
+    handleUpdateAssistantDraft({
+      ...baseDraft,
+      objective: String(answers.primaryGoal || selectedTraineeProfile?.primaryGoal || baseDraft.objective || ''),
+      trainingDaysPerWeek: source?.trainingDaysPerWeek || Number(answers.weeklySessions || baseDraft.trainingDaysPerWeek || 1),
+      dayLabels: source?.dayLabels || baseDraft.dayLabels,
+      exercises: source ? source.exercises.map((exercise, index) => ({ ...exercise, id: `setup-exercise-${Date.now()}-${index}` })) : baseDraft.exercises,
+      status: 'DRAFT',
+      updatedAt: now
+    });
+    const context = `נתוני הפתיחה נקלטו: ${answers.updateProfile === true ? 'נתוני המתאמן עודכנו' : 'שימוש בנתונים הקיימים'}; ${source ? 'נטענה תוכנית מהמאגר כטיוטה' : 'נבנית תוכנית חדשה'}. אם חסר מידע מהותי, אשאל שאלה קצרה אחת בכל פעם. כתוב “בנה תוכנית אימון” כדי להתחיל.`;
+    onUpdateWorkoutAssistantMessages([...workoutAssistantMessages, { id: `workout-setup-${Date.now()}`, traineeId: selectedTrainee.id, coachId: activeUser.id, coachName: activeUser.name, role: 'ASSISTANT', content: context, createdAt: now }]);
+    setPersonalSetupAnswers(answers);
+    setPersonalSetupComplete(true);
+    setPersonalBuilderPanel('WORKOUT');
+  };
+
+  const nutritionSetupQuestions: WizardQuestion[] = [
+    { id: 'updateProfile', label: 'האם לעדכן את נתוני המתאמן לפני התכנון?', type: 'choice', required: true, options: [{ value: true, label: 'כן' }, { value: false, label: 'לא' }] },
+    { id: 'goal', label: 'מטרת תוכנית התזונה', type: 'text', required: true, placeholder: 'לדוגמה: ירידה מבוקרת במשקל' },
+    { id: 'dailyCalories', label: 'יעד קלורי יומי', type: 'number', min: 800, max: 6000, required: true },
+    { id: 'mealsPerDay', label: 'מספר ארוחות ביום', type: 'number', min: 2, max: 8, required: true },
+    { id: 'dietaryPreferences', label: 'העדפות תזונתיות', type: 'textarea', placeholder: 'צמחוני, כשר, מאכלים מועדפים...' },
+    { id: 'restrictions', label: 'אלרגיות, רגישויות ומגבלות רפואיות', type: 'textarea', placeholder: 'אם אין, כתבו: ללא' },
+    { id: 'sourceMode', label: 'איך להתחיל?', type: 'choice', required: true, options: [{ value: 'NEW', label: 'תוכנית חדשה' }, { value: 'CURRENT', label: 'לעדכן קיימת', description: currentNutrition ? 'התוכנית הקיימת תיטען לעריכה' : 'אין תוכנית קיימת כרגע' }] },
+    { id: 'saveToLibrary', label: 'לשמור את המבנה גם במאגר?', type: 'choice', required: true, options: [{ value: true, label: 'כן' }, { value: false, label: 'לא' }] }
+  ];
+
+  const completeNutritionSetup = (answers: WizardAnswers) => {
+    startEditingNutrition();
+    setNutritionForm(current => ({
+      ...current,
+      goal: String(answers.goal || selectedTraineeProfile?.primaryGoal || ''),
+      dailyCalories: Number(answers.dailyCalories || current.dailyCalories),
+      coachNotes: [current.coachNotes, `מספר ארוחות: ${answers.mealsPerDay || 4}`, `העדפות: ${answers.dietaryPreferences || 'ללא'}`, `מגבלות: ${answers.restrictions || 'ללא'}`].filter(Boolean).join('\n'),
+      assistantMessages: [...current.assistantMessages, { id: `nutrition-setup-${Date.now()}`, role: 'ASSISTANT', createdAt: new Date().toISOString(), content: 'קיבלתי את שאלון הפתיחה. הנתונים הועברו לצ׳אט; אפשר לכתוב “בנה תוכנית תזונה” ואז לעדכן כל ארוחה דרך הצ׳אט או ישירות.' }]
+    }));
+    setNutritionSetupAnswers(answers);
+    setNutritionSetupComplete(true);
+  };
 
   const handleSaveTraineeProfile = (profile: TraineeProfessionalProfile) => {
     const exists = traineeProfiles.some(item => item.traineeId === profile.traineeId);
@@ -944,6 +1042,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     setSelectedTraineeId(traineeId);
     setActiveTab('programs');
     setPersonalBuilderPanel('WORKOUT');
+    setPersonalSetupComplete(false);
+    setPersonalSetupAnswers({});
     setWorkoutPlanningRoute('PERSONAL_BUILDER');
   };
 
@@ -1059,7 +1159,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
             ספריית PDF
           </button>
           <button
-            onClick={() => setActiveTab('nutrition')}
+            onClick={() => { setActiveTab('nutrition'); setNutritionSetupComplete(false); setNutritionSetupAnswers({}); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
               activeTab === 'nutrition' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'
             }`}
@@ -1136,16 +1236,34 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                         פתח מסך אימון
                       </button>
                     )}
-                    <button
-                      onClick={() => { setPersonalBuilderPanel('WORKOUT'); setShowAddExercise(!showAddExercise); }}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1 transition"
-                    >
-                      <Plus size={14} />
-                      הוסף תרגיל חדש
-                    </button>
                   </div>
                 </div>
 
+                {!personalSetupComplete ? <ProgramSetupWizard
+                  title={`הכנת תוכנית אישית ל${selectedTrainee.name}`}
+                  description="נאסוף רק את נתוני הפתיחה הנדרשים. לאחר מכן הצ׳אט ישאל רק על מידע שחסר ויפתח לידו טיוטה מלאה לעריכה."
+                  questions={personalSetupQuestions}
+                  initialAnswers={{
+                    updateProfile: false,
+                    primaryGoal: selectedTraineeProfile?.primaryGoal || '',
+                    experienceLevel: selectedTraineeProfile?.experienceLevel || 'BEGINNER',
+                    weeklySessions: selectedTraineeProfile?.weeklySessions || selectedAssistantDraft?.trainingDaysPerWeek || 3,
+                    preferredWorkoutMinutes: selectedTraineeProfile?.preferredWorkoutMinutes || 60,
+                    limitations: selectedTraineeProfile?.limitations || '',
+                    sourceMode: 'NEW',
+                    saveToLibrary: false,
+                    ...personalSetupAnswers
+                  }}
+                  onComplete={completePersonalSetup}
+                /> : <>
+                <ProgramBriefPanel title="תקציר התכנון האישי" onEdit={() => setPersonalSetupComplete(false)} items={[
+                  { label: 'מתאמן', value: selectedTrainee.name },
+                  { label: 'מטרה', value: personalSetupAnswers.primaryGoal || selectedTraineeProfile?.primaryGoal },
+                  { label: 'אימונים בשבוע', value: personalSetupAnswers.weeklySessions || selectedTraineeProfile?.weeklySessions },
+                  { label: 'משך', value: personalSetupAnswers.preferredWorkoutMinutes ? `${personalSetupAnswers.preferredWorkoutMinutes} דקות` : undefined },
+                  { label: 'מקור', value: personalSetupAnswers.sourceMode === 'LIBRARY' ? 'תוכנית מהמאגר' : 'תוכנית חדשה' },
+                  { label: 'שמירה במאגר', value: personalSetupAnswers.saveToLibrary === true ? 'כן' : 'לא' }
+                ]} />
                 <nav className="personal-builder-menu" aria-label="אזורי בניית תוכנית אישית">
                   <button type="button" onClick={() => setPersonalBuilderPanel('WORKOUT')} className={personalBuilderPanel === 'WORKOUT' ? 'active' : ''}><Dumbbell size={18} /><span><strong>התוכנית והצ׳אט</strong><small>צפייה, בנייה ועריכה</small></span></button>
                   <button type="button" onClick={() => setPersonalBuilderPanel('PROFILE')} className={personalBuilderPanel === 'PROFILE' ? 'active' : ''}><UserCheck size={18} /><span><strong>נתוני המתאמן</strong><small>מטרות, מגבלות וזיכרון</small></span></button>
@@ -1168,7 +1286,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     onPublish={handlePublishAssistantDraft}
                   />}
 
-                {personalBuilderPanel === 'WORKOUT' && <section className="rounded-2xl border border-amber-300/30 bg-zinc-900 p-3 text-white">
+                {personalBuilderPanel === 'WORKOUT' && !selectedAssistantDraft && <section className="rounded-2xl border border-amber-300/30 bg-zinc-900 p-3 text-white">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h4 className="text-sm font-black text-white">ימי התוכנית</h4>
@@ -1238,7 +1356,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 {personalBuilderPanel === 'LIBRARY' && exerciseLibrary.length === 0 && <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900 p-8 text-center text-xs text-zinc-400">המאגר עדיין ריק. תרגילים שתשמרו בתוכניות יופיעו כאן לשימוש חוזר.</div>}
 
                 {/* ADD EXERCISE FORM */}
-                {personalBuilderPanel === 'WORKOUT' && showAddExercise && (
+                {personalBuilderPanel === 'WORKOUT' && !selectedAssistantDraft && showAddExercise && (
                   <form onSubmit={handleAddExerciseToPlan} className="bg-slate-50 border border-slate-100 rounded-lg p-5 space-y-4" id="add-exercise-form">
                     <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                       <h4 className="text-xs font-bold text-slate-800">הוספת תרגיל ובחירת קטגוריות / קבוצת שרירים</h4>
@@ -1400,7 +1518,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 )}
 
                 {/* EXERCISES DISPLAY LIST */}
-                {personalBuilderPanel === 'WORKOUT' && (traineeWorkoutPlan && traineeWorkoutPlan.exercises.length > 0 ? (
+                {personalBuilderPanel === 'WORKOUT' && !selectedAssistantDraft && (traineeWorkoutPlan && traineeWorkoutPlan.exercises.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {traineeWorkoutPlan.exercises.filter(exercise => (exercise.dayNumber || 1) === selectedWorkoutDay).map(ex => (
                       <div key={ex.id} className="relative flex flex-col justify-between rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-white" id={`exercise-card-${ex.id}`}>
@@ -1509,6 +1627,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     אין תרגילים בתוכנית כעת. לחץ על "הוסף תרגיל חדש" כדי להתחיל לתכנת!
                   </div>
                 ))}
+                </>}
               </div>
             )}
 
@@ -1564,17 +1683,61 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   )}
                 </div>
 
+                {!nutritionSetupComplete ? <ProgramSetupWizard
+                  title={`שאלון פתיחה לתוכנית התזונה של ${selectedTrainee.name}`}
+                  description="הנתונים יועברו לעוזר התזונה ויישארו זמינים לעריכה. לאחר השאלון ניתן לשנות את הארוחות בצ׳אט או ישירות בתוכנית."
+                  questions={nutritionSetupQuestions}
+                  initialAnswers={{
+                    updateProfile: false,
+                    goal: currentNutrition?.goal || selectedTraineeProfile?.primaryGoal || '',
+                    dailyCalories: currentNutrition?.dailyCalories || 2000,
+                    mealsPerDay: currentNutrition?.categories?.length || 4,
+                    dietaryPreferences: '',
+                    restrictions: selectedTraineeProfile?.limitations || '',
+                    sourceMode: currentNutrition ? 'CURRENT' : 'NEW',
+                    saveToLibrary: false,
+                    ...nutritionSetupAnswers
+                  }}
+                  onComplete={completeNutritionSetup}
+                /> : <>
+                <ProgramBriefPanel title="תקציר תכנון התזונה" onEdit={() => setNutritionSetupComplete(false)} items={[
+                  { label: 'מתאמן', value: selectedTrainee.name },
+                  { label: 'מטרה', value: nutritionSetupAnswers.goal },
+                  { label: 'קלוריות', value: nutritionSetupAnswers.dailyCalories },
+                  { label: 'ארוחות ביום', value: nutritionSetupAnswers.mealsPerDay },
+                  { label: 'מגבלות', value: nutritionSetupAnswers.restrictions },
+                  { label: 'שמירה במאגר', value: nutritionSetupAnswers.saveToLibrary === true ? 'כן' : 'לא' }
+                ]} />
                 <NutritionAssistantPanel
+                  activeUser={activeUser}
                   trainee={selectedTrainee}
                   profile={selectedTraineeProfile}
                   dailyCalories={Number(nutritionForm.dailyCalories)}
                   proteinGrams={Number(nutritionForm.proteinGrams)}
                   carbsGrams={Number(nutritionForm.carbsGrams)}
                   fatGrams={Number(nutritionForm.fatGrams)}
+                  hydrationLiters={Number(nutritionForm.hydrationLiters)}
+                  fiberGrams={Number(nutritionForm.fiberGrams)}
+                  goal={nutritionForm.goal}
+                  coachNotes={nutritionForm.coachNotes}
+                  mealsDescription={nutritionForm.mealsDescription}
+                  categories={nutritionForm.categories}
                   messages={nutritionForm.assistantMessages}
                   onUpdateMessages={assistantMessages => setNutritionForm(current => ({ ...current, assistantMessages }))}
-                  onApplyCategories={categories => {
-                    setNutritionForm(current => ({ ...current, categories }));
+                  onApplyPlan={plan => {
+                    setNutritionForm(current => ({
+                      ...current,
+                      goal: plan.goal,
+                      dailyCalories: plan.dailyCalories,
+                      proteinGrams: plan.proteinGrams,
+                      carbsGrams: plan.carbsGrams,
+                      fatGrams: plan.fatGrams,
+                      hydrationLiters: plan.hydrationLiters,
+                      fiberGrams: plan.fiberGrams,
+                      coachNotes: plan.coachNotes,
+                      mealsDescription: plan.mealsDescription,
+                      categories: plan.categories
+                    }));
                     setIsEditingNutrition(true);
                   }}
                 />
@@ -1729,6 +1892,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     לא הוגדרה תוכנית תזונה למתאמן זה. לחץ על "הרכב תפריט תזונה ראשון" למעלה כדי לבנות תוכנית!
                   </div>
                 )}
+                </>}
               </div>
             )}
 

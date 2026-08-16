@@ -4,6 +4,8 @@ import {
   GroupWorkoutExercise,
   GroupWorkoutProgram,
   GymEquipment,
+  NutritionAssistantMessage,
+  NutritionMealCategory,
   TraineeMemoryEntry,
   TraineeProfessionalProfile,
   User,
@@ -39,6 +41,20 @@ export interface GroupWorkoutAiResult {
   stations: Array<{ name: string; exercises: AiGroupExercise[] }>;
 }
 
+export interface NutritionAiResult {
+  assistantMessage: string;
+  goal: string;
+  dailyCalories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
+  hydrationLiters: number;
+  fiberGrams: number;
+  coachNotes: string;
+  mealsDescription: string;
+  categories: Array<Omit<NutritionMealCategory, 'id'>>;
+}
+
 interface PersonalWorkoutAiRequest {
   message: string;
   actor: User;
@@ -62,6 +78,26 @@ interface GroupWorkoutAiRequest {
     professionalProfile?: TraineeProfessionalProfile;
     confirmedMemory: TraineeMemoryEntry[];
   }>;
+}
+
+interface NutritionAiRequest {
+  message: string;
+  actor: User;
+  trainee: User;
+  professionalProfile?: TraineeProfessionalProfile;
+  conversation: NutritionAssistantMessage[];
+  currentDraft: {
+    goal: string;
+    dailyCalories: number;
+    proteinGrams: number;
+    carbsGrams: number;
+    fatGrams: number;
+    hydrationLiters: number;
+    fiberGrams: number;
+    coachNotes: string;
+    mealsDescription: string;
+    categories: NutritionMealCategory[];
+  };
 }
 
 const aiApiBase = () => (import.meta.env.VITE_AI_API_URL || import.meta.env.VITE_PAYMENT_API_URL || '').replace(/\/$/, '');
@@ -129,4 +165,14 @@ export const generateGroupWorkoutWithAi = (request: GroupWorkoutAiRequest) => re
     professionalProfile: participant.professionalProfile,
     confirmedMemory: publicMemory(participant.confirmedMemory)
   }))
+});
+
+export const generateNutritionWithAi = (request: NutritionAiRequest) => requestWorkoutAi<NutritionAiResult>({
+  scope: 'NUTRITION',
+  message: request.message,
+  actor: publicUserContext(request.actor),
+  trainee: publicUserContext(request.trainee),
+  professionalProfile: request.professionalProfile,
+  conversation: request.conversation.slice(-16).map(message => ({ role: message.role, content: message.content })),
+  currentDraft: request.currentDraft
 });

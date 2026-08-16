@@ -88,6 +88,44 @@ const groupSchema = {
   }
 };
 
+const nutritionMealProperties = {
+  title: { type: 'string' },
+  suggestedTime: { type: 'string' },
+  foods: { type: 'string' },
+  calories: { type: 'integer' },
+  proteinGrams: { type: 'integer' },
+  carbsGrams: { type: 'integer' },
+  fatGrams: { type: 'integer' },
+  notes: { type: 'string' }
+};
+
+const nutritionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['assistantMessage', 'goal', 'dailyCalories', 'proteinGrams', 'carbsGrams', 'fatGrams', 'hydrationLiters', 'fiberGrams', 'coachNotes', 'mealsDescription', 'categories'],
+  properties: {
+    assistantMessage: { type: 'string' },
+    goal: { type: 'string' },
+    dailyCalories: { type: 'integer' },
+    proteinGrams: { type: 'integer' },
+    carbsGrams: { type: 'integer' },
+    fatGrams: { type: 'integer' },
+    hydrationLiters: { type: 'number' },
+    fiberGrams: { type: 'integer' },
+    coachNotes: { type: 'string' },
+    mealsDescription: { type: 'string' },
+    categories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: Object.keys(nutritionMealProperties),
+        properties: nutritionMealProperties
+      }
+    }
+  }
+};
+
 const readOutputText = response => {
   if (typeof response.output_text === 'string' && response.output_text) return response.output_text;
   for (const item of response.output || []) {
@@ -146,12 +184,12 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
     assertAllowedOrigin(request, env);
     enforceRateLimit(request, env);
     const body = await request.json();
-    if (!['PERSONAL', 'GROUP'].includes(body.scope) || typeof body.message !== 'string' || !body.message.trim()) {
+    if (!['PERSONAL', 'GROUP', 'NUTRITION'].includes(body.scope) || typeof body.message !== 'string' || !body.message.trim()) {
       return json({ message: 'בקשת ה־AI אינה תקינה.' }, 400, headers);
     }
     const context = cleanContext(body);
-    const schema = body.scope === 'PERSONAL' ? personalSchema : groupSchema;
-    const schemaName = body.scope === 'PERSONAL' ? 'personal_workout_plan' : 'group_workout_plan';
+    const schema = body.scope === 'PERSONAL' ? personalSchema : body.scope === 'GROUP' ? groupSchema : nutritionSchema;
+    const schemaName = body.scope === 'PERSONAL' ? 'personal_workout_plan' : body.scope === 'GROUP' ? 'group_workout_plan' : 'nutrition_plan';
     const openAiResponse = await fetch(OPENAI_RESPONSES_URL, {
       method: 'POST',
       headers: {
@@ -164,7 +202,7 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
         safety_identifier: await privacySafeIdentifier(body.actor?.id || body.trainee?.id),
         input: [
           { role: 'system', content: workoutCoachPrompt },
-          { role: 'user', content: `עדכן את טיוטת תוכנית האימון בהתאם לבקשה ולהקשר הבא:\n${JSON.stringify(context)}` }
+          { role: 'user', content: `עדכן את הטיוטה בהתאם לבקשה ולהקשר הבא. אם זהו שאלון תזונה, החזר הצעה שמרנית לבדיקת איש מקצוע ואישור המאמן בלבד:\n${JSON.stringify(context)}` }
         ],
         text: {
           format: {

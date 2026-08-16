@@ -25,6 +25,7 @@ import { ExerciseMedia } from './ExerciseMedia';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import { getGroupWorkoutStatus, GroupWorkoutLiveStatus, sendGroupWorkoutCommand, subscribeToGroupWorkoutStatus } from '../data/groupWorkoutRemote';
 import { generateGroupWorkoutWithAi } from '../data/workoutAi';
+import { ProgramBriefPanel, ProgramSetupWizard, WizardAnswers, WizardQuestion } from './ProgramSetupWizard';
 
 interface GroupWorkoutProgramManagerProps {
   activeUser: User;
@@ -108,6 +109,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   const [assistantMessages, setAssistantMessages] = useState<string[]>([
     'בחרו תוכנית או צרו חדשה, ואז כתבו כיצד תרצו לבנות או לשנות את האימון.'
   ]);
+  const [setupComplete, setSetupComplete] = useState(false);
+  const [setupAnswers, setSetupAnswers] = useState<WizardAnswers>({});
   const handledInitialAudienceRef = useRef('');
   const selectedProgram = programs.find(program => program.id === selectedProgramId);
   const groupSessions = useMemo(() => sessions
@@ -201,6 +204,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     };
     onUpdatePrograms([program, ...programs]);
     setSelectedProgramId(program.id);
+    setSetupAnswers({});
+    setSetupComplete(false);
     if (session) setSelectedSessionId(session.id);
   };
 
@@ -232,6 +237,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     };
     onUpdatePrograms([assigned, ...programs]);
     setSelectedProgramId(assigned.id);
+    setSetupAnswers({ sourceMode: 'LIBRARY', templateId });
+    setSetupComplete(false);
     setSelectedSessionId(session.id);
   };
 
@@ -565,6 +572,62 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     void runAssistantCommand(request);
   };
 
+  const setupQuestions: WizardQuestion[] = [
+    { id: 'title', label: 'שם האימון', type: 'text', required: true, placeholder: 'לדוגמה: כוח וסבולת – ערב' },
+    { id: 'groupName', label: 'שם הקבוצה', type: 'text', required: true, placeholder: 'לדוגמה: אימון בנים ערב' },
+    { id: 'durationMinutes', label: 'משך האימון בדקות', type: 'number', required: true, min: 15, max: 180 },
+    { id: 'trainingType', label: 'סוג האימון', type: 'select', required: true, options: ['כוח', 'פונקציונלי', 'סבולת', 'Tabata', 'תחנות', 'משולב'].map(value => ({ value, label: value })) },
+    { id: 'mode', label: 'מבנה האימון', type: 'choice', required: true, options: [{ value: 'LINEAR', label: 'רצף משותף', description: 'כל הקבוצה מבצעת אותו רצף' }, { value: 'ROTATING_GROUPS', label: 'תתי־קבוצות', description: 'תחנות מתחלפות בזמנים משותפים' }] },
+    { id: 'subgroupCount', label: 'כמה תתי־קבוצות / תחנות?', type: 'number', required: true, min: 2, max: 12, visibleWhen: answers => answers.mode === 'ROTATING_GROUPS' },
+    { id: 'exerciseCount', label: 'כמה תרגילים בסך הכול?', type: 'number', required: true, min: 1, max: 60 },
+    { id: 'rounds', label: 'כמה מחזורים / סבבים?', type: 'number', required: true, min: 1, max: 20 },
+    { id: 'workSeconds', label: 'זמן עבודה בשניות', type: 'number', required: true, min: 5, max: 900 },
+    { id: 'restSeconds', label: 'זמן מנוחה בשניות', type: 'number', required: true, min: 0, max: 900 },
+    { id: 'transitionSeconds', label: 'זמן מעבר בין תחנות', type: 'number', min: 0, max: 900, visibleWhen: answers => answers.mode === 'ROTATING_GROUPS' },
+    { id: 'sourceMode', label: 'לבנות חדשה או להתחיל מהמאגר?', type: 'choice', required: true, options: [{ value: 'NEW', label: 'חדשה' }, { value: 'LIBRARY', label: 'מהמאגר' }] },
+    { id: 'templateId', label: 'בחירת תוכנית מהמאגר', type: 'select', required: true, visibleWhen: answers => answers.sourceMode === 'LIBRARY', options: templatePrograms.filter(program => program.id !== selectedProgramId).map(program => ({ value: program.id, label: `${program.title} · ${programExerciseCount(program)} תרגילים` })) },
+    { id: 'notes', label: 'מטרה ודגשים למאמן', type: 'textarea', placeholder: 'ציוד, רמה, מגבלות או דגש מיוחד' }
+  ];
+
+  const completeSetup = (answers: WizardAnswers) => {
+    if (!selectedProgram) return;
+    const template = answers.sourceMode === 'LIBRARY' ? programs.find(program => program.id === answers.templateId) : undefined;
+    const mode = String(answers.mode || selectedProgram.mode || 'LINEAR') as 'LINEAR' | 'ROTATING_GROUPS';
+    const count = Math.min(60, Math.max(1, Number(answers.exerciseCount || 1)));
+    const subgroupCount = Math.min(12, Math.max(2, Number(answers.subgroupCount || 3)));
+    const work = Number(answers.workSeconds || 40);
+    const rest = Number(answers.restSeconds || 20);
+    const blankExercises = Array.from({ length: count }, (_, index) => createExercise(index, work, rest));
+    const stations: GroupWorkoutStation[] = mode === 'ROTATING_GROUPS'
+      ? Array.from({ length: subgroupCount }, (_, stationIndex) => ({
+          id: `setup-station-${Date.now()}-${stationIndex}`,
+          name: `תחנה ${stationIndex + 1}`,
+          exercises: blankExercises.filter((_, index) => index % subgroupCount === stationIndex)
+        }))
+      : [];
+    const now = new Date().toISOString();
+    const updated: GroupWorkoutProgram = {
+      ...selectedProgram,
+      title: String(answers.title || selectedProgram.title),
+      groupName: String(answers.groupName || selectedProgram.groupName),
+      description: [String(answers.trainingType || ''), String(answers.notes || ''), `משך מתוכנן: ${answers.durationMinutes || 60} דקות`].filter(Boolean).join(' · '),
+      mode: template?.mode || mode,
+      exercises: template ? template.exercises.map((exercise, index) => ({ ...exercise, id: `group-template-ex-${Date.now()}-${index}` })) : mode === 'LINEAR' ? blankExercises : [],
+      stations: template ? (template.stations || []).map((station, stationIndex) => ({ ...station, id: `group-template-station-${Date.now()}-${stationIndex}`, exercises: station.exercises.map((exercise, index) => ({ ...exercise, id: `group-template-station-ex-${Date.now()}-${stationIndex}-${index}` })) })) : stations,
+      participantGroupNames: mode === 'ROTATING_GROUPS' ? Array.from({ length: subgroupCount }, (_, index) => `קבוצה ${index + 1}`) : selectedProgram.participantGroupNames,
+      roundsPerStation: Number(answers.rounds || 3),
+      defaultWorkSeconds: work,
+      defaultRestSeconds: rest,
+      transitionSeconds: Number(answers.transitionSeconds || 30),
+      status: 'DRAFT',
+      updatedAt: now
+    };
+    onUpdatePrograms(programs.map(program => program.id === updated.id ? updated : program));
+    setAssistantMessages([`קיבלתי את שאלון הפתיחה: ${answers.trainingType}, ${answers.durationMinutes} דקות, ${count} תרגילים ו־${answers.rounds} סבבים. כתוב “בנה תוכנית אימון” ואמלא את התרגילים; אחר כך אפשר לבקש שינויים או לערוך כל תרגיל ישירות.`]);
+    setSetupAnswers(answers);
+    setSetupComplete(true);
+  };
+
   return (
     <section className="space-y-5" dir="rtl">
       <div className="rounded-2xl bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-lg">
@@ -578,6 +641,37 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         </div>
       </div>
 
+      {selectedProgram && !setupComplete ? <ProgramSetupWizard
+        title="שאלון פתיחה לאימון הקבוצתי"
+        description="הגדרת הבסיס פעם אחת. לאחר מכן הצ׳אט יבנה את התרגילים והתחנות, וכל פרט יישאר ניתן לעריכה ישירה."
+        questions={setupQuestions}
+        initialAnswers={{
+          title: selectedProgram.title,
+          groupName: selectedProgram.groupName,
+          durationMinutes: 60,
+          trainingType: 'כוח',
+          mode: selectedProgram.mode || 'LINEAR',
+          subgroupCount: Math.max(2, selectedProgram.stations?.length || 3),
+          exerciseCount: Math.max(1, programExerciseCount(selectedProgram) || 12),
+          rounds: selectedProgram.roundsPerStation || 3,
+          workSeconds: selectedProgram.defaultWorkSeconds || 40,
+          restSeconds: selectedProgram.defaultRestSeconds || 20,
+          transitionSeconds: selectedProgram.transitionSeconds || 30,
+          sourceMode: 'NEW',
+          notes: selectedProgram.description,
+          ...setupAnswers
+        }}
+        onComplete={completeSetup}
+      /> : <>
+      {selectedProgram && setupComplete && <ProgramBriefPanel title="תקציר האימון הקבוצתי" onEdit={() => setSetupComplete(false)} items={[
+        { label: 'שם', value: setupAnswers.title },
+        { label: 'קבוצה', value: setupAnswers.groupName },
+        { label: 'סוג', value: setupAnswers.trainingType },
+        { label: 'משך', value: `${setupAnswers.durationMinutes || 60} דקות` },
+        { label: 'מבנה', value: setupAnswers.mode === 'ROTATING_GROUPS' ? 'תתי־קבוצות ותחנות' : 'רצף משותף' },
+        { label: 'תרגילים', value: setupAnswers.exerciseCount },
+        { label: 'סבבים', value: setupAnswers.rounds }
+      ]} />}
       <section className="rounded-2xl border border-amber-400/25 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2"><span className="rounded-xl bg-amber-400/15 p-2 text-amber-300"><MessageCircle size={19} /></span><div><h3 className="text-sm font-black text-white">עוזר בניית אימון קבוצתי</h3><p className="text-[10px] text-zinc-400">הצ׳אט מעדכן את הטיוטה, והמאמן מאשר ומפרסם</p></div></div>
@@ -777,6 +871,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
           <div className="flex min-h-96 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><div><UsersRound className="mx-auto mb-3 text-slate-400" size={38} /><p className="font-black text-slate-700">צרו קבוצה כדי להתחיל לבנות תוכנית</p></div></div>
         )}
       </div>
+      </>}
     </section>
   );
 };
