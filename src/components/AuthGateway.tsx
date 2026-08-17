@@ -378,10 +378,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       <main className="auth-gateway" dir="rtl">
         <section className="auth-hero">
           <div className="auth-brand">
-            <RubisLogo size={58} className="auth-brand-logo" />
-            <div>
-              <strong>BALY WELLNESS</strong>
-            </div>
+            <RubisLogo size={190} className="auth-brand-logo" />
           </div>
           <div className="auth-kicker">המקום שלך להתחזק, להתאזן ולהרגיש טוב</div>
           <h1>האימון שלך.<br />בקצב שלך.</h1>
@@ -391,6 +388,16 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
             <div><ShieldCheck size={18} /><span>ליווי מקצועי</span></div>
             <div><MessageSquareText size={18} /><span>קשר ישיר עם המאמן</span></div>
           </div>
+          <section className="auth-contact" aria-label="יצירת קשר עם המועדון">
+            <div>
+              <span>יצירת קשר עם המועדון</span>
+              <strong>מנהל: רובי באלי</strong>
+              <a href="tel:+972546995885" dir="ltr"><Phone size={16} /> 054-6995885</a>
+            </div>
+            <a className="auth-whatsapp" href="https://wa.me/972546995885" target="_blank" rel="noopener noreferrer" aria-label="שליחת הודעת WhatsApp לרובי באלי">
+              <MessageSquareText size={19} /> הודעה ב־WhatsApp
+            </a>
+          </section>
           <div className="auth-actions">
             <button className="auth-primary" onClick={() => openScreen('register')}>
               <UserPlus size={18} /> הרשמה למועדון
@@ -411,7 +418,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         <button className="auth-back" onClick={() => openScreen('welcome')}>
           <ArrowLeft size={18} /> חזרה
         </button>
-        <div className="auth-mini-brand">BALY WELLNESS</div>
+        <RubisLogo size={145} className="auth-panel-logo" />
 
         {screen === 'login' && (
           <>

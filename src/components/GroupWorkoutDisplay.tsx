@@ -14,6 +14,7 @@ import { GroupWorkoutProgram } from '../types';
 import { RotatingGroupWorkoutDisplay } from './RotatingGroupWorkoutDisplay';
 import { ExerciseMedia } from './ExerciseMedia';
 import { LiveClock } from './LiveClock';
+import { RubisLogo } from './RubisLogo';
 
 interface GroupWorkoutDisplayProps {
   program?: GroupWorkoutProgram;
@@ -184,7 +185,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
   if (!program) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-center text-white" dir="rtl">
-        <div><Dumbbell className="mx-auto mb-4 text-slate-500" size={52} /><h1 className="text-2xl font-black">תוכנית האימון לא נמצאה במכשיר זה</h1><p className="mt-3 text-slate-400">פתחו את מסך האימון מתוך מערכת הניהול באותו דפדפן.</p><button onClick={exitDisplay} className="mt-6 rounded-xl bg-white px-5 py-3 font-black text-slate-900">חזרה למערכת</button></div>
+        <div><RubisLogo size={190} className="mx-auto mb-6" /><Dumbbell className="mx-auto mb-4 text-slate-500" size={52} /><h1 className="text-2xl font-black">תוכנית האימון לא נמצאה במכשיר זה</h1><p className="mt-3 text-slate-400">פתחו את מסך האימון מתוך מערכת הניהול באותו דפדפן.</p><button onClick={exitDisplay} className="mt-6 rounded-xl bg-white px-5 py-3 font-black text-slate-900">חזרה למערכת</button></div>
       </main>
     );
   }
@@ -192,7 +193,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
   if (!currentExercise) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-center text-white" dir="rtl">
-        <div><h1 className="text-3xl font-black">אין תרגילים בתוכנית</h1><button onClick={exitDisplay} className="mt-6 rounded-xl bg-white px-5 py-3 font-black text-slate-900">חזרה למערכת</button></div>
+        <div><RubisLogo size={190} className="mx-auto mb-6" /><h1 className="text-3xl font-black">אין תרגילים בתוכנית</h1><button onClick={exitDisplay} className="mt-6 rounded-xl bg-white px-5 py-3 font-black text-slate-900">חזרה למערכת</button></div>
       </main>
     );
   }
@@ -210,7 +211,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
     <main className="h-screen overflow-hidden bg-slate-950 text-white" dir="rtl">
       <div className="flex h-screen min-h-0 flex-col overflow-hidden">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-950 px-5 py-3 lg:px-8">
-          <div><p className="text-sm font-black text-indigo-300">{program.groupName}</p><h1 className="text-xl font-black lg:text-2xl">{program.title}</h1></div>
+          <div className="flex items-center gap-4"><RubisLogo size={105} /><div><p className="text-sm font-black text-indigo-300">{program.groupName}</p><h1 className="text-xl font-black lg:text-2xl">{program.title}</h1></div></div>
           <div className="flex items-center gap-2">
             <span className="hidden rounded-lg bg-white/5 px-3 py-2 text-xs text-slate-400 sm:block">רווח: הפעלה/עצירה · חצים: מעבר תחנה · R: איפוס</span>
             <button onClick={toggleFullscreen} className="rounded-lg bg-white/10 p-2.5 hover:bg-white/20" title="מסך מלא"><Maximize size={20} /></button>
