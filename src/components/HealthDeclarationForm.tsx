@@ -1,12 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, HeartPulse, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileUp, HeartPulse, ShieldCheck } from 'lucide-react';
 
 export type HealthDeclarationResult = {
   answers: Record<string, 'YES' | 'NO'>;
   signatureName: string;
   parentConsent: boolean;
   parentName?: string;
+  parentIdNumber?: string;
   requiresMedicalCertificate: boolean;
+  medicalCertificateFileName?: string;
+  medicalCertificateDataUrl?: string;
   signed: boolean;
 };
 
@@ -43,7 +46,10 @@ export const HealthDeclarationForm: React.FC<HealthDeclarationFormProps> = ({
   const [signatureName, setSignatureName] = useState(fullName);
   const [declarationApproved, setDeclarationApproved] = useState(false);
   const [parentName, setParentName] = useState('');
+  const [parentIdNumber, setParentIdNumber] = useState('');
   const [parentConsent, setParentConsent] = useState(false);
+  const [medicalCertificateFileName, setMedicalCertificateFileName] = useState('');
+  const [medicalCertificateDataUrl, setMedicalCertificateDataUrl] = useState('');
   const [error, setError] = useState('');
   const requiresMedicalCertificate = useMemo(() => Object.values(answers).includes('YES'), [answers]);
   const allAnswered = QUESTIONS.every(question => answers[question.id]);
@@ -52,14 +58,17 @@ export const HealthDeclarationForm: React.FC<HealthDeclarationFormProps> = ({
   const handleSubmit = () => {
     if (!allAnswered) return setError('יש לענות כן או לא על כל שאלות השאלון הרפואי.');
     if (!signatureName.trim() || !declarationApproved) return setError('יש להזין שם מלא ולאשר את ההצהרה והחתימה.');
-    if (isMinor && (!parentName.trim() || !parentConsent)) return setError('למתאמן שטרם מלאו לו 18 נדרשים שם ואישור של אחד ההורים.');
+    if (isMinor && (!parentName.trim() || !/^\d{9}$/.test(parentIdNumber.replace(/\D/g, '')) || !parentConsent)) return setError('למתאמן שטרם מלאו לו 18 נדרשים שם הורה, מספר תעודת זהות בן 9 ספרות ואישור הורה.');
     setError('');
     onComplete({
       answers,
       signatureName: signatureName.trim(),
       parentConsent: isMinor ? parentConsent : false,
       parentName: isMinor ? parentName.trim() : undefined,
+      parentIdNumber: isMinor ? parentIdNumber.replace(/\D/g, '') : undefined,
       requiresMedicalCertificate,
+      medicalCertificateFileName: requiresMedicalCertificate ? medicalCertificateFileName : undefined,
+      medicalCertificateDataUrl: requiresMedicalCertificate ? medicalCertificateDataUrl : undefined,
       signed: !requiresMedicalCertificate
     });
   };
@@ -117,12 +126,41 @@ export const HealthDeclarationForm: React.FC<HealthDeclarationFormProps> = ({
           <strong>הסכמה בכתב של אחד מהורי הקטין</strong>
           <p>מתאמן שלא מלאו לו 18 שנה יצרף להצהרת הבריאות הסכמה חתומה בידי אחד מהוריו.</p>
           <label>שם ההורה<input value={parentName} onChange={event => setParentName(event.target.value)} placeholder="שם מלא של ההורה" /></label>
+          <label>מספר תעודת זהות של ההורה<input inputMode="numeric" maxLength={9} value={parentIdNumber} onChange={event => setParentIdNumber(event.target.value.replace(/\D/g, '').slice(0, 9))} placeholder="9 ספרות" /></label>
           <label className="health-consent"><input type="checkbox" checked={parentConsent} onChange={event => setParentConsent(event.target.checked)} /><span>אני מסכים/ה כי המתאמן יתאמן בחדר הכושר בסוגי האימונים המותרים לו.</span></label>
         </div>
       )}
 
       {requiresMedicalCertificate && (
-        <div className="health-certificate-warning"><AlertTriangle size={18} /><span>סימון תשובה חיובית מחייב הצגת תעודה רפואית ואישור המועדון. עד לאישור התעודה, ההרשמה והכניסה לאימונים יישארו חסומות.</span></div>
+        <div className="health-medical-upload">
+          <div className="health-certificate-warning"><AlertTriangle size={18} /><span>סימון תשובה חיובית מחייב הצגת תעודה רפואית ואישור המועדון. עד לאישור התעודה, ההרשמה והכניסה לאימונים יישארו חסומות.</span></div>
+          <label className="health-upload-button">
+            <FileUp size={18} />
+            <span>{medicalCertificateFileName || 'העלאת צילום אישור רופא (PDF או תמונה)'}</span>
+            <input
+              type="file"
+              accept="application/pdf,image/png,image/jpeg,image/webp"
+              onChange={event => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                if (file.size > 5 * 1024 * 1024) {
+                  setError('גודל אישור הרופא המרבי הוא 5MB.');
+                  return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                  if (typeof reader.result === 'string') {
+                    setMedicalCertificateFileName(file.name);
+                    setMedicalCertificateDataUrl(reader.result);
+                    setError('');
+                  }
+                };
+                reader.readAsDataURL(file);
+              }}
+            />
+          </label>
+          <small>אפשר לשמור את השאלון גם בלי מסמך ולהעלות אותו מאוחר יותר; האימון יישאר חסום עד לאישור מנהל.</small>
+        </div>
       )}
       {error && <div className="health-form-error">{error}</div>}
       <button type="button" className="health-submit" onClick={handleSubmit}>

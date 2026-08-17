@@ -16,6 +16,8 @@ export interface PendingCardcomPayment {
   familyBillingMode?: FamilyBillingMode;
   familyMemberPlans?: FamilyMemberPlanSelection[];
   discountCode?: string;
+  planAmount?: number;
+  planLabel?: string;
 }
 
 interface CreatePaymentRequest {
@@ -32,6 +34,8 @@ interface CreatePaymentRequest {
   familyBillingMode?: FamilyBillingMode;
   familyMemberPlans?: FamilyMemberPlanSelection[];
   discountCode?: string;
+  planAmount?: number;
+  planLabel?: string;
 }
 
 export interface VerifiedCardcomPayment {
@@ -69,7 +73,9 @@ export const startCardcomPayment = async (request: CreatePaymentRequest) => {
       familyMembersCount: request.familyMembersCount,
       familyBillingMode: request.familyBillingMode,
       familyMemberPlans: request.familyMemberPlans,
-      discountCode: request.discountCode
+      discountCode: request.discountCode,
+      planAmount: request.planAmount,
+      planLabel: request.planLabel
     })
   });
   const result = await response.json().catch(() => ({}));

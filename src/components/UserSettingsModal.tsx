@@ -21,6 +21,7 @@ interface UserSettingsModalProps {
   isAdminMode?: boolean; // If opened from admin panel to edit another user
   initialSection?: 'profile' | 'health' | 'family';
   onOpenFamilyPurchase?: () => void;
+  onMedicalCertificateSubmitted?: (fileName?: string) => void;
 }
 
 export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
@@ -34,7 +35,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   onUpdateDiscountCodes,
   isAdminMode = false,
   initialSection = 'profile',
-  onOpenFamilyPurchase
+  onOpenFamilyPurchase,
+  onMedicalCertificateSubmitted
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'family'>('profile');
   const [showHealthDeclaration, setShowHealthDeclaration] = useState(false);
@@ -261,7 +263,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       medicalCertificateApproved: false,
       parentConsent: result.parentConsent,
       parentName: result.parentName,
-      signatureName: result.signatureName
+      parentIdNumber: result.parentIdNumber,
+      signatureName: result.signatureName,
+      medicalCertificateFileName: result.medicalCertificateFileName,
+      medicalCertificateDataUrl: result.medicalCertificateDataUrl
     });
     const updated: User = {
       ...currentUser,
@@ -272,7 +277,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       healthDeclarationMedicalCertificateApproved: false,
       healthDeclarationParentConsent: result.parentConsent,
       healthDeclarationParentName: result.parentName,
+      healthDeclarationParentIdNumber: result.parentIdNumber,
       healthDeclarationSignatureName: result.signatureName,
+      healthDeclarationMedicalCertificateFileName: result.medicalCertificateFileName,
+      healthDeclarationMedicalCertificateDataUrl: result.medicalCertificateDataUrl,
       healthDeclarationHistory: [record, ...(currentUser.healthDeclarationHistory || [])]
     };
     onUpdateUser(updated);
@@ -280,6 +288,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       onUpdateAllUsers(allUsers.map(user => user.id === updated.id ? updated : user));
     }
     setShowHealthDeclaration(false);
+    if (result.requiresMedicalCertificate) onMedicalCertificateSubmitted?.(result.medicalCertificateFileName);
     setMsg(result.signed
       ? { type: 'success', text: 'הצהרת הבריאות נחתמה מחדש ותוקפה הוארך בשנה.' }
       : { type: 'error', text: 'השאלון נשמר. נדרשת תעודה רפואית ואישור המועדון לפני כניסה לאימונים.' });
@@ -357,7 +366,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       healthDeclarationMedicalCertificateApproved: false,
       healthDeclarationParentConsent: subHealthDeclaration?.parentConsent,
       healthDeclarationParentName: subHealthDeclaration?.parentName,
+      healthDeclarationParentIdNumber: subHealthDeclaration?.parentIdNumber,
       healthDeclarationSignatureName: subHealthDeclaration?.signatureName,
+      healthDeclarationMedicalCertificateFileName: subHealthDeclaration?.medicalCertificateFileName,
+      healthDeclarationMedicalCertificateDataUrl: subHealthDeclaration?.medicalCertificateDataUrl,
       healthDeclarationHistory: [createHealthDeclarationRecord({
         signed: subHealthDeclaration?.signed ?? false,
         answers: subHealthDeclaration?.answers,
@@ -365,7 +377,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
         medicalCertificateApproved: false,
         parentConsent: subHealthDeclaration?.parentConsent,
         parentName: subHealthDeclaration?.parentName,
-        signatureName: subHealthDeclaration?.signatureName
+        parentIdNumber: subHealthDeclaration?.parentIdNumber,
+        signatureName: subHealthDeclaration?.signatureName,
+        medicalCertificateFileName: subHealthDeclaration?.medicalCertificateFileName,
+        medicalCertificateDataUrl: subHealthDeclaration?.medicalCertificateDataUrl
       })],
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
@@ -400,11 +415,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto dir-rtl">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-xl w-full my-8 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/70 p-2 backdrop-blur-sm sm:items-center sm:p-4 dir-rtl">
+      <div className="my-1 max-h-[calc(100dvh-0.5rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 sm:my-8 sm:max-h-[calc(100dvh-2rem)]">
         
         {/* Header */}
-        <div className="bg-slate-900 p-5 text-white relative flex items-center justify-between">
+        <div className="sticky top-0 z-20 bg-slate-900 p-5 text-white relative flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-emerald-500/20 text-emerald-400 p-2 rounded-xl border border-emerald-500/30">
               <UserIcon size={20} />

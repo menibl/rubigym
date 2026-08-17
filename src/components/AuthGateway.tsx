@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -18,8 +18,7 @@ import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarat
 import {
   Gender,
   DiscountCode,
-  CURRENT_MEMBERSHIP_ADD_ONS,
-  CURRENT_PRIMARY_MEMBERSHIP_PLANS,
+  DEFAULT_MEMBERSHIP_PLAN_CONFIGS,
   FamilyBillingMode,
   FamilyMemberPlanSelection,
   MEMBERSHIP_PRICES,
@@ -31,7 +30,8 @@ import {
   TRAINING_CARD_SIZES,
   TrainingCardSize,
   User,
-  UserRole
+  UserRole,
+  SystemSettings
 } from '../types';
 import {
   clearCardcomReturnParams,
@@ -51,6 +51,7 @@ import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembershi
 interface AuthGatewayProps {
   users: User[];
   discountCodes: DiscountCode[];
+  settings: SystemSettings;
   onLogin: (user: User) => void;
   onRegister: (user: User, payment: Payment) => void;
 }
@@ -59,8 +60,6 @@ type AuthScreen = 'welcome' | 'login' | 'register';
 type LoginMethod = 'password' | 'phone';
 
 const TEST_OTP = '1111';
-const REGISTRATION_PLANS = [...CURRENT_PRIMARY_MEMBERSHIP_PLANS, ...CURRENT_MEMBERSHIP_ADD_ONS];
-
 const calculateAge = (birthDate: string) => {
   const birth = new Date(birthDate);
   const today = new Date();
@@ -70,7 +69,7 @@ const calculateAge = (birthDate: string) => {
   return Math.max(age, 0);
 };
 
-export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, onLogin, onRegister }) => {
+export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onLogin, onRegister }) => {
   const [screen, setScreen] = useState<AuthScreen>('welcome');
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
   const [username, setUsername] = useState('');
@@ -104,6 +103,12 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [paymentStarting, setPaymentStarting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const registrationPlans = useMemo(
+    () => (settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS).filter(plan => plan.active),
+    [settings.membershipPlans]
+  );
+  const selectedPlanConfig = registrationPlans.find(plan => plan.id === selectedPlan);
+  const selectedPlanPrice = selectedPlanConfig?.price ?? MEMBERSHIP_PRICES[selectedPlan] ?? 0;
 
   const resetMessages = () => {
     setError('');
@@ -294,13 +299,16 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     const now = Date.now();
     const familyId = isFamilyPlan ? `fam-${now}` : undefined;
     const healthRecord = createHealthDeclarationRecord({
-      signed: true,
+      signed: healthDeclaration?.signed ?? false,
       answers: healthDeclaration?.answers,
       requiresMedicalCertificate: healthDeclaration?.requiresMedicalCertificate,
       medicalCertificateApproved: false,
       parentConsent: healthDeclaration?.parentConsent,
       parentName: healthDeclaration?.parentName,
-      signatureName: healthDeclaration?.signatureName
+      parentIdNumber: healthDeclaration?.parentIdNumber,
+      signatureName: healthDeclaration?.signatureName,
+      medicalCertificateFileName: healthDeclaration?.medicalCertificateFileName,
+      medicalCertificateDataUrl: healthDeclaration?.medicalCertificateDataUrl
     });
     const newUser: User = {
       id: `user-${now}`,
@@ -313,14 +321,17 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       gender: registerGender,
       age,
       birthDate: registerBirthDate,
-      healthDeclarationSigned: true,
+      healthDeclarationSigned: healthDeclaration?.signed ?? false,
       healthDeclarationDate: new Date().toISOString().split('T')[0],
       healthDeclarationAnswers: healthDeclaration?.answers,
       healthDeclarationRequiresMedicalCertificate: healthDeclaration?.requiresMedicalCertificate,
       healthDeclarationMedicalCertificateApproved: false,
       healthDeclarationParentConsent: healthDeclaration?.parentConsent,
       healthDeclarationParentName: healthDeclaration?.parentName,
+      healthDeclarationParentIdNumber: healthDeclaration?.parentIdNumber,
       healthDeclarationSignatureName: healthDeclaration?.signatureName,
+      healthDeclarationMedicalCertificateFileName: healthDeclaration?.medicalCertificateFileName,
+      healthDeclarationMedicalCertificateDataUrl: healthDeclaration?.medicalCertificateDataUrl,
       healthDeclarationHistory: [healthRecord],
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
@@ -365,6 +376,8 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         familyBillingMode: isFamilyPlan ? familyBillingMode : undefined,
         familyMemberPlans: isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans : undefined,
         discountCode: appliedDiscount?.code,
+        planAmount: !isFamilyPlan ? selectedPlanPrice * (isTrainingCard ? trainingCardSize : 1) : undefined,
+        planLabel: !isFamilyPlan ? selectedPlanConfig?.label : undefined,
         registrationDraft: { user: newUser }
       });
     } catch (paymentError) {
@@ -388,6 +401,14 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
             <div><ShieldCheck size={18} /><span>ליווי מקצועי</span></div>
             <div><MessageSquareText size={18} /><span>קשר ישיר עם המאמן</span></div>
           </div>
+          <div className="auth-actions">
+            <button className="auth-primary" onClick={() => openScreen('register')}>
+              <UserPlus size={18} /> הרשמה למועדון
+            </button>
+            <button className="auth-secondary" onClick={() => openScreen('login')}>
+              <KeyRound size={18} /> LOGIN
+            </button>
+          </div>
           <section className="auth-contact" aria-label="יצירת קשר עם המועדון">
             <div>
               <span>יצירת קשר עם המועדון</span>
@@ -398,14 +419,6 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
               <MessageSquareText size={19} /> הודעה ב־WhatsApp
             </a>
           </section>
-          <div className="auth-actions">
-            <button className="auth-primary" onClick={() => openScreen('register')}>
-              <UserPlus size={18} /> הרשמה למועדון
-            </button>
-            <button className="auth-secondary" onClick={() => openScreen('login')}>
-              <KeyRound size={18} /> LOGIN
-            </button>
-          </div>
           <small className="auth-legal">בהמשך ההרשמה מאשרים את תקנון המועדון והצהרת הבריאות.</small>
         </section>
       </main>
@@ -525,7 +538,9 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                     <span><strong>מנוי משפחתי</strong><small>חשבון משלם אחד, עם פרופיל נפרד לכל בן משפחה</small></span>
                     <b>מ־₪900</b>
                   </button>
-                  {REGISTRATION_PLANS.map(plan => (
+                  {registrationPlans.map(planConfig => {
+                    const plan = planConfig.id as MembershipType;
+                    return (
                     <button
                       key={plan}
                       type="button"
@@ -533,17 +548,17 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                       onClick={() => { setSelectedPlan(plan); setIsFamilyPlan(false); }}
                     >
                       <span>
-                        <strong>{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
-                        <small>{MEMBERSHIP_TYPE_LABELS[plan].description}</small>
+                        <strong>{planConfig.label}</strong>
+                        <small>{planConfig.description}</small>
                       </span>
-                      <b>₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : plan === MembershipType.GROUP_MONTHLY || plan === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</b>
+                      <b>₪{planConfig.price}{planConfig.priceUnit === 'SESSION' ? ' לאימון' : planConfig.priceUnit === 'MONTH' ? ' לחודש' : ''}</b>
                     </button>
-                  ))}
+                  );})}
                 </div>
                 {!isFamilyPlan && (selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) && (
                   <div className="auth-family-options">
                     <label>גודל כרטיסייה<select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)}>
-                      {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{size * MEMBERSHIP_PRICES[selectedPlan]}</option>)}
+                      {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{size * selectedPlanPrice}</option>)}
                     </select></label>
                     <small>היתרה נשמרת בחשבון ותישלח התראה כאשר יישארו שני אימונים.</small>
                   </div>
@@ -568,7 +583,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   <strong>₪{(() => {
                     const base = isFamilyPlan
                       ? familyPurchaseAmount(familyBillingMode, familyMembersCount, resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי'))
-                      : MEMBERSHIP_PRICES[selectedPlan] * ((selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) ? trainingCardSize : 1);
+                      : selectedPlanPrice * ((selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) ? trainingCardSize : 1);
                     const discount = appliedDiscount?.discountPercent ? Math.round(base * appliedDiscount.discountPercent / 100) : (appliedDiscount?.discountAmount || 0);
                     return Math.max(0, base - discount);
                   })()}</strong>
