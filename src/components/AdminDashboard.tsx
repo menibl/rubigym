@@ -23,6 +23,8 @@ import {
   CURRENT_MEMBERSHIP_CATALOG,
   MEMBERSHIP_TYPE_LABELS,
   MEMBERSHIP_PRICES,
+  DEFAULT_MEMBERSHIP_PLAN_CONFIGS,
+  MembershipPlanConfig,
   MembershipStatus,
   UserRole,
   DiscountCode,
@@ -202,6 +204,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionViewMode, setSessionViewMode] = useState<'CALENDAR' | 'TABLE'>('CALENDAR');
   const [penaltySearch, setPenaltySearch] = useState('');
+  const [newMembershipPlan, setNewMembershipPlan] = useState({ label: '', description: '', price: 0, category: 'PRIMARY' as MembershipPlanConfig['category'], priceUnit: 'MONTH' as MembershipPlanConfig['priceUnit'] });
+  const membershipPlans = settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS;
+
+  const updateMembershipPlan = (id: string, patch: Partial<MembershipPlanConfig>) => {
+    onUpdateSettings({ ...settings, membershipPlans: membershipPlans.map(plan => plan.id === id ? { ...plan, ...patch } : plan) });
+  };
+
+  const removeMembershipPlan = (id: string) => {
+    if (!window.confirm('להסיר את המסלול מרשימת הרכישה? משתמשים שכבר רכשו אותו לא יימחקו.')) return;
+    onUpdateSettings({ ...settings, membershipPlans: membershipPlans.filter(plan => plan.id !== id) });
+  };
+
+  const addMembershipPlan = () => {
+    if (!newMembershipPlan.label.trim() || newMembershipPlan.price < 0) return;
+    const created: MembershipPlanConfig = {
+      id: `CUSTOM_${Date.now()}`,
+      label: newMembershipPlan.label.trim(),
+      description: newMembershipPlan.description.trim(),
+      price: Number(newMembershipPlan.price),
+      category: newMembershipPlan.category,
+      priceUnit: newMembershipPlan.priceUnit,
+      active: true
+    };
+    onUpdateSettings({ ...settings, membershipPlans: [...membershipPlans, created] });
+    setNewMembershipPlan({ label: '', description: '', price: 0, category: 'PRIMARY', priceUnit: 'MONTH' });
+  };
 
   const downloadCsv = (fileName: string, headers: string[], rows: Array<Array<string | number | boolean | undefined>>) => {
     const escapeCell = (value: string | number | boolean | undefined) => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -225,8 +253,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       medicalCertificateApproved: user.healthDeclarationMedicalCertificateApproved,
       parentConsent: user.healthDeclarationParentConsent,
       parentName: user.healthDeclarationParentName,
+      parentIdNumber: user.healthDeclarationParentIdNumber,
       signatureName: user.healthDeclarationSignatureName,
-      signatureUrl: user.healthDeclarationSignatureUrl
+      signatureUrl: user.healthDeclarationSignatureUrl,
+      medicalCertificateFileName: user.healthDeclarationMedicalCertificateFileName,
+      medicalCertificateDataUrl: user.healthDeclarationMedicalCertificateDataUrl
     }] : [];
     return records.map(record => ({ user, record }));
   }).sort((a, b) => b.record.signedAt.localeCompare(a.record.signedAt));
@@ -237,6 +268,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const latest = healthRecords.find(item => item.user.id === user.id)?.record;
     return !latest?.signed || latest.validUntil < today || (latest.requiresMedicalCertificate && !latest.medicalCertificateApproved);
   }).length;
+
+  const approveMedicalCertificate = (userId: string, recordId: string) => {
+    onUpdateUsers(users.map(user => {
+      if (user.id !== userId) return user;
+      const updatedHistory = (user.healthDeclarationHistory || []).map(record => record.id === recordId
+        ? { ...record, signed: true, medicalCertificateApproved: true }
+        : record);
+      const isLatest = updatedHistory[0]?.id === recordId || (!user.healthDeclarationHistory?.length && recordId === `legacy-${user.id}`);
+      return {
+        ...user,
+        healthDeclarationHistory: updatedHistory.length ? updatedHistory : user.healthDeclarationHistory,
+        ...(isLatest ? { healthDeclarationSigned: true, healthDeclarationMedicalCertificateApproved: true } : {})
+      };
+    }));
+  };
 
   const handleAddCoach = (event: React.FormEvent) => {
     event.preventDefault();
@@ -837,12 +883,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_310px]">
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-black text-slate-900">ארכיון הצהרות בריאות</h3><p className="mt-1 text-xs text-slate-500">כל חתימה נשמרת כרשומה נפרדת, כולל תוקף, תשובות ואישור רפואי.</p></div><button type="button" onClick={() => downloadCsv('baly-health-declarations.csv', ['מזהה', 'מתאמן', 'טלפון', 'תאריך חתימה', 'בתוקף עד', 'חתום', 'דורש אישור רפואי', 'אישור רפואי', 'שם חותם', 'תשובות'], healthRecords.map(({ user, record }) => [record.id, user.name, user.phone, record.signedAt, record.validUntil, record.signed, record.requiresMedicalCertificate, record.medicalCertificateApproved, record.signatureName, JSON.stringify(record.answers || {})]))} className="flex min-h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-black text-white"><FileDown size={15} /> ייצוא הצהרות</button></div>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-black text-slate-900">ארכיון הצהרות בריאות</h3><p className="mt-1 text-xs text-slate-500">כל חתימה נשמרת כרשומה נפרדת, כולל תוקף, תשובות ואישור רפואי.</p></div><button type="button" onClick={() => downloadCsv('baly-health-declarations.csv', ['מזהה', 'מתאמן', 'טלפון', 'תאריך חתימה', 'בתוקף עד', 'חתום', 'דורש אישור רפואי', 'אישור רפואי', 'שם חותם', 'שם הורה', 'ת.ז. הורה', 'קובץ רפואי', 'תשובות'], healthRecords.map(({ user, record }) => [record.id, user.name, user.phone, record.signedAt, record.validUntil, record.signed, record.requiresMedicalCertificate, record.medicalCertificateApproved, record.signatureName, record.parentName, record.parentIdNumber, record.medicalCertificateFileName, JSON.stringify(record.answers || {})]))} className="flex min-h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-black text-white"><FileDown size={15} /> ייצוא הצהרות</button></div>
                 <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-100">
                   <table className="w-full min-w-[760px] text-right text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-600"><tr><th className="p-3">מתאמן</th><th className="p-3">חתימה</th><th className="p-3">תוקף</th><th className="p-3">שאלון</th><th className="p-3">אישור רפואי</th><th className="p-3">סטטוס</th></tr></thead><tbody>{healthRecords.map(({ user, record }) => {
                     const yesAnswers = Object.values(record.answers || {}).filter(answer => answer === 'YES').length;
                     const valid = record.signed && record.validUntil >= today && (!record.requiresMedicalCertificate || record.medicalCertificateApproved);
-                    return <tr key={`${user.id}-${record.id}`} className="border-t border-slate-100"><td className="p-3"><strong className="block text-slate-900">{user.name}</strong><span className="text-[10px] text-slate-500">{user.phone}</span></td><td className="p-3">{new Date(record.signedAt).toLocaleDateString('he-IL')}<small className="block text-slate-400">{record.signatureName || 'חתימה דיגיטלית'}</small></td><td className="p-3 font-mono">{record.validUntil}</td><td className="p-3">{Object.keys(record.answers || {}).length} תשובות · {yesAnswers} כן</td><td className="p-3">{record.requiresMedicalCertificate ? record.medicalCertificateApproved ? 'אושר' : 'ממתין' : 'לא נדרש'}</td><td className="p-3"><span className={`rounded-full px-2 py-1 text-[10px] font-black ${valid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{valid ? 'תקף' : 'חסום'}</span></td></tr>;
+                    return <tr key={`${user.id}-${record.id}`} className="border-t border-slate-100"><td className="p-3"><strong className="block text-slate-900">{user.name}</strong><span className="text-[10px] text-slate-500">{user.phone}</span>{record.parentName && <small className="block text-slate-400">הורה: {record.parentName} · {record.parentIdNumber || 'ללא ת.ז.'}</small>}</td><td className="p-3">{new Date(record.signedAt).toLocaleDateString('he-IL')}<small className="block text-slate-400">{record.signatureName || 'חתימה דיגיטלית'}</small></td><td className="p-3 font-mono">{record.validUntil}</td><td className="p-3">{Object.keys(record.answers || {}).length} תשובות · {yesAnswers} כן</td><td className="p-3">{record.requiresMedicalCertificate ? <div className="space-y-1">{record.medicalCertificateDataUrl ? <a href={record.medicalCertificateDataUrl} download={record.medicalCertificateFileName || 'medical-certificate'} className="block font-bold text-sky-700 underline">צפייה במסמך</a> : <span className="text-rose-700">טרם הועלה מסמך</span>}{record.medicalCertificateApproved ? <span className="text-emerald-700">אושר</span> : record.medicalCertificateDataUrl ? <button type="button" onClick={() => approveMedicalCertificate(user.id, record.id)} className="rounded-lg bg-amber-500 px-2 py-1 text-[10px] font-black text-slate-950">אישור מנהל</button> : <span className="text-amber-700">ממתין</span>}</div> : 'לא נדרש'}</td><td className="p-3"><span className={`rounded-full px-2 py-1 text-[10px] font-black ${valid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{valid ? 'תקף' : 'חסום'}</span></td></tr>;
                   })}{healthRecords.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">אין הצהרות מתועדות.</td></tr>}</tbody></table>
                 </div>
               </div>
@@ -1942,6 +1988,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             id="settings-form"
           >
             <h3 className="text-sm font-semibold text-slate-800 border-b border-slate-200 pb-2">קביעת חוקי ופרמטרי מועדון הכושר</h3>
+
+            <section className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div><h4 className="font-black text-slate-900">מסלולים ומחירים</h4><p className="mt-1 text-[11px] text-slate-600">השינויים נשמרים ומופיעים מיד בהרשמה ובדף רכישת מסלול. הסרת מסלול אינה משנה מנויים קיימים.</p></div>
+                <span className="rounded-full bg-slate-900 px-3 py-1 text-[10px] font-black text-white">{membershipPlans.length} מסלולים</span>
+              </div>
+              <div className="space-y-3">
+                {membershipPlans.map(plan => <article key={plan.id} className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[150px_minmax(220px,1fr)_110px_105px_auto] md:items-end">
+                  <label className="text-[10px] font-bold text-slate-600">שם המסלול<input value={plan.label} onChange={event => updateMembershipPlan(plan.id, { label: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>
+                  <label className="text-[10px] font-bold text-slate-600">תיאור<input value={plan.description} onChange={event => updateMembershipPlan(plan.id, { description: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>
+                  <label className="text-[10px] font-bold text-slate-600">מחיר ₪<input type="number" min={0} value={plan.price} onChange={event => updateMembershipPlan(plan.id, { price: Math.max(0, Number(event.target.value)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>
+                  <label className="text-[10px] font-bold text-slate-600">יחידת חיוב<select value={plan.priceUnit || 'ONE_TIME'} onChange={event => updateMembershipPlan(plan.id, { priceUnit: event.target.value as MembershipPlanConfig['priceUnit'] })} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs"><option value="MONTH">לחודש</option><option value="SESSION">לאימון</option><option value="ONE_TIME">חד־פעמי</option></select></label>
+                  <div className="flex gap-1"><button type="button" onClick={() => updateMembershipPlan(plan.id, { active: !plan.active })} className={`min-h-9 rounded-lg px-2 text-[10px] font-black ${plan.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>{plan.active ? 'פעיל' : 'מוסתר'}</button><button type="button" onClick={() => removeMembershipPlan(plan.id)} className="grid min-h-9 w-9 place-items-center rounded-lg bg-rose-100 text-rose-700" aria-label={`הסרת ${plan.label}`}><Trash2 size={14} /></button></div>
+                </article>)}
+              </div>
+              <div className="mt-4 rounded-xl border border-dashed border-amber-300 bg-white p-3">
+                <strong className="text-xs text-slate-900">הוספת מסלול חדש</strong>
+                <div className="mt-2 grid gap-2 md:grid-cols-[150px_minmax(220px,1fr)_100px_110px_110px_auto] md:items-end">
+                  <label className="text-[10px] font-bold text-slate-600">שם<input value={newMembershipPlan.label} onChange={event => setNewMembershipPlan(current => ({ ...current, label: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label>
+                  <label className="text-[10px] font-bold text-slate-600">תיאור<input value={newMembershipPlan.description} onChange={event => setNewMembershipPlan(current => ({ ...current, description: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label>
+                  <label className="text-[10px] font-bold text-slate-600">מחיר ₪<input type="number" min={0} value={newMembershipPlan.price} onChange={event => setNewMembershipPlan(current => ({ ...current, price: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label>
+                  <label className="text-[10px] font-bold text-slate-600">סוג<select value={newMembershipPlan.category} onChange={event => setNewMembershipPlan(current => ({ ...current, category: event.target.value as MembershipPlanConfig['category'] }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs"><option value="PRIMARY">מסלול ראשי</option><option value="ADD_ON">תוספת</option></select></label>
+                  <label className="text-[10px] font-bold text-slate-600">חיוב<select value={newMembershipPlan.priceUnit} onChange={event => setNewMembershipPlan(current => ({ ...current, priceUnit: event.target.value as MembershipPlanConfig['priceUnit'] }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs"><option value="MONTH">לחודש</option><option value="SESSION">לאימון</option><option value="ONE_TIME">חד־פעמי</option></select></label>
+                  <button type="button" onClick={addMembershipPlan} className="min-h-9 rounded-lg bg-amber-500 px-3 text-xs font-black text-slate-950"><Plus size={14} className="inline" /> הוסף</button>
+                </div>
+              </div>
+            </section>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">

@@ -20,6 +20,7 @@ import {
   AttendanceLog,
   DiscountCode,
   SystemSettings,
+  DEFAULT_MEMBERSHIP_PLAN_CONFIGS,
   MuscleGroup
 } from '../types';
 
@@ -27,7 +28,8 @@ export const INITIAL_SETTINGS: SystemSettings = {
   cancellationWindowHours: 2,
   maxBlackPointsBeforePriorityDrop: 3,
   blackPointExpiryMonths: 1,
-  openGymMaxParticipants: 15
+  openGymMaxParticipants: 15,
+  membershipPlans: DEFAULT_MEMBERSHIP_PLAN_CONFIGS
 };
 
 export const INITIAL_USERS: User[] = [

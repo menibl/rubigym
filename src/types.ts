@@ -171,7 +171,6 @@ export const MEMBERSHIP_PRICES: Record<MembershipType, number> = {
 
 export const CURRENT_PRIMARY_MEMBERSHIP_PLANS: MembershipType[] = [
   MembershipType.OPEN_GYM,
-  MembershipType.OPEN_GYM_WITH_PLAN,
   MembershipType.GROUP_MONTHLY,
   MembershipType.GROUP_ANNUAL,
   MembershipType.YOUTH_TWICE_WEEKLY,
@@ -190,6 +189,39 @@ export const CURRENT_MEMBERSHIP_CATALOG: MembershipType[] = [
   ...CURRENT_PRIMARY_MEMBERSHIP_PLANS,
   ...CURRENT_MEMBERSHIP_ADD_ONS,
   MembershipType.FAMILY_MEMBERSHIP
+];
+
+export interface MembershipPlanConfig {
+  id: string;
+  label: string;
+  description: string;
+  price: number;
+  category: 'PRIMARY' | 'ADD_ON';
+  active: boolean;
+  priceUnit?: 'MONTH' | 'SESSION' | 'ONE_TIME';
+  supportsTrainingCard?: boolean;
+}
+
+export const DEFAULT_MEMBERSHIP_PLAN_CONFIGS: MembershipPlanConfig[] = [
+  ...CURRENT_PRIMARY_MEMBERSHIP_PLANS.map(id => ({
+    id,
+    label: MEMBERSHIP_TYPE_LABELS[id].label,
+    description: MEMBERSHIP_TYPE_LABELS[id].description,
+    price: MEMBERSHIP_PRICES[id],
+    category: 'PRIMARY' as const,
+    active: true,
+    priceUnit: ([MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL].includes(id) ? 'MONTH' : 'ONE_TIME') as MembershipPlanConfig['priceUnit']
+  })),
+  ...CURRENT_MEMBERSHIP_ADD_ONS.map(id => ({
+    id,
+    label: MEMBERSHIP_TYPE_LABELS[id].label,
+    description: MEMBERSHIP_TYPE_LABELS[id].description,
+    price: MEMBERSHIP_PRICES[id],
+    category: 'ADD_ON' as const,
+    active: true,
+    priceUnit: ([MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(id) ? 'SESSION' : 'ONE_TIME') as MembershipPlanConfig['priceUnit'],
+    supportsTrainingCard: [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(id)
+  }))
 ];
 
 export const FAMILY_MEMBERSHIP_PRICES: Record<number, number> = {
@@ -249,8 +281,11 @@ export interface HealthDeclarationRecord {
   medicalCertificateApproved?: boolean;
   parentConsent?: boolean;
   parentName?: string;
+  parentIdNumber?: string;
   signatureName?: string;
   signatureUrl?: string;
+  medicalCertificateFileName?: string;
+  medicalCertificateDataUrl?: string;
 }
 
 export interface User {
@@ -274,7 +309,10 @@ export interface User {
   healthDeclarationMedicalCertificateApproved?: boolean;
   healthDeclarationParentConsent?: boolean;
   healthDeclarationParentName?: string;
+  healthDeclarationParentIdNumber?: string;
   healthDeclarationSignatureName?: string;
+  healthDeclarationMedicalCertificateFileName?: string;
+  healthDeclarationMedicalCertificateDataUrl?: string;
   healthDeclarationHistory?: HealthDeclarationRecord[];
   clubAgreementSigned?: boolean;
   clubAgreementDate?: string;
@@ -558,6 +596,8 @@ export interface GroupWorkoutProgram {
   transitionSeconds?: number;
   defaultWorkSeconds: number;
   defaultRestSeconds: number;
+  effortMetric?: 'TIME' | 'REPS';
+  defaultRepetitions?: string;
   preparationSeconds: number;
   status: 'DRAFT' | 'PUBLISHED';
   createdAt: string;
@@ -676,4 +716,5 @@ export interface SystemSettings {
   maxBlackPointsBeforePriorityDrop: number; // default: 3 points
   blackPointExpiryMonths: number; // default: 1 month
   openGymMaxParticipants: number; // default: 15
+  membershipPlans?: MembershipPlanConfig[];
 }

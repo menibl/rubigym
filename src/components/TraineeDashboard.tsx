@@ -22,8 +22,7 @@ import {
   Gender,
   MembershipStatus,
   MembershipType,
-  CURRENT_PRIMARY_MEMBERSHIP_PLANS,
-  CURRENT_MEMBERSHIP_ADD_ONS,
+  DEFAULT_MEMBERSHIP_PLAN_CONFIGS,
   MEMBERSHIP_TYPE_LABELS,
   MEMBERSHIP_PRICES,
   PaymentPurchaseVariant,
@@ -113,9 +112,6 @@ interface TraineeDashboardProps {
   onHome?: () => void;
 }
 
-const PRIMARY_MEMBERSHIP_PLANS = CURRENT_PRIMARY_MEMBERSHIP_PLANS;
-const MEMBERSHIP_ADD_ONS = CURRENT_MEMBERSHIP_ADD_ONS;
-
 export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   activeUser,
   users,
@@ -164,6 +160,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const scannerStreamRef = useRef<MediaStream | null>(null);
   const [selectedWorkoutDay, setSelectedWorkoutDay] = useState(1);
   const [demoExercise, setDemoExercise] = useState<Exercise | null>(null);
+  const membershipPlanConfigs = (settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS).filter(plan => plan.active);
+  const primaryMembershipPlans = membershipPlanConfigs.filter(plan => plan.category === 'PRIMARY');
+  const membershipAddOns = membershipPlanConfigs.filter(plan => plan.category === 'ADD_ON');
+  const selectedMembershipConfig = membershipPlanConfigs.find(plan => plan.id === selectedMembershipPurchase);
+  const selectedMembershipPrice = selectedMembershipConfig?.price ?? (selectedMembershipPurchase ? MEMBERSHIP_PRICES[selectedMembershipPurchase] : 0) ?? 0;
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [bookingView, setBookingView] = useState<'DAY' | 'WEEK'>('DAY');
   // Notification banner for feedback
@@ -315,7 +316,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         setActiveTab('membership');
         setSelectedMembershipPurchase(null);
         if (pending.familyMembersCount) sessionStorage.removeItem('baly_family_purchase_draft_v1');
-        showFeedback(`${MEMBERSHIP_TYPE_LABELS[pending.membershipType].label} נרכש והופעל בהצלחה.`);
+        const purchasedLabel = membershipPlanConfigs.find(plan => plan.id === pending.membershipType)?.label || MEMBERSHIP_TYPE_LABELS[pending.membershipType]?.label || pending.membershipType;
+        showFeedback(`${purchasedLabel} נרכש והופעל בהצלחה.`);
       })
       .catch(error => {
         clearCardcomReturnParams();
@@ -593,7 +595,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         purchaseVariant: isTrainingCard
           ? `${selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING ? 'PERSONAL' : 'DUO'}_${trainingCardSize}` as PaymentPurchaseVariant
           : undefined,
-        discountCode: appliedDiscount?.code
+        discountCode: appliedDiscount?.code,
+        planAmount: selectedMembershipPrice * (isTrainingCard ? trainingCardSize : 1),
+        planLabel: selectedMembershipConfig?.label
       });
     } catch (error) {
       setPaymentStarting(false);
@@ -2192,7 +2196,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <div className="rounded-xl bg-white/5 border border-white/10 p-3 min-w-52">
                   <div className="flex justify-between gap-4 text-xs">
                     <span className="text-slate-400">מסלול נוכחי</span>
-                    <b>{MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.OPEN_GYM].label}</b>
+                    <b>{membershipPlanConfigs.find(plan => plan.id === activeUser.membershipType)?.label || MEMBERSHIP_TYPE_LABELS[activeUser.membershipType || MembershipType.OPEN_GYM]?.label || activeUser.membershipType}</b>
                   </div>
                   <div className="flex justify-between gap-4 text-xs mt-2">
                     <span className="text-slate-400">תוקף</span>
@@ -2208,16 +2212,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <h3 className="text-xl font-black text-slate-900">תשלום והפעלת מסלול</h3>
                 <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4 flex justify-between items-center gap-4">
                   <div>
-                    <b className="block text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[selectedMembershipPurchase].label}</b>
+                    <b className="block text-sm text-slate-900">{selectedMembershipConfig?.label || MEMBERSHIP_TYPE_LABELS[selectedMembershipPurchase]?.label || selectedMembershipPurchase}</b>
                     <span className="text-[11px] text-slate-600">{membershipPurchaseMode === 'PRIMARY' ? 'מסלול ראשי' : 'שירות נוסף'}</span>
                   </div>
-                  <strong className="text-xl text-amber-800">₪{applySelectedDiscount(MEMBERSHIP_PRICES[selectedMembershipPurchase] * ((selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) ? trainingCardSize : 1))}{selectedMembershipPurchase === MembershipType.GROUP_MONTHLY || selectedMembershipPurchase === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</strong>
+                  <strong className="text-xl text-amber-800">₪{applySelectedDiscount(selectedMembershipPrice * ((selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) ? trainingCardSize : 1))}{selectedMembershipConfig?.priceUnit === 'MONTH' ? ' לחודש' : ''}</strong>
                 </div>
                 <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
                   {(selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) && (
                     <label className="text-xs font-bold text-slate-700">בחרו גודל כרטיסייה
                       <select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3">
-                        {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{(size * MEMBERSHIP_PRICES[selectedMembershipPurchase]).toLocaleString('he-IL')}</option>)}
+                        {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{(size * selectedMembershipPrice).toLocaleString('he-IL')}</option>)}
                       </select>
                       <small className="mt-2 block font-normal text-slate-500">לאחר כל אימון היתרה תתעדכן. כשיישארו שני אימונים תישלח התראה למתאמן ולמאמן.</small>
                     </label>
@@ -2267,37 +2271,39 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <p className="text-xs text-slate-500 mt-1">אפשר לחדש, לשדרג או להחליף את המסלול הקיים.</p>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {PRIMARY_MEMBERSHIP_PLANS.map(plan => (
-                      <article key={plan} className={`rounded-2xl border p-4 bg-white flex flex-col ${activeUser.membershipType === plan ? 'border-amber-400 ring-1 ring-amber-200' : 'border-slate-200'}`}>
+                    {primaryMembershipPlans.map(planConfig => {
+                      const plan = planConfig.id as MembershipType;
+                      return <article key={planConfig.id} className={`rounded-2xl border p-4 bg-white flex flex-col ${activeUser.membershipType === plan ? 'border-amber-400 ring-1 ring-amber-200' : 'border-slate-200'}`}>
                         <div className="flex justify-between gap-3">
-                          <strong className="text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
+                          <strong className="text-sm text-slate-900">{planConfig.label}</strong>
                           {activeUser.membershipType === plan && <span className="text-[9px] bg-amber-100 text-amber-800 rounded-full px-2 py-1 h-fit">נוכחי</span>}
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-2 leading-5 flex-1">{MEMBERSHIP_TYPE_LABELS[plan].description}</p>
+                        <p className="text-[11px] text-slate-500 mt-2 leading-5 flex-1">{planConfig.description}</p>
                         <div className="flex items-end justify-between gap-3 mt-4">
-                          <b className="text-xl text-slate-950">₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.GROUP_MONTHLY || plan === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</b>
+                          <b className="text-xl text-slate-950">₪{planConfig.price}{planConfig.priceUnit === 'MONTH' ? ' לחודש' : ''}</b>
                           <button className="rounded-lg bg-slate-950 text-white text-xs font-bold px-3 py-2" onClick={() => openMembershipCheckout(plan, 'PRIMARY')}>
                             {activeUser.membershipType === plan ? 'חידוש מסלול' : 'בחירה ותשלום'}
                           </button>
                         </div>
-                      </article>
-                    ))}
+                      </article>;
+                    })}
                   </div>
                 </section>
 
                 <section>
                   <h3 className="font-black text-slate-900 mb-3">רכישת שירותים נוספים</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {MEMBERSHIP_ADD_ONS.map(plan => {
+                    {membershipAddOns.map(planConfig => {
+                      const plan = planConfig.id as MembershipType;
                       const alreadyPurchased = (activeUser.secondaryMemberships || []).includes(plan);
                       return (
-                        <article key={plan} className="rounded-2xl border border-slate-200 p-4 bg-white">
-                          <strong className="text-sm text-slate-900">{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
-                          <p className="text-[11px] text-slate-500 mt-2 min-h-10">{MEMBERSHIP_TYPE_LABELS[plan].description}</p>
+                        <article key={planConfig.id} className="rounded-2xl border border-slate-200 p-4 bg-white">
+                          <strong className="text-sm text-slate-900">{planConfig.label}</strong>
+                          <p className="text-[11px] text-slate-500 mt-2 min-h-10">{planConfig.description}</p>
                           {plan === MembershipType.PERSONAL_TRAINING && activeUser.personalTrainingRemaining !== undefined && <p className="mt-2 text-[11px] font-bold text-amber-800">יתרה: {activeUser.personalTrainingRemaining} אימונים</p>}
                           {plan === MembershipType.DUO_TRAINING && activeUser.duoTrainingRemaining !== undefined && <p className="mt-2 text-[11px] font-bold text-amber-800">יתרה: {activeUser.duoTrainingRemaining} אימונים</p>}
                           <div className="flex justify-between items-center mt-4">
-                            <b>₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : ''}</b>
+                            <b>₪{planConfig.price}{planConfig.priceUnit === 'SESSION' ? ' לאימון' : planConfig.priceUnit === 'MONTH' ? ' לחודש' : ''}</b>
                             <button className="rounded-lg border border-slate-300 text-xs font-bold px-3 py-2" onClick={() => openMembershipCheckout(plan, 'ADDON')}>
                               {alreadyPurchased ? 'רכישה נוספת' : 'הוספה ותשלום'}
                             </button>

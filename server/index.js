@@ -90,7 +90,7 @@ const normalizeFamilyPlans = plans => {
   });
 };
 
-const resolvePurchase = body => {
+const resolvePurchase = (body, allowDemoOverride = false) => {
   if (body.familyMembersCount || body.membershipType === 'FAMILY_MEMBERSHIP') {
     const count = Number(body.familyMembersCount);
     const mode = body.familyBillingMode || 'ANNUAL_BY_SIZE';
@@ -111,6 +111,12 @@ const resolvePurchase = body => {
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
     return { amount: applyDiscount(baseAmount, body.discountCode), label, familyBillingMode: mode, familyMemberPlans };
+  }
+  if (allowDemoOverride && body.planAmount !== undefined) {
+    const amount = Number(body.planAmount);
+    const label = String(body.planLabel || membershipLabels[body.membershipType] || 'מסלול BALY').slice(0, 120);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100000) throw new Error('INVALID_DEMO_AMOUNT');
+    return { amount: applyDiscount(Math.round(amount), body.discountCode), label };
   }
   if (body.purchaseVariant) {
     const variant = trainingCardVariants[body.purchaseVariant];
@@ -137,7 +143,8 @@ const sign = async (value, secret) => {
 };
 
 const createSignedOrder = async (body, env) => {
-  const purchase = resolvePurchase(body);
+  const demoMode = String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true';
+  const purchase = resolvePurchase(body, demoMode);
   const { amount } = purchase;
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(body.mode)) throw new Error('INVALID_MODE');
   const payload = encodePayload({
@@ -149,6 +156,8 @@ const createSignedOrder = async (body, env) => {
     fm: purchase.familyBillingMode || undefined,
     fp: purchase.familyMemberPlans || undefined,
     c: body.discountCode ? String(body.discountCode).toUpperCase() : undefined,
+    pa: demoMode && body.planAmount !== undefined ? Number(body.planAmount) : undefined,
+    pl: demoMode && body.planLabel ? String(body.planLabel).slice(0, 120) : undefined,
     a: amount,
     t: Date.now()
   });
@@ -161,7 +170,8 @@ const verifySignedOrder = async (value, env) => {
   if (!payload || !signature || await sign(payload, env.PAYMENT_SIGNING_SECRET) !== signature) throw new Error('INVALID_SIGNATURE');
   const order = decodePayload(payload);
   if (Date.now() - Number(order.t) > 24 * 60 * 60 * 1000) throw new Error('ORDER_EXPIRED');
-  if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v, familyMembersCount: order.f, familyBillingMode: order.fm, familyMemberPlans: order.fp, discountCode: order.c }).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
+  const demoMode = String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true';
+  if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v, familyMembersCount: order.f, familyBillingMode: order.fm, familyMemberPlans: order.fp, discountCode: order.c, planAmount: order.pa, planLabel: order.pl }, demoMode).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(order.d)) throw new Error('INVALID_MODE');
   return order;
 };
@@ -216,7 +226,7 @@ const handleCreatePayment = async (request, env) => {
   requirePaymentEnv(env);
   const body = await request.json();
   let purchase;
-  try { purchase = resolvePurchase(body); }
+  try { purchase = resolvePurchase(body, String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true'); }
   catch { return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env)); }
   const { amount } = purchase;
   const returnValue = await createSignedOrder(body, env);

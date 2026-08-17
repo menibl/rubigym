@@ -415,6 +415,24 @@ export default function App() {
   const handleGatewayRegistration = (newUser: User, payment: Payment) => {
     handleCompleteRegistration(newUser);
     setPayments(prev => [payment, ...prev]);
+    if (newUser.healthDeclarationRequiresMedicalCertificate) {
+      const submittedMessage = newUser.healthDeclarationMedicalCertificateFileName
+        ? ` והעלה/תה אישור רפואי: ${newUser.healthDeclarationMedicalCertificateFileName}`
+        : '. עדיין לא הועלה אישור רפואי';
+      const managerMessages: Message[] = users
+        .filter(user => user.role === UserRole.MANAGER)
+        .map(manager => ({
+          id: `msg-health-${newUser.id}-${manager.id}-${Date.now()}`,
+          senderId: newUser.id,
+          senderName: newUser.name,
+          senderRole: UserRole.TRAINEE,
+          receiverId: manager.id,
+          content: `${newUser.name} נרשם/ה עם תשובה חיובית בהצהרת הבריאות${submittedMessage}. נדרש אישור מנהל בלשונית תיעוד ובקרה.`,
+          timestamp: new Date().toISOString(),
+          read: false
+        }));
+      setMessages(previous => [...managerMessages, ...previous]);
+    }
   };
 
   // Login handler
@@ -479,6 +497,7 @@ export default function App() {
       <AuthGateway
         users={users}
         discountCodes={discountCodes}
+        settings={settings}
         onLogin={handleLoginSuccess}
         onRegister={handleGatewayRegistration}
       />
@@ -792,6 +811,14 @@ export default function App() {
         isAdminMode={activeUser.role === UserRole.MANAGER && userToEdit?.id !== activeUser.id}
         initialSection={settingsInitialSection}
         onOpenFamilyPurchase={activeUser.role === UserRole.TRAINEE ? () => setWorkspaceView('MY_MEMBERSHIP') : undefined}
+        onMedicalCertificateSubmitted={(fileName) => {
+          users.filter(user => user.role === UserRole.MANAGER).forEach(manager => {
+            handleSendMessage(
+              `${userToEdit?.name || activeUser.name} מילא/ה הצהרת בריאות עם תשובה חיובית${fileName ? ` והעלה/תה אישור רפואי: ${fileName}` : '. עדיין לא הועלה אישור רפואי'}. נדרש אישור מנהל בלשונית תיעוד ובקרה.`,
+              manager.id
+            );
+          });
+        }}
       />
 
       {showBlockingAlert && (

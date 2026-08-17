@@ -7,8 +7,11 @@ interface HealthDeclarationRecordInput {
   medicalCertificateApproved?: boolean;
   parentConsent?: boolean;
   parentName?: string;
+  parentIdNumber?: string;
   signatureName?: string;
   signatureUrl?: string;
+  medicalCertificateFileName?: string;
+  medicalCertificateDataUrl?: string;
 }
 
 export const createHealthDeclarationRecord = (input: HealthDeclarationRecordInput): HealthDeclarationRecord => {
@@ -25,7 +28,10 @@ export const createHealthDeclarationRecord = (input: HealthDeclarationRecordInpu
     medicalCertificateApproved: input.medicalCertificateApproved,
     parentConsent: input.parentConsent,
     parentName: input.parentName,
+    parentIdNumber: input.parentIdNumber,
     signatureName: input.signatureName,
-    signatureUrl: input.signatureUrl
+    signatureUrl: input.signatureUrl,
+    medicalCertificateFileName: input.medicalCertificateFileName,
+    medicalCertificateDataUrl: input.medicalCertificateDataUrl
   };
 };
