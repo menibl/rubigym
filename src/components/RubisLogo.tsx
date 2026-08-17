@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import balyLogo from '../assets/logo-baly-transparent.png';
 
 interface RubisLogoProps {
   className?: string;
@@ -15,7 +16,7 @@ export const RubisLogo: React.FC<RubisLogoProps> = ({ className = '', size = 120
 
   // List of paths and formats we try in order to load the uploaded logo.
   const logoPaths = [
-    `${import.meta.env.BASE_URL}logo-baly-transparent.png`,
+    balyLogo,
     'logo.png',
     'logo.jpg',
     'logo.jpeg',
