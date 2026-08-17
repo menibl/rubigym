@@ -197,6 +197,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       transitionSeconds: 30,
       defaultWorkSeconds: 40,
       defaultRestSeconds: 20,
+      effortMetric: 'TIME',
+      defaultRepetitions: '12',
       preparationSeconds: 10,
       status: 'DRAFT',
       createdAt: now,
@@ -519,8 +521,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
           name: exercise.name.trim() || `תרגיל ${index + 1}`,
           sets: Math.min(20, Math.max(1, Math.round(exercise.sets || 1))),
           dayNumber: 1,
-          workSeconds: Math.min(900, Math.max(5, Math.round(exercise.workSeconds || result.defaultWorkSeconds || 40))),
-          restSeconds: Math.min(900, Math.max(0, Math.round(exercise.restSeconds ?? result.defaultRestSeconds ?? 20))),
+          reps: selectedProgram.effortMetric === 'REPS' ? (exercise.reps || selectedProgram.defaultRepetitions || '12') : exercise.reps,
+          workSeconds: selectedProgram.effortMetric === 'REPS' ? 0 : Math.min(900, Math.max(5, Math.round(exercise.workSeconds || result.defaultWorkSeconds || 40))),
+          restSeconds: selectedProgram.effortMetric === 'REPS' ? 0 : Math.min(900, Math.max(0, Math.round(exercise.restSeconds ?? result.defaultRestSeconds ?? 20))),
           rounds: Math.min(20, Math.max(1, Math.round(exercise.rounds || 1))),
           id: existing?.id || `${prefix}-${Date.now()}-${index}`,
           mediaUrl: existing?.mediaUrl,
@@ -534,8 +537,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         description: result.description,
         mode: result.mode,
         participantCount: Math.min(100, Math.max(1, Math.round(result.participantCount || selectedProgram.participantCount || 1))),
-        defaultWorkSeconds: Math.min(900, Math.max(5, Math.round(result.defaultWorkSeconds || 40))),
-        defaultRestSeconds: Math.min(900, Math.max(0, Math.round(result.defaultRestSeconds || 0))),
+        defaultWorkSeconds: selectedProgram.effortMetric === 'REPS' ? 0 : Math.min(900, Math.max(5, Math.round(result.defaultWorkSeconds || 40))),
+        defaultRestSeconds: selectedProgram.effortMetric === 'REPS' ? 0 : Math.min(900, Math.max(0, Math.round(result.defaultRestSeconds || 0))),
         preparationSeconds: Math.min(900, Math.max(0, Math.round(result.preparationSeconds || 0))),
         roundsPerStation: Math.min(20, Math.max(1, Math.round(result.roundsPerStation || 1))),
         transitionSeconds: Math.min(900, Math.max(0, Math.round(result.transitionSeconds || 0))),
@@ -581,8 +584,10 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     { id: 'subgroupCount', label: 'כמה תתי־קבוצות / תחנות?', type: 'number', required: true, min: 2, max: 12, visibleWhen: answers => answers.mode === 'ROTATING_GROUPS' },
     { id: 'exerciseCount', label: 'כמה תרגילים בסך הכול?', type: 'number', required: true, min: 1, max: 60 },
     { id: 'rounds', label: 'כמה מחזורים / סבבים?', type: 'number', required: true, min: 1, max: 20 },
-    { id: 'workSeconds', label: 'זמן עבודה בשניות', type: 'number', required: true, min: 5, max: 900 },
-    { id: 'restSeconds', label: 'זמן מנוחה בשניות', type: 'number', required: true, min: 0, max: 900 },
+    { id: 'effortMetric', label: 'איך מודדים כל תרגיל?', type: 'choice', required: true, options: [{ value: 'TIME', label: 'לפי זמן', description: 'זמן עבודה ומנוחה משותפים' }, { value: 'REPS', label: 'לפי חזרות', description: 'מספר חזרות לכל תרגיל' }] },
+    { id: 'workSeconds', label: 'זמן עבודה בשניות', type: 'number', required: true, min: 5, max: 900, visibleWhen: answers => answers.effortMetric === 'TIME' },
+    { id: 'restSeconds', label: 'זמן מנוחה בשניות', type: 'number', required: true, min: 0, max: 900, visibleWhen: answers => answers.effortMetric === 'TIME' },
+    { id: 'repetitions', label: 'מספר חזרות ברירת מחדל', type: 'text', required: true, placeholder: 'לדוגמה: 12 או 10 לכל צד', visibleWhen: answers => answers.effortMetric === 'REPS' },
     { id: 'transitionSeconds', label: 'זמן מעבר בין תחנות', type: 'number', min: 0, max: 900, visibleWhen: answers => answers.mode === 'ROTATING_GROUPS' },
     { id: 'sourceMode', label: 'לבנות חדשה או להתחיל מהמאגר?', type: 'choice', required: true, options: [{ value: 'NEW', label: 'חדשה' }, { value: 'LIBRARY', label: 'מהמאגר' }] },
     { id: 'templateId', label: 'בחירת תוכנית מהמאגר', type: 'select', required: true, visibleWhen: answers => answers.sourceMode === 'LIBRARY', options: templatePrograms.filter(program => program.id !== selectedProgramId).map(program => ({ value: program.id, label: `${program.title} · ${programExerciseCount(program)} תרגילים` })) },
@@ -595,9 +600,16 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     const mode = String(answers.mode || selectedProgram.mode || 'LINEAR') as 'LINEAR' | 'ROTATING_GROUPS';
     const count = Math.min(60, Math.max(1, Number(answers.exerciseCount || 1)));
     const subgroupCount = Math.min(12, Math.max(2, Number(answers.subgroupCount || 3)));
-    const work = Number(answers.workSeconds || 40);
-    const rest = Number(answers.restSeconds || 20);
-    const blankExercises = Array.from({ length: count }, (_, index) => createExercise(index, work, rest));
+    const effortMetric = String(answers.effortMetric || 'TIME') as 'TIME' | 'REPS';
+    const work = effortMetric === 'TIME' ? Number(answers.workSeconds || 40) : 0;
+    const rest = effortMetric === 'TIME' ? Number(answers.restSeconds || 20) : 0;
+    const repetitions = String(answers.repetitions || '12');
+    const blankExercises = Array.from({ length: count }, (_, index) => ({
+      ...createExercise(index, work, rest),
+      reps: effortMetric === 'REPS' ? repetitions : 'לפי זמן',
+      workDuration: effortMetric === 'TIME' ? `${work} שניות` : undefined,
+      restDuration: effortMetric === 'TIME' ? `${rest} שניות` : undefined
+    }));
     const stations: GroupWorkoutStation[] = mode === 'ROTATING_GROUPS'
       ? Array.from({ length: subgroupCount }, (_, stationIndex) => ({
           id: `setup-station-${Date.now()}-${stationIndex}`,
@@ -618,12 +630,14 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       roundsPerStation: Number(answers.rounds || 3),
       defaultWorkSeconds: work,
       defaultRestSeconds: rest,
+      effortMetric,
+      defaultRepetitions: effortMetric === 'REPS' ? repetitions : undefined,
       transitionSeconds: Number(answers.transitionSeconds || 30),
       status: 'DRAFT',
       updatedAt: now
     };
     onUpdatePrograms(programs.map(program => program.id === updated.id ? updated : program));
-    setAssistantMessages([`קיבלתי את שאלון הפתיחה: ${answers.trainingType}, ${answers.durationMinutes} דקות, ${count} תרגילים ו־${answers.rounds} סבבים. כתוב “בנה תוכנית אימון” ואמלא את התרגילים; אחר כך אפשר לבקש שינויים או לערוך כל תרגיל ישירות.`]);
+    setAssistantMessages([`קיבלתי את שאלון הפתיחה: ${answers.trainingType}, ${answers.durationMinutes} דקות, ${count} תרגילים ו־${answers.rounds} סבבים, ${effortMetric === 'TIME' ? `${work} שניות עבודה ו־${rest} שניות מנוחה` : `${repetitions} חזרות`}. כתוב “בנה תוכנית אימון” ואמלא את התרגילים; אחר כך אפשר לבקש שינויים או לערוך כל תרגיל ישירות.`]);
     setSetupAnswers(answers);
     setSetupComplete(true);
   };
@@ -654,8 +668,10 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
           subgroupCount: Math.max(2, selectedProgram.stations?.length || 3),
           exerciseCount: Math.max(1, programExerciseCount(selectedProgram) || 12),
           rounds: selectedProgram.roundsPerStation || 3,
+          effortMetric: selectedProgram.effortMetric || 'TIME',
           workSeconds: selectedProgram.defaultWorkSeconds || 40,
           restSeconds: selectedProgram.defaultRestSeconds || 20,
+          repetitions: selectedProgram.defaultRepetitions || '12',
           transitionSeconds: selectedProgram.transitionSeconds || 30,
           sourceMode: 'NEW',
           notes: selectedProgram.description,
@@ -670,7 +686,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         { label: 'משך', value: `${setupAnswers.durationMinutes || 60} דקות` },
         { label: 'מבנה', value: setupAnswers.mode === 'ROTATING_GROUPS' ? 'תתי־קבוצות ותחנות' : 'רצף משותף' },
         { label: 'תרגילים', value: setupAnswers.exerciseCount },
-        { label: 'סבבים', value: setupAnswers.rounds }
+        { label: 'סבבים', value: setupAnswers.rounds },
+        { label: 'מדידה', value: setupAnswers.effortMetric === 'REPS' ? `${setupAnswers.repetitions} חזרות` : `${setupAnswers.workSeconds} שנ׳ עבודה / ${setupAnswers.restSeconds} שנ׳ מנוחה` }
       ]} />}
       <section className="rounded-2xl border border-amber-400/25 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="flex items-center justify-between gap-3">
@@ -758,8 +775,12 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
               </div>
               <div className={`mt-4 grid gap-3 rounded-xl bg-slate-50 p-3 ${selectedProgram.mode === 'ROTATING_GROUPS' ? 'grid-cols-2 md:grid-cols-6' : 'grid-cols-3'}`}>
                 <label className="text-[10px] font-bold text-slate-600">הכנה לפני התחלה<input type="number" min={0} max={120} value={selectedProgram.preparationSeconds} onChange={event => updateProgram({ preparationSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
-                <label className="text-[10px] font-bold text-slate-600">זמן עבודה משותף<input type="number" min={5} max={600} value={selectedProgram.defaultWorkSeconds} onChange={event => updateProgram({ defaultWorkSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
-                <label className="text-[10px] font-bold text-slate-600">זמן מנוחה משותף<input type="number" min={0} max={300} value={selectedProgram.defaultRestSeconds} onChange={event => updateProgram({ defaultRestSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
+                {selectedProgram.effortMetric === 'REPS'
+                  ? <label className="text-[10px] font-bold text-slate-600">חזרות ברירת מחדל<input value={selectedProgram.defaultRepetitions || '12'} onChange={event => updateProgram({ defaultRepetitions: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
+                  : <>
+                    <label className="text-[10px] font-bold text-slate-600">זמן עבודה משותף<input type="number" min={5} max={600} value={selectedProgram.defaultWorkSeconds} onChange={event => updateProgram({ defaultWorkSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
+                    <label className="text-[10px] font-bold text-slate-600">זמן מנוחה משותף<input type="number" min={0} max={300} value={selectedProgram.defaultRestSeconds} onChange={event => updateProgram({ defaultRestSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
+                  </>}
                 {selectedProgram.mode === 'ROTATING_GROUPS' && <>
                   <label className="text-[10px] font-bold text-slate-600">מספר נרשמים<input type="number" min={0} max={100} disabled={!!selectedProgram.sessionId} value={selectedProgram.participantCount || 0} onChange={event => updateProgram({ participantCount: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs disabled:bg-slate-100" /></label>
                   <label className="text-[10px] font-bold text-slate-600">סבבים בכל תחנה<input type="number" min={1} max={20} value={selectedProgram.roundsPerStation || 3} onChange={event => updateProgram({ roundsPerStation: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
@@ -827,8 +848,12 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
                       <div className="flex items-center gap-1"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-black text-indigo-700">{index + 1}</span><button onClick={() => moveExercise(index, -1)} disabled={index === 0} className="rounded p-1 text-slate-500 disabled:opacity-20"><ArrowUp size={14} /></button><button onClick={() => moveExercise(index, 1)} disabled={index === selectedProgram.exercises.length - 1} className="rounded p-1 text-slate-500 disabled:opacity-20"><ArrowDown size={14} /></button></div>
                       <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
                         <label className="sm:col-span-2 text-[9px] font-bold text-slate-500">שם התרגיל<input value={exercise.name} onChange={event => updateExercise(exercise.id, { name: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs font-bold text-slate-800" placeholder="לדוגמה: Battle Rope" /></label>
-                        <label className="text-[9px] font-bold text-slate-500">עבודה<input type="number" min={5} max={600} value={exercise.workSeconds} onChange={event => updateExercise(exercise.id, { workSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
-                        <label className="text-[9px] font-bold text-slate-500">מנוחה<input type="number" min={0} max={300} value={exercise.restSeconds} onChange={event => updateExercise(exercise.id, { restSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
+                        {selectedProgram.effortMetric === 'REPS'
+                          ? <label className="text-[9px] font-bold text-slate-500">חזרות<input value={exercise.reps} onChange={event => updateExercise(exercise.id, { reps: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
+                          : <>
+                            <label className="text-[9px] font-bold text-slate-500">עבודה<input type="number" min={5} max={600} value={exercise.workSeconds} onChange={event => updateExercise(exercise.id, { workSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
+                            <label className="text-[9px] font-bold text-slate-500">מנוחה<input type="number" min={0} max={300} value={exercise.restSeconds} onChange={event => updateExercise(exercise.id, { restSeconds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
+                          </>}
                         <label className="text-[9px] font-bold text-slate-500">סבבים<input type="number" min={1} max={20} value={exercise.rounds} onChange={event => updateExercise(exercise.id, { rounds: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" /></label>
                         <label className="text-[9px] font-bold text-slate-500">חזרות / משקל<input value={exercise.weight || exercise.reps} onChange={event => updateExercise(exercise.id, { weight: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" placeholder="לפי זמן" /></label>
                         <label className="sm:col-span-2 lg:col-span-5 text-[9px] font-bold text-slate-500">הנחיות למאמן<input value={exercise.notes || ''} onChange={event => updateExercise(exercise.id, { notes: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs" placeholder="טכניקה, התאמות או ציוד נדרש" /></label>
