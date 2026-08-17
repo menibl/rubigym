@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import balyLogo from '../assets/logo-baly-transparent.png';
 
 interface RubisLogoProps {
   className?: string;
@@ -15,6 +16,7 @@ export const RubisLogo: React.FC<RubisLogoProps> = ({ className = '', size = 120
 
   // List of paths and formats we try in order to load the uploaded logo.
   const logoPaths = [
+    balyLogo,
     'logo.png',
     'logo.jpg',
     'logo.jpeg',
@@ -28,12 +30,12 @@ export const RubisLogo: React.FC<RubisLogoProps> = ({ className = '', size = 120
   // If we haven't exhausted our candidate paths, attempt to load the current path
   if (logoPathIndex < logoPaths.length) {
     return (
-      <div className={`flex flex-col items-center justify-center ${className}`}>
+      <div className={`flex shrink-0 items-center justify-center ${className}`}>
         <img
           src={logoPaths[logoPathIndex]}
           alt="BALY WELLNESS Logo"
-          style={{ width: size, height: size }}
-          className="object-contain transition-transform duration-300 hover:scale-105 rounded-full"
+          style={{ width: size, height: Math.round(size * 0.663) }}
+          className="block object-contain transition-transform duration-300 hover:scale-105"
           onError={handleImgError}
         />
       </div>

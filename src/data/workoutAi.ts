@@ -103,13 +103,23 @@ interface NutritionAiRequest {
 const aiApiBase = () => (import.meta.env.VITE_AI_API_URL || import.meta.env.VITE_PAYMENT_API_URL || '').replace(/\/$/, '');
 
 const requestWorkoutAi = async <T>(body: object): Promise<{ result: T; model: string }> => {
-  const response = await fetch(`${aiApiBase()}/api/ai/workout-plan`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${aiApiBase()}/api/ai/workout-plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch {
+    throw new Error('לא ניתן להתחבר לשרת ה־AI. בדקו שהאתר הציבורי מחובר לשירות השרת.');
+  }
   const payload = await response.json().catch(() => ({})) as { result?: T; model?: string; message?: string };
-  if (!response.ok || !payload.result) throw new Error(payload.message || 'שירות ה־AI אינו זמין כרגע.');
+  if (!response.ok || !payload.result) {
+    const fallback = response.status === 404
+      ? 'שירות ה־AI אינו מחובר לגרסה הציבורית.'
+      : 'שירות ה־AI אינו זמין כרגע.';
+    throw new Error(payload.message || fallback);
+  }
   return { result: payload.result, model: payload.model || 'OpenAI' };
 };
 

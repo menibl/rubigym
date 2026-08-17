@@ -2,17 +2,19 @@ name: gymflow
 
 services:
   app:
+    image: ${GYMFLOW_IMAGE:-gymflow:local}
     build:
       context: ..
       dockerfile: Dockerfile
       args:
         VITE_PAYMENT_API_URL: ${VITE_PAYMENT_API_URL}
+        VITE_AI_API_URL: ${VITE_AI_API_URL}
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     env_file:
-      - .env
+      - ${GYMFLOW_ENV_FILE:-.env}
     expose:
       - "8080"
     read_only: true

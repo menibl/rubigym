@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Maximize, Pause, Play, RotateCcw, Volume2, X
 import { GroupWorkoutProgram } from '../types';
 import { ExerciseMedia } from './ExerciseMedia';
 import { LiveClock } from './LiveClock';
+import { RubisLogo } from './RubisLogo';
 import { publishGroupWorkoutStatus, subscribeToGroupWorkoutCommands } from '../data/groupWorkoutRemote';
 
 interface RotatingGroupWorkoutDisplayProps {
@@ -212,7 +213,7 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
   };
 
   if (stations.length === 0 || stations.every(station => station.exercises.length === 0)) {
-    return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-center text-white" dir="rtl"><div><h1 className="text-3xl font-black">לא הוגדרו תחנות ותרגילים</h1><button onClick={exitDisplay} className="mt-6 rounded-xl bg-white px-5 py-3 font-black text-slate-900">חזרה למערכת</button></div></main>;
+    return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-center text-white" dir="rtl"><div><RubisLogo size={190} className="mx-auto mb-6" /><h1 className="text-3xl font-black">לא הוגדרו תחנות ותרגילים</h1><button onClick={exitDisplay} className="mt-6 rounded-xl bg-white px-5 py-3 font-black text-slate-900">חזרה למערכת</button></div></main>;
   }
 
   const phaseLabel = phase === 'WORK' ? 'עבודה' : phase === 'REST' ? 'מנוחה' : phase === 'TRANSITION' ? 'החלפת תחנות' : phase === 'COMPLETE' ? 'האימון הושלם!' : 'מתכוננים';
@@ -223,7 +224,7 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
     <main className="h-screen overflow-hidden bg-slate-950 text-white" dir="rtl">
       <div className="flex h-screen min-h-0 flex-col overflow-hidden">
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-2 lg:px-6">
-          <div><p className="text-sm font-black text-indigo-300">{program.groupName} · {(program.participants || []).length || program.participantCount || 0} משתתפים</p><h1 className="text-xl font-black lg:text-2xl">{program.title}</h1></div>
+          <div className="flex items-center gap-4"><RubisLogo size={105} /><div><p className="text-sm font-black text-indigo-300">{program.groupName} · {(program.participants || []).length || program.participantCount || 0} משתתפים</p><h1 className="text-xl font-black lg:text-2xl">{program.title}</h1></div></div>
           <div className="flex items-center gap-2"><span className="hidden rounded-lg bg-white/5 px-3 py-2 text-xs text-slate-400 sm:block">סבב {chainRound}/{roundsPerStation} · החלפה {rotationIndex + 1}/{stations.length}</span><button onClick={() => void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen())} className="rounded-lg bg-white/10 p-2.5"><Maximize size={20} /></button><button onClick={exitDisplay} className="rounded-lg bg-white/10 p-2.5"><X size={20} /></button></div>
         </header>
         <div className="h-1.5 shrink-0 bg-slate-800"><div className="h-full bg-gradient-to-l from-indigo-400 to-emerald-400 transition-all" style={{ width: `${progress}%` }} /></div>

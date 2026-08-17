@@ -11,7 +11,8 @@ import {
   MuscleGroup,
   Gender,
   MembershipType,
-  MEMBERSHIP_TYPE_LABELS
+  MEMBERSHIP_TYPE_LABELS,
+  CURRENT_MEMBERSHIP_CATALOG
 } from '../types';
 import { X, Calendar, Clock, Users, Dumbbell, Sparkles, Repeat, ShieldCheck, Edit3 } from 'lucide-react';
 
@@ -58,7 +59,7 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
   const [ageMax, setAgeMax] = useState<string>(session?.ageMax ? String(session.ageMax) : '');
   const [genderRestriction, setGenderRestriction] = useState<Gender>(session?.genderRestriction || Gender.ALL);
   const [allowedMemberships, setAllowedMemberships] = useState<MembershipType[]>(
-    session?.allowedMemberships || (Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[])
+    session?.allowedMemberships || [...CURRENT_MEMBERSHIP_CATALOG]
   );
   const [isPersonalTraining, setIsPersonalTraining] = useState<boolean>(session?.isPersonalTraining || false);
 
@@ -77,7 +78,7 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
       setAgeMin(session.ageMin ? String(session.ageMin) : '');
       setAgeMax(session.ageMax ? String(session.ageMax) : '');
       setGenderRestriction(session.genderRestriction || Gender.ALL);
-      setAllowedMemberships(session.allowedMemberships || (Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]));
+      setAllowedMemberships(session.allowedMemberships || [...CURRENT_MEMBERSHIP_CATALOG]);
       setIsPersonalTraining(session.isPersonalTraining || false);
     } else if (openGym) {
       setDate(openGym.date);
@@ -351,7 +352,7 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">מנויים מורשים להרשמה</label>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {(Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]).map(mType => {
+                  {CURRENT_MEMBERSHIP_CATALOG.map(mType => {
                     const isChecked = allowedMemberships.includes(mType);
                     return (
                       <label

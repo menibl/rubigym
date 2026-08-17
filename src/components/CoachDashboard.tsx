@@ -32,13 +32,15 @@ import {
   Gender,
   MembershipType,
   MembershipStatus,
-  MEMBERSHIP_TYPE_LABELS
+  MEMBERSHIP_TYPE_LABELS,
+  CURRENT_MEMBERSHIP_CATALOG
 } from '../types';
 import { TraineeMemoryPanel } from './TraineeMemoryPanel';
 import { GymEquipmentPanel } from './GymEquipmentPanel';
 import { CoachPdfLibraryPanel } from './CoachPdfLibraryPanel';
 import { WorkoutAssistantPanel } from './WorkoutAssistantPanel';
 import { NutritionAssistantPanel } from './NutritionAssistantPanel';
+import { NutritionPlanningNavigator } from './NutritionPlanningNavigator';
 import { GroupWorkoutProgramManager } from './GroupWorkoutProgramManager';
 import { CoachTrainingMode } from './CoachTrainingMode';
 import { WorkoutPlanningNavigator, WorkoutPlanningRoute } from './WorkoutPlanningNavigator';
@@ -152,6 +154,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const [groupProgramId, setGroupProgramId] = useState('');
   const [groupProgramAudience, setGroupProgramAudience] = useState('');
   const [workoutPlanningRoute, setWorkoutPlanningRoute] = useState<WorkoutPlanningRoute | 'PERSONAL_BUILDER' | 'GROUP_BUILDER' | 'PDF_LIBRARY'>('HOME');
+  const [nutritionPlanningSelecting, setNutritionPlanningSelecting] = useState(initialPlanningTab === 'nutrition');
 
   useEffect(() => {
     if (initialMode) setCoachMode(initialMode);
@@ -442,7 +445,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     maxParticipants: 10,
     ageMin: '',
     genderRestriction: Gender.ALL,
-    allowedMemberships: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+    allowedMemberships: [...CURRENT_MEMBERSHIP_CATALOG]
   });
 
   // Personal Training Scheduling State
@@ -451,7 +454,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     time: '16:00',
     durationMinutes: 60,
     muscleGroup: MuscleGroup.UPPER,
-    rate: selectedTrainee?.personalTrainingRate || 180,
+    rate: selectedTrainee?.personalTrainingRate || 200,
     coTraineeId: ''
   });
 
@@ -464,7 +467,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
     const ptSession: TrainingSession = {
       id: `pt-${Date.now()}`,
-      title: `אימון אישי 1:1 – ${selectedTrainee.name}`,
+      title: `${ptForm.coTraineeId ? 'אימון זוגי' : 'אימון אישי 1:1'} – ${selectedTrainee.name}`,
       date: ptForm.date,
       time: ptForm.time,
       durationMinutes: Number(ptForm.durationMinutes),
@@ -473,7 +476,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       muscleGroup: ptForm.muscleGroup,
       maxParticipants: registered.length,
       genderRestriction: Gender.ALL,
-      allowedMemberships: [MembershipType.PERSONAL_TRAINING],
+      allowedMemberships: [ptForm.coTraineeId ? MembershipType.DUO_TRAINING : MembershipType.PERSONAL_TRAINING],
       registeredUsers: registered,
       waitlistUsers: [],
       isPersonalTraining: true,
@@ -492,14 +495,34 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       onSendMessage(`🏋️ הצטרפת באישור המאמן לאימון אישי של ${selectedTrainee.name} ביום ${ptForm.date} בשעה ${ptForm.time}.`, ptForm.coTraineeId);
     }
 
-    // Increment personal session count for trainee
+    // Use one session from the matching card and warn both sides when only two remain.
     if (onUpdateUsers) {
+      const cardMembers = ptForm.coTraineeId ? [selectedTrainee.id, ptForm.coTraineeId] : [selectedTrainee.id];
+      cardMembers.forEach(memberId => {
+        const member = users.find(user => user.id === memberId);
+        const currentBalance = ptForm.coTraineeId ? member?.duoTrainingRemaining : member?.personalTrainingRemaining;
+        if (currentBalance !== undefined && Math.max(0, currentBalance - 1) === 2) {
+          const warning = `⚠️ נותרו לך 2 אימונים בלבד בכרטיסיית ${ptForm.coTraineeId ? 'האימון הזוגי' : 'האימון האישי'}. ניתן לחדש דרך ניהול המסלול.`;
+          onSendMessage(warning, memberId);
+          users.filter(user => user.role === UserRole.MANAGER || (user.role === UserRole.COACH && user.id !== activeUser.id)).forEach(staff =>
+            onSendMessage(`⚠️ למתאמן/ת ${member?.name || memberId} נותרו 2 אימונים בכרטיסייה.`, staff.id)
+          );
+        }
+      });
       const updatedUsers = users.map(u => {
-        if (u.id === selectedTrainee.id) {
+        if (cardMembers.includes(u.id)) {
+          const personalRemaining = !ptForm.coTraineeId && u.id === selectedTrainee.id
+            ? Math.max(0, (u.personalTrainingRemaining ?? 1) - 1)
+            : u.personalTrainingRemaining;
+          const duoRemaining = ptForm.coTraineeId
+            ? Math.max(0, (u.duoTrainingRemaining ?? 1) - 1)
+            : u.duoTrainingRemaining;
           return {
             ...u,
             personalTrainingRate: Number(ptForm.rate),
-            personalSessionsCountThisMonth: (u.personalSessionsCountThisMonth || 0) + 1
+            personalSessionsCountThisMonth: (u.personalSessionsCountThisMonth || 0) + 1,
+            personalTrainingRemaining: personalRemaining,
+            duoTrainingRemaining: duoRemaining
           };
         }
         return u;
@@ -847,7 +870,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       maxParticipants: 10,
       ageMin: '',
       genderRestriction: Gender.ALL,
-      allowedMemberships: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+      allowedMemberships: [...CURRENT_MEMBERSHIP_CATALOG]
     });
   };
 
@@ -865,6 +888,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       : plan));
   };
   const selectedHasWorkoutPlanAccess = Boolean(
+    selectedTrainee?.secondaryMemberships?.includes(MembershipType.WORKOUT_COACHING) ||
     selectedTrainee?.secondaryMemberships?.includes(MembershipType.WORKOUT_PLAN) ||
     (selectedTrainee?.membershipType && MEMBERSHIP_TYPE_LABELS[selectedTrainee.membershipType]?.includesWorkoutPlan &&
       (selectedTrainee.membershipStatus === MembershipStatus.ACTIVE || selectedTrainee.offlinePaymentApproved))
@@ -1055,6 +1079,21 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     setWorkoutPlanningRoute('GROUP_BUILDER');
   };
 
+  const openNutritionBuilder = (traineeId: string) => {
+    setSelectedTraineeId(traineeId);
+    setActiveTab('nutrition');
+    setNutritionSetupComplete(false);
+    setNutritionSetupAnswers({});
+    setNutritionPlanningSelecting(false);
+  };
+
+  if (initialPlanningTab === 'nutrition' && nutritionPlanningSelecting) {
+    return <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-md" id="coach-dashboard">
+      {modeSwitcher}
+      <NutritionPlanningNavigator trainees={traineesOnly} nutritionPlans={nutritionPlans} onOpenTrainee={openNutritionBuilder} />
+    </div>;
+  }
+
   if (guidedWorkoutPlanning && navigatorRoutes.includes(workoutPlanningRoute as WorkoutPlanningRoute)) {
     return <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-md" id="coach-dashboard">
       {modeSwitcher}
@@ -1090,13 +1129,16 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="coach-dashboard">
       {modeSwitcher}
       {/* Tab Header */}
-      {guidedWorkoutPlanning && <div className="planning-builder-context" dir="rtl">
+      {(guidedWorkoutPlanning || initialPlanningTab === 'nutrition') && <div className="planning-builder-context" dir="rtl">
+        {initialPlanningTab === 'nutrition' ? <button type="button" onClick={() => setNutritionPlanningSelecting(true)}>
+          <Calendar size={17} /> חזרה לבחירת מתאמן
+        </button> :
         <button type="button" onClick={() => setWorkoutPlanningRoute(activeTab === 'group-programs' ? 'GROUP' : activeTab === 'pdf-library' ? 'LIBRARY' : 'PERSONAL')}>
           <Calendar size={17} /> חזרה לבחירת סוג תוכנית
-        </button>
+        </button>}
         <div>
-          <span>{activeTab === 'group-programs' ? 'תוכנית קבוצתית' : activeTab === 'pdf-library' ? 'ספריית PDF' : 'תוכנית אישית'}</span>
-          <strong>{activeTab === 'programs' ? selectedTrainee?.name || 'בחירת מתאמן' : activeTab === 'group-programs' ? 'בנייה, עריכה ופרסום' : 'מקורות לתכנון בעזרת AI'}</strong>
+          <span>{activeTab === 'nutrition' ? 'תוכנית תזונה' : activeTab === 'group-programs' ? 'תוכנית קבוצתית' : activeTab === 'pdf-library' ? 'ספריית PDF' : 'תוכנית אישית'}</span>
+          <strong>{activeTab === 'nutrition' ? selectedTrainee?.name || 'בחירת מתאמן' : activeTab === 'programs' ? selectedTrainee?.name || 'בחירת מתאמן' : activeTab === 'group-programs' ? 'בנייה, עריכה ופרסום' : 'מקורות לתכנון בעזרת AI'}</strong>
         </div>
       </div>}
       <div className={`${guidedWorkoutPlanning ? 'hidden' : 'flex'} bg-slate-900 border-b border-slate-800 p-4 flex-wrap justify-between items-center gap-4`}>
@@ -2111,7 +2153,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                             type="button"
                             onClick={() => setNewSession({
                               ...newSession,
-                              allowedMemberships: Object.keys(MEMBERSHIP_TYPE_LABELS) as MembershipType[]
+                              allowedMemberships: [...CURRENT_MEMBERSHIP_CATALOG]
                             })}
                             className="text-emerald-700 hover:underline font-semibold"
                           >
@@ -2132,10 +2174,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-white p-3 rounded-lg border border-slate-200 text-xs">
-                        {Object.entries(MEMBERSHIP_TYPE_LABELS).map(([typeKey, info]) => {
-                          const typeEnum = typeKey as MembershipType;
+                        {CURRENT_MEMBERSHIP_CATALOG.map(typeEnum => {
+                          const info = MEMBERSHIP_TYPE_LABELS[typeEnum];
                           return (
-                            <label key={typeKey} className="flex items-center gap-1.5 cursor-pointer hover:text-emerald-700">
+                            <label key={typeEnum} className="flex items-center gap-1.5 cursor-pointer hover:text-emerald-700">
                               <input
                                 type="checkbox"
                                 checked={newSession.allowedMemberships.includes(typeEnum)}
@@ -2245,7 +2287,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       <div className="text-lg font-black text-indigo-700">
                         {selectedTrainee.personalSessionsCountThisMonth || 0} אימונים 
                         <span className="text-xs text-slate-500 font-normal mr-2">
-                          (סה"כ לתשלום ב-1 לחודש: ₪{(selectedTrainee.personalTrainingRate || 180) * (selectedTrainee.personalSessionsCountThisMonth || 0)})
+                          (סה"כ לתשלום ב-1 לחודש: ₪{(selectedTrainee.personalTrainingRate || 200) * (selectedTrainee.personalSessionsCountThisMonth || 0)})
                         </span>
                       </div>
                     </div>
@@ -2313,7 +2355,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       </label>
                       <select
                         value={ptForm.coTraineeId}
-                        onChange={(e) => setPtForm({ ...ptForm, coTraineeId: e.target.value })}
+                        onChange={(e) => setPtForm({ ...ptForm, coTraineeId: e.target.value, rate: e.target.value ? 350 : 200 })}
                         className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-indigo-500 bg-white"
                       >
                         <option value="">-- ללא מתאמן נוסף (אימון 1:1 בלבד) --</option>

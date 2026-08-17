@@ -3,7 +3,7 @@ name: Deploy BALY wellness to GitHub Pages
 on:
   push:
     branches:
-      - main
+      - staging
   workflow_dispatch:
 
 permissions:
@@ -25,15 +25,19 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+
+      - name: Enable pnpm
+        run: corepack enable
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: pnpm install --frozen-lockfile
 
       - name: Build public site
-        run: npm run build:pages
+        run: pnpm run build:pages
         env:
           VITE_PAYMENT_API_URL: ${{ vars.PAYMENT_API_URL }}
+          VITE_AI_API_URL: ${{ vars.AI_API_URL || vars.PAYMENT_API_URL }}
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
