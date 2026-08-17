@@ -197,7 +197,7 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: env.OPENAI_WORKOUT_MODEL || 'gpt-5.4-mini',
+        model: env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini',
         store: false,
         safety_identifier: await privacySafeIdentifier(body.actor?.id || body.trainee?.id),
         input: [
@@ -219,9 +219,16 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
     if (!openAiResponse.ok || !result) {
       console.error('OpenAI workout request failed', openAiResponse.status, result?.error?.code || result?.error?.message || 'unknown');
       const status = openAiResponse.status === 429 ? 429 : 502;
-      return json({ message: status === 429 ? 'שירות ה־AI עמוס כרגע. נסו שוב בעוד רגע.' : 'שירות ה־AI לא הצליח ליצור תוכנית.' }, status, headers);
+      const message = openAiResponse.status === 401
+        ? 'מפתח OpenAI שמוגדר בשרת אינו תקין.'
+        : openAiResponse.status === 404
+          ? 'מודל ה־AI שמוגדר בשרת אינו זמין לפרויקט.'
+          : status === 429
+            ? 'שירות ה־AI עמוס כרגע או שמגבלת התקציב נוצלה. נסו שוב בעוד רגע.'
+            : 'שירות ה־AI לא הצליח ליצור תוכנית.';
+      return json({ message }, status, headers);
     }
-    return json({ result: JSON.parse(readOutputText(result)), model: result.model || env.OPENAI_WORKOUT_MODEL || 'gpt-5.4-mini' }, 200, headers);
+    return json({ result: JSON.parse(readOutputText(result)), model: result.model || env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini' }, 200, headers);
   } catch (error) {
     const code = error instanceof Error ? error.message : 'UNKNOWN';
     if (code === 'AI_RATE_LIMIT') return json({ message: 'הגעתם למגבלת בקשות ה־AI לשעה. נסו שוב מאוחר יותר.' }, 429, headers);

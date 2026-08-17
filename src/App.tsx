@@ -55,6 +55,7 @@ import { UserSettingsModal } from './components/UserSettingsModal';
 import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
 import { ClubWorkoutDisplay } from './components/ClubWorkoutDisplay';
 import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
+import { isMembershipCancellationEffective } from './data/membershipPolicy';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const AUTH_SESSION_KEY = 'gym_auth_session_v1';
@@ -543,9 +544,9 @@ export default function App() {
   const familyPayer = activeUser.familyPayerId
     ? users.find(user => user.id === activeUser.familyPayerId)
     : undefined;
-  const hasValidPayment = activeUser.membershipStatus === MembershipStatus.ACTIVE
+  const hasValidPayment = (activeUser.membershipStatus === MembershipStatus.ACTIVE && !isMembershipCancellationEffective(activeUser))
     || Boolean(activeUser.offlinePaymentApproved)
-    || familyPayer?.membershipStatus === MembershipStatus.ACTIVE
+    || (familyPayer?.membershipStatus === MembershipStatus.ACTIVE && !isMembershipCancellationEffective(familyPayer))
     || Boolean(familyPayer?.offlinePaymentApproved);
   const healthSignedAt = activeUser.healthDeclarationDate
     ? new Date(`${activeUser.healthDeclarationDate}T00:00:00`)
@@ -569,13 +570,8 @@ export default function App() {
       <header className="app-header bg-gradient-to-r from-zinc-950 via-zinc-900 to-amber-950 text-white shadow-md border-b border-amber-500/20">
         <div className="app-header-inner max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-4">
-            <div className="bg-zinc-950 p-0.5 rounded-full border-2 border-amber-500/40 shadow-lg shadow-black/50 shrink-0">
-              <RubisLogo size={54} />
-            </div>
+            <RubisLogo size={128} />
             <div>
-              <h1 className="text-lg font-semibold tracking-[0.16em] font-sans text-white">
-                BALY WELLNESS
-              </h1>
               <p className="text-[10px] text-zinc-400 font-sans">אימונים, בריאות וליווי אישי במקום אחד</p>
             </div>
           </div>
@@ -674,8 +670,9 @@ export default function App() {
               blackPoints={blackPoints}
               announcements={announcements}
               payments={payments}
-              settings={settings}
+              attendanceLogs={attendanceLogs}
               discountCodes={discountCodes}
+              settings={settings}
               workoutPlans={workoutPlans}
               nutritionPlans={nutritionPlans}
               messages={messages}
@@ -730,6 +727,7 @@ export default function App() {
               announcements={announcements}
               payments={payments}
               attendanceLogs={attendanceLogs}
+              discountCodes={discountCodes}
               settings={settings}
               onUpdateSessions={setSessions}
               onUpdateOpenGym={setOpenGymSessions}

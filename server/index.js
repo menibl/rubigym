@@ -4,12 +4,22 @@ const CARDCOM_BASE_URL = 'https://secure.cardcom.solutions/api/v11';
 const liveDisplayState = { program: null, commands: new Map(), statuses: new Map() };
 
 const membershipPrices = {
-  GROUP_MONTHLY: 350,
-  GROUP_ANNUAL: 290,
+  OPEN_GYM: 280,
+  NUTRITION_COACHING: 350,
+  WORKOUT_COACHING: 350,
+  OPEN_GYM_WITH_PLAN: 450,
+  CORE_GROUPS: 500,
+  DUO_TRAINING: 350,
+  YOUTH_TWICE_WEEKLY: 500,
+  YOUTH_ONCE_WEEKLY: 300,
+  DEDICATED_GROUP_HALF_YEAR: 3600,
+  FAMILY_MEMBERSHIP: 900,
+  GROUP_MONTHLY: 600,
+  GROUP_ANNUAL: 500,
   OPEN_MONTHLY: 300,
   OPEN_ANNUAL: 250,
   OPEN_PUNCH_CARD: 400,
-  PERSONAL_TRAINING: 450,
+  PERSONAL_TRAINING: 200,
   NUTRITION_PLAN: 200,
   WORKOUT_PLAN: 150,
   WEIGHT_LOSS_HALF_YEAR: 1800,
@@ -17,8 +27,18 @@ const membershipPrices = {
 };
 
 const membershipLabels = {
-  GROUP_MONTHLY: 'מנוי קבוצתי חודשי',
-  GROUP_ANNUAL: 'מנוי קבוצתי שנתי',
+  OPEN_GYM: 'Open Gym',
+  NUTRITION_COACHING: 'תוכנית תזונה + ליווי אישי',
+  WORKOUT_COACHING: 'תוכנית אימון + ליווי אישי',
+  OPEN_GYM_WITH_PLAN: 'Open Gym + תוכנית',
+  CORE_GROUPS: 'קבוצות (ליבה)',
+  DUO_TRAINING: 'אימון זוגי',
+  YOUTH_TWICE_WEEKLY: 'נוער – פעמיים בשבוע',
+  YOUTH_ONCE_WEEKLY: 'נוער – פעם בשבוע',
+  DEDICATED_GROUP_HALF_YEAR: 'קבוצה ייעודית – חצי שנתי',
+  FAMILY_MEMBERSHIP: 'מנוי משפחתי',
+  GROUP_MONTHLY: 'קבוצתי חודשי – ₪600 לחודש',
+  GROUP_ANNUAL: 'קבוצתי שנתי – הוראת קבע חודשית ל־12 חודשים',
   OPEN_MONTHLY: 'Open Gym חודשי',
   OPEN_ANNUAL: 'Open Gym שנתי',
   OPEN_PUNCH_CARD: 'כרטיסיית Open Gym',
@@ -29,38 +49,77 @@ const membershipLabels = {
   POSTPARTUM_HALF_YEAR: 'נשים אחרי לידה – חצי שנתי'
 };
 
-const punchCardVariants = {
-  PUNCH_5: { amount: 250, label: 'כרטיסיית 5 אימונים' },
-  PUNCH_10: { amount: 450, label: 'כרטיסיית 10 אימונים' },
-  PUNCH_20: { amount: 800, label: 'כרטיסיית 20 אימונים' }
+const trainingCardVariants = {
+  PERSONAL_1: { amount: 200, label: 'אימון אישי בודד', membershipType: 'PERSONAL_TRAINING' },
+  PERSONAL_4: { amount: 800, label: 'כרטיסיית 4 אימונים אישיים', membershipType: 'PERSONAL_TRAINING' },
+  PERSONAL_8: { amount: 1600, label: 'כרטיסיית 8 אימונים אישיים', membershipType: 'PERSONAL_TRAINING' },
+  PERSONAL_12: { amount: 2400, label: 'כרטיסיית 12 אימונים אישיים', membershipType: 'PERSONAL_TRAINING' },
+  DUO_1: { amount: 350, label: 'אימון זוגי בודד', membershipType: 'DUO_TRAINING' },
+  DUO_4: { amount: 1400, label: 'כרטיסיית 4 אימונים זוגיים', membershipType: 'DUO_TRAINING' },
+  DUO_8: { amount: 2800, label: 'כרטיסיית 8 אימונים זוגיים', membershipType: 'DUO_TRAINING' },
+  DUO_12: { amount: 4200, label: 'כרטיסיית 12 אימונים זוגיים', membershipType: 'DUO_TRAINING' }
 };
 
-const familyPrices = { 2: 550, 3: 750, 4: 920, 5: 1100 };
+const familyPrices = { 2: 900, 3: 1350, 4: 1800, 5: 2250, 6: 2700 };
+const familyMonthlyPricePerMember = 550;
 const discountCodes = {
   RUBI10: { percent: 10 },
   FAMILY15: { percent: 15 },
   VIP50: { amount: 50 }
 };
 
+const applyDiscount = (amount, discountCode) => {
+  const discount = discountCode ? discountCodes[String(discountCode).toUpperCase()] : undefined;
+  if (discountCode && !discount) throw new Error('INVALID_DISCOUNT');
+  return discount?.percent ? Math.round(amount * (1 - discount.percent / 100)) : Math.max(0, amount - (discount?.amount || 0));
+};
+
+const normalizeFamilyPlans = plans => {
+  if (!Array.isArray(plans)) return [];
+  return plans.map((plan, index) => {
+    const membershipType = String(plan?.membershipType || '');
+    if (!membershipPrices[membershipType] || membershipType === 'FAMILY_MEMBERSHIP') throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+    const isTraining = membershipType === 'PERSONAL_TRAINING' || membershipType === 'DUO_TRAINING';
+    const trainingSessionsCount = isTraining ? Math.max(1, Math.min(50, Math.round(Number(plan?.trainingSessionsCount || 1)))) : undefined;
+    return {
+      memberId: plan?.memberId ? String(plan.memberId).slice(0, 100) : undefined,
+      memberName: String(plan?.memberName || `בן משפחה ${index + 1}`).slice(0, 100),
+      membershipType,
+      trainingSessionsCount
+    };
+  });
+};
+
 const resolvePurchase = body => {
-  if (body.familyMembersCount) {
-    const familyAmount = familyPrices[Number(body.familyMembersCount)];
-    if (!familyAmount || body.membershipType !== 'GROUP_MONTHLY') throw new Error('INVALID_FAMILY_PLAN');
-    const discount = body.discountCode ? discountCodes[String(body.discountCode).toUpperCase()] : undefined;
-    const amount = discount?.percent ? Math.round(familyAmount * (1 - discount.percent / 100)) : Math.max(0, familyAmount - (discount?.amount || 0));
-    return { amount, label: `מנוי משפחתי ${body.familyMembersCount} מנויים` };
+  if (body.familyMembersCount || body.membershipType === 'FAMILY_MEMBERSHIP') {
+    const count = Number(body.familyMembersCount);
+    const mode = body.familyBillingMode || 'ANNUAL_BY_SIZE';
+    if (!Number.isInteger(count) || count < 2 || count > 6 || body.membershipType !== 'FAMILY_MEMBERSHIP') throw new Error('INVALID_FAMILY_PLAN');
+    let baseAmount;
+    let label;
+    let familyMemberPlans;
+    if (mode === 'ANNUAL_BY_SIZE') {
+      baseAmount = familyPrices[count];
+      label = `משפחתי שנתי – ${count} מתאמנים`;
+    } else if (mode === 'MONTHLY_PER_MEMBER') {
+      baseAmount = count * familyMonthlyPricePerMember;
+      label = `משפחתי חודשי – ${count} × ₪${familyMonthlyPricePerMember}`;
+    } else if (mode === 'CUSTOM_COMBINED') {
+      familyMemberPlans = normalizeFamilyPlans(body.familyMemberPlans);
+      if (familyMemberPlans.length !== count) throw new Error('INVALID_FAMILY_MEMBER_COUNT');
+      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + membershipPrices[plan.membershipType] * (plan.trainingSessionsCount || 1), 0);
+      label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
+    } else throw new Error('INVALID_FAMILY_BILLING_MODE');
+    return { amount: applyDiscount(baseAmount, body.discountCode), label, familyBillingMode: mode, familyMemberPlans };
   }
-  if (body.membershipType === 'OPEN_PUNCH_CARD' && body.purchaseVariant) {
-    const variant = punchCardVariants[body.purchaseVariant];
-    if (!variant) throw new Error('INVALID_VARIANT');
-    return variant;
+  if (body.purchaseVariant) {
+    const variant = trainingCardVariants[body.purchaseVariant];
+    if (!variant || variant.membershipType !== body.membershipType) throw new Error('INVALID_VARIANT');
+    return { ...variant, amount: applyDiscount(variant.amount, body.discountCode) };
   }
   const amount = membershipPrices[body.membershipType];
   if (!amount) throw new Error('INVALID_MEMBERSHIP');
-  const discount = body.discountCode ? discountCodes[String(body.discountCode).toUpperCase()] : undefined;
-  if (body.discountCode && !discount) throw new Error('INVALID_DISCOUNT');
-  const finalAmount = discount?.percent ? Math.round(amount * (1 - discount.percent / 100)) : Math.max(0, amount - (discount?.amount || 0));
-  return { amount: finalAmount, label: membershipLabels[body.membershipType] };
+  return { amount: applyDiscount(amount, body.discountCode), label: membershipLabels[body.membershipType] };
 };
 
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
@@ -78,7 +137,8 @@ const sign = async (value, secret) => {
 };
 
 const createSignedOrder = async (body, env) => {
-  const { amount } = resolvePurchase(body);
+  const purchase = resolvePurchase(body);
+  const { amount } = purchase;
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(body.mode)) throw new Error('INVALID_MODE');
   const payload = encodePayload({
     o: crypto.randomUUID(),
@@ -86,6 +146,8 @@ const createSignedOrder = async (body, env) => {
     d: body.mode,
     v: body.purchaseVariant || undefined,
     f: body.familyMembersCount || undefined,
+    fm: purchase.familyBillingMode || undefined,
+    fp: purchase.familyMemberPlans || undefined,
     c: body.discountCode ? String(body.discountCode).toUpperCase() : undefined,
     a: amount,
     t: Date.now()
@@ -99,7 +161,7 @@ const verifySignedOrder = async (value, env) => {
   if (!payload || !signature || await sign(payload, env.PAYMENT_SIGNING_SECRET) !== signature) throw new Error('INVALID_SIGNATURE');
   const order = decodePayload(payload);
   if (Date.now() - Number(order.t) > 24 * 60 * 60 * 1000) throw new Error('ORDER_EXPIRED');
-  if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v, familyMembersCount: order.f, discountCode: order.c }).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
+  if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v, familyMembersCount: order.f, familyBillingMode: order.fm, familyMemberPlans: order.fp, discountCode: order.c }).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(order.d)) throw new Error('INVALID_MODE');
   return order;
 };
@@ -209,6 +271,8 @@ const handleVerifyPayment = async (request, env) => {
       mode: order.d,
       purchaseVariant: order.v,
       familyMembersCount: order.f,
+      familyBillingMode: order.fm,
+      familyMemberPlans: order.fp,
       amount: order.a,
       transactionId: `demo-${order.o}`,
       last4Digits: '1111'
@@ -222,6 +286,8 @@ const handleVerifyPayment = async (request, env) => {
     mode: order.d,
     purchaseVariant: order.v,
     familyMembersCount: order.f,
+    familyBillingMode: order.fm,
+    familyMemberPlans: order.fp,
     amount: order.a,
     transactionId: String(result.TranzactionId || result.TranzactionInfo?.TranzactionId || ''),
     last4Digits: result.TranzactionInfo?.Last4CardDigitsString || result.TranzactionInfo?.Last4CardDigits
@@ -292,14 +358,17 @@ const handleApi = async (request, env, url) => {
       const result = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', body.payload, body.expectedRevision);
       return result.conflict ? json(result, 409, headers) : json(result, 200, headers);
     }
+    if (request.method === 'GET' && url.pathname === '/api/ai/status') {
+      return json({ configured: Boolean(env.OPENAI_API_KEY), model: env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini' }, 200, headers);
+    }
     if (request.method === 'POST' && url.pathname === '/api/ai/workout-plan') return await handleWorkoutAi(request, env, headers, json);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/create') return await handleCreatePayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/verify') return await handleVerifyPayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/webhook') return await handleWebhook(request, env);
     return json({ message: 'Not found' }, 404, headers);
   } catch (error) {
-    console.error('Cardcom payment error', error instanceof Error ? error.message : error);
-    return json({ message: 'שירות התשלום אינו זמין כרגע. נסו שוב מאוחר יותר.' }, 502, headers);
+    console.error('API request error', error instanceof Error ? error.message : error);
+    return json({ message: 'שירות השרת אינו זמין כרגע. נסו שוב מאוחר יותר.' }, 502, headers);
   }
 };
 

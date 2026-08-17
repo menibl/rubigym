@@ -878,14 +878,11 @@ option {
 .auth-brand {
   display: flex;
   align-items: center;
-  gap: 13px;
+  justify-content: center;
 }
 
 .auth-brand-logo {
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .45);
-  border-radius: 50%;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .32));
 }
 
 .auth-brand div { display: flex; align-items: center; }
@@ -915,6 +912,61 @@ option {
 }
 
 .auth-benefits svg { color: #c9a867; }
+.auth-contact {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 15px;
+  border: 1px solid rgba(201, 168, 103, .3);
+  border-radius: 17px;
+  background: rgba(10, 11, 9, .42);
+}
+
+.auth-contact > div {
+  display: grid;
+  gap: 5px;
+}
+
+.auth-contact span {
+  color: #c9a867;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.auth-contact strong {
+  color: #f7f5ef;
+  font-size: 14px;
+}
+
+.auth-contact a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #e3ded1;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-whatsapp {
+  min-height: 44px;
+  justify-content: center;
+  border-radius: 12px;
+  background: #1f9d55;
+  color: #fff !important;
+  transition: background .2s ease, transform .2s ease;
+}
+
+.auth-whatsapp:hover {
+  background: #188448;
+  transform: translateY(-1px);
+}
+
+.auth-panel-logo {
+  margin: 0 auto 18px;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .3));
+}
+
 .auth-actions { display: grid; gap: 9px; margin-top: 28px; }
 
 .auth-primary,

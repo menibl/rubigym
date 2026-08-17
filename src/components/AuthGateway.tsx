@@ -18,11 +18,18 @@ import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarat
 import {
   Gender,
   DiscountCode,
+  CURRENT_MEMBERSHIP_ADD_ONS,
+  CURRENT_PRIMARY_MEMBERSHIP_PLANS,
+  FamilyBillingMode,
+  FamilyMemberPlanSelection,
   MEMBERSHIP_PRICES,
   MEMBERSHIP_TYPE_LABELS,
   MembershipStatus,
   MembershipType,
   Payment,
+  PaymentPurchaseVariant,
+  TRAINING_CARD_SIZES,
+  TrainingCardSize,
   User,
   UserRole
 } from '../types';
@@ -36,6 +43,10 @@ import {
   verifyPendingCardcomPayment,
   wasTransactionProcessed
 } from '../data/cardcomPayments';
+import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
+import { createMembershipTerm } from '../data/membershipPolicy';
+import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
+import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 
 interface AuthGatewayProps {
   users: User[];
@@ -48,15 +59,7 @@ type AuthScreen = 'welcome' | 'login' | 'register';
 type LoginMethod = 'password' | 'phone';
 
 const TEST_OTP = '1111';
-const REGISTRATION_PLANS = [
-  MembershipType.GROUP_MONTHLY,
-  MembershipType.GROUP_ANNUAL,
-  MembershipType.OPEN_MONTHLY,
-  MembershipType.OPEN_ANNUAL,
-  MembershipType.OPEN_PUNCH_CARD,
-  MembershipType.WEIGHT_LOSS_HALF_YEAR,
-  MembershipType.POSTPARTUM_HALF_YEAR
-];
+const REGISTRATION_PLANS = [...CURRENT_PRIMARY_MEMBERSHIP_PLANS, ...CURRENT_MEMBERSHIP_ADD_ONS];
 
 const calculateAge = (birthDate: string) => {
   const birth = new Date(birthDate);
@@ -89,10 +92,13 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [agreementApproved, setAgreementApproved] = useState(false);
   const [pushApproved, setPushApproved] = useState(false);
   const [pushWorkoutReminders, setPushWorkoutReminders] = useState(true);
-  const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
+  const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.OPEN_GYM);
+  const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [isFamilyPlan, setIsFamilyPlan] = useState(false);
   const [familyName, setFamilyName] = useState('');
   const [familyMembersCount, setFamilyMembersCount] = useState(2);
+  const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>('ANNUAL_BY_SIZE');
+  const [familyMemberPlans, setFamilyMemberPlans] = useState<FamilyMemberPlanSelection[]>([]);
   const [discountInput, setDiscountInput] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
   const [paymentStarting, setPaymentStarting] = useState(false);
@@ -281,12 +287,21 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     }
 
     const age = calculateAge(registerBirthDate);
-    const expiryDate = new Date();
-    const isAnnual = selectedPlan === MembershipType.GROUP_ANNUAL || selectedPlan === MembershipType.OPEN_ANNUAL;
-    const isHalfYear = selectedPlan === MembershipType.WEIGHT_LOSS_HALF_YEAR || selectedPlan === MembershipType.POSTPARTUM_HALF_YEAR;
-    expiryDate.setMonth(expiryDate.getMonth() + (isAnnual ? 12 : isHalfYear || selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 6 : 1));
+    const isTrainingCard = selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING;
+    const normalizedFamilyPlans = resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי');
+    const selectedFamilyPayerPlan = familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans[0]?.membershipType : MembershipType.FAMILY_MEMBERSHIP;
+    const membershipTerm = createMembershipTerm(isFamilyPlan && familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan);
     const now = Date.now();
     const familyId = isFamilyPlan ? `fam-${now}` : undefined;
+    const healthRecord = createHealthDeclarationRecord({
+      signed: true,
+      answers: healthDeclaration?.answers,
+      requiresMedicalCertificate: healthDeclaration?.requiresMedicalCertificate,
+      medicalCertificateApproved: false,
+      parentConsent: healthDeclaration?.parentConsent,
+      parentName: healthDeclaration?.parentName,
+      signatureName: healthDeclaration?.signatureName
+    });
     const newUser: User = {
       id: `user-${now}`,
       name: registerName.trim(),
@@ -306,20 +321,29 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       healthDeclarationParentConsent: healthDeclaration?.parentConsent,
       healthDeclarationParentName: healthDeclaration?.parentName,
       healthDeclarationSignatureName: healthDeclaration?.signatureName,
+      healthDeclarationHistory: [healthRecord],
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
       pushNotificationsEnabled: pushApproved && (!('Notification' in window) || Notification.permission === 'granted'),
       workoutRemindersEnabled: pushApproved && pushWorkoutReminders,
-      membershipType: selectedPlan,
+      membershipType: isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan,
       membershipStatus: MembershipStatus.ACTIVE,
-      membershipExpiry: expiryDate.toISOString().split('T')[0],
-      punchCardRemaining: selectedPlan === MembershipType.OPEN_PUNCH_CARD ? 10 : undefined,
+      ...membershipTerm,
+      personalTrainingCardSize: !isFamilyPlan && selectedPlan === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
+      personalTrainingRemaining: isFamilyPlan && selectedFamilyPayerPlan === MembershipType.PERSONAL_TRAINING ? normalizedFamilyPlans[0]?.trainingSessionsCount : selectedPlan === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
+      duoTrainingCardSize: !isFamilyPlan && selectedPlan === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
+      duoTrainingRemaining: isFamilyPlan && selectedFamilyPayerPlan === MembershipType.DUO_TRAINING ? normalizedFamilyPlans[0]?.trainingSessionsCount : selectedPlan === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
+      nutritionPlanPaid: (isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan) === MembershipType.NUTRITION_COACHING,
+      requestedWorkoutPlan: [MembershipType.WORKOUT_COACHING, MembershipType.OPEN_GYM_WITH_PLAN].includes(isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan),
       priorityScore: 100,
       familyId,
       familyName: isFamilyPlan ? (familyName.trim() || `משפחת ${registerName.trim().split(' ')[0]}`) : undefined,
       isFamilyPayer: isFamilyPlan || undefined,
       familyMembersCount: isFamilyPlan ? familyMembersCount : undefined,
-      familyTrackName: isFamilyPlan ? `מסלול משפחתי (${familyMembersCount} מנויים)` : undefined,
+      familyBillingMode: isFamilyPlan ? familyBillingMode : undefined,
+      familyMemberPlans: isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans : undefined,
+      familyCombinedAmount: isFamilyPlan ? familyPurchaseAmount(familyBillingMode, familyMembersCount, normalizedFamilyPlans) : undefined,
+      familyTrackName: isFamilyPlan ? familyBillingMode === 'ANNUAL_BY_SIZE' ? `משפחתי שנתי (${familyMembersCount} מתאמנים)` : familyBillingMode === 'MONTHLY_PER_MEMBER' ? `משפחתי חודשי (${familyMembersCount} מתאמנים)` : 'משפחתי מותאם – תשלום מאוחד' : undefined,
       imageUrl: registerGender === Gender.FEMALE
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
@@ -331,10 +355,15 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         userName: newUser.name,
         email: newUser.email,
         phone: newUser.phone,
-        membershipType: selectedPlan,
+        membershipType: isFamilyPlan ? MembershipType.FAMILY_MEMBERSHIP : selectedPlan,
         mode: 'REGISTRATION',
+        purchaseVariant: isTrainingCard
+          ? `${selectedPlan === MembershipType.PERSONAL_TRAINING ? 'PERSONAL' : 'DUO'}_${trainingCardSize}` as PaymentPurchaseVariant
+          : undefined,
         familyMembersCount: isFamilyPlan ? familyMembersCount : undefined,
         familyName: isFamilyPlan ? newUser.familyName : undefined,
+        familyBillingMode: isFamilyPlan ? familyBillingMode : undefined,
+        familyMemberPlans: isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans : undefined,
         discountCode: appliedDiscount?.code,
         registrationDraft: { user: newUser }
       });
@@ -349,10 +378,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       <main className="auth-gateway" dir="rtl">
         <section className="auth-hero">
           <div className="auth-brand">
-            <RubisLogo size={58} className="auth-brand-logo" />
-            <div>
-              <strong>BALY WELLNESS</strong>
-            </div>
+            <RubisLogo size={190} className="auth-brand-logo" />
           </div>
           <div className="auth-kicker">המקום שלך להתחזק, להתאזן ולהרגיש טוב</div>
           <h1>האימון שלך.<br />בקצב שלך.</h1>
@@ -362,6 +388,16 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
             <div><ShieldCheck size={18} /><span>ליווי מקצועי</span></div>
             <div><MessageSquareText size={18} /><span>קשר ישיר עם המאמן</span></div>
           </div>
+          <section className="auth-contact" aria-label="יצירת קשר עם המועדון">
+            <div>
+              <span>יצירת קשר עם המועדון</span>
+              <strong>מנהל: רובי באלי</strong>
+              <a href="tel:+972546995885" dir="ltr"><Phone size={16} /> 054-6995885</a>
+            </div>
+            <a className="auth-whatsapp" href="https://wa.me/972546995885" target="_blank" rel="noopener noreferrer" aria-label="שליחת הודעת WhatsApp לרובי באלי">
+              <MessageSquareText size={19} /> הודעה ב־WhatsApp
+            </a>
+          </section>
           <div className="auth-actions">
             <button className="auth-primary" onClick={() => openScreen('register')}>
               <UserPlus size={18} /> הרשמה למועדון
@@ -382,7 +418,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         <button className="auth-back" onClick={() => openScreen('welcome')}>
           <ArrowLeft size={18} /> חזרה
         </button>
-        <div className="auth-mini-brand">BALY WELLNESS</div>
+        <RubisLogo size={145} className="auth-panel-logo" />
 
         {screen === 'login' && (
           <>
@@ -484,10 +520,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   <button
                     type="button"
                     className={`auth-plan-card ${isFamilyPlan ? 'active' : ''}`}
-                    onClick={() => { setIsFamilyPlan(true); setSelectedPlan(MembershipType.GROUP_MONTHLY); }}
+                    onClick={() => { setIsFamilyPlan(true); setSelectedPlan(MembershipType.FAMILY_MEMBERSHIP); }}
                   >
                     <span><strong>מנוי משפחתי</strong><small>חשבון משלם אחד, עם פרופיל נפרד לכל בן משפחה</small></span>
-                    <b>מ־₪550</b>
+                    <b>מ־₪900</b>
                   </button>
                   {REGISTRATION_PLANS.map(plan => (
                     <button
@@ -500,19 +536,22 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                         <strong>{MEMBERSHIP_TYPE_LABELS[plan].label}</strong>
                         <small>{MEMBERSHIP_TYPE_LABELS[plan].description}</small>
                       </span>
-                      <b>₪{MEMBERSHIP_PRICES[plan]}</b>
+                      <b>₪{MEMBERSHIP_PRICES[plan]}{plan === MembershipType.PERSONAL_TRAINING || plan === MembershipType.DUO_TRAINING ? ' לאימון' : plan === MembershipType.GROUP_MONTHLY || plan === MembershipType.GROUP_ANNUAL ? ' לחודש' : ''}</b>
                     </button>
                   ))}
                 </div>
-                {isFamilyPlan && <div className="auth-family-options">
-                  <label>שם המשפחה<input value={familyName} onChange={event => setFamilyName(event.target.value)} placeholder={`משפחת ${registerName.trim().split(' ')[0] || 'ישראל'}`} /></label>
-                  <label>מספר מנויים בחבילה<select value={familyMembersCount} onChange={event => setFamilyMembersCount(Number(event.target.value))}>
-                    <option value={2}>2 מנויים — ₪550 לחודש</option>
-                    <option value={3}>3 מנויים — ₪750 לחודש</option>
-                    <option value={4}>4 מנויים — ₪920 לחודש</option>
-                    <option value={5}>5 מנויים — ₪1,100 לחודש</option>
-                  </select></label>
-                  <small>לאחר התשלום ניתן להוסיף את בני המשפחה ולחתום עבור כל אחד בפרופיל.</small>
+                {!isFamilyPlan && (selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) && (
+                  <div className="auth-family-options">
+                    <label>גודל כרטיסייה<select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)}>
+                      {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{size * MEMBERSHIP_PRICES[selectedPlan]}</option>)}
+                    </select></label>
+                    <small>היתרה נשמרת בחשבון ותישלח התראה כאשר יישארו שני אימונים.</small>
+                  </div>
+                )}
+                {isFamilyPlan && <div className="space-y-3">
+                  <label className="block text-xs font-bold">שם המשפחה<input value={familyName} onChange={event => setFamilyName(event.target.value)} placeholder={`משפחת ${registerName.trim().split(' ')[0] || 'ישראל'}`} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyMembersCount} onCountChange={setFamilyMembersCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={registerName.trim() || 'המשלם הראשי'} />
+                  <small>לאחר התשלום ניתן לפתוח פרופיל נפרד ולחתום על הצהרת בריאות עבור כל בן משפחה.</small>
                 </div>}
                 <div className="auth-discount-box">
                   <label>קוד הנחה</label>
@@ -525,13 +564,16 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   }}>הפעל</button></div>
                 </div>
                 <div className="auth-checkout-summary">
-                  <span>לתשלום כעת</span>
+                  <span>{selectedPlan === MembershipType.GROUP_ANNUAL ? 'חיוב חודשי ראשון' : 'לתשלום כעת'}</span>
                   <strong>₪{(() => {
-                    const base = isFamilyPlan ? ({2: 550, 3: 750, 4: 920, 5: 1100}[familyMembersCount] || 550) : MEMBERSHIP_PRICES[selectedPlan];
+                    const base = isFamilyPlan
+                      ? familyPurchaseAmount(familyBillingMode, familyMembersCount, resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי'))
+                      : MEMBERSHIP_PRICES[selectedPlan] * ((selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) ? trainingCardSize : 1);
                     const discount = appliedDiscount?.discountPercent ? Math.round(base * appliedDiscount.discountPercent / 100) : (appliedDiscount?.discountAmount || 0);
                     return Math.max(0, base - discount);
                   })()}</strong>
                 </div>
+                {!isFamilyPlan && selectedPlan === MembershipType.GROUP_ANNUAL && <small className="auth-mock-note">₪500 בחודש בהוראת קבע למשך 12 חודשים. בקשת ביטול נכנסת לתוקף חודש קדימה.</small>}
                 <small className="auth-mock-note">פרטי האשראי יוזנו רק בעמוד המאובטח של Cardcom ולא יישמרו ב־BALY.</small>
                 {!isCardcomConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}
                 <button className="auth-primary" type="submit" disabled={paymentStarting || !isCardcomConfigured()}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>
