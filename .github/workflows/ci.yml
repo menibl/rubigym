@@ -44,6 +44,9 @@ jobs:
           bash -n deploy/scripts/*.sh
           bash -n deploy/scripts/gymflow-dev.sh deploy/scripts/gymflow-prod deploy/scripts/gymflow-ops
 
+      - name: Test production deployment strict mode
+        run: bash deploy/tests/production-deploy.test.sh
+
       - name: Validate Docker Compose configuration
         env:
           GYMFLOW_ENV_FILE: ${{ github.workspace }}/deploy/.env.example
