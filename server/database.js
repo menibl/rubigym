@@ -2,9 +2,27 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-export const createDatabaseStore = async (databaseUrl) => {
+const disabledSslModes = new Set(['0', 'disable', 'false', 'no']);
+const enabledSslModes = new Set(['1', 'require', 'true', 'yes']);
+const localDatabaseHosts = new Set(['127.0.0.1', '::1', 'localhost', 'postgres']);
+
+export const resolveDatabaseSsl = (databaseUrl, configuredMode) => {
+  const mode = configuredMode?.trim().toLowerCase();
+  if (disabledSslModes.has(mode)) return false;
+  if (enabledSslModes.has(mode)) return { rejectUnauthorized: false };
+  if (mode) throw new Error('DATABASE_SSL must be true/require or false/disable.');
+
+  const hostname = new URL(databaseUrl).hostname.toLowerCase();
+  return localDatabaseHosts.has(hostname) ? false : { rejectUnauthorized: false };
+};
+
+export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
   if (!databaseUrl) return null;
-  const pool = new Pool({ connectionString: databaseUrl, max: 5, ssl: databaseUrl.includes('localhost') ? false : { rejectUnauthorized: false } });
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    max: 5,
+    ssl: resolveDatabaseSsl(databaseUrl, databaseSsl),
+  });
   await pool.query(`
     CREATE TABLE IF NOT EXISTS club_state (
       club_id text PRIMARY KEY,
