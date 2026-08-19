@@ -107,7 +107,7 @@ EOF
 chmod 0600 /etc/gymflow/production.env /etc/gymflow/production.conf /etc/gymflow/monitor.env /etc/gymflow/secrets/telegram-bot-token
 
 bash "${DEPLOY_DIR}/scripts/install-openclaw.sh" "${TELEGRAM_USER_ID}" latest
-install -o openclaw -g openclaw -m 0755 "${DEPLOY_DIR}/scripts/gymflow-dev.sh" /home/openclaw/.local/bin/gymflow-dev
+install -o root -g openclaw -m 0755 "${DEPLOY_DIR}/scripts/gymflow-dev.sh" /home/openclaw/.local/bin/gymflow-dev
 bash "${DEPLOY_DIR}/scripts/install-monitoring.sh" "${DEPLOY_DIR}"
 bash "${DEPLOY_DIR}/scripts/install-production-automation.sh" "${DEPLOY_DIR}"
 bash "${DEPLOY_DIR}/scripts/grant-openclaw-docker-access.sh" "${DEPLOY_DIR}"
