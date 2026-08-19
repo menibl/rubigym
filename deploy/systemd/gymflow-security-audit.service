@@ -1,0 +1,15 @@
+[Unit]
+Description=Daily OpenClaw deep security audit
+After=network-online.target openclaw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/gymflow-monitor/security-audit.sh
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/var/log/gymflow /home/openclaw

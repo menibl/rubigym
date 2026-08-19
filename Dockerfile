@@ -5,7 +5,7 @@ ARG VITE_PAYMENT_API_URL
 ARG VITE_AI_API_URL
 ENV VITE_PAYMENT_API_URL=${VITE_PAYMENT_API_URL}
 ENV VITE_AI_API_URL=${VITE_AI_API_URL}
-RUN corepack enable
+RUN npm install --global pnpm@10.34.5
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .

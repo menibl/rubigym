@@ -1,0 +1,88 @@
+name: Validate GymFlow changes
+
+on:
+  pull_request:
+    branches:
+      - staging
+      - main
+  push:
+    branches:
+      - staging
+      - main
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate deployment scripts
+        run: bash -n deploy/scripts/*.sh
+
+      - name: Validate Docker Compose configuration
+        env:
+          GYMFLOW_ENV_FILE: ${{ github.workspace }}/deploy/.env.example
+        run: docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet
+
+      - name: Type-check
+        run: pnpm run lint
+
+      - name: Build production bundle
+        run: pnpm run build
+        env:
+          VITE_AI_API_URL: https://staging.invalid
+          VITE_PAYMENT_API_URL: https://staging.invalid
+
+      - name: Validate server entrypoint
+        run: node --check server/node-entry.js
+
+      - name: Build production container
+        run: |
+          docker build \
+            --build-arg VITE_AI_API_URL=https://staging.invalid \
+            --build-arg VITE_PAYMENT_API_URL=https://staging.invalid \
+            --tag gymflow:ci \
+            .
+
+  promotion-gate:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require staging as the production source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "${GITHUB_HEAD_REF}" = "staging"
+          result=$(gh run list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --workflow deploy-pages.yml \
+            --branch staging \
+            --limit 1 \
+            --json conclusion,headSha \
+            --jq '.[0] | [.conclusion,.headSha] | @tsv')
+          test "${result}" = $'success\t'"${EXPECTED_SHA}"

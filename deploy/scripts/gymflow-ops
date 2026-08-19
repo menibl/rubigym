@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ ${EUID} -ne 0 ]]; then
+  echo "Use sudo /usr/local/sbin/gymflow-ops <command>." >&2
+  exit 1
+fi
+
+DEPLOY=/usr/local/lib/gymflow-deploy/production-deploy.sh
+DAILY=/usr/local/lib/gymflow-deploy/daily-management.sh
+AUDIT=/usr/local/lib/gymflow-monitor/security-audit.sh
+CONFIG=/etc/gymflow/production.conf
+
+[[ -x ${DEPLOY} && -r ${CONFIG} ]] || { echo "GymFlow operations are not installed." >&2; exit 1; }
+# shellcheck disable=SC1090
+source "${CONFIG}"
+
+current_sha() {
+  local state_dir=${PRODUCTION_STATE:-/var/lib/gymflow-deploy}
+  [[ -r ${state_dir}/current-sha ]] || return 1
+  cat "${state_dir}/current-sha"
+}
+
+compose_current() {
+  local sha
+  sha=$(current_sha)
+  GYMFLOW_IMAGE="gymflow:${sha}" \
+  GYMFLOW_ENV_FILE="${PRODUCTION_ENV_FILE:-/etc/gymflow/production.env}" \
+    docker compose --project-name gymflow \
+      --env-file "${PRODUCTION_ENV_FILE:-/etc/gymflow/production.env}" \
+      -f "${PRODUCTION_RELEASES:-/opt/gymflow/releases}/${sha}/deploy/compose.yaml" "$@"
+}
+
+command=${1:-}
+[[ $# -eq 1 ]] || { echo "Exactly one command is required." >&2; exit 2; }
+
+case "${command}" in
+  status)
+    "${DEPLOY}" status
+    printf 'openclaw=%s\nmonitor_timer=%s\nproduction_timer=%s\n' \
+      "$(systemctl is-active openclaw.service 2>/dev/null || true)" \
+      "$(systemctl is-active gymflow-monitor.timer 2>/dev/null || true)" \
+      "$(systemctl is-active gymflow-production-deploy.timer 2>/dev/null || true)"
+    ;;
+  logs)
+    compose_current logs --tail=200 --no-color app caddy postgres
+    ;;
+  deploy-main)
+    "${DEPLOY}" deploy
+    ;;
+  rollback)
+    "${DEPLOY}" rollback
+    ;;
+  restart-app)
+    compose_current restart app
+    sleep 5
+    curl --fail --silent --show-error --max-time 15 "${PRODUCTION_HEALTH_URL}" >/dev/null
+    ;;
+  security-audit)
+    "${AUDIT}"
+    ;;
+  daily)
+    "${DAILY}"
+    ;;
+  *)
+    echo "Allowed commands: status, logs, deploy-main, rollback, restart-app, security-audit, daily" >&2
+    exit 2
+    ;;
+esac
