@@ -5,7 +5,18 @@ ARG VITE_PAYMENT_API_URL
 ARG VITE_AI_API_URL
 ENV VITE_PAYMENT_API_URL=${VITE_PAYMENT_API_URL}
 ENV VITE_AI_API_URL=${VITE_AI_API_URL}
-RUN npm install --global pnpm@10.34.5
+RUN set -eu; \
+    attempt=1; \
+    until npm install --global pnpm@10.34.5; do \
+      if [ "${attempt}" -ge 5 ]; then \
+        echo "pnpm installation failed after ${attempt} attempts" >&2; \
+        exit 1; \
+      fi; \
+      delay=$((attempt * 5)); \
+      echo "pnpm installation failed; retrying in ${delay}s" >&2; \
+      sleep "${delay}"; \
+      attempt=$((attempt + 1)); \
+    done
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .

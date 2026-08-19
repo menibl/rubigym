@@ -100,17 +100,31 @@ backup_database() {
 }
 
 activate_release() {
-  local sha=$1 target
+  local sha=$1 target attempt build_ok=false
   target=$(release_path "${sha}")
   prepare_release "${sha}"
   if ! docker image inspect "gymflow:${sha}" >/dev/null 2>&1; then
-    GYMFLOW_IMAGE="gymflow:${sha}" \
-    GYMFLOW_ENV_FILE="${PRODUCTION_ENV_FILE}" \
-      docker compose --project-name gymflow \
-        --env-file "${PRODUCTION_ENV_FILE}" \
-        -f "${target}/deploy/compose.yaml" build --pull app
+    for attempt in 1 2 3; do
+      if GYMFLOW_IMAGE="gymflow:${sha}" \
+        GYMFLOW_ENV_FILE="${PRODUCTION_ENV_FILE}" \
+          docker compose --project-name gymflow \
+            --env-file "${PRODUCTION_ENV_FILE}" \
+            -f "${target}/deploy/compose.yaml" build --pull app; then
+        build_ok=true
+        break
+      fi
+      echo "Application image build attempt ${attempt}/3 failed." >&2
+      if (( attempt < 3 )); then sleep $((attempt * 10)); fi
+    done
+    if [[ ${build_ok} != true ]]; then
+      echo "Application image build failed; health checks were not started." >&2
+      return 1
+    fi
   fi
-  compose_for "${sha}" up -d --remove-orphans
+  if ! compose_for "${sha}" up -d --remove-orphans; then
+    echo "Docker Compose failed to start release ${sha}." >&2
+    return 1
+  fi
   wait_for_health
 }
 
