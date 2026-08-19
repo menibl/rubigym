@@ -92,7 +92,8 @@ wait_for_health() {
 }
 
 backup_database() {
-  local sha=$1 backup=${PRODUCTION_BACKUPS}/pre-deploy-${sha}-$(date -u +%Y%m%dT%H%M%SZ).sql.gz
+  local sha=$1
+  local backup=${PRODUCTION_BACKUPS}/pre-deploy-${sha}-$(date -u +%Y%m%dT%H%M%SZ).sql.gz
   if compose_for "${sha}" ps --status running postgres 2>/dev/null | grep -q postgres; then
     compose_for "${sha}" exec -T postgres pg_dump -U gymflow gymflow | gzip -9 >"${backup}"
     chmod 0600 "${backup}"
