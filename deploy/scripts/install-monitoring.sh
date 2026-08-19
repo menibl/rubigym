@@ -16,7 +16,11 @@ if [[ ! -s /etc/gymflow/secrets/telegram-bot-token ]]; then
   exit 1
 fi
 
-chmod 0600 /etc/gymflow/monitor.env /etc/gymflow/secrets/telegram-bot-token
+chown root:openclaw /etc/gymflow/secrets
+chmod 0750 /etc/gymflow/secrets
+chmod 0600 /etc/gymflow/monitor.env
+chown root:openclaw /etc/gymflow/secrets/telegram-bot-token
+chmod 0640 /etc/gymflow/secrets/telegram-bot-token
 install -d -m 0755 /usr/local/lib/gymflow-monitor /var/lib/gymflow-monitor /var/log/gymflow
 install -m 0755 "${DEPLOY_DIR}/scripts/telegram-send.sh" /usr/local/lib/gymflow-monitor/
 install -m 0755 "${DEPLOY_DIR}/scripts/server-monitor.sh" /usr/local/lib/gymflow-monitor/
