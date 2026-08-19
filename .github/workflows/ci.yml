@@ -67,6 +67,14 @@ jobs:
             --tag gymflow:ci \
             .
 
+      - name: Validate production runtime dependencies
+        run: |
+          docker run --rm \
+            --entrypoint node \
+            gymflow:ci \
+            --input-type=module \
+            --eval "await import('pg')"
+
   promotion-gate:
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     runs-on: ubuntu-latest
