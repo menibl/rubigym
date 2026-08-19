@@ -62,11 +62,16 @@ run_oc config set channels.telegram.groupPolicy '"disabled"'
 run_oc config set channels.telegram.customCommands '[{"command":"gymstatus","description":"GymFlow production and monitoring status"},{"command":"gymtest","description":"Run checks for the current feature branch"},{"command":"gympublish","description":"Prepare a feature PR for staging"},{"command":"gympromote","description":"Prepare a staging to main PR"},{"command":"gymrollback","description":"Request a production rollback"}]'
 run_oc config set session.dmScope '"per-channel-peer"'
 run_oc config set agents.defaults.model.primary '"openai/gpt-5.6-sol"'
+if ! run_oc plugins info codex >/dev/null 2>&1; then
+  run_oc plugins install @openclaw/codex
+fi
 run_oc config set plugins.entries.codex.enabled true
 run_oc config set logging.redactSensitive '"tools"'
 run_oc config set tools.exec.host '"gateway"'
-run_oc config set tools.exec.mode '"ask"'
 run_oc config set tools.exec.strictInlineEval true
+# OpenClaw rejects tools.exec.mode when the explicit security/ask policy below is present.
+# Remove it so rerunning after an older partial install is safe as well.
+run_oc config unset tools.exec.mode >/dev/null 2>&1 || true
 run_oc exec-policy set --host gateway --security allowlist --ask on-miss --ask-fallback deny
 run_oc approvals allowlist add --agent main "/usr/local/bin/gymflow-status"
 run_oc approvals allowlist add --agent main "/home/openclaw/.local/bin/gymflow-dev"
