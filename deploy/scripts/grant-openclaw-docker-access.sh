@@ -11,6 +11,7 @@ install -d -m 0755 /usr/local/lib/gymflow-deploy
 install -m 0755 "${DEPLOY_DIR}/scripts/production-deploy.sh" /usr/local/lib/gymflow-deploy/
 install -m 0755 "${DEPLOY_DIR}/scripts/daily-management.sh" /usr/local/lib/gymflow-deploy/
 install -m 0755 "${DEPLOY_DIR}/scripts/gymflow-ops" /usr/local/sbin/gymflow-ops
+install -o root -g openclaw -m 0755 "${DEPLOY_DIR}/scripts/gymflow-prod" /usr/local/bin/gymflow-prod
 
 cat >/etc/sudoers.d/openclaw-gymflow <<'EOF'
 Defaults:openclaw !requiretty

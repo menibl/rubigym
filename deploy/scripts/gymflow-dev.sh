@@ -14,6 +14,71 @@ require_clean() {
   [[ -z $(git status --porcelain) ]] || { echo "Worktree must be clean for this operation." >&2; exit 1; }
 }
 
+require_pr_number() {
+  [[ $# -eq 1 && $1 =~ ^[1-9][0-9]*$ ]] || {
+    echo "A numeric pull request number is required." >&2
+    exit 2
+  }
+}
+
+pr_field() {
+  local pr=$1 field=$2
+  gh pr view "${pr}" --json "${field}" --jq ".${field}"
+}
+
+pr_merge_sha() {
+  local pr=$1
+  gh pr view "${pr}" --json mergeCommit --jq '.mergeCommit.oid'
+}
+
+wait_for_workflow() {
+  local workflow=$1 sha=$2 label=$3 attempt run_id
+  for ((attempt=1; attempt<=60; attempt++)); do
+    run_id=$(gh run list --workflow "${workflow}" --branch staging --limit 20 \
+      --json databaseId,headSha \
+      --jq "[.[] | select(.headSha == \"${sha}\")][0].databaseId // empty")
+    if [[ -n ${run_id} ]]; then
+      echo "Waiting for ${label} run ${run_id} on ${sha}."
+      timeout 25m gh run watch "${run_id}" --exit-status
+      return 0
+    fi
+    sleep 10
+  done
+  echo "Timed out waiting for ${label} to start for ${sha}." >&2
+  return 1
+}
+
+require_staging_ready() {
+  local staging_sha=$1 workflow result conclusion deployed_sha
+  for workflow in ci.yml deploy-pages.yml; do
+    result=$(gh run list --workflow "${workflow}" --branch staging --limit 20 \
+      --json conclusion,headSha \
+      --jq "[.[] | select(.headSha == \"${staging_sha}\")][0] | [.conclusion,.headSha] | @tsv")
+    conclusion=${result%%$'\t'*}
+    deployed_sha=${result#*$'\t'}
+    [[ ${conclusion} == success && ${deployed_sha} == "${staging_sha}" ]] || {
+      echo "Staging ${staging_sha} is not ready: ${workflow} has not succeeded for the exact commit." >&2
+      return 1
+    }
+  done
+}
+
+validate_pr_target() {
+  local pr=$1 expected_base=$2 expected_head_pattern=$3 state draft base head
+  state=$(pr_field "${pr}" state)
+  draft=$(pr_field "${pr}" isDraft)
+  base=$(pr_field "${pr}" baseRefName)
+  head=$(pr_field "${pr}" headRefName)
+  [[ ${state} == OPEN && ${draft} == false ]] || {
+    echo "PR #${pr} must be open and ready for review." >&2
+    exit 1
+  }
+  [[ ${base} == "${expected_base}" && ${head} == ${expected_head_pattern} ]] || {
+    echo "PR #${pr} has unexpected branches: ${head} -> ${base}." >&2
+    exit 1
+  }
+}
+
 validate_feature_branch() {
   local branch
   branch=$(git branch --show-current)
@@ -66,25 +131,88 @@ case "${command}" in
     gh pr create --base staging --head "${branch}" --title "${message}" \
       --body "Created from the allowlisted OpenClaw Telegram workflow. CI and human review are required before staging."
     ;;
+  stage)
+    require_pr_number "$@"
+    pr=$1
+    require_clean
+    git fetch origin --prune
+    validate_pr_target "${pr}" staging 'feature/*'
+    head_sha=$(pr_field "${pr}" headRefOid)
+    echo "Validating PR #${pr} at ${head_sha} before merging to staging."
+    gh pr checks "${pr}" --watch --fail-fast
+    [[ $(pr_field "${pr}" headRefOid) == "${head_sha}" ]] || {
+      echo "PR #${pr} changed while checks were running; request a new approval." >&2
+      exit 1
+    }
+    gh pr merge "${pr}" --merge --match-head-commit "${head_sha}"
+    merged_sha=$(pr_merge_sha "${pr}")
+    git fetch origin --prune staging
+    staging_sha=$(git rev-parse origin/staging)
+    [[ ${staging_sha} == "${merged_sha}" ]] || {
+      echo "Staging advanced after PR #${pr} merged. Refusing to certify a different commit." >&2
+      exit 1
+    }
+    wait_for_workflow ci.yml "${staging_sha}" "staging CI"
+    wait_for_workflow deploy-pages.yml "${staging_sha}" "GitHub Pages"
+    require_staging_ready "${staging_sha}"
+    printf 'staging_sha=%s\nstaging_url=https://menibl.github.io/rubigym/\n' "${staging_sha}"
+    ;;
+  staging-status)
+    [[ $# -eq 0 ]] || { echo "Usage: gymflow-dev staging-status" >&2; exit 2; }
+    git fetch origin --prune staging
+    staging_sha=$(git rev-parse origin/staging)
+    printf 'staging_sha=%s\n' "${staging_sha}"
+    gh run list --branch staging --limit 10 \
+      --json workflowName,status,conclusion,headSha,url \
+      --jq ".[] | select(.headSha == \"${staging_sha}\")"
+    ;;
   promote)
     [[ $# -eq 0 ]] || { echo "Usage: gymflow-dev promote" >&2; exit 2; }
     require_clean
     git fetch origin --prune
     staging_sha=$(git rev-parse origin/staging)
-    run=$(gh run list --workflow deploy-pages.yml --branch staging --limit 1 \
-      --json conclusion,headSha --jq '.[0] | [.conclusion,.headSha] | @tsv')
-    conclusion=${run%%$'\t'*}
-    deployed_sha=${run#*$'\t'}
-    [[ ${conclusion} == success && ${deployed_sha} == "${staging_sha}" ]] || {
-      echo "The current staging commit has not completed a successful public deployment." >&2
+    require_staging_ready "${staging_sha}"
+    existing=$(gh pr list --base main --head staging --state open --limit 1 \
+      --json number,url --jq '.[0] | [.number,.url] | @tsv')
+    if [[ -n ${existing} ]]; then
+      printf 'promotion_pr=%s\n' "${existing}"
+    else
+      gh pr create --base main --head staging \
+        --title "Promote staging to production" \
+        --body "Staging commit ${staging_sha} passed CI and the GitHub Pages deployment. Merge requires explicit operator approval; GCP deploys only after the merge reaches main."
+    fi
+    ;;
+  release)
+    require_pr_number "$@"
+    pr=$1
+    require_clean
+    git fetch origin --prune staging main
+    validate_pr_target "${pr}" main staging
+    staging_sha=$(git rev-parse origin/staging)
+    [[ $(pr_field "${pr}" headRefOid) == "${staging_sha}" ]] || {
+      echo "PR #${pr} does not point to the current staging commit." >&2
       exit 1
     }
-    gh pr create --base main --head staging \
-      --title "Promote staging to production" \
-      --body "Staging commit ${staging_sha} passed CI and the GitHub Pages deployment. Merge requires human approval; GCP deploys only after the merge reaches main."
+    require_staging_ready "${staging_sha}"
+    echo "Validating production PR #${pr} for staging commit ${staging_sha}."
+    gh pr checks "${pr}" --watch --fail-fast
+    [[ $(pr_field "${pr}" headRefOid) == "${staging_sha}" ]] || {
+      echo "PR #${pr} changed while checks were running; request a new approval." >&2
+      exit 1
+    }
+    gh pr merge "${pr}" --merge --match-head-commit "${staging_sha}"
+    merged_sha=$(pr_merge_sha "${pr}")
+    git fetch origin --prune main
+    production_sha=$(git rev-parse origin/main)
+    [[ ${production_sha} == "${merged_sha}" ]] || {
+      echo "Main advanced after PR #${pr} merged. Refusing to certify a different production commit." >&2
+      exit 1
+    }
+    printf 'production_sha=%s\n' "${production_sha}"
+    echo "The production timer will deploy this main commit within five minutes."
     ;;
   *)
-    echo "Commands: status, start <slug>, test, publish <message>, promote" >&2
+    echo "Commands: status, start <slug>, test, publish <message>, stage <pr>, staging-status, promote, release <pr>" >&2
     exit 2
     ;;
 esac
