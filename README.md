@@ -18,3 +18,7 @@ View your app in AI Studio: https://ai.studio/apps/fd743132-0675-483d-9b95-1c1f1
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## GCP production deployment
+
+The hardened Compute Engine deployment, OpenClaw/Codex setup, Telegram monitoring, and incident-response runbook are documented in [deploy/README.he.md](deploy/README.he.md).

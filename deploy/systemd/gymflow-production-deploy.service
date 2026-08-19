@@ -1,0 +1,15 @@
+[Unit]
+Description=Deploy the latest approved GymFlow main branch to production
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/gymflow-deploy/production-deploy.sh deploy
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/gymflow /var/lib/gymflow-deploy /var/backups/gymflow /var/log/gymflow /run/lock

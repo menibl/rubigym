@@ -1,0 +1,33 @@
+[Unit]
+Description=OpenClaw gateway (isolated service account)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+Environment=HOME=/home/openclaw
+Environment=PATH=/home/openclaw/.local/bin:/home/openclaw/.local/openclaw/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=OPENCLAW_DISABLE_BONJOUR=1
+WorkingDirectory=/home/openclaw/.openclaw/workspace
+ExecStart=/home/openclaw/.local/openclaw/bin/openclaw gateway --port 18789
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/openclaw/.openclaw /home/openclaw/.config/openclaw
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
