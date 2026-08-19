@@ -45,14 +45,14 @@ runuser -u openclaw -- env HOME=/home/openclaw \
 OPENCLAW=/home/openclaw/.local/openclaw/bin/openclaw
 run_oc() { runuser -u openclaw -- env HOME=/home/openclaw "${OPENCLAW}" "$@"; }
 
-install -o openclaw -g openclaw -m 0600 \
+install -o root -g openclaw -m 0640 \
   "$(dirname "${BASH_SOURCE[0]}")/../openclaw/AGENTS.md" /home/openclaw/.openclaw/workspace/AGENTS.md
-install -o openclaw -g openclaw -m 0600 \
+install -o root -g openclaw -m 0640 \
   "$(dirname "${BASH_SOURCE[0]}")/../openclaw/SOUL.md" /home/openclaw/.openclaw/workspace/SOUL.md
-install -o openclaw -g openclaw -m 0600 \
+install -o root -g openclaw -m 0640 \
   "$(dirname "${BASH_SOURCE[0]}")/../openclaw/HEARTBEAT.md" /home/openclaw/.openclaw/workspace/HEARTBEAT.md
 install -d -o openclaw -g openclaw -m 0755 /home/openclaw/.local/bin
-install -o openclaw -g openclaw -m 0755 \
+install -o root -g openclaw -m 0755 \
   "$(dirname "${BASH_SOURCE[0]}")/gymflow-dev.sh" /home/openclaw/.local/bin/gymflow-dev
 
 run_oc config set gateway.mode '"local"'
@@ -62,7 +62,7 @@ run_oc config set channels.telegram.tokenFile '"/etc/gymflow/secrets/telegram-bo
 run_oc config set channels.telegram.dmPolicy '"allowlist"'
 run_oc config set channels.telegram.allowFrom "[\"${TELEGRAM_USER_ID}\"]"
 run_oc config set channels.telegram.groupPolicy '"disabled"'
-run_oc config set channels.telegram.customCommands '[{"command":"gymstatus","description":"GymFlow production and monitoring status"},{"command":"gymtest","description":"Run checks for the current feature branch"},{"command":"gympublish","description":"Prepare a feature PR for staging"},{"command":"gympromote","description":"Prepare a staging to main PR"},{"command":"gymrollback","description":"Request a production rollback"}]'
+run_oc config set channels.telegram.customCommands '[{"command":"gymstatus","description":"Production and monitoring status"},{"command":"gymstart","description":"Start a feature branch"},{"command":"gymtest","description":"Test the current feature branch"},{"command":"gympublish","description":"Open a feature PR to staging"},{"command":"gymstage","description":"Approve a feature PR for GitHub Pages"},{"command":"gympromote","description":"Open staging to main PR"},{"command":"gymrelease","description":"Approve main merge and GCP release"},{"command":"gymlogs","description":"Bounded production logs"},{"command":"gymaudit","description":"Run the security audit"}]'
 run_oc config set session.dmScope '"per-channel-peer"'
 run_oc config set agents.defaults.model.primary '"openai/gpt-5.5"'
 # A loopback listener still needs authentication in case a local reverse proxy is
@@ -82,6 +82,7 @@ run_oc config unset tools.exec.mode >/dev/null 2>&1 || true
 run_oc exec-policy set --host gateway --security allowlist --ask on-miss --ask-fallback deny
 run_oc approvals allowlist add --agent main "/usr/local/bin/gymflow-status"
 run_oc approvals allowlist add --agent main "/home/openclaw/.local/bin/gymflow-dev"
+run_oc approvals allowlist add --agent main "/usr/local/bin/gymflow-prod"
 run_oc config validate
 run_oc security audit --fix
 

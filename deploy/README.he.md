@@ -251,6 +251,18 @@ gymflow-dev test
 
 לפני `gymflow-dev publish` הבוט צריך להציג את ה־diff ותוצאות הבדיקות ולבקש אישור מפורש. הפקודה יוצרת commit, דוחפת `feature/*` ופותחת PR ל־`staging`; היא אינה ממזגת.
 
+אחרי שבדיקות ה־PR עברו, הבוט מציג את מספר ה־PR ואת ה־SHA המדויק ומבקש אישור יחיד ומפורש, למשל:
+
+```text
+מאשר merge של PR #21 ל-staging
+```
+
+רק אז הוא מפעיל `gymflow-dev stage 21`. הפקודה מוודאת מחדש שה־PR פתוח, שאינו draft, שמקורו `feature/*`, שהיעד הוא `staging`, שה־SHA לא השתנה ושכל הבדיקות עברו. לאחר המיזוג היא ממתינה ל־CI ולפריסת GitHub Pages של אותו SHA ומחזירה את כתובת הבדיקה:
+
+```text
+https://menibl.github.io/rubigym/
+```
+
 ### בדיקת staging
 
 אחרי merge ל־`staging`, GitHub Actions מריץ CI ומפרסם את האתר הציבורי. בדוק ידנית:
@@ -270,7 +282,25 @@ gymflow-dev test
 
 OpenClaw מפעיל `gymflow-dev promote`. הפקודה מסרבת אם הפריסה הציבורית האחרונה אינה success או אם ה־SHA אינו זהה ל־`origin/staging`.
 
-לאחר מכן אתה מאשר וממזג ידנית את PR `staging → main`. שרת GCP יזהה את `main` החדש בתוך כחמש דקות.
+לאחר פתיחת PR הקידום, OpenClaw ממתין לבדיקות ומציג את מספר ה־PR ואת SHA של `staging`. רק אחרי שבדקת את Pages הוא מבקש אישור מדויק, למשל:
+
+```text
+מאשר merge ל-main של PR #22 ופריסה אוטומטית לקומיט <SHA>
+```
+
+לאחר האישור הוא מפעיל `gymflow-dev release 22`. הפקודה מוודאת שה־PR הוא רק `staging → main`, שה־SHA זהה לגרסה שנבדקה ב־Pages ושכל בדיקות הקידום הצליחו, ואז ממזגת. ה־production timer בשרת מזהה את `main` החדש בתוך חמש דקות ומפרסם ל־GCP. OpenClaw עוקב באמצעות `gymflow-prod status` ומדווח בטלגרם רק לאחר שה־SHA החדש פעיל ובריא.
+
+המילה `מאשר` לבדה תקפה רק כתשובה ישירה לבקשת אישור אחת וברורה שהבוט שלח מיד לפני כן, ובה הופיעו PR, יעד ו־SHA. הודעה אחרת באמצע, שינוי SHA או בדיקה שנכשלה מבטלים את האישור.
+
+### עדכון workflow של OpenClaw בשרת קיים
+
+אחרי שהשינוי הזה הגיע ל־`main` ונפרס, מריצים פעם אחת מתוך ה־release/checkout המעודכן:
+
+```bash
+sudo bash deploy/scripts/update-openclaw-workflow.sh "$(pwd)/deploy"
+```
+
+הסקריפט מעדכן את כללי הסוכן, פקודות Telegram וה־wrappers המוגבלים, מאמת את התצורה ומאתחל רק את שירות OpenClaw. הוא אינו מוסיף את OpenClaw לקבוצת Docker ואינו חושף את ה־gateway.
 
 ### ניהול production
 
@@ -295,7 +325,7 @@ sudo /usr/local/sbin/gymflow-ops security-audit
 sudo /usr/local/sbin/gymflow-ops daily
 ```
 
-`deploy-main`, `rollback` ו־`restart-app` מחייבים אישור מפורש בטלגרם. אין פקודת shell כללית ואין אפשרות להעביר ארגומנטים חופשיים ל־broker.
+`deploy-main`, `rollback` ו־`restart-app` מחייבים אישור מפורש בטלגרם. OpenClaw משתמש ב־`/usr/local/bin/gymflow-prod`, שמעביר רק שם פעולה יחיד ל־broker המוגבל. אין פקודת shell כללית ואין אפשרות להעביר ארגומנטים חופשיים ל־broker.
 
 ## שלב 8 — פריסה, גיבוי ו־rollback
 

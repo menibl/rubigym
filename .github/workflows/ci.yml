@@ -40,7 +40,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Validate deployment scripts
-        run: bash -n deploy/scripts/*.sh
+        run: |
+          bash -n deploy/scripts/*.sh
+          bash -n deploy/scripts/gymflow-dev.sh deploy/scripts/gymflow-prod deploy/scripts/gymflow-ops
 
       - name: Validate Docker Compose configuration
         env:

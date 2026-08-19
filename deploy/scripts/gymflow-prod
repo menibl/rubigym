@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ $(id -un) != openclaw ]]; then
+  echo "Run this command as the openclaw service user." >&2
+  exit 1
+fi
+
+[[ $# -eq 1 ]] || {
+  echo "Usage: gymflow-prod status|logs|deploy-main|rollback|restart-app|security-audit|daily" >&2
+  exit 2
+}
+
+case "$1" in
+  status|logs|deploy-main|rollback|restart-app|security-audit|daily) ;;
+  *) echo "Unsupported GymFlow production command." >&2; exit 2 ;;
+esac
+
+exec sudo -n /usr/local/sbin/gymflow-ops "$1"
