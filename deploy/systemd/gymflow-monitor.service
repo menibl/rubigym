@@ -1,0 +1,15 @@
+[Unit]
+Description=GymFlow deterministic health monitor
+After=network-online.target docker.service openclaw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/gymflow-monitor/server-monitor.sh
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gymflow-monitor

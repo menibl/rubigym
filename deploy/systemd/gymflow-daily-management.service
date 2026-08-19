@@ -1,0 +1,15 @@
+[Unit]
+Description=GymFlow daily backup and operations report
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/gymflow-deploy/daily-management.sh
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/gymflow /var/log/gymflow /var/lib/gymflow-deploy

@@ -1,6 +1,7 @@
 .git
 .github
-.openai
+.openai/*
+!.openai/hosting.json
 node_modules
 dist
 docs/rendered-rules

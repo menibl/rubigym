@@ -1,0 +1,12 @@
+# Root-owned production deployment settings: /etc/gymflow/production.conf
+PRODUCTION_GIT_URL=https://github.com/menibl/rubigym.git
+PRODUCTION_BRANCH=main
+PRODUCTION_HEALTH_URL=https://gym.example.com/healthz
+PRODUCTION_ENV_FILE=/etc/gymflow/production.env
+PRODUCTION_MIRROR=/opt/gymflow/repository.git
+PRODUCTION_RELEASES=/opt/gymflow/releases
+PRODUCTION_STATE=/var/lib/gymflow-deploy
+PRODUCTION_BACKUPS=/var/backups/gymflow
+KEEP_RELEASES=7
+HEALTH_RETRIES=36
+HEALTH_INTERVAL_SECONDS=5

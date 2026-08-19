@@ -1,0 +1,10 @@
+[Unit]
+Description=Run GymFlow daily management
+
+[Timer]
+OnCalendar=*-*-* 02:35:00
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
