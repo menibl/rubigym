@@ -2,11 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
+  CalendarDays,
   CheckCircle2,
+  ChevronDown,
   Copy,
   Dumbbell,
   ExternalLink,
   ImagePlus,
+  Library,
   MessageCircle,
   MonitorPlay,
   Pause,
@@ -159,11 +162,11 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     () => [...programs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [programs]
   );
+  const scheduledPrograms = useMemo(() => sortedPrograms.filter(program => !!program.sessionId), [sortedPrograms]);
   const templatePrograms = useMemo(() => programs.filter(program => !program.sessionId), [programs]);
 
   useEffect(() => {
-    if (!selectedTemplateId && templatePrograms[0]) setSelectedTemplateId(templatePrograms[0].id);
-    if (selectedTemplateId && !templatePrograms.some(program => program.id === selectedTemplateId)) setSelectedTemplateId(templatePrograms[0]?.id || '');
+    if (selectedTemplateId && !templatePrograms.some(program => program.id === selectedTemplateId)) setSelectedTemplateId('');
   }, [selectedTemplateId, templatePrograms]);
 
   const updateProgram = (changes: Partial<GroupWorkoutProgram>) => {
@@ -708,18 +711,26 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
 
       <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="grid gap-3 md:grid-cols-2">
-          <label className="min-w-0 flex-1 text-xs font-black text-zinc-200">בחרו אימון מהיומן
+          <label className="min-w-0 flex-1 text-xs font-black text-zinc-200 md:col-span-2">בחרו אימון מהיומן
             <select value={selectedSessionId} onChange={event => setSelectedSessionId(event.target.value)} className="mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm font-bold text-white">
               <option value="">בחר אימון קבוצתי...</option>
               {groupSessions.map(session => <option key={session.id} value={session.id}>{session.date} · {session.time} · {session.title} ({session.registeredUsers.length} נרשמים)</option>)}
             </select>
           </label>
-          <label className="min-w-0 flex-1 text-xs font-black text-zinc-200">תוכנית מוכנה מהמאגר
-            <select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm font-bold text-white">
-              <option value="">ללא תבנית — אימון חדש</option>
-              {templatePrograms.map(program => <option key={program.id} value={program.id}>{program.title} · {programExerciseCount(program)} תרגילים</option>)}
-            </select>
-          </label>
+          <details className="group rounded-xl border border-zinc-700 bg-zinc-950 md:col-span-2">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-black text-zinc-200">
+              <span className="flex items-center gap-2"><Library size={15} className="text-amber-300" /> בחירה אופציונלית ממאגר האימונים <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[9px] text-zinc-400">{templatePrograms.length}</span></span>
+              <ChevronDown size={16} className="text-zinc-400 transition group-open:rotate-180" />
+            </summary>
+            <div className="border-t border-zinc-800 p-3">
+              <label className="text-[10px] font-bold text-zinc-400">תוכנית מוכנה לשיבוץ
+                <select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-3 text-sm font-bold text-white">
+                  <option value="">ללא תבנית — אימון חדש</option>
+                  {templatePrograms.map(program => <option key={program.id} value={program.id}>{program.title} · {programExerciseCount(program)} תרגילים</option>)}
+                </select>
+              </label>
+            </div>
+          </details>
           <button onClick={() => {
             const existing = programs.find(program => program.sessionId === selectedSessionId);
             if (existing) setSelectedProgramId(existing.id);
@@ -731,20 +742,32 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         <p className="mt-2 text-xs text-zinc-400">אפשר להכין מראש מאגר לשבוע או לחודש. השיבוץ יוצר עותק נפרד לאירוע ורשימת המתאמנים מגיעה אוטומטית מהיומן.</p>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <h3 className="px-2 pb-3 text-sm font-black text-slate-800">מאגר ותוכניות משובצות</h3>
-          <div className="space-y-2">
-            {sortedPrograms.map(program => (
-              <button key={program.id} onClick={() => setSelectedProgramId(program.id)} className={`w-full rounded-xl border p-3 text-right transition ${selectedProgramId === program.id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-                <div className="flex items-start justify-between gap-2"><strong className="text-sm text-slate-900">{program.groupName}</strong><span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${program.sessionId ? 'bg-indigo-100 text-indigo-700' : 'bg-fuchsia-100 text-fuchsia-700'}`}>{program.sessionId ? 'משובץ ביומן' : 'במאגר'}</span></div>
-                <p className="mt-1 truncate text-xs text-slate-500">{program.title}</p>
-                <p className="mt-2 text-[10px] text-slate-400">{program.sessionDate ? `${program.sessionDate} · ${program.sessionTime} · ` : ''}{programExerciseCount(program)} תרגילים · {formatDuration(totalProgramSeconds(program))}</p>
-              </button>
-            ))}
-            {programs.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500">עדיין לא נבנתה תוכנית קבוצתית.</div>}
-          </div>
-        </aside>
+      <div className="space-y-4">
+        <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-2">
+          <label className="text-[10px] font-black text-slate-600">
+            <span className="mb-1 flex items-center gap-1.5"><CalendarDays size={14} className="text-indigo-600" /> תוכניות ששובצו ביומן</span>
+            <select value={selectedProgram?.sessionId ? selectedProgramId : ''} onChange={event => setSelectedProgramId(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-xs font-bold text-slate-800">
+              <option value="">בחרו תוכנית משובצת...</option>
+              {scheduledPrograms.map(program => <option key={program.id} value={program.id}>{program.sessionDate ? `${program.sessionDate} · ${program.sessionTime} · ` : ''}{program.groupName} · {program.title}</option>)}
+            </select>
+          </label>
+
+          <details className="group self-end rounded-xl border border-slate-300 bg-slate-50">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-xs font-black text-slate-700">
+              <span className="flex items-center gap-2"><Library size={15} className="text-fuchsia-600" /> מאגר אימונים <span className="rounded-full bg-white px-2 py-0.5 text-[9px] text-slate-500">{templatePrograms.length}</span></span>
+              <ChevronDown size={16} className="text-slate-400 transition group-open:rotate-180" />
+            </summary>
+            <div className="max-h-56 space-y-2 overflow-y-auto border-t border-slate-200 p-2">
+              {templatePrograms.map(program => (
+                <button key={program.id} onClick={() => setSelectedProgramId(program.id)} className={`w-full rounded-lg border p-2.5 text-right transition ${selectedProgramId === program.id ? 'border-fuchsia-300 bg-fuchsia-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                  <strong className="block truncate text-xs text-slate-900">{program.title}</strong>
+                  <span className="mt-1 block text-[9px] text-slate-500">{program.groupName} · {programExerciseCount(program)} תרגילים · {formatDuration(totalProgramSeconds(program))}</span>
+                </button>
+              ))}
+              {templatePrograms.length === 0 && <p className="p-3 text-center text-xs text-slate-500">מאגר האימונים עדיין ריק.</p>}
+            </div>
+          </details>
+        </div>
 
         {selectedProgram ? (
           <div className="space-y-4">
