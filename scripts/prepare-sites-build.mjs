@@ -10,3 +10,7 @@ await cp("server/generated/workout-coach-prompt.js", "dist/server/generated/work
 await cp(".openai/hosting.json", "dist/.openai/hosting.json");
 await cp("dist/index.html", "dist/client/index.html");
 await cp("dist/assets", "dist/client/assets", { recursive: true });
+await cp("dist/icons", "dist/client/icons", { recursive: true });
+await cp("dist/logo.png", "dist/client/logo.png");
+await cp("dist/manifest.webmanifest", "dist/client/manifest.webmanifest");
+await cp("dist/sw.js", "dist/client/sw.js");
