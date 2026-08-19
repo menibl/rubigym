@@ -8,7 +8,7 @@ import { createDatabaseStore } from './database.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const port = Number(process.env.PORT || 8080);
 const maxBodyBytes = Number(process.env.MAX_REQUEST_BODY_BYTES || 1_048_576);
-const databaseStore = await createDatabaseStore(process.env.DATABASE_URL);
+const databaseStore = await createDatabaseStore(process.env.DATABASE_URL, process.env.DATABASE_SSL);
 
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
