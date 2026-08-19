@@ -144,6 +144,8 @@ sudo -u openclaw -H /home/openclaw/.local/openclaw/bin/openclaw \
 ```bash
 sudo -u openclaw -H /home/openclaw/.local/openclaw/bin/openclaw \
   models list --provider openai
+sudo -u openclaw -H /home/openclaw/.local/openclaw/bin/openclaw \
+  models set openai/gpt-5.5
 sudo systemctl enable --now openclaw.service
 sudo -u openclaw -H /home/openclaw/.local/openclaw/bin/openclaw \
   security audit --deep

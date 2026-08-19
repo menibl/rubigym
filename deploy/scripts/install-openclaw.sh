@@ -22,7 +22,10 @@ if ! id openclaw >/dev/null 2>&1; then
 fi
 
 install -d -o openclaw -g openclaw -m 0700 \
-  /home/openclaw/.openclaw /home/openclaw/.openclaw/workspace /home/openclaw/.config/openclaw
+  /home/openclaw/.openclaw /home/openclaw/.openclaw/workspace \
+  /home/openclaw/.config/openclaw /home/openclaw/.npm
+chown root:openclaw /etc/gymflow/secrets
+chmod 0750 /etc/gymflow/secrets
 chown root:openclaw /etc/gymflow/secrets/telegram-bot-token
 chmod 0640 /etc/gymflow/secrets/telegram-bot-token
 
@@ -61,12 +64,16 @@ run_oc config set channels.telegram.allowFrom "[\"${TELEGRAM_USER_ID}\"]"
 run_oc config set channels.telegram.groupPolicy '"disabled"'
 run_oc config set channels.telegram.customCommands '[{"command":"gymstatus","description":"GymFlow production and monitoring status"},{"command":"gymtest","description":"Run checks for the current feature branch"},{"command":"gympublish","description":"Prepare a feature PR for staging"},{"command":"gympromote","description":"Prepare a staging to main PR"},{"command":"gymrollback","description":"Request a production rollback"}]'
 run_oc config set session.dmScope '"per-channel-peer"'
-run_oc config set agents.defaults.model.primary '"openai/gpt-5.6-sol"'
-if ! run_oc plugins info codex >/dev/null 2>&1; then
-  run_oc plugins install @openclaw/codex
-fi
+run_oc config set agents.defaults.model.primary '"openai/gpt-5.5"'
+# A loopback listener still needs authentication in case a local reverse proxy is
+# added later. Doctor creates and stores a random gateway token without exposing it.
+run_oc doctor --generate-gateway-token
+run_oc plugins install @openclaw/codex --force --pin
 run_oc config set plugins.entries.codex.enabled true
+run_oc config set plugins.allow '["codex"]'
 run_oc config set logging.redactSensitive '"tools"'
+run_oc config set tools.elevated.enabled false
+run_oc config set browser.enabled false
 run_oc config set tools.exec.host '"gateway"'
 run_oc config set tools.exec.strictInlineEval true
 # OpenClaw rejects tools.exec.mode when the explicit security/ask policy below is present.
