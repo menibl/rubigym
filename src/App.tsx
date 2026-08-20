@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   User,
   TrainingSession,
@@ -39,10 +39,9 @@ import {
   INITIAL_MESSAGES,
   INITIAL_ATTENDANCE,
   INITIAL_SETTINGS,
-  INITIAL_DISCOUNT_CODES,
-  getLocalStorageData,
-  saveLocalStorageData
+  INITIAL_DISCOUNT_CODES
 } from './data/initialData';
+import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logoutServerSession, registerServerUser, saveClubState, updateServerPassword } from './data/clubServer';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
@@ -55,8 +54,6 @@ import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceL
 import { isMembershipCancellationEffective } from './data/membershipPolicy';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
-const AUTH_SESSION_KEY = 'gym_auth_session_v1';
-const GROUP_WORKOUT_STORAGE_KEY = 'gym_group_workout_programs_v1';
 const isClubWorkoutDisplay = () => window.location.hash === '#club-workout-display';
 
 const getGroupWorkoutDisplayId = () => {
@@ -75,73 +72,27 @@ const parseDisplaySeconds = (value: string | undefined, fallback: number) => {
   return /min|דק/i.test(value || '') ? parsed * 60 : parsed;
 };
 
-const getSavedAuthUserId = () => {
-  try {
-    return localStorage.getItem(AUTH_SESSION_KEY);
-  } catch {
-    return null;
-  }
-};
-
 export default function App() {
   // --- Global Application State ---
-  const [settings, setSettings] = useState<SystemSettings>(() =>
-    getLocalStorageData('gym_settings_v7', INITIAL_SETTINGS)
-  );
-  const [users, setUsers] = useState<User[]>(() =>
-    getLocalStorageData('gym_users_v7', INITIAL_USERS)
-  );
-  const [sessions, setSessions] = useState<TrainingSession[]>(() =>
-    getLocalStorageData('gym_sessions_v7', INITIAL_SESSIONS)
-  );
-  const [openGymSessions, setOpenGymSessions] = useState<OpenGymSession[]>(() =>
-    getLocalStorageData('gym_opengym_v7', INITIAL_OPEN_GYM_SESSIONS)
-  );
-  const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>(() =>
-    getLocalStorageData('gym_workouts_v7', INITIAL_WORKOUT_PLANS)
-  );
-  const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>(() =>
-    getLocalStorageData('gym_nutrition_v7', INITIAL_NUTRITION_PLANS)
-  );
-  const [blackPoints, setBlackPoints] = useState<BlackPoint[]>(() =>
-    getLocalStorageData('gym_blackpoints_v7', INITIAL_BLACK_POINTS)
-  );
-  const [announcements, setAnnouncements] = useState<Announcement[]>(() =>
-    getLocalStorageData('gym_announcements_v7', INITIAL_ANNOUNCEMENTS)
-  );
-  const [payments, setPayments] = useState<Payment[]>(() =>
-    getLocalStorageData('gym_payments_v7', INITIAL_PAYMENTS)
-  );
-  const [messages, setMessages] = useState<Message[]>(() =>
-    getLocalStorageData('gym_messages_v7', INITIAL_MESSAGES)
-  );
-  const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>(() =>
-    getLocalStorageData('gym_attendance_v7', INITIAL_ATTENDANCE)
-  );
-  const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>(() =>
-    getLocalStorageData('gym_discounts_v7', INITIAL_DISCOUNT_CODES)
-  );
-  const [traineeProfiles, setTraineeProfiles] = useState<TraineeProfessionalProfile[]>(() =>
-    getLocalStorageData('gym_trainee_profiles_v1', [])
-  );
-  const [traineeMemoryEntries, setTraineeMemoryEntries] = useState<TraineeMemoryEntry[]>(() =>
-    getLocalStorageData('gym_trainee_memory_v1', [])
-  );
-  const [gymEquipment, setGymEquipment] = useState<GymEquipment[]>(() =>
-    getLocalStorageData('gym_equipment_v1', [])
-  );
-  const [coachPdfDocuments, setCoachPdfDocuments] = useState<CoachPdfDocument[]>(() =>
-    getLocalStorageData('gym_coach_pdf_documents_v1', [])
-  );
-  const [workoutAssistantMessages, setWorkoutAssistantMessages] = useState<WorkoutAssistantMessage[]>(() =>
-    getLocalStorageData('gym_workout_assistant_messages_v1', [])
-  );
-  const [workoutAssistantDrafts, setWorkoutAssistantDrafts] = useState<WorkoutAssistantDraft[]>(() =>
-    getLocalStorageData('gym_workout_assistant_drafts_v1', [])
-  );
-  const [groupWorkoutPrograms, setGroupWorkoutPrograms] = useState<GroupWorkoutProgram[]>(() =>
-    getLocalStorageData(GROUP_WORKOUT_STORAGE_KEY, [])
-  );
+  const [settings, setSettings] = useState<SystemSettings>(INITIAL_SETTINGS);
+  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  const [sessions, setSessions] = useState<TrainingSession[]>(INITIAL_SESSIONS);
+  const [openGymSessions, setOpenGymSessions] = useState<OpenGymSession[]>(INITIAL_OPEN_GYM_SESSIONS);
+  const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>(INITIAL_WORKOUT_PLANS);
+  const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>(INITIAL_NUTRITION_PLANS);
+  const [blackPoints, setBlackPoints] = useState<BlackPoint[]>(INITIAL_BLACK_POINTS);
+  const [announcements, setAnnouncements] = useState<Announcement[]>(INITIAL_ANNOUNCEMENTS);
+  const [payments, setPayments] = useState<Payment[]>(INITIAL_PAYMENTS);
+  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>(INITIAL_ATTENDANCE);
+  const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>(INITIAL_DISCOUNT_CODES);
+  const [traineeProfiles, setTraineeProfiles] = useState<TraineeProfessionalProfile[]>([]);
+  const [traineeMemoryEntries, setTraineeMemoryEntries] = useState<TraineeMemoryEntry[]>([]);
+  const [gymEquipment, setGymEquipment] = useState<GymEquipment[]>([]);
+  const [coachPdfDocuments, setCoachPdfDocuments] = useState<CoachPdfDocument[]>([]);
+  const [workoutAssistantMessages, setWorkoutAssistantMessages] = useState<WorkoutAssistantMessage[]>([]);
+  const [workoutAssistantDrafts, setWorkoutAssistantDrafts] = useState<WorkoutAssistantDraft[]>([]);
+  const [groupWorkoutPrograms, setGroupWorkoutPrograms] = useState<GroupWorkoutProgram[]>([]);
   const [groupWorkoutDisplayId, setGroupWorkoutDisplayId] = useState(getGroupWorkoutDisplayId);
   const [clubWorkoutDisplay, setClubWorkoutDisplay] = useState(isClubWorkoutDisplay);
   const [personalWorkoutDisplayId, setPersonalWorkoutDisplayId] = useState(getPersonalWorkoutDisplayId);
@@ -152,22 +103,13 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<'profile' | 'health' | 'family'>('profile');
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    const savedUserId = getSavedAuthUserId();
-    return Boolean(savedUserId && users.some(user => user.id === savedUserId));
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const revisionRef = useRef(0);
+  const hydratedRef = useRef(false);
 
   // Active signed-in user
-  const [activeUser, setActiveUser] = useState<User>(() => {
-    const loadedUsers = getLocalStorageData('gym_users_v7', INITIAL_USERS);
-    const savedUserId = getSavedAuthUserId();
-    const savedUser = savedUserId
-      ? loadedUsers.find(user => user.id === savedUserId)
-      : undefined;
-    return savedUser
-      || loadedUsers.find(u => u.role === UserRole.TRAINEE)
-      || loadedUsers[0];
-  });
+  const [activeUser, setActiveUser] = useState<User>(INITIAL_USERS[0]);
 
   // State synchronization helper when switching user (so user details like debt, priority score are up to date)
   useEffect(() => {
@@ -177,82 +119,66 @@ export default function App() {
     }
   }, [users]);
 
-  // --- Auto-Save States on changes ---
-  useEffect(() => {
-    saveLocalStorageData('gym_settings_v7', settings);
-  }, [settings]);
+  const applyServerPayload = (payload: Record<string, unknown>, revision: number) => {
+    setSettings({ ...INITIAL_SETTINGS, ...((payload.settings as SystemSettings) || {}) });
+    setUsers((payload.users as User[]) || []);
+    setSessions((payload.sessions as TrainingSession[]) || []);
+    setOpenGymSessions((payload.openGymSessions as OpenGymSession[]) || []);
+    setWorkoutPlans((payload.workoutPlans as WorkoutPlan[]) || []);
+    setNutritionPlans((payload.nutritionPlans as NutritionPlan[]) || []);
+    setBlackPoints((payload.blackPoints as BlackPoint[]) || []);
+    setAnnouncements((payload.announcements as Announcement[]) || []);
+    setPayments((payload.payments as Payment[]) || []);
+    setMessages((payload.messages as Message[]) || []);
+    setAttendanceLogs((payload.attendanceLogs as AttendanceLog[]) || []);
+    setDiscountCodes((payload.discountCodes as DiscountCode[]) || []);
+    setTraineeProfiles((payload.traineeProfiles as TraineeProfessionalProfile[]) || []);
+    setTraineeMemoryEntries((payload.traineeMemoryEntries as TraineeMemoryEntry[]) || []);
+    setGymEquipment((payload.gymEquipment as GymEquipment[]) || []);
+    setCoachPdfDocuments((payload.coachPdfDocuments as CoachPdfDocument[]) || []);
+    setWorkoutAssistantMessages((payload.workoutAssistantMessages as WorkoutAssistantMessage[]) || []);
+    setWorkoutAssistantDrafts((payload.workoutAssistantDrafts as WorkoutAssistantDraft[]) || []);
+    setGroupWorkoutPrograms((payload.groupWorkoutPrograms as GroupWorkoutProgram[]) || []);
+    revisionRef.current = revision;
+    hydratedRef.current = true;
+  };
+
+  const loadAuthenticatedState = async (signedInUser: User) => {
+    const state = await getClubState();
+    applyServerPayload(state.payload, state.revision);
+    setActiveUser(signedInUser);
+    setIsAuthenticated(true);
+  };
 
   useEffect(() => {
-    saveLocalStorageData('gym_users_v7', users);
-  }, [users]);
+    getServerSession()
+      .then(({ user }) => loadAuthenticatedState(user))
+      .catch(() => undefined)
+      .finally(() => setIsBootstrapping(false));
+  }, []);
 
   useEffect(() => {
-    saveLocalStorageData('gym_sessions_v7', sessions);
-  }, [sessions]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_opengym_v7', openGymSessions);
-  }, [openGymSessions]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_workouts_v7', workoutPlans);
-  }, [workoutPlans]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_nutrition_v7', nutritionPlans);
-  }, [nutritionPlans]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_blackpoints_v7', blackPoints);
-  }, [blackPoints]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_announcements_v7', announcements);
-  }, [announcements]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_payments_v7', payments);
-  }, [payments]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_messages_v7', messages);
-  }, [messages]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_attendance_v7', attendanceLogs);
-  }, [attendanceLogs]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_discounts_v7', discountCodes);
-  }, [discountCodes]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_trainee_profiles_v1', traineeProfiles);
-  }, [traineeProfiles]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_trainee_memory_v1', traineeMemoryEntries);
-  }, [traineeMemoryEntries]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_equipment_v1', gymEquipment);
-  }, [gymEquipment]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_coach_pdf_documents_v1', coachPdfDocuments);
-  }, [coachPdfDocuments]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_workout_assistant_messages_v1', workoutAssistantMessages);
-  }, [workoutAssistantMessages]);
-
-  useEffect(() => {
-    saveLocalStorageData('gym_workout_assistant_drafts_v1', workoutAssistantDrafts);
-  }, [workoutAssistantDrafts]);
-
-  useEffect(() => {
-    saveLocalStorageData(GROUP_WORKOUT_STORAGE_KEY, groupWorkoutPrograms);
-  }, [groupWorkoutPrograms]);
+    if (!isAuthenticated || !hydratedRef.current) return;
+    const payload = {
+      settings, users, sessions, openGymSessions, workoutPlans, nutritionPlans, blackPoints,
+      announcements, payments, messages, attendanceLogs, discountCodes, traineeProfiles,
+      traineeMemoryEntries, gymEquipment, coachPdfDocuments, workoutAssistantMessages,
+      workoutAssistantDrafts, groupWorkoutPrograms
+    };
+    const timer = window.setTimeout(() => {
+      saveClubState(payload, revisionRef.current)
+        .then(result => { revisionRef.current = result.revision; })
+        .catch(async (error: Error & { status?: number }) => {
+          if (error.status === 409) {
+            const latest = await getClubState();
+            applyServerPayload(latest.payload, latest.revision);
+          } else {
+            console.error('Unable to save club state', error);
+          }
+        });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [settings, users, sessions, openGymSessions, workoutPlans, nutritionPlans, blackPoints, announcements, payments, messages, attendanceLogs, discountCodes, traineeProfiles, traineeMemoryEntries, gymEquipment, coachPdfDocuments, workoutAssistantMessages, workoutAssistantDrafts, groupWorkoutPrograms, isAuthenticated]);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -260,20 +186,9 @@ export default function App() {
       setClubWorkoutDisplay(isClubWorkoutDisplay());
       setPersonalWorkoutDisplayId(getPersonalWorkoutDisplayId());
     };
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === GROUP_WORKOUT_STORAGE_KEY && event.newValue) {
-        try {
-          setGroupWorkoutPrograms(JSON.parse(event.newValue));
-        } catch {
-          // Ignore invalid external storage updates.
-        }
-      }
-    };
     window.addEventListener('hashchange', handleHashChange);
-    window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener('hashchange', handleHashChange);
-      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 
@@ -355,8 +270,9 @@ export default function App() {
     }
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem(AUTH_SESSION_KEY);
+  const handleLogout = async () => {
+    await logoutServerSession().catch(() => undefined);
+    hydratedRef.current = false;
     setIsAuthenticated(false);
     setWorkspaceView(null);
     setShowTraineeAccessAlert(true);
@@ -378,18 +294,9 @@ export default function App() {
     setMessages(prev => [newMessage, ...prev]);
   };
 
-  // Registration completion handler
-  const handleCompleteRegistration = (newUser: User, familyMembers?: User[]) => {
-    const updatedUsersList = [newUser, ...(familyMembers || []), ...users];
-    setUsers(updatedUsersList);
-    setActiveUser(newUser);
-    localStorage.setItem(AUTH_SESSION_KEY, newUser.id);
-    setIsAuthenticated(true);
-  };
-
-  const handleGatewayRegistration = (newUser: User, payment: Payment) => {
-    handleCompleteRegistration(newUser);
-    setPayments(prev => [payment, ...prev]);
+  const handleGatewayRegistration = async (newUser: User, payment: Payment) => {
+    const { user } = await registerServerUser(newUser, payment);
+    await loadAuthenticatedState(user);
     if (newUser.healthDeclarationRequiresMedicalCertificate) {
       const submittedMessage = newUser.healthDeclarationMedicalCertificateFileName
         ? ` והעלה/תה אישור רפואי: ${newUser.healthDeclarationMedicalCertificateFileName}`
@@ -410,20 +317,31 @@ export default function App() {
     }
   };
 
-  // Login handler
-  const handleLoginSuccess = (user: User) => {
-    setActiveUser(user);
-    localStorage.setItem(AUTH_SESSION_KEY, user.id);
-    setIsAuthenticated(true);
+  const finishServerLogin = async (user: User) => {
+    await loadAuthenticatedState(user);
     setWorkspaceView(null);
     setShowTraineeAccessAlert(true);
+    return user;
+  };
+
+  const handlePasswordLogin = async (login: string, password: string) => {
+    const { user } = await loginWithPassword(login, password);
+    return finishServerLogin(user);
+  };
+
+  const handlePhoneLogin = async (phone: string, otp: string) => {
+    const { user } = await loginWithPhone(phone, otp);
+    return finishServerLogin(user);
   };
 
   // User details update handler
   const handleUpdateUser = (updatedUser: User) => {
-    setActiveUser(current => current.id === updatedUser.id ? updatedUser : current);
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    setUserToEdit(current => current?.id === updatedUser.id ? updatedUser : current);
+    const { password, ...withoutPassword } = updatedUser;
+    const safeUser = withoutPassword as User;
+    if (password) updateServerPassword(password).catch(error => console.error('Unable to update password', error));
+    setActiveUser(current => current.id === safeUser.id ? safeUser : current);
+    setUsers(prev => prev.map(u => u.id === safeUser.id ? safeUser : u));
+    setUserToEdit(current => current?.id === safeUser.id ? safeUser : current);
   };
 
   const handleCloseSettings = () => {
@@ -467,13 +385,18 @@ export default function App() {
     return <GroupWorkoutDisplay program={displayProgram} />;
   }
 
+  if (isBootstrapping) {
+    return <div className="min-h-screen grid place-items-center bg-zinc-950 text-amber-400 font-bold" dir="rtl">טוען את נתוני המועדון…</div>;
+  }
+
   if (!isAuthenticated) {
     return (
       <AuthGateway
         users={users}
         discountCodes={discountCodes}
         settings={settings}
-        onLogin={handleLoginSuccess}
+        onPasswordLogin={handlePasswordLogin}
+        onPhoneLogin={handlePhoneLogin}
         onRegister={handleGatewayRegistration}
       />
     );

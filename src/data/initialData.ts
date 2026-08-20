@@ -59,18 +59,3 @@ export const INITIAL_PAYMENTS: Payment[] = [];
 export const INITIAL_MESSAGES: Message[] = [];
 export const INITIAL_ATTENDANCE: AttendanceLog[] = [];
 export const INITIAL_DISCOUNT_CODES: DiscountCode[] = [];
-
-export const getLocalStorageData = <T>(key: string, defaultValue: T): T => {
-  const item = localStorage.getItem(key);
-  if (!item) return defaultValue;
-  try {
-    return JSON.parse(item);
-  } catch (error) {
-    console.error(`Unable to parse browser cache key ${key}`, error);
-    return defaultValue;
-  }
-};
-
-export const saveLocalStorageData = <T>(key: string, data: T): void => {
-  localStorage.setItem(key, JSON.stringify(data));
-};

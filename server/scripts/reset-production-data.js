@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { resolveDatabaseSsl } from '../database.js';
 
 const { Client } = pg;
 const confirmation = 'KEEP_RUBY_BALI_AND_CLEAR_CLUB_DATA';
@@ -36,9 +37,7 @@ const collectionKeys = [
 
 const client = new Client({
   connectionString: process.env.DATABASE_URL,
-  ssl: /^(1|true|require|yes)$/i.test(process.env.DATABASE_SSL || '')
-    ? { rejectUnauthorized: false }
-    : false
+  ssl: resolveDatabaseSsl(process.env.DATABASE_URL, process.env.DATABASE_SSL)
 });
 
 try {
@@ -81,6 +80,8 @@ try {
   await client.query('DELETE FROM live_display_commands');
   await client.query('DELETE FROM live_display_status');
   await client.query('DELETE FROM live_display WHERE club_id=$1', [clubId]);
+  await client.query('DELETE FROM auth_sessions WHERE club_id=$1', [clubId]);
+  await client.query('DELETE FROM auth_accounts WHERE club_id=$1 AND user_id<>$2', [clubId, ruby.id]);
   await client.query('COMMIT');
   console.log(`Production data reset completed for ${clubId}; Ruby Bali was preserved and a backup was created.`);
 } catch (error) {

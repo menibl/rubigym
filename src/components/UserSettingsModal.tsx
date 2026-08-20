@@ -70,7 +70,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [showAddSubMember, setShowAddSubMember] = useState(false);
   const [subName, setSubName] = useState('');
   const [subUsername, setSubUsername] = useState('');
-  const [subPassword, setSubPassword] = useState('123456');
+  const [subPassword, setSubPassword] = useState('');
   const [subPhone, setSubPhone] = useState('');
   const [subBirthDate, setSubBirthDate] = useState('');
   const [subGender, setSubGender] = useState<Gender>(Gender.MALE);
@@ -168,8 +168,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
 
     if (newPassword) {
-      if (newPassword.length < 4) {
-        setMsg({ type: 'error', text: 'הסיסמה החדשה חייבת להכיל לפחות 4 תווים' });
+      if (newPassword.length < 8) {
+        setMsg({ type: 'error', text: 'הסיסמה החדשה חייבת להכיל לפחות 8 תווים' });
         return;
       }
       if (newPassword !== confirmNewPassword) {
@@ -205,7 +205,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
     // If allUsers callback is present, update in list as well
     if (onUpdateAllUsers) {
-      onUpdateAllUsers(allUsers.map(u => u.id === updated.id ? updated : u));
+      const { password: _credential, ...safeUpdated } = updated;
+      onUpdateAllUsers(allUsers.map(u => u.id === updated.id ? safeUpdated as User : u));
     }
 
     onClose();
@@ -330,6 +331,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setMsg({ type: 'error', text: 'אנא מלא שם מלא, שם משתמש וסיסמה עבור בן המשפחה' });
       return;
     }
+    if (subPassword.trim().length < 8) {
+      setMsg({ type: 'error', text: 'הסיסמה לבן המשפחה חייבת להכיל לפחות 8 תווים' });
+      return;
+    }
 
     if (allUsers.some(u => u.username?.toLowerCase() === subUsername.trim().toLowerCase())) {
       setMsg({ type: 'error', text: 'שם המשתמש כבר תפוס' });
@@ -404,7 +409,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     setShowAddSubMember(false);
     setSubName('');
     setSubUsername('');
-    setSubPassword('123456');
+    setSubPassword('');
     setSubPhone('');
     setSubBirthDate('');
     setSubHealthApproved(false);
@@ -882,7 +887,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                                   )}
                                 </div>
                                 <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                                  שם משתמש: <span className="font-bold text-indigo-700">{m.username || m.name}</span> | סיסמה: <span className="font-bold text-amber-700">{m.password || '123456'}</span>
+                                  שם משתמש: <span className="font-bold text-indigo-700">{m.username || m.name}</span> | הסיסמה נשמרת באופן מאובטח ואינה מוצגת
                                 </div>
                               </div>
 
