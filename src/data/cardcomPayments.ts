@@ -1,4 +1,6 @@
-import { FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, PaymentPurchaseVariant } from '../types';
+import { FamilyBillingMode, FamilyMemberPlanSelection, MEMBERSHIP_PRICES, MembershipType, PaymentPurchaseVariant } from '../types';
+import { isPagesDemoMode } from './appMode';
+import { familyPurchaseAmount } from './familyMembership';
 
 const PENDING_PAYMENT_KEY = 'baly_cardcom_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_cardcom_processed_transactions_v1';
@@ -54,9 +56,43 @@ export interface VerifiedCardcomPayment {
 
 const paymentApiBase = () => (import.meta.env.VITE_PAYMENT_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
-export const isCardcomConfigured = () => Boolean(paymentApiBase());
+export const isCardcomConfigured = () => isPagesDemoMode() || Boolean(paymentApiBase());
+
+const demoPaymentAmount = (request: CreatePaymentRequest) => {
+  if (request.membershipType === MembershipType.FAMILY_MEMBERSHIP) {
+    return familyPurchaseAmount(
+      request.familyBillingMode || 'ANNUAL_BY_SIZE',
+      request.familyMembersCount || 2,
+      request.familyMemberPlans || []
+    );
+  }
+  return request.planAmount ?? MEMBERSHIP_PRICES[request.membershipType];
+};
 
 export const startCardcomPayment = async (request: CreatePaymentRequest) => {
+  if (isPagesDemoMode()) {
+    const pending: PendingCardcomPayment = {
+      lowProfileId: `pages-demo-${Date.now()}`,
+      userId: request.userId,
+      membershipType: request.membershipType,
+      mode: request.mode,
+      purchaseVariant: request.purchaseVariant,
+      createdAt: new Date().toISOString(),
+      registrationDraft: request.registrationDraft,
+      familyMembersCount: request.familyMembersCount,
+      familyName: request.familyName,
+      familyBillingMode: request.familyBillingMode,
+      familyMemberPlans: request.familyMemberPlans,
+      discountCode: request.discountCode,
+      planAmount: demoPaymentAmount(request),
+      planLabel: request.planLabel
+    };
+    sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
+    const returnUrl = new URL(window.location.href);
+    returnUrl.searchParams.set('cardcom', 'success');
+    window.location.assign(returnUrl.toString());
+    return;
+  }
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות התשלום עדיין לא הוגדר בשרת.');
   const response = await fetch(`${apiBase}/api/payments/cardcom/create`, {
@@ -112,6 +148,21 @@ export const getPendingCardcomPayment = (): PendingCardcomPayment | null => {
 export const clearPendingCardcomPayment = () => sessionStorage.removeItem(PENDING_PAYMENT_KEY);
 
 export const verifyPendingCardcomPayment = async (pending: PendingCardcomPayment): Promise<VerifiedCardcomPayment> => {
+  if (isPagesDemoMode()) {
+    return {
+      success: true,
+      lowProfileId: pending.lowProfileId,
+      membershipType: pending.membershipType,
+      amount: pending.planAmount ?? MEMBERSHIP_PRICES[pending.membershipType],
+      transactionId: pending.lowProfileId,
+      last4Digits: '1111',
+      mode: pending.mode,
+      purchaseVariant: pending.purchaseVariant,
+      familyMembersCount: pending.familyMembersCount,
+      familyBillingMode: pending.familyBillingMode,
+      familyMemberPlans: pending.familyMemberPlans
+    };
+  }
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
   const response = await fetch(`${apiBase}/api/payments/cardcom/verify`, {
