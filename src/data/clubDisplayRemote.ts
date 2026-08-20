@@ -9,6 +9,7 @@ export const activateClubDisplay = async (program: GroupWorkoutProgram) => {
   if (!base) throw new Error('שרת התצוגה עדיין לא הוגדר.');
   const response = await fetch(`${base}/api/live-display/active`, {
     method: 'PUT',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ program })
   });

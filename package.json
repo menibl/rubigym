@@ -14,6 +14,7 @@
     "build:pages": "vite build --base=/rubigym/",
     "preview": "vite preview",
     "test:ai": "npm run sync:ai-prompt && node scripts/test-workout-ai.mjs",
+    "reset:production-data": "node server/scripts/reset-production-data.js",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },

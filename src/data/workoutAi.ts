@@ -107,6 +107,7 @@ const requestWorkoutAi = async <T>(body: object): Promise<{ result: T; model: st
   try {
     response = await fetch(`${aiApiBase()}/api/ai/workout-plan`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });

@@ -1,0 +1,148 @@
+import { Payment, User } from '../types';
+import { isPagesDemoMode } from './appMode';
+import { createDemoPayload } from './demoData';
+
+const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
+const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
+const DEMO_PASSWORDS_KEY = 'baly_pages_demo_passwords_v1';
+
+type DemoState = ClubStateEnvelope;
+
+const normalizeLogin = (value: string) => value.trim().toLowerCase().replace(/[^\p{L}\p{N}@.+]/gu, '');
+
+const readDemoState = (): DemoState => {
+  try {
+    const stored = localStorage.getItem(DEMO_STATE_KEY);
+    if (stored) return JSON.parse(stored) as DemoState;
+  } catch { /* start again from the public demo seed */ }
+  const state = { payload: createDemoPayload(), revision: 1 };
+  localStorage.setItem(DEMO_STATE_KEY, JSON.stringify(state));
+  return state;
+};
+
+const writeDemoState = (state: DemoState) => {
+  localStorage.setItem(DEMO_STATE_KEY, JSON.stringify(state));
+  return state;
+};
+
+const demoPasswords = (): Record<string, string> => {
+  try { return JSON.parse(localStorage.getItem(DEMO_PASSWORDS_KEY) || '{}'); }
+  catch { return {}; }
+};
+
+const findDemoUser = (login: string) => {
+  const normalized = normalizeLogin(login);
+  return ((readDemoState().payload.users as User[]) || []).find(user =>
+    [user.name, user.username, user.email, user.phone].filter(Boolean).some(value => normalizeLogin(String(value)) === normalized)
+  );
+};
+
+const currentDemoUser = () => {
+  const id = localStorage.getItem(DEMO_SESSION_KEY);
+  return id ? ((readDemoState().payload.users as User[]) || []).find(user => user.id === id) : undefined;
+};
+
+const apiBase = () => (import.meta.env.VITE_API_URL || import.meta.env.VITE_AI_API_URL || import.meta.env.VITE_PAYMENT_API_URL || '').replace(/\/$/, '');
+
+const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+  const response = await fetch(`${apiBase()}${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(init.headers || {}) }
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(result.message || (response.status === 409 ? 'STATE_CONFLICT' : 'שירות המועדון אינו זמין כרגע.')) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return result as T;
+};
+
+export type ClubStateEnvelope = { payload: Record<string, unknown>; revision: number; updated_at?: string };
+
+export const getServerSession = async () => {
+  if (isPagesDemoMode()) {
+    const user = currentDemoUser();
+    if (!user) throw new Error('DEMO_SESSION_NOT_FOUND');
+    return { authenticated: true, user };
+  }
+  return request<{ authenticated: boolean; user: User }>('/api/auth/session');
+};
+
+export const loginWithPassword = async (login: string, password: string) => {
+  if (isPagesDemoMode()) {
+    const user = findDemoUser(login);
+    const passwords = demoPasswords();
+    const expected = passwords[user?.id || ''] || (user?.id === 'user-robi' ? import.meta.env.VITE_DEMO_MANAGER_PASSWORD : '');
+    if (!user || !expected || password !== expected) throw new Error('שם המשתמש או הסיסמה אינם נכונים.');
+    localStorage.setItem(DEMO_SESSION_KEY, user.id);
+    return { user };
+  }
+  return request<{ user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ login, password }) });
+};
+
+export const loginWithPhone = async (phone: string, otp: string) => {
+  if (isPagesDemoMode()) {
+    const user = findDemoUser(phone);
+    if (!user || otp !== '1111') throw new Error('מספר הטלפון או קוד האימות אינם תקינים.');
+    localStorage.setItem(DEMO_SESSION_KEY, user.id);
+    return { user };
+  }
+  return request<{ user: User }>('/api/auth/phone-login', { method: 'POST', body: JSON.stringify({ phone, otp }) });
+};
+
+export const registerServerUser = async (user: User, payment: Payment) => {
+  if (isPagesDemoMode()) {
+    const state = readDemoState();
+    const users = (state.payload.users as User[]) || [];
+    if (users.some(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean).some(value =>
+      [user.username, user.email, user.phone].filter(Boolean).some(input => normalizeLogin(String(value)) === normalizeLogin(String(input)))
+    ))) throw new Error('שם המשתמש, האימייל או הטלפון כבר רשומים.');
+    const passwords = demoPasswords();
+    passwords[user.id] = user.password || '';
+    localStorage.setItem(DEMO_PASSWORDS_KEY, JSON.stringify(passwords));
+    const { password: _password, ...safeUser } = user;
+    const next = writeDemoState({
+      payload: { ...state.payload, users: [safeUser, ...users], payments: [payment, ...((state.payload.payments as Payment[]) || [])] },
+      revision: state.revision + 1
+    });
+    localStorage.setItem(DEMO_SESSION_KEY, safeUser.id);
+    return { user: safeUser as User, revision: next.revision };
+  }
+  return request<{ user: User; revision: number }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ user, payment }) });
+};
+
+export const logoutServerSession = async () => {
+  if (isPagesDemoMode()) {
+    localStorage.removeItem(DEMO_SESSION_KEY);
+    return { ok: true };
+  }
+  return request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' });
+};
+
+export const updateServerPassword = async (password: string) => {
+  if (isPagesDemoMode()) {
+    const user = currentDemoUser();
+    if (!user) throw new Error('DEMO_SESSION_NOT_FOUND');
+    localStorage.setItem(DEMO_PASSWORDS_KEY, JSON.stringify({ ...demoPasswords(), [user.id]: password }));
+    return { ok: true };
+  }
+  return request<{ ok: boolean }>('/api/auth/password', { method: 'PUT', body: JSON.stringify({ password }) });
+};
+
+export const getClubState = async () => isPagesDemoMode() ? readDemoState() : request<ClubStateEnvelope>('/api/state');
+
+export const saveClubState = async (payload: Record<string, unknown>, expectedRevision: number) => {
+  if (isPagesDemoMode()) {
+    const current = readDemoState();
+    if (current.revision !== expectedRevision) {
+      const error = new Error('STATE_CONFLICT') as Error & { status?: number };
+      error.status = 409;
+      throw error;
+    }
+    const next = writeDemoState({ payload, revision: current.revision + 1 });
+    return { revision: next.revision };
+  }
+  return request<{ revision: number }>('/api/state', { method: 'PUT', body: JSON.stringify({ payload, expectedRevision }) });
+};

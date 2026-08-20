@@ -38,8 +38,11 @@ jobs:
       - name: Build public site
         run: pnpm run build:pages
         env:
-          VITE_PAYMENT_API_URL: ${{ vars.PAYMENT_API_URL }}
-          VITE_AI_API_URL: ${{ vars.AI_API_URL || vars.PAYMENT_API_URL }}
+          # GitHub Pages is an isolated public demo. These values are intentionally
+          # public build settings and are never used by the production build.
+          VITE_APP_MODE: demo
+          VITE_DEMO_MANAGER_PASSWORD: 12345678
+          VITE_AI_API_URL: https://demo-api.invalid
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
