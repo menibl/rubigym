@@ -30,6 +30,14 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       revision bigint NOT NULL DEFAULT 1,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS club_state_backups (
+      id bigserial PRIMARY KEY,
+      club_id text NOT NULL,
+      payload jsonb NOT NULL,
+      revision bigint NOT NULL,
+      reason text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
     CREATE TABLE IF NOT EXISTS live_display (
       club_id text PRIMARY KEY,
       program jsonb,

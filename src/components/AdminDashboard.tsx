@@ -680,7 +680,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     onUpdateUsers(updatedUsers);
   };
 
-  // Record a Mock Payment to clear debt
+  // Record an offline payment to clear a debt.
   const handlePayDebt = (trainee: User) => {
     const purchasedType = trainee.membershipType || MembershipType.GROUP_MONTHLY;
     const paymentAmount = MEMBERSHIP_PRICES[purchasedType];
@@ -1438,7 +1438,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 onClick={() => handlePayDebt(u)}
                                 className="bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold py-1 px-2.5 rounded transition shadow-sm w-full text-center"
                               >
-                                סגירת חוב (MOCK סליקה)
+                                רישום תשלום ידני וסגירת חוב
                               </button>
                             )}
 
@@ -1731,7 +1731,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* TAB 4: PAYMENTS LEDGER (MOCK BILLING) */}
+        {/* TAB 4: PAYMENTS LEDGER */}
         {activeTab === 'payments' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1800,7 +1800,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="p-3 text-slate-500">{p.paymentMethod}</td>
                         <td className="p-3">
                           <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[9px]">
-                            הושלם (MOCK)
+                            הושלם ידנית
                           </span>
                         </td>
                       </tr>
@@ -1982,7 +1982,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              alert('ההגדרות נשמרו בהצלחה בסימולטור!');
+              alert('ההגדרות נשמרו בהצלחה.');
             }}
             className="space-y-6"
             id="settings-form"

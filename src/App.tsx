@@ -42,15 +42,12 @@ import {
   INITIAL_DISCOUNT_CODES,
   getLocalStorageData,
   saveLocalStorageData
-} from './data/mockData';
-import { RoleSwitcher } from './components/RoleSwitcher';
+} from './data/initialData';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
 import { AuthGateway } from './components/AuthGateway';
 import { RubisLogo } from './components/RubisLogo';
-import { LoginModal } from './components/LoginModal';
-import { RegisterModal } from './components/RegisterModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
 import { ClubWorkoutDisplay } from './components/ClubWorkoutDisplay';
@@ -152,8 +149,6 @@ export default function App() {
   const [showTraineeAccessAlert, setShowTraineeAccessAlert] = useState(true);
 
   // Modals state
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<'profile' | 'health' | 'family'>('profile');
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
@@ -162,16 +157,14 @@ export default function App() {
     return Boolean(savedUserId && users.some(user => user.id === savedUserId));
   });
 
-  // Active Simulated User
+  // Active signed-in user
   const [activeUser, setActiveUser] = useState<User>(() => {
     const loadedUsers = getLocalStorageData('gym_users_v7', INITIAL_USERS);
     const savedUserId = getSavedAuthUserId();
     const savedUser = savedUserId
       ? loadedUsers.find(user => user.id === savedUserId)
       : undefined;
-    // Open on the mobile trainee experience shown in the product mockup.
     return savedUser
-      || loadedUsers.find(u => u.id === 'trainee-meni')
       || loadedUsers.find(u => u.role === UserRole.TRAINEE)
       || loadedUsers[0];
   });
@@ -284,7 +277,7 @@ export default function App() {
     };
   }, []);
 
-  // In-app PUSH simulation. Production delivery while the app is closed will use a push provider.
+  // In-app notification delivery while the application is open.
   useEffect(() => {
     if (
       !isAuthenticated ||
@@ -361,24 +354,6 @@ export default function App() {
       console.log('Background Engine: Expired outdated black points and updated trainees priorities.');
     }
   }, []);
-
-  // Reset database completely
-  const handleResetDatabase = () => {
-    if (confirm('האם אתה בטוח שברצונך לאפס את כל הנתונים השמורים במערכת לערכי ברירת המחדל?')) {
-      localStorage.clear();
-      window.location.reload();
-    }
-  };
-
-  // Switch Active user simulation callback
-  const handleSwitchUser = (user: User) => {
-    setActiveUser(user);
-    setWorkspaceView(null);
-    setShowTraineeAccessAlert(true);
-    if (isAuthenticated) {
-      localStorage.setItem(AUTH_SESSION_KEY, user.id);
-    }
-  };
 
   const handleLogout = () => {
     localStorage.removeItem(AUTH_SESSION_KEY);
@@ -587,11 +562,11 @@ export default function App() {
     <div className={`app-shell role-${activeUser.role.toLowerCase()} min-h-screen flex flex-col font-sans antialiased`} dir="rtl">
       {/* Visual Header */}
       <header className="app-header bg-gradient-to-r from-zinc-950 via-zinc-900 to-amber-950 text-white shadow-md border-b border-amber-500/20">
-        <div className="app-header-inner max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-4">
+        <div className="app-header-inner max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
+          <div className="app-brand flex items-center gap-3">
             <RubisLogo size={192} />
-            <div>
-              <p className="text-[10px] text-zinc-400 font-sans">אימונים, בריאות וליווי אישי במקום אחד</p>
+            <div className="app-brand-copy">
+              <p>אימונים, בריאות וליווי אישי במקום אחד</p>
             </div>
           </div>
 
@@ -643,14 +618,6 @@ export default function App() {
 
       {/* Main Container */}
       <main className="app-main flex-grow max-w-7xl w-full mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        {/* Role Simulator Widget */}
-        <RoleSwitcher
-          allUsers={users}
-          activeUser={activeUser}
-          onSwitchUser={handleSwitchUser}
-          onResetDatabase={handleResetDatabase}
-        />
-
         {/* Dynamic Dashboards */}
         <div className="dashboard-stage transition-all duration-300">
           {!workspaceView && (
@@ -774,31 +741,8 @@ export default function App() {
           <div>
             <span className="font-bold text-white font-sans text-xs text-amber-500">BALY wellness</span> — מערכת חכמה לניהול חוויית האימון והמנוי.
           </div>
-          <div className="flex gap-4 text-zinc-600 text-[10px]">
-            <span>גרסת בדיקות למועדון BALY wellness</span>
-            <span>•</span>
-            <span>מצב סימולטור וסורק קוד נוכחות פעילים</span>
-          </div>
         </div>
       </footer>
-      {/* Modals */}
-      <LoginModal
-        isOpen={isLoginOpen}
-        onClose={() => setIsLoginOpen(false)}
-        users={users}
-        onLoginSuccess={handleLoginSuccess}
-        onOpenRegister={() => setIsRegisterOpen(true)}
-      />
-
-      <RegisterModal
-        isOpen={isRegisterOpen}
-        onClose={() => setIsRegisterOpen(false)}
-        existingUsers={users}
-        onCompleteRegistration={handleCompleteRegistration}
-        discountCodes={discountCodes}
-        onUpdateDiscountCodes={setDiscountCodes}
-      />
-
       <UserSettingsModal
         isOpen={isSettingsOpen}
         onClose={handleCloseSettings}

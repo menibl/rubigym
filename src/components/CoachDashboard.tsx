@@ -2484,7 +2484,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
           </div>
         ) : (
           <div className="text-center py-8 text-slate-400 text-xs">
-            לא נמצאו מתאמנים רשומים במערכת. אנא צור מתאמנים או אפס את נתוני הסימולטור.
+            לא נמצאו מתאמנים רשומים במערכת. ניתן להוסיף מתאמנים דרך ניהול המועדון.
           </div>
         )}
       </div>
