@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { handleWorkoutAi } from '../server/workout-ai.js';
 
-const prompt = await readFile(new URL('../server/prompts/workout-coach.md', import.meta.url), 'utf8');
+const prompt = (await readFile(new URL('../server/prompts/workout-coach.md', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const originalFetch = globalThis.fetch;
 let capturedRequest;
 

@@ -33,6 +33,7 @@ export const sendGroupWorkoutCommand = (programId: string, action: GroupWorkoutR
   const base = apiBase();
   if (base) void fetch(`${base}/api/live-display/${encodeURIComponent(programId)}/commands`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(command)
   }).catch(() => undefined);

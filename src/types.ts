@@ -433,7 +433,7 @@ export interface Exercise {
   restDuration?: string; // e.g., "60 sec"
   mediaUrl?: string; // optional demonstration video link
   mediaType?: 'IMAGE' | 'GIF' | 'VIDEO';
-  mediaStorageId?: string; // device-local uploaded media in the demo version
+  mediaStorageId?: string; // identifier of uploaded exercise media
   notes?: string;
   dayNumber?: number; // 1-based training day within a weekly personal plan
 }

@@ -1,4 +1,16 @@
 import { handleWorkoutAi } from './workout-ai.js';
+import {
+  accountFromUser,
+  clearSessionCookie,
+  createAuthenticatedSession,
+  getAuthenticatedSession,
+  mergePayloadForUser,
+  normalizePhone,
+  payloadForUser,
+  hashPassword,
+  stripCredentials,
+  verifyPassword
+} from './auth.js';
 
 const CARDCOM_BASE_URL = 'https://secure.cardcom.solutions/api/v11';
 const liveDisplayState = { program: null, commands: new Map(), statuses: new Map() };
@@ -194,6 +206,7 @@ const corsHeaders = (request, env) => {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
+    'Access-Control-Allow-Credentials': 'true',
     'Vary': 'Origin'
   } : {};
 };
@@ -320,11 +333,96 @@ const handleApi = async (request, env, url) => {
   const headers = corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   try {
+    const clubId = env.CLUB_ID || 'baly-wellness';
+    const getIdentity = async () => {
+      const session = await getAuthenticatedSession(request, env.STATE_STORE);
+      if (!session) return null;
+      const account = await env.STATE_STORE.getAccount(session.club_id, session.user_id);
+      return account ? { session, account } : null;
+    };
+
+    if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      const body = await request.json();
+      const account = await env.STATE_STORE.getAccountByLogin(clubId, body.login);
+      if (!account || !await verifyPassword(body.password, account.password_hash)) {
+        return json({ message: 'שם המשתמש או הסיסמה אינם נכונים.' }, 401, headers);
+      }
+      const state = await env.STATE_STORE.getClubState(clubId);
+      const user = state?.payload?.users?.find(candidate => candidate.id === account.user_id);
+      if (!user) return json({ message: 'חשבון המשתמש אינו קיים בנתוני המועדון.' }, 409, headers);
+      const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, user.id);
+      return json({ user: stripCredentials(user) }, 200, { ...headers, 'Set-Cookie': auth.cookie });
+    }
+
+    if (url.pathname === '/api/auth/phone-login' && request.method === 'POST') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      const body = await request.json();
+      if (String(env.SMS_TEST_MODE).toLowerCase() !== 'true' || String(body.otp) !== '1111') {
+        return json({ message: 'קוד האימות אינו תקין או ששירות ה-SMS אינו מוגדר.' }, 401, headers);
+      }
+      const account = await env.STATE_STORE.getAccountByLogin(clubId, normalizePhone(body.phone));
+      if (!account) return json({ message: 'לא נמצא משתמש עם מספר הטלפון הזה.' }, 404, headers);
+      const state = await env.STATE_STORE.getClubState(clubId);
+      const user = state?.payload?.users?.find(candidate => candidate.id === account.user_id);
+      if (!user) return json({ message: 'חשבון המשתמש אינו קיים בנתוני המועדון.' }, 409, headers);
+      const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, user.id);
+      return json({ user: stripCredentials(user) }, 200, { ...headers, 'Set-Cookie': auth.cookie });
+    }
+
+    if (url.pathname === '/api/auth/session' && request.method === 'GET') {
+      const identity = await getIdentity();
+      if (!identity) return json({ authenticated: false }, 401, headers);
+      const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+      const user = state?.payload?.users?.find(candidate => candidate.id === identity.account.user_id);
+      return user ? json({ authenticated: true, user: stripCredentials(user) }, 200, headers) : json({ authenticated: false }, 401, headers);
+    }
+
+    if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+      const identity = await getIdentity();
+      if (identity) await env.STATE_STORE.deleteSession(identity.session.tokenHash);
+      return json({ ok: true }, 200, { ...headers, 'Set-Cookie': clearSessionCookie });
+    }
+
+    if (url.pathname === '/api/auth/password' && request.method === 'PUT') {
+      const identity = await getIdentity();
+      if (!identity) return json({ message: 'Unauthorized' }, 401, headers);
+      const body = await request.json();
+      if (typeof body.password !== 'string' || body.password.length < 8) return json({ message: 'הסיסמה חייבת להכיל לפחות 8 תווים.' }, 400, headers);
+      await env.STATE_STORE.updatePassword(identity.session.club_id, identity.account.user_id, await hashPassword(body.password));
+      return json({ ok: true }, 200, headers);
+    }
+
+    if (url.pathname === '/api/auth/register' && request.method === 'POST') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      const body = await request.json();
+      const user = body.user;
+      if (!user?.id || !user?.password || user.role !== 'TRAINEE') return json({ message: 'פרטי ההרשמה אינם תקינים.' }, 400, headers);
+      const duplicate = await env.STATE_STORE.getAccountByLogin(clubId, user.username)
+        || await env.STATE_STORE.getAccountByLogin(clubId, user.email)
+        || await env.STATE_STORE.getAccountByLogin(clubId, user.phone);
+      if (duplicate) return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
+      const state = await env.STATE_STORE.getClubState(clubId);
+      if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
+      const safeUser = stripCredentials(user);
+      const nextPayload = {
+        ...state.payload,
+        users: [safeUser, ...(state.payload.users || [])],
+        payments: body.payment ? [body.payment, ...(state.payload.payments || [])] : (state.payload.payments || [])
+      };
+      const saved = await env.STATE_STORE.putClubState(clubId, nextPayload, state.revision);
+      if (saved.conflict) return json(saved, 409, headers);
+      await env.STATE_STORE.upsertAccount(await accountFromUser(clubId, safeUser, user.password));
+      const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, safeUser.id);
+      return json({ user: safeUser, revision: saved.revision }, 201, { ...headers, 'Set-Cookie': auth.cookie });
+    }
     if (url.pathname === '/api/live-display/active' && request.method === 'GET') {
       const program = env.STATE_STORE ? await env.STATE_STORE.getActiveProgram(env.CLUB_ID || 'baly-wellness') : liveDisplayState.program;
       return program ? json({ program }, 200, headers) : new Response(null, { status: 204, headers });
     }
     if (url.pathname === '/api/live-display/active' && request.method === 'PUT') {
+      const identity = await getIdentity();
+      if (!identity || !['MANAGER', 'COACH'].includes(identity.account.role)) return json({ message: 'Unauthorized' }, 401, headers);
       const body = await request.json();
       if (!body?.program?.id) return json({ message: 'Invalid program' }, 400, headers);
       if (env.STATE_STORE) await env.STATE_STORE.setActiveProgram(env.CLUB_ID || 'baly-wellness', body.program);
@@ -337,6 +435,8 @@ const handleApi = async (request, env, url) => {
       return json(env.STATE_STORE ? await env.STATE_STORE.getCommand(programId) : liveDisplayState.commands.get(programId) || null, 200, headers);
     }
     if (commandMatch && request.method === 'POST') {
+      const identity = await getIdentity();
+      if (!identity || !['MANAGER', 'COACH'].includes(identity.account.role)) return json({ message: 'Unauthorized' }, 401, headers);
       const command = await request.json();
       if (!command?.id || !command?.action) return json({ message: 'Invalid command' }, 400, headers);
       const programId = decodeURIComponent(commandMatch[1]);
@@ -357,21 +457,43 @@ const handleApi = async (request, env, url) => {
     }
     if (url.pathname === '/api/state' && request.method === 'GET') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
-      if (!env.STATE_SYNC_TOKEN || request.headers.get('Authorization') !== `Bearer ${env.STATE_SYNC_TOKEN}`) return json({ message: 'Unauthorized' }, 401, headers);
-      const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
-      return state ? json(state, 200, headers) : new Response(null, { status: 204, headers });
+      const identity = await getIdentity();
+      if (!identity) return json({ message: 'Unauthorized' }, 401, headers);
+      const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+      return state ? json({ ...state, payload: payloadForUser(state.payload, identity.account.user_id, identity.account.role) }, 200, headers) : new Response(null, { status: 204, headers });
     }
     if (url.pathname === '/api/state' && request.method === 'PUT') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
-      if (!env.STATE_SYNC_TOKEN || request.headers.get('Authorization') !== `Bearer ${env.STATE_SYNC_TOKEN}`) return json({ message: 'Unauthorized' }, 401, headers);
+      const identity = await getIdentity();
+      if (!identity) return json({ message: 'Unauthorized' }, 401, headers);
       const body = await request.json();
-      const result = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', body.payload, body.expectedRevision);
+      const current = await env.STATE_STORE.getClubState(identity.session.club_id);
+      if (!current) return json({ message: 'Club state was not initialized' }, 503, headers);
+      if (Number(body.expectedRevision) !== Number(current.revision)) return json({ conflict: true, revision: current.revision }, 409, headers);
+      const incomingUsers = Array.isArray(body.payload?.users) ? body.payload.users : [];
+      for (const candidate of incomingUsers) {
+        if (!candidate?.password || candidate.password.length < 8) continue;
+        const mayProvision = identity.account.role === 'MANAGER'
+          || (candidate.role === 'TRAINEE' && candidate.familyPayerId === identity.account.user_id);
+        if (mayProvision) await env.STATE_STORE.upsertAccount(await accountFromUser(identity.session.club_id, candidate, candidate.password));
+      }
+      const merged = mergePayloadForUser(current.payload, body.payload, identity.account.user_id, identity.account.role);
+      const result = await env.STATE_STORE.putClubState(identity.session.club_id, merged, current.revision);
+      if (!result.conflict) {
+        for (const user of merged.users || []) {
+          if (await env.STATE_STORE.getAccount(identity.session.club_id, user.id)) await env.STATE_STORE.updateAccountIdentity(identity.session.club_id, user);
+        }
+      }
       return result.conflict ? json(result, 409, headers) : json(result, 200, headers);
     }
     if (request.method === 'GET' && url.pathname === '/api/ai/status') {
       return json({ configured: Boolean(env.OPENAI_API_KEY), model: env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini' }, 200, headers);
     }
-    if (request.method === 'POST' && url.pathname === '/api/ai/workout-plan') return await handleWorkoutAi(request, env, headers, json);
+    if (request.method === 'POST' && url.pathname === '/api/ai/workout-plan') {
+      const identity = await getIdentity();
+      if (!identity || !['MANAGER', 'COACH'].includes(identity.account.role)) return json({ message: 'שירות ה-AI זמין למאמנים ולמנהלים בלבד.' }, 403, headers);
+      return await handleWorkoutAi(request, env, headers, json);
+    }
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/create') return await handleCreatePayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/verify') return await handleVerifyPayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/webhook') return await handleWebhook(request, env);

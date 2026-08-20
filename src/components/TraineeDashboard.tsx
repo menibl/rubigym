@@ -1483,7 +1483,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             <section className="home-quick-actions" aria-label="פעולות מהירות">
               <button onClick={() => setActiveTab('classes')}>
                 <CalendarIcon size={21} />
-                <span><strong>קביעת אימון</strong><small>בחירת אימון ומקום פנוי</small></span>
+                <span><strong>רישום לאימון</strong><small>בחירת אימון ומקום פנוי</small></span>
                 <ChevronRight size={17} />
               </button>
               <button onClick={() => setActiveTab('profile')}>
@@ -1537,7 +1537,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             </div>
             {bookingView === 'DAY' && <>
             <div className="mobile-booking-header">
-              <h2>קביעת אימון</h2>
+              <h2>רישום לאימון</h2>
               <p>בחר יום כדי לראות אימונים פנויים</p>
               <div className="mobile-day-picker">
                 {bookingDays.map(day => (

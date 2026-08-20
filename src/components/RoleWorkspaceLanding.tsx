@@ -95,7 +95,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
 
   const actions: HomeAction[] = isTrainee
     ? [
-        { key: 'booking', title: 'קביעת אימון', description: 'יומן, הרשמה וביטול', icon: CalendarCheck, view: 'BOOKING' },
+        { key: 'booking', title: 'רישום לאימון', description: 'יומן, הרשמה וביטול', icon: CalendarCheck, view: 'BOOKING' },
         { key: 'profile', title: 'פרופיל', description: 'פרטים, מנוי ובריאות', icon: UserRound, view: 'MY_ACCOUNT' },
         { key: 'workout', title: 'תוכנית אימון', description: 'צפייה והפעלת האימון', icon: Dumbbell, view: 'MY_PROGRAM' },
         { key: 'nutrition', title: 'תוכנית תזונה', description: 'ארוחות, יעדים והחלפות', icon: Apple, view: 'MY_NUTRITION' }
