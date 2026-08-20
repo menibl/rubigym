@@ -4,6 +4,11 @@ set -Eeuo pipefail
 ROOT_DIR=$(realpath "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)")
 SOURCE=${ROOT_DIR}/deploy/scripts/production-deploy.sh
 
+grep -Fq 'DOCKER_CONFIG=${PRODUCTION_STATE}/docker' "${SOURCE}"
+grep -Fq 'COMPOSE_BAKE=false' "${SOURCE}"
+grep -Fq 'export DOCKER_CONFIG COMPOSE_BAKE' "${SOURCE}"
+grep -Fq 'install -d -m 0700 "${DOCKER_CONFIG}"' "${SOURCE}"
+
 function_source=$(awk '
   /^backup_database\(\)/ { capture=1 }
   capture { print }
