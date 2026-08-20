@@ -47,6 +47,7 @@ import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords'
 import { createMembershipTerm } from '../data/membershipPolicy';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
+import { isPagesDemoMode } from '../data/appMode';
 
 interface AuthGatewayProps {
   users: User[];
@@ -71,10 +72,12 @@ const calculateAge = (birthDate: string) => {
 };
 
 export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRegister }) => {
+  const demoMode = isPagesDemoMode();
+  const demoManagerPassword = import.meta.env.VITE_DEMO_MANAGER_PASSWORD || '';
   const [screen, setScreen] = useState<AuthScreen>('welcome');
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState(demoMode ? 'רובי באלי' : '');
+  const [password, setPassword] = useState(demoMode ? demoManagerPassword : '');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
@@ -434,6 +437,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
           <>
             <h1>כניסה לחשבון</h1>
             <p>בחרו את הדרך הנוחה להיכנס.</p>
+            {demoMode && <div className="auth-message notice">סביבת הדגמה — פרטי הכניסה של רובי כבר מולאו. אפשר גם להיכנס בטלפון 054-6995885 עם הקוד 1111.</div>}
             <div className="auth-method-tabs">
               <button className={loginMethod === 'password' ? 'active' : ''} onClick={() => { setLoginMethod('password'); resetMessages(); }}>
                 <LockKeyhole size={16} /> משתמש וסיסמה
