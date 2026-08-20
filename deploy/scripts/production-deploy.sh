@@ -23,6 +23,13 @@ source "${CONFIG_FILE}"
 : "${HEALTH_RETRIES:=36}"
 : "${HEALTH_INTERVAL_SECONDS:=5}"
 
+# The production service deliberately hides /root with ProtectHome=true.
+# Keep Docker client state in the deployment state directory instead of
+# allowing Docker Compose to fall back to the read-only /root/.docker path.
+DOCKER_CONFIG=${PRODUCTION_STATE}/docker
+COMPOSE_BAKE=false
+export DOCKER_CONFIG COMPOSE_BAKE
+
 [[ -r ${PRODUCTION_ENV_FILE} ]] || { echo "Missing ${PRODUCTION_ENV_FILE}" >&2; exit 1; }
 if grep -Eq 'CHANGE_ME|replace-with|example\.com' "${PRODUCTION_ENV_FILE}"; then
   echo "Production environment still contains placeholder values." >&2
@@ -30,6 +37,7 @@ if grep -Eq 'CHANGE_ME|replace-with|example\.com' "${PRODUCTION_ENV_FILE}"; then
 fi
 
 install -d -m 0750 "${PRODUCTION_RELEASES}" "${PRODUCTION_STATE}" "${PRODUCTION_BACKUPS}"
+install -d -m 0700 "${DOCKER_CONFIG}"
 exec 9>/run/lock/gymflow-production.lock
 flock -n 9 || { echo "Another GymFlow deployment is already running." >&2; exit 75; }
 
