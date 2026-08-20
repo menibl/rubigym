@@ -589,7 +589,7 @@ export default function App() {
       <header className="app-header bg-gradient-to-r from-zinc-950 via-zinc-900 to-amber-950 text-white shadow-md border-b border-amber-500/20">
         <div className="app-header-inner max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-4">
-            <RubisLogo size={128} />
+            <RubisLogo size={192} />
             <div>
               <p className="text-[10px] text-zinc-400 font-sans">אימונים, בריאות וליווי אישי במקום אחד</p>
             </div>
