@@ -124,10 +124,13 @@ const publicStaff = user => ({
 export const payloadForUser = (payload, userId, role) => {
   const safe = sanitizePayload(payload);
   if (role === 'MANAGER' || role === 'COACH') return safe;
+  const currentUser = safe.users.find(user => user.id === userId);
+  const familyId = currentUser?.familyId;
   return {
     ...safe,
-    users: safe.users.filter(user => user.id === userId || user.role === 'MANAGER' || user.role === 'COACH')
-      .map(user => user.id === userId ? user : publicStaff(user)),
+    users: safe.users
+      .filter(user => user.id === userId || user.role === 'MANAGER' || user.role === 'COACH' || (familyId && user.familyId === familyId))
+      .map(user => user.id === userId || (familyId && user.familyId === familyId) ? user : publicStaff(user)),
     workoutPlans: (safe.workoutPlans || []).filter(plan => plan.traineeId === userId),
     nutritionPlans: (safe.nutritionPlans || []).filter(plan => plan.traineeId === userId),
     blackPoints: (safe.blackPoints || []).filter(point => point.traineeId === userId),
@@ -152,6 +155,11 @@ const selfEditableFields = new Set([
   'healthDeclarationMedicalCertificateApprovedAt', 'healthDeclarationMedicalCertificateApprovedBy',
   'agreementSigned', 'agreementSignedAt', 'pushNotificationsEnabled', 'workoutRemindersEnabled',
   'managerPushNotificationsEnabled'
+]);
+
+const familyEditableFields = new Set([
+  'membershipType', 'secondaryMemberships', 'personalTrainingCardSize', 'personalTrainingRemaining',
+  'duoTrainingCardSize', 'duoTrainingRemaining', 'nutritionPlanPaid', 'requestedWorkoutPlan'
 ]);
 
 const mergeOwnBooking = (currentItems = [], incomingItems = [], userId) => currentItems.map(current => {
@@ -181,11 +189,24 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     return merged;
   }
 
-  const nextUsers = current.users.map(user => {
+  const actor = current.users.find(user => user.id === userId);
+  const incomingUserIds = new Set(incoming.users.map(user => user.id));
+  const canManageFamily = Boolean(actor?.isFamilyPayer && actor.familyId);
+  const nextUsers = current.users.filter(user => {
+    if (!canManageFamily || user.id === userId || user.familyId !== actor.familyId) return true;
+    return incomingUserIds.has(user.id);
+  }).map(user => {
     if (user.id !== userId) return user;
     const requested = incoming.users.find(candidate => candidate.id === userId) || {};
     const updated = { ...user };
     for (const field of selfEditableFields) if (field in requested) updated[field] = requested[field];
+    if (canManageFamily) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
+    return updated;
+  }).map(user => {
+    if (!canManageFamily || user.id === userId || user.familyId !== actor.familyId) return user;
+    const requested = incoming.users.find(candidate => candidate.id === user.id) || {};
+    const updated = { ...user };
+    for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
     return updated;
   });
   const newFamilyMembers = incoming.users

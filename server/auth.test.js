@@ -51,3 +51,29 @@ test('trainee can only change their own booking membership', () => {
   assert.equal(merged.sessions[0].title, 'Original');
   assert.deepEqual(merged.sessions[0].registeredUsers.sort(), ['t1', 't2']);
 });
+
+test('family members are visible to each other and the payer can manage tracks and removal', () => {
+  const payload = {
+    users: [
+      { id: 'payer', role: 'TRAINEE', name: 'Parent', familyId: 'family-1', isFamilyPayer: true, membershipType: 'FAMILY_MEMBERSHIP' },
+      { id: 'child', role: 'TRAINEE', name: 'Child', familyId: 'family-1', familyPayerId: 'payer', membershipType: 'OPEN_GYM' },
+      { id: 'other', role: 'TRAINEE', name: 'Other', familyId: 'family-2' }
+    ],
+    sessions: [], openGymSessions: [], workoutPlans: [], nutritionPlans: [], blackPoints: [], payments: [],
+    messages: [], attendanceLogs: [], traineeProfiles: [], traineeMemoryEntries: [], discountCodes: []
+  };
+  const visible = payloadForUser(payload, 'payer', 'TRAINEE');
+  assert.deepEqual(visible.users.map(user => user.id), ['payer', 'child']);
+  const visibleToChild = payloadForUser(payload, 'child', 'TRAINEE');
+  assert.deepEqual(visibleToChild.users.map(user => user.id), ['payer', 'child']);
+
+  const changed = mergePayloadForUser(payload, {
+    ...payload,
+    users: [{ ...payload.users[0], membershipType: 'GROUP_ANNUAL' }, { ...payload.users[1], membershipType: 'GROUP_MONTHLY' }, payload.users[2]]
+  }, 'payer', 'TRAINEE');
+  assert.equal(changed.users.find(user => user.id === 'payer').membershipType, 'GROUP_ANNUAL');
+  assert.equal(changed.users.find(user => user.id === 'child').membershipType, 'GROUP_MONTHLY');
+
+  const removed = mergePayloadForUser(payload, { ...payload, users: [payload.users[0], payload.users[2]] }, 'payer', 'TRAINEE');
+  assert.equal(removed.users.some(user => user.id === 'child'), false);
+});
