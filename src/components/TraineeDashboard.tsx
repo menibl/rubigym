@@ -286,6 +286,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       traineeName: activeUser.name,
       amount: verified.amount,
       date: new Date().toISOString().split('T')[0],
+      timestamp: new Date().toISOString(),
       status: 'PAID',
       membershipTypePurchased: purchasedType,
       paymentMethod: `Cardcom${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,

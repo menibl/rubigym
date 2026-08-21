@@ -6,6 +6,7 @@ import {
   CalendarClock,
   ChevronLeft,
   ClipboardList,
+  CreditCard,
   Dumbbell,
   Edit3,
   Inbox,
@@ -15,9 +16,10 @@ import {
   Send,
   Settings2,
   Trash2,
+  UserPlus,
   UserRound
 } from 'lucide-react';
-import { Announcement, Gender, Message, TrainingSession, User, UserRole } from '../types';
+import { Announcement, Gender, MEMBERSHIP_TYPE_LABELS, MembershipType, Message, Payment, TrainingSession, User, UserRole } from '../types';
 
 export type WorkspaceView =
   | 'CLUB_MANAGEMENT'
@@ -39,6 +41,7 @@ interface RoleWorkspaceLandingProps {
   sessions?: TrainingSession[];
   announcements?: Announcement[];
   messages?: Message[];
+  payments?: Payment[];
   onSendMessage?: (content: string, receiverId: string) => void;
   onUpdateAnnouncements?: (announcements: Announcement[]) => void;
 }
@@ -60,6 +63,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   sessions = [],
   announcements = [],
   messages = [],
+  payments = [],
   onSendMessage,
   onUpdateAnnouncements
 }) => {
@@ -133,6 +137,70 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
     .filter(message => message.receiverId === activeUser.id)
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp)), [activeUser.id, messages]);
 
+  const staffAlerts = useMemo(() => {
+    if (isTrainee) return [];
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 14);
+    cutoff.setHours(0, 0, 0, 0);
+    const cutoffTime = cutoff.getTime();
+    const alerts: Array<{
+      id: string;
+      kind: 'JOINED' | 'PURCHASE' | 'CHAT';
+      title: string;
+      detail: string;
+      timestamp: string;
+    }> = [];
+
+    users
+      .filter(user => user.role === UserRole.TRAINEE && user.membershipStartedAt)
+      .forEach(user => {
+        const startedAt = new Date(`${user.membershipStartedAt}T12:00:00`);
+        if (!Number.isFinite(startedAt.getTime()) || startedAt.getTime() < cutoffTime) return;
+        const membershipLabel = user.membershipType
+          ? MEMBERSHIP_TYPE_LABELS[user.membershipType]?.label || user.membershipType
+          : 'ללא מסלול';
+        alerts.push({
+          id: `joined-${user.id}-${user.membershipStartedAt}`,
+          kind: 'JOINED',
+          title: `${user.name} הצטרף/ה למועדון`,
+          detail: membershipLabel,
+          timestamp: startedAt.toISOString()
+        });
+      });
+
+    payments
+      .filter(payment => payment.status === 'PAID')
+      .forEach(payment => {
+        const paidAt = new Date(payment.timestamp || `${payment.date}T12:00:00`);
+        if (!Number.isFinite(paidAt.getTime()) || paidAt.getTime() < cutoffTime) return;
+        const purchaseLabel = MEMBERSHIP_TYPE_LABELS[payment.membershipTypePurchased]?.label || payment.membershipTypePurchased;
+        const purchaseDetail = [MembershipType.NUTRITION_COACHING, MembershipType.NUTRITION_PLAN].includes(payment.membershipTypePurchased)
+          ? 'תוכנית תזונה'
+          : [MembershipType.WORKOUT_COACHING, MembershipType.WORKOUT_PLAN, MembershipType.OPEN_GYM_WITH_PLAN].includes(payment.membershipTypePurchased)
+            ? 'תוכנית אימון'
+            : purchaseLabel;
+        alerts.push({
+          id: `purchase-${payment.id}`,
+          kind: 'PURCHASE',
+          title: `${payment.traineeName} — רכישה חדשה`,
+          detail: `${purchaseDetail} · ₪${payment.amount.toLocaleString('he-IL')}`,
+          timestamp: paidAt.toISOString()
+        });
+      });
+
+    incomingStaffMessages
+      .filter(message => !message.read)
+      .forEach(message => alerts.push({
+        id: `chat-${message.id}`,
+        kind: 'CHAT',
+        title: `ממתינה הודעה בצ׳אט מאת ${message.senderName}`,
+        detail: message.content,
+        timestamp: message.timestamp
+      }));
+
+    return alerts.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  }, [incomingStaffMessages, isTrainee, payments, users]);
+
   const latestClubAnnouncements = useMemo(() => [...announcements]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5), [announcements]);
@@ -203,6 +271,30 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
               : <strong>אין כרגע אימון משובץ</strong>}
           </div>
         </div>
+        {!isTrainee && (
+          <section className="role-home-alert-center" aria-label="הודעות חדשות למאמן ולמנהל">
+            <header>
+              <div><Bell size={18} /><strong>הודעות חדשות</strong></div>
+              {staffAlerts.length > 0 && <span>{staffAlerts.length}</span>}
+            </header>
+            <div className="role-home-alert-list">
+              {staffAlerts.slice(0, 6).map(alert => {
+                const AlertIcon = alert.kind === 'PURCHASE' ? CreditCard : alert.kind === 'JOINED' ? UserPlus : MessageCircle;
+                return (
+                  <article key={alert.id} className={`role-home-alert ${alert.kind.toLowerCase()}`}>
+                    <span className="role-home-alert-icon"><AlertIcon size={17} /></span>
+                    <div>
+                      <strong>{alert.title}</strong>
+                      <p>{alert.detail}</p>
+                    </div>
+                    <time>{new Date(alert.timestamp).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' })}</time>
+                  </article>
+                );
+              })}
+              {staffAlerts.length === 0 && <div className="role-home-alert-empty">אין כרגע עדכונים חדשים.</div>}
+            </div>
+          </section>
+        )}
         {activeUser.role === UserRole.MANAGER && (
           <button type="button" className="role-home-management-link" onClick={() => onSelect('CLUB_MANAGEMENT')}>
             <Settings2 size={17} /> פאנל ניהול המועדון <ChevronLeft size={16} />
