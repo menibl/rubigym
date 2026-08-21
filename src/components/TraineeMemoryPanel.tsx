@@ -105,7 +105,7 @@ export const TraineeMemoryPanel: React.FC<TraineeMemoryPanelProps> = ({
   };
 
   return (
-    <section className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white overflow-hidden" dir="rtl">
+    <section className="trainee-memory-panel rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white overflow-hidden" dir="rtl">
       <div className="p-4 sm:p-5 border-b border-sky-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-sky-900">

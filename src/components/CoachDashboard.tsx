@@ -628,7 +628,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       return u;
     });
     onUpdateUsers(updatedUsers);
-    alert(`אושר תשלום תוכנית תזונה (150 ₪) עבור ${selectedTrainee.name}! 💳`);
+    alert(`אושר תשלום תוכנית תזונה (350 ₪) עבור ${selectedTrainee.name}! 💳`);
   };
 
   // Workout Program Builder Add Exercise
@@ -1787,19 +1787,19 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 {/* Nutrition Payment Status Banner */}
                 {(selectedTrainee.nutritionPlanPaid || currentNutrition?.isPaid) ? (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-900 font-semibold flex items-center justify-between">
-                    <span>✅ תוכנית תזונה שולמה במלאה (150 ₪) – תוכנית זו מוצגת למתאמן באפליקציה.</span>
+                    <span>✅ תוכנית תזונה שולמה במלואה (350 ₪) – תוכנית זו מוצגת למתאמן באפליקציה.</span>
                   </div>
                 ) : (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex justify-between items-center gap-2">
                     <div>
-                      <span className="font-bold block">⚠️ טרם שולם תשלום פרטני (150 ₪) עבור תוכנית תזונה למתאמן זה:</span>
+                      <span className="font-bold block">⚠️ טרם שולם תשלום פרטני (350 ₪) עבור תוכנית תזונה למתאמן זה:</span>
                       <span className="text-[11px] text-amber-800">התפריט יוצג למתאמן באפליקציה מיד עם הסדרת התשלום (או באישור ידני של המאמן/מנהל).</span>
                     </div>
                     <button
                       onClick={handleApproveNutritionPayment}
                       className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs shrink-0 transition"
                     >
-                      💳 אישור תשלום (150 ₪)
+                      💳 אישור תשלום (350 ₪)
                     </button>
                   </div>
                 )}
