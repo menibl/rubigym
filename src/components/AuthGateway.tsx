@@ -55,11 +55,20 @@ interface AuthGatewayProps {
   settings: SystemSettings;
   onPasswordLogin: (login: string, password: string) => Promise<User>;
   onPhoneLogin: (phone: string, otp: string) => Promise<User>;
-  onRegister: (user: User, payment: Payment) => Promise<void>;
+  onRegister: (user: User, payment: Payment, familyUsers?: User[]) => Promise<void>;
 }
 
 type AuthScreen = 'welcome' | 'login' | 'register';
 type LoginMethod = 'password' | 'phone';
+type FamilyAccountDraft = {
+  name: string;
+  username: string;
+  email: string;
+  phone: string;
+  password: string;
+  birthDate: string;
+  gender: Gender;
+};
 
 const TEST_OTP = '1111';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -104,6 +113,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [familyMembersCount, setFamilyMembersCount] = useState(2);
   const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>('ANNUAL_BY_SIZE');
   const [familyMemberPlans, setFamilyMemberPlans] = useState<FamilyMemberPlanSelection[]>([]);
+  const [familyAccountDrafts, setFamilyAccountDrafts] = useState<FamilyAccountDraft[]>([]);
   const [discountInput, setDiscountInput] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
   const [paymentStarting, setPaymentStarting] = useState(false);
@@ -116,6 +126,20 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   );
   const selectedPlanConfig = registrationPlans.find(plan => plan.id === selectedPlan);
   const selectedPlanPrice = selectedPlanConfig?.price ?? MEMBERSHIP_PRICES[selectedPlan] ?? 0;
+  const familyAccountAt = (index: number): FamilyAccountDraft => familyAccountDrafts[index] || {
+    name: resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי')[index + 1]?.memberName || `בן/בת משפחה ${index + 2}`,
+    username: '',
+    email: '',
+    phone: '',
+    password: '',
+    birthDate: '',
+    gender: Gender.MALE
+  };
+  const updateFamilyAccount = (index: number, patch: Partial<FamilyAccountDraft>) => setFamilyAccountDrafts(current =>
+    Array.from({ length: Math.max(familyMembersCount - 1, current.length) }, (_, draftIndex) => draftIndex === index
+      ? { ...(current[draftIndex] || familyAccountAt(draftIndex)), ...patch }
+      : (current[draftIndex] || familyAccountAt(draftIndex)))
+  );
 
   const resetMessages = () => {
     setError('');
@@ -152,7 +176,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
           setScreen('login');
           return;
         }
-        const draft = pending.registrationDraft as { user?: User } | undefined;
+        const draft = pending.registrationDraft as { user?: User; familyUsers?: User[] } | undefined;
         if (!draft?.user || draft.user.id !== pending.userId) throw new Error('פרטי ההרשמה לא נמצאו במכשיר זה. יש לפנות למועדון עם אישור העסקה.');
         const payment: Payment = {
           id: `payment-cardcom-${transactionKey}`,
@@ -165,7 +189,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
           paymentMethod: `Cardcom${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
           isMock: false
         };
-        return onRegister(draft.user, payment).then(() => {
+        return onRegister(draft.user, payment, draft.familyUsers || []).then(() => {
           markTransactionProcessed(transactionKey);
           clearPendingCardcomPayment();
           clearCardcomReturnParams();
@@ -309,6 +333,20 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     const membershipTerm = createMembershipTerm(isFamilyPlan && familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan);
     const now = Date.now();
     const familyId = isFamilyPlan ? `fam-${now}` : undefined;
+    const familyAccounts = isFamilyPlan
+      ? Array.from({ length: familyMembersCount - 1 }, (_, index) => familyAccountAt(index))
+      : [];
+    if (familyAccounts.some(account => !account.name.trim() || !account.username.trim() || !EMAIL_PATTERN.test(account.email.trim().toLowerCase()) || account.password.length < 8 || !account.birthDate)) {
+      setError('יש להשלים שם, שם משתמש, אימייל תקין, סיסמה בת 8 תווים ותאריך לידה עבור כל בן משפחה.');
+      return;
+    }
+    const familyIdentities = [registerUsername, registerEmail, registerPhone, ...familyAccounts.flatMap(account => [account.username, account.email, account.phone])]
+      .filter(Boolean)
+      .map(value => value.trim().toLowerCase().replace(/[^\p{L}\p{N}@.+]/gu, ''));
+    if (isFamilyPlan && new Set(familyIdentities).size !== familyIdentities.length) {
+      setError('לכל בן משפחה נדרשים שם משתמש, אימייל ומספר טלפון ייחודיים.');
+      return;
+    }
     const healthRecord = createHealthDeclarationRecord({
       signed: healthDeclaration?.signed ?? false,
       answers: healthDeclaration?.answers,
@@ -370,6 +408,42 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
     };
+    const familyUsers: User[] = familyAccounts.map((account, index) => {
+      const plan = normalizedFamilyPlans[index + 1];
+      const memberAge = calculateAge(account.birthDate);
+      const membershipType = familyBillingMode === 'CUSTOM_COMBINED' ? plan.membershipType : MembershipType.FAMILY_MEMBERSHIP;
+      const memberTerm = createMembershipTerm(familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : membershipType);
+      return {
+        id: `user-family-${now}-${index + 1}`,
+        name: account.name.trim(),
+        username: account.username.trim(),
+        password: account.password,
+        email: account.email.trim().toLowerCase(),
+        phone: account.phone.trim(),
+        role: UserRole.TRAINEE,
+        gender: account.gender,
+        age: memberAge,
+        birthDate: account.birthDate,
+        healthDeclarationSigned: false,
+        clubAgreementSigned: true,
+        clubAgreementDate: new Date().toISOString().split('T')[0],
+        membershipType,
+        membershipStatus: MembershipStatus.ACTIVE,
+        ...memberTerm,
+        personalTrainingRemaining: membershipType === MembershipType.PERSONAL_TRAINING ? plan.trainingSessionsCount : undefined,
+        duoTrainingRemaining: membershipType === MembershipType.DUO_TRAINING ? plan.trainingSessionsCount : undefined,
+        nutritionPlanPaid: membershipType === MembershipType.NUTRITION_COACHING,
+        requestedWorkoutPlan: membershipType === MembershipType.WORKOUT_COACHING,
+        priorityScore: 100,
+        familyId,
+        familyName: newUser.familyName,
+        isFamilyPayer: false,
+        familyPayerId: newUser.id,
+        imageUrl: account.gender === Gender.FEMALE
+          ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
+      };
+    });
     setPaymentStarting(true);
     try {
       await startCardcomPayment({
@@ -389,7 +463,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         discountCode: appliedDiscount?.code,
         planAmount: !isFamilyPlan ? selectedPlanPrice * (isTrainingCard ? trainingCardSize : 1) : undefined,
         planLabel: !isFamilyPlan ? selectedPlanConfig?.label : undefined,
-        registrationDraft: { user: newUser }
+        registrationDraft: { user: newUser, familyUsers }
       });
     } catch (paymentError) {
       setPaymentStarting(false);
@@ -579,7 +653,22 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 {isFamilyPlan && <div className="space-y-3">
                   <label className="block text-xs font-bold">שם המשפחה<input value={familyName} onChange={event => setFamilyName(event.target.value)} placeholder={`משפחת ${registerName.trim().split(' ')[0] || 'ישראל'}`} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
                   <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyMembersCount} onCountChange={setFamilyMembersCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={registerName.trim() || 'המשלם הראשי'} />
-                  <small>לאחר התשלום ניתן לפתוח פרופיל נפרד ולחתום על הצהרת בריאות עבור כל בן משפחה.</small>
+                  <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-zinc-950/70 p-4">
+                    <div><strong className="text-sm text-amber-300">חשבונות כניסה לבני המשפחה</strong><small className="mt-1 block text-zinc-300">לאחר התשלום ייווצר לכל אחד חשבון מתאמן נפרד. בכניסה הראשונה יהיה עליו לחתום על הצהרת בריאות.</small></div>
+                    {Array.from({ length: familyMembersCount - 1 }, (_, index) => {
+                      const account = familyAccountAt(index);
+                      return <article key={index} className="grid gap-2 rounded-xl border border-zinc-700 bg-zinc-900 p-3 sm:grid-cols-2">
+                        <strong className="sm:col-span-2 text-xs text-white">בן/בת משפחה {index + 2}</strong>
+                        <label>שם מלא<input required value={account.name} onChange={event => updateFamilyAccount(index, { name: event.target.value })} /></label>
+                        <label>שם משתמש<input required value={account.username} onChange={event => updateFamilyAccount(index, { username: event.target.value })} autoComplete="off" /></label>
+                        <label>אימייל<input required type="email" value={account.email} onChange={event => updateFamilyAccount(index, { email: event.target.value })} autoComplete="off" /></label>
+                        <label>טלפון אישי — לא חובה<input inputMode="tel" value={account.phone} onChange={event => updateFamilyAccount(index, { phone: event.target.value })} /></label>
+                        <label>סיסמה — לפחות 8 תווים<input required minLength={8} type="password" value={account.password} onChange={event => updateFamilyAccount(index, { password: event.target.value })} autoComplete="new-password" /></label>
+                        <label>תאריך לידה<input required type="date" value={account.birthDate} onChange={event => updateFamilyAccount(index, { birthDate: event.target.value })} /></label>
+                        <label className="sm:col-span-2">מין<select value={account.gender} onChange={event => updateFamilyAccount(index, { gender: event.target.value as Gender })}><option value={Gender.MALE}>זכר</option><option value={Gender.FEMALE}>נקבה</option></select></label>
+                      </article>;
+                    })}
+                  </section>
                 </div>}
                 <div className="auth-discount-box">
                   <label>קוד הנחה</label>

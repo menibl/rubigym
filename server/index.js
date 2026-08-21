@@ -1,4 +1,4 @@
-import { handleWorkoutAi } from './workout-ai.js';
+import { handleWorkoutAi, resolveOpenAiApiKey } from './workout-ai.js';
 import {
   accountFromUser,
   clearSessionCookie,
@@ -6,6 +6,7 @@ import {
   getAuthenticatedSession,
   isValidEmail,
   mergePayloadForUser,
+  normalizeLogin,
   normalizePhone,
   payloadForUser,
   hashPassword,
@@ -398,26 +399,84 @@ const handleApi = async (request, env, url) => {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
       const body = await request.json();
       const user = body.user;
-      if (!user?.id || !user?.password || !user?.email || !isValidEmail(user.email) || user.role !== 'TRAINEE') {
+      const familyUsers = Array.isArray(body.familyUsers) ? body.familyUsers : [];
+      if (!user?.id || typeof user?.password !== 'string' || user.password.length < 8 || !user?.email || !isValidEmail(user.email) || user.role !== 'TRAINEE') {
         return json({ message: 'פרטי ההרשמה או כתובת האימייל אינם תקינים.' }, 400, headers);
       }
-      const duplicate = await env.STATE_STORE.getAccountByLogin(clubId, user.username)
-        || await env.STATE_STORE.getAccountByLogin(clubId, user.email)
-        || await env.STATE_STORE.getAccountByLogin(clubId, user.phone);
-      if (duplicate) return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
+      if (familyUsers.length > 5 || (familyUsers.length && (!user.isFamilyPayer || !user.familyId))) {
+        return json({ message: 'פרטי החשבון המשפחתי אינם תקינים.' }, 400, headers);
+      }
+      const registrations = [user, ...familyUsers];
+      for (const candidate of registrations) {
+        const isFamilyMember = candidate.id !== user.id;
+        if (!candidate?.id || !candidate?.name || !candidate?.username || !candidate?.email || !isValidEmail(candidate.email)
+          || typeof candidate.password !== 'string' || candidate.password.length < 8 || candidate.role !== 'TRAINEE'
+          || (isFamilyMember && (candidate.familyPayerId !== user.id || candidate.familyId !== user.familyId))) {
+          return json({ message: 'חסרים פרטי כניסה תקינים לאחד מבני המשפחה.' }, 400, headers);
+        }
+      }
+      const identityValues = registrations.flatMap(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean));
+      const normalizedIdentities = registrations.flatMap(candidate => [
+        normalizeLogin(candidate.username),
+        normalizeLogin(candidate.email),
+        normalizePhone(candidate.phone)
+      ].filter(Boolean));
+      if (new Set(normalizedIdentities).size !== normalizedIdentities.length) {
+        return json({ message: 'שם משתמש, אימייל או טלפון מופיעים יותר מפעם אחת בהרשמה.' }, 409, headers);
+      }
+      for (const identityValue of identityValues) {
+        if (await env.STATE_STORE.getAccountByLogin(clubId, identityValue)) {
+          return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
+        }
+      }
       const state = await env.STATE_STORE.getClubState(clubId);
       if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
       const safeUser = stripCredentials(user);
+      const safeFamilyUsers = familyUsers.map(stripCredentials);
       const nextPayload = {
         ...state.payload,
-        users: [safeUser, ...(state.payload.users || [])],
+        users: [safeUser, ...safeFamilyUsers, ...(state.payload.users || [])],
         payments: body.payment ? [body.payment, ...(state.payload.payments || [])] : (state.payload.payments || [])
       };
       const saved = await env.STATE_STORE.putClubState(clubId, nextPayload, state.revision);
       if (saved.conflict) return json(saved, 409, headers);
-      await env.STATE_STORE.upsertAccount(await accountFromUser(clubId, safeUser, user.password));
+      for (const candidate of registrations) {
+        await env.STATE_STORE.upsertAccount(await accountFromUser(clubId, stripCredentials(candidate), candidate.password));
+      }
       const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, safeUser.id);
-      return json({ user: safeUser, revision: saved.revision }, 201, { ...headers, 'Set-Cookie': auth.cookie });
+      return json({ user: safeUser, familyUsers: safeFamilyUsers, revision: saved.revision }, 201, { ...headers, 'Set-Cookie': auth.cookie });
+    }
+
+    if (url.pathname === '/api/auth/family-members' && request.method === 'POST') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'TRAINEE') return json({ message: 'Unauthorized' }, 401, headers);
+      const body = await request.json();
+      const candidate = body.user;
+      const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+      const payer = state?.payload?.users?.find(userItem => userItem.id === identity.account.user_id);
+      const familyMembers = state?.payload?.users?.filter(userItem => userItem.familyId && userItem.familyId === payer?.familyId) || [];
+      if (!payer?.isFamilyPayer || !payer.familyId || familyMembers.length >= Number(payer.familyMembersCount || 0)) {
+        return json({ message: 'אין מקום נוסף בחשבון המשפחתי או שהמשתמש אינו המשלם הראשי.' }, 403, headers);
+      }
+      if (!candidate?.id || !candidate?.name || !candidate?.username || !candidate?.email || !isValidEmail(candidate.email)
+        || typeof candidate.password !== 'string' || candidate.password.length < 8 || candidate.role !== 'TRAINEE'
+        || candidate.familyPayerId !== payer.id || candidate.familyId !== payer.familyId) {
+        return json({ message: 'פרטי בן המשפחה או פרטי הכניסה אינם תקינים.' }, 400, headers);
+      }
+      for (const identityValue of [candidate.username, candidate.email, candidate.phone].filter(Boolean)) {
+        if (await env.STATE_STORE.getAccountByLogin(identity.session.club_id, identityValue)) {
+          return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
+        }
+      }
+      const safeUser = stripCredentials(candidate);
+      const saved = await env.STATE_STORE.putClubState(identity.session.club_id, {
+        ...state.payload,
+        users: [safeUser, ...(state.payload.users || [])]
+      }, state.revision);
+      if (saved.conflict) return json(saved, 409, headers);
+      await env.STATE_STORE.upsertAccount(await accountFromUser(identity.session.club_id, safeUser, candidate.password));
+      return json({ user: safeUser, revision: saved.revision }, 201, headers);
     }
     if (url.pathname === '/api/live-display/active' && request.method === 'GET') {
       const program = env.STATE_STORE ? await env.STATE_STORE.getActiveProgram(env.CLUB_ID || 'baly-wellness') : liveDisplayState.program;
@@ -490,7 +549,11 @@ const handleApi = async (request, env, url) => {
       return result.conflict ? json(result, 409, headers) : json(result, 200, headers);
     }
     if (request.method === 'GET' && url.pathname === '/api/ai/status') {
-      return json({ configured: Boolean(env.OPENAI_API_KEY), model: env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini' }, 200, headers);
+      return json({
+        configured: Boolean(resolveOpenAiApiKey(env)),
+        configurationSource: 'OPENAI_API_KEY server environment',
+        model: env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini'
+      }, 200, headers);
     }
     if (request.method === 'POST' && url.pathname === '/api/ai/workout-plan') {
       const identity = await getIdentity();

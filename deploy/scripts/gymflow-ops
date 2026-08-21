@@ -52,7 +52,8 @@ case "${command}" in
     "${DEPLOY}" rollback
     ;;
   restart-app)
-    compose_current restart app
+    # Recreate instead of a plain restart so updates in production.env are loaded.
+    compose_current up -d --no-deps --force-recreate app
     sleep 5
     curl --fail --silent --show-error --max-time 15 "${PRODUCTION_HEALTH_URL}" >/dev/null
     ;;

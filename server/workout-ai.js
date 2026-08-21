@@ -178,8 +178,11 @@ const cleanContext = body => ({
   groupParticipants: Array.isArray(body.groupParticipants) ? body.groupParticipants.slice(0, 100) : []
 });
 
+export const resolveOpenAiApiKey = env => String(env?.OPENAI_API_KEY || '').trim();
+
 export const handleWorkoutAi = async (request, env, headers, json) => {
-  if (!env.OPENAI_API_KEY) return json({ message: 'מפתח OpenAI עדיין לא הוגדר בשרת.' }, 503, headers);
+  const apiKey = resolveOpenAiApiKey(env);
+  if (!apiKey) return json({ message: 'מפתח OpenAI עדיין לא הוגדר בשרת.' }, 503, headers);
   try {
     assertAllowedOrigin(request, env);
     enforceRateLimit(request, env);
@@ -193,7 +196,7 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
     const openAiResponse = await fetch(OPENAI_RESPONSES_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({

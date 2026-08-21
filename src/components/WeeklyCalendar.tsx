@@ -317,7 +317,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
     : [weekDays[mobileSelectedDay as number]].filter(Boolean);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden dir-rtl">
+    <div className="weekly-calendar-root bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden dir-rtl">
       {/* CALENDAR HEADER & CONTROLS */}
       <div className="p-3 border-b border-slate-200/80 bg-slate-50 space-y-2.5">
         <div className="flex flex-wrap justify-between items-center gap-2">
@@ -600,7 +600,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                 <div
                                   key={og.id}
                                   onClick={() => setSelectedItem({ type: 'OPEN_GYM', openGym: og })}
-                                  className={`p-2 rounded-xl border text-right transition cursor-pointer shadow-2xs hover:shadow-xs relative space-y-1 ${
+                                  className={`calendar-event-card calendar-event-open p-2 rounded-xl border text-right transition cursor-pointer shadow-2xs hover:shadow-xs relative space-y-1 ${
                                     isUserBooked
                                       ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-300'
                                       : isUserWaitlist
@@ -644,7 +644,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                 <div
                                   key={session.id}
                                   onClick={() => setSelectedItem({ type: 'SESSION', session })}
-                                  className={`p-2 rounded-xl border text-right transition cursor-pointer shadow-2xs hover:shadow-xs relative space-y-1 ${
+                                  className={`calendar-event-card calendar-event-session p-2 rounded-xl border text-right transition cursor-pointer shadow-2xs hover:shadow-xs relative space-y-1 ${
                                     isRegistered
                                       ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-300'
                                       : isWaitlist
@@ -754,7 +754,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                       <div
                         key={og.id}
                         onClick={() => setSelectedItem({ type: 'OPEN_GYM', openGym: og })}
-                        className="p-2.5 rounded-lg border border-purple-200 bg-purple-50/80 hover:bg-purple-100 text-right cursor-pointer transition space-y-1"
+                        className="calendar-event-card calendar-event-open p-2.5 rounded-lg border border-purple-200 bg-purple-50/80 hover:bg-purple-100 text-right cursor-pointer transition space-y-1"
                       >
                         <div className="flex justify-between items-center text-xs">
                           <span className="font-bold text-purple-900 flex items-center gap-1">
@@ -772,7 +772,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                       <div
                         key={session.id}
                         onClick={() => setSelectedItem({ type: 'SESSION', session })}
-                        className={`p-2.5 rounded-lg border text-right cursor-pointer transition space-y-1 ${
+                        className={`calendar-event-card calendar-event-session p-2.5 rounded-lg border text-right cursor-pointer transition space-y-1 ${
                           session.isPersonalTraining
                             ? 'bg-sky-50 border-sky-200 hover:bg-sky-100'
                             : 'bg-white border-slate-200 hover:bg-slate-50'
