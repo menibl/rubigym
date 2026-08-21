@@ -294,6 +294,16 @@ export default function App() {
     setMessages(prev => [newMessage, ...prev]);
   };
 
+  const handleAcknowledgeStaffAlerts = (alertIds: string[]) => {
+    if (!alertIds.length) return;
+    const acknowledged = new Set([...(activeUser.staffAlertAcknowledgements || []), ...alertIds]);
+    const staffAlertAcknowledgements = [...acknowledged].slice(-500);
+    setActiveUser(current => ({ ...current, staffAlertAcknowledgements }));
+    setUsers(current => current.map(user => user.id === activeUser.id ? { ...user, staffAlertAcknowledgements } : user));
+    const alertIdSet = new Set(alertIds);
+    setMessages(current => current.map(message => alertIdSet.has(`chat-${message.id}`) ? { ...message, read: true } : message));
+  };
+
   const handleGatewayRegistration = async (newUser: User, payment: Payment, familyUsers: User[] = []) => {
     const { user } = await registerServerUser(newUser, payment, familyUsers);
     await loadAuthenticatedState(user);
@@ -565,6 +575,7 @@ export default function App() {
               payments={payments}
               onSendMessage={handleSendMessage}
               onUpdateAnnouncements={setAnnouncements}
+              onAcknowledgeStaffAlerts={handleAcknowledgeStaffAlerts}
             />
           )}
 

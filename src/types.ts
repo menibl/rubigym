@@ -321,6 +321,7 @@ export interface User {
   pushNotificationsEnabled?: boolean;
   workoutRemindersEnabled?: boolean;
   managerPushNotificationsEnabled?: boolean;
+  staffAlertAcknowledgements?: string[]; // Alert ids acknowledged by this coach or manager
   
   // Trainee fields
   membershipType?: MembershipType;
