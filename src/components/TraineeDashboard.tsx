@@ -165,8 +165,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const membershipAddOns = membershipPlanConfigs.filter(plan => plan.category === 'ADD_ON');
   const selectedMembershipConfig = membershipPlanConfigs.find(plan => plan.id === selectedMembershipPurchase);
   const selectedMembershipPrice = selectedMembershipConfig?.price ?? (selectedMembershipPurchase ? MEMBERSHIP_PRICES[selectedMembershipPurchase] : 0) ?? 0;
-  const [selectedBookingDate, setSelectedBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedBookingDate, setSelectedBookingDate] = useState(() => {
+    const today = toLocalIsoDate(new Date());
+    return [...sessions]
+      .filter(session => session.date >= today)
+      .sort((a, b) => `${a.date}T${a.time || '00:00'}`.localeCompare(`${b.date}T${b.time || '00:00'}`))[0]?.date || today;
+  });
   const [bookingView, setBookingView] = useState<'DAY' | 'WEEK'>('DAY');
+  const [bookingNameFilter, setBookingNameFilter] = useState('');
+  const [bookingTypeFilter, setBookingTypeFilter] = useState<'ALL' | 'GROUP' | 'PERSONAL'>('ALL');
   // Notification banner for feedback
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -1239,11 +1246,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const date = new Date();
     date.setDate(date.getDate() + index);
     return {
-      key: date.toISOString().split('T')[0],
+      key: toLocalIsoDate(date),
       day: date.toLocaleDateString('he-IL', { weekday: 'short' }).replace('יום ', ''),
       number: date.getDate()
     };
   });
+  const filteredBookingSessions = sessions
+    .filter(session => session.date === selectedBookingDate)
+    .filter(session => session.title.toLocaleLowerCase('he-IL').includes(bookingNameFilter.trim().toLocaleLowerCase('he-IL')))
+    .filter(session => bookingTypeFilter === 'ALL' || (bookingTypeFilter === 'PERSONAL' ? session.isPersonalTraining : !session.isPersonalTraining))
+    .sort((a, b) => `${a.date}T${a.time || '00:00'}-${a.title}`.localeCompare(`${b.date}T${b.time || '00:00'}-${b.title}`, 'he'));
 
   return (
     <div className="space-y-6 trainee-app" id="trainee-dashboard">
@@ -1562,6 +1574,33 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 />
               </label>
             </div>
+            <div className="booking-filter-panel" dir="rtl" aria-label="סינון אימונים">
+              <label>
+                <span>תאריך האימון</span>
+                <input
+                  type="date"
+                  value={selectedBookingDate}
+                  onChange={event => setSelectedBookingDate(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>שם האימון</span>
+                <input
+                  type="search"
+                  value={bookingNameFilter}
+                  onChange={event => setBookingNameFilter(event.target.value)}
+                  placeholder="לדוגמה: כוח"
+                />
+              </label>
+              <label>
+                <span>סוג האימון</span>
+                <select value={bookingTypeFilter} onChange={event => setBookingTypeFilter(event.target.value as 'ALL' | 'GROUP' | 'PERSONAL')}>
+                  <option value="ALL">כל הסוגים</option>
+                  <option value="GROUP">אימון קבוצתי</option>
+                  <option value="PERSONAL">אימון אישי</option>
+                </select>
+              </label>
+            </div>
             </>}
 
             {/* WEEKLY CALENDAR FOR TRAINEE */}
@@ -1597,14 +1636,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {sessions.map(s => {
+              {filteredBookingSessions.map(s => {
                 const booked = isBooked(s);
                 const waitlisted = isWaitlisted(s);
                 const isFull = s.registeredUsers.length >= s.maxParticipants;
                 const checkResult = checkBookingEligibility(s);
                 
                 return (
-                  <div key={s.id} className={`border border-slate-150 rounded-xl p-4 bg-slate-50 flex flex-col justify-between ${s.date !== selectedBookingDate ? 'mobile-session-hidden' : ''}`} id={`booking-card-${s.id}`}>
+                  <div key={s.id} className="border border-slate-150 rounded-xl p-4 bg-slate-50 flex flex-col justify-between" id={`booking-card-${s.id}`}>
                     <div>
                       <div className="flex justify-between items-start">
                         <div>
@@ -1729,6 +1768,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   </div>
                 );
               })}
+              {filteredBookingSessions.length === 0 && (
+                <div className="booking-empty-state">
+                  <CalendarIcon size={28} />
+                  <strong>לא נמצאו אימונים בתאריך ובסינון שנבחרו</strong>
+                  <span>אפשר לבחור תאריך אחר או לנקות את סינון השם והסוג.</span>
+                </div>
+              )}
             </div>
             </>}
           </div>
