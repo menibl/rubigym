@@ -562,6 +562,7 @@ export default function App() {
               sessions={sessions}
               announcements={announcements}
               messages={messages}
+              payments={payments}
               onSendMessage={handleSendMessage}
               onUpdateAnnouncements={setAnnouncements}
             />

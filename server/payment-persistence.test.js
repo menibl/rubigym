@@ -60,3 +60,55 @@ test('verified nutrition payment unlocks the purchased service and is idempotent
   assert.equal(repeatedResponse.status, 200);
   assert.equal(state.payload.payments.length, 1);
 });
+
+test('verified non-nutrition purchase is persisted for staff alerts', async () => {
+  let state = {
+    payload: {
+      users: [{ id: 'trainee-2', name: 'Meni', role: 'TRAINEE', secondaryMemberships: [] }],
+      nutritionPlans: [],
+      payments: []
+    },
+    revision: 1
+  };
+  const sessions = new Map();
+  const store = {
+    async createSession(tokenHash, clubId, userId, expiresAt) { sessions.set(tokenHash, { club_id: clubId, user_id: userId, expires_at: expiresAt }); },
+    async getSession(tokenHash) { return sessions.get(tokenHash); },
+    async getAccount() { return { user_id: 'trainee-2', role: 'TRAINEE' }; },
+    async getClubState() { return state; },
+    async putClubState(_clubId, payload, expectedRevision) {
+      if (expectedRevision !== state.revision) return { conflict: true, revision: state.revision };
+      state = { payload, revision: state.revision + 1 };
+      return { conflict: false, revision: state.revision };
+    }
+  };
+  const env = {
+    STATE_STORE: store,
+    CLUB_ID: 'test-club',
+    DEMO_PAYMENT_MODE: 'true',
+    PAYMENT_SIGNING_SECRET: 'workout-payment-test-secret',
+    PUBLIC_APP_URL: 'https://balywellness.test/',
+    PAYMENT_ALLOWED_ORIGIN: 'https://balywellness.test'
+  };
+  const auth = await createAuthenticatedSession(store, 'test-club', 'trainee-2');
+  const createResponse = await worker.fetch(new Request('https://balywellness.test/api/payments/cardcom/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: auth.cookie, Origin: 'https://balywellness.test' },
+    body: JSON.stringify({ userId: 'trainee-2', userName: 'Meni', membershipType: 'WORKOUT_COACHING', mode: 'ADDON' })
+  }), env);
+  assert.equal(createResponse.status, 200);
+  const checkout = await createResponse.json();
+  const verifyResponse = await worker.fetch(new Request('https://balywellness.test/api/payments/cardcom/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: auth.cookie, Origin: 'https://balywellness.test' },
+    body: JSON.stringify({ lowProfileId: checkout.lowProfileId })
+  }), env);
+
+  assert.equal(verifyResponse.status, 200);
+  assert.equal(state.payload.payments.length, 1);
+  assert.equal(state.payload.payments[0].traineeId, 'trainee-2');
+  assert.equal(state.payload.payments[0].membershipTypePurchased, 'WORKOUT_COACHING');
+  assert.match(state.payload.payments[0].timestamp, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(state.payload.users[0].secondaryMemberships, ['WORKOUT_COACHING']);
+  assert.equal(state.payload.users[0].requestedWorkoutPlan, true);
+});

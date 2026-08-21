@@ -238,8 +238,95 @@ const getLowProfileResult = async (lowProfileId, env) => {
   return { result, order };
 };
 
-const persistVerifiedNutritionPurchase = async (env, order, payment, fallbackUserId) => {
-  if (!env.STATE_STORE || order.d === 'REGISTRATION' || order.m !== 'NUTRITION_COACHING') return;
+const isoDate = date => date.toISOString().slice(0, 10);
+const membershipTermFor = type => {
+  const startedAt = new Date();
+  const expiresAt = new Date(startedAt);
+  const months = type === 'GROUP_ANNUAL' ? 12 : type === 'DEDICATED_GROUP_HALF_YEAR' ? 6 : 1;
+  const originalDay = expiresAt.getUTCDate();
+  expiresAt.setUTCDate(1);
+  expiresAt.setUTCMonth(expiresAt.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(expiresAt.getUTCFullYear(), expiresAt.getUTCMonth() + 1, 0)).getUTCDate();
+  expiresAt.setUTCDate(Math.min(originalDay, lastDay));
+  const endDate = isoDate(expiresAt);
+  return {
+    membershipStartedAt: isoDate(startedAt),
+    membershipExpiry: endDate,
+    membershipCommitmentEndsAt: type === 'GROUP_ANNUAL' ? endDate : undefined,
+    recurringBillingMonths: type === 'GROUP_ANNUAL' ? 12 : undefined,
+    monthlyBillingDay: type === 'GROUP_ANNUAL' ? startedAt.getUTCDate() : undefined
+  };
+};
+
+const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
+  const workoutTypes = ['WORKOUT_COACHING', 'WORKOUT_PLAN', 'OPEN_GYM_WITH_PLAN'];
+  const nutritionTypes = ['NUTRITION_COACHING', 'NUTRITION_PLAN'];
+  return (users || []).map(candidate => {
+    const customPlan = order.m === 'FAMILY_MEMBERSHIP' && order.fm === 'CUSTOM_COMBINED'
+      ? order.fp?.find(plan => plan.memberId === candidate.id)
+        || (candidate.id === userId ? order.fp?.[0] : undefined)
+      : undefined;
+    if (candidate.id !== userId && !customPlan) return candidate;
+
+    if (customPlan) {
+      const type = customPlan.membershipType;
+      return {
+        ...candidate,
+        membershipType: type,
+        membershipStatus: 'ACTIVE',
+        ...membershipTermFor(type),
+        familyBillingMode: 'CUSTOM_COMBINED',
+        familyCombinedAmount: amount,
+        familyTrackName: 'משפחתי מותאם – תשלום מאוחד',
+        personalTrainingRemaining: type === 'PERSONAL_TRAINING' ? customPlan.trainingSessionsCount : candidate.personalTrainingRemaining,
+        duoTrainingRemaining: type === 'DUO_TRAINING' ? customPlan.trainingSessionsCount : candidate.duoTrainingRemaining,
+        nutritionPlanPaid: nutritionTypes.includes(type) ? true : candidate.nutritionPlanPaid,
+        requestedWorkoutPlan: workoutTypes.includes(type) ? true : candidate.requestedWorkoutPlan
+      };
+    }
+
+    if (order.d === 'PRIMARY') {
+      const termType = order.m === 'FAMILY_MEMBERSHIP' && order.fm === 'ANNUAL_BY_SIZE' ? 'GROUP_ANNUAL' : order.m;
+      return {
+        ...candidate,
+        membershipType: order.m,
+        membershipStatus: 'ACTIVE',
+        ...membershipTermFor(termType),
+        isMembershipFrozen: false,
+        membershipFreezeStartedAt: undefined,
+        membershipFreezeUsedAt: undefined,
+        membershipFrozenUntil: undefined,
+        isCancelledEarly: false,
+        cancellationRequestedAt: undefined,
+        cancellationEffectiveDate: undefined,
+        offlinePaymentApproved: false,
+        familyMembersCount: order.f || candidate.familyMembersCount,
+        familyBillingMode: order.fm || candidate.familyBillingMode,
+        familyMemberPlans: order.fp || candidate.familyMemberPlans,
+        familyCombinedAmount: order.m === 'FAMILY_MEMBERSHIP' ? amount : candidate.familyCombinedAmount,
+        familyTrackName: order.m === 'FAMILY_MEMBERSHIP'
+          ? order.fm === 'MONTHLY_PER_MEMBER' ? `משפחתי חודשי (${order.f} מתאמנים)` : `משפחתי שנתי (${order.f} מתאמנים)`
+          : candidate.familyTrackName
+      };
+    }
+
+    const secondaryMemberships = candidate.secondaryMemberships || [];
+    const variantCount = order.v ? Number(String(order.v).split('_')[1]) : 0;
+    return {
+      ...candidate,
+      secondaryMemberships: secondaryMemberships.includes(order.m) ? secondaryMemberships : [...secondaryMemberships, order.m],
+      nutritionPlanPaid: nutritionTypes.includes(order.m) ? true : candidate.nutritionPlanPaid,
+      requestedWorkoutPlan: workoutTypes.includes(order.m) ? true : candidate.requestedWorkoutPlan,
+      personalTrainingCardSize: String(order.v || '').startsWith('PERSONAL_') ? variantCount : candidate.personalTrainingCardSize,
+      personalTrainingRemaining: String(order.v || '').startsWith('PERSONAL_') ? (candidate.personalTrainingRemaining || 0) + variantCount : candidate.personalTrainingRemaining,
+      duoTrainingCardSize: String(order.v || '').startsWith('DUO_') ? variantCount : candidate.duoTrainingCardSize,
+      duoTrainingRemaining: String(order.v || '').startsWith('DUO_') ? (candidate.duoTrainingRemaining || 0) + variantCount : candidate.duoTrainingRemaining
+    };
+  });
+};
+
+const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
+  if (!env.STATE_STORE || order.d === 'REGISTRATION') return;
   const userId = order.u || fallbackUserId;
   if (!userId) return;
   const paymentId = `payment-cardcom-${payment.transactionId || payment.lowProfileId}`;
@@ -251,30 +338,27 @@ const persistVerifiedNutritionPurchase = async (env, order, payment, fallbackUse
     if (!user) throw new Error('PAYMENT_USER_NOT_FOUND');
     if ((state.payload.payments || []).some(existing => existing.id === paymentId)) return;
 
-    const secondaryMemberships = user.secondaryMemberships || [];
+    const updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.a));
     const payload = {
       ...state.payload,
-      users: (state.payload.users || []).map(candidate => candidate.id === userId ? {
-        ...candidate,
-        nutritionPlanPaid: true,
-        secondaryMemberships: secondaryMemberships.includes('NUTRITION_COACHING')
-          ? secondaryMemberships
-          : [...secondaryMemberships, 'NUTRITION_COACHING']
-      } : candidate),
-      nutritionPlans: (state.payload.nutritionPlans || []).map(plan => plan.traineeId === userId ? {
-        ...plan,
-        isPaid: true,
-        price: Number(order.a),
-        paymentStatus: 'PAID'
-      } : plan),
+      users: updatedUsers,
+      nutritionPlans: ['NUTRITION_COACHING', 'NUTRITION_PLAN'].includes(order.m)
+        ? (state.payload.nutritionPlans || []).map(plan => plan.traineeId === userId ? {
+            ...plan,
+            isPaid: true,
+            price: Number(order.a),
+            paymentStatus: 'PAID'
+          } : plan)
+        : state.payload.nutritionPlans,
       payments: [{
         id: paymentId,
         traineeId: userId,
         traineeName: user.name,
         amount: Number(order.a),
         date: new Date().toISOString().slice(0, 10),
+        timestamp: new Date().toISOString(),
         status: 'PAID',
-        membershipTypePurchased: 'NUTRITION_COACHING',
+        membershipTypePurchased: order.m,
         paymentMethod: `Cardcom${payment.last4Digits ? ` •••• ${payment.last4Digits}` : ''}`,
         isMock: String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true'
       }, ...(state.payload.payments || [])]
@@ -361,7 +445,7 @@ const handleVerifyPayment = async (request, env) => {
       transactionId: `demo-${order.o}`,
       last4Digits: '1111'
     };
-    await persistVerifiedNutritionPurchase(env, order, payment, identity?.user_id);
+    await persistVerifiedPurchase(env, order, payment, identity?.user_id);
     return json(payment, 200, corsHeaders(request, env));
   }
   const { result, order } = await getLowProfileResult(lowProfileId, env);
@@ -383,7 +467,7 @@ const handleVerifyPayment = async (request, env) => {
     transactionId: String(result.TranzactionId || result.TranzactionInfo?.TranzactionId || ''),
     last4Digits: result.TranzactionInfo?.Last4CardDigitsString || result.TranzactionInfo?.Last4CardDigits
   };
-  await persistVerifiedNutritionPurchase(env, order, payment, identity?.user_id);
+  await persistVerifiedPurchase(env, order, payment, identity?.user_id);
   return json(payment, 200, corsHeaders(request, env));
 };
 
@@ -396,7 +480,7 @@ const handleWebhook = async (request, env) => {
   const lowProfileId = payload.LowProfileId || payload.lowProfileId || payload.LowProfileCode || payload.lowprofilecode;
   if (!lowProfileId) return new Response('missing LowProfileId', { status: 400 });
   const { result, order } = await getLowProfileResult(String(lowProfileId), env);
-  await persistVerifiedNutritionPurchase(env, order, {
+  await persistVerifiedPurchase(env, order, {
     lowProfileId: String(lowProfileId),
     transactionId: String(result.TranzactionId || result.TranzactionInfo?.TranzactionId || ''),
     last4Digits: result.TranzactionInfo?.Last4CardDigitsString || result.TranzactionInfo?.Last4CardDigits

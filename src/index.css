@@ -2032,6 +2032,125 @@ option {
   font-size: 15px;
 }
 
+.role-home-alert-center {
+  margin-top: 15px;
+  padding: 13px;
+  border: 1px solid rgba(201, 168, 103, 0.34);
+  border-radius: 17px;
+  background: rgba(8, 10, 15, 0.46);
+}
+
+.role-home-alert-center > header,
+.role-home-alert-center > header > div,
+.role-home-alert {
+  display: flex;
+  align-items: center;
+}
+
+.role-home-alert-center > header {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.role-home-alert-center > header > div {
+  gap: 8px;
+  color: var(--app-gold);
+}
+
+.role-home-alert-center > header strong {
+  color: var(--app-text);
+  font-size: 14px;
+}
+
+.role-home-alert-center > header > span {
+  display: grid;
+  min-width: 25px;
+  height: 25px;
+  padding-inline: 7px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--app-gold);
+  color: #111318;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.role-home-alert-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.role-home-alert {
+  min-width: 0;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.role-home-alert-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 11px;
+  background: rgba(201, 168, 103, 0.13);
+  color: var(--app-gold);
+}
+
+.role-home-alert.purchase .role-home-alert-icon {
+  background: rgba(52, 211, 153, 0.12);
+  color: #6ee7b7;
+}
+
+.role-home-alert.chat .role-home-alert-icon {
+  background: rgba(96, 165, 250, 0.13);
+  color: #93c5fd;
+}
+
+.role-home-alert > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.role-home-alert strong,
+.role-home-alert p {
+  display: block;
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-home-alert strong {
+  color: var(--app-text);
+  font-size: 12px;
+}
+
+.role-home-alert p,
+.role-home-alert time,
+.role-home-alert-empty {
+  color: var(--app-muted);
+  font-size: 10px;
+}
+
+.role-home-alert p {
+  margin-top: 3px;
+}
+
+.role-home-alert time {
+  flex: 0 0 auto;
+}
+
+.role-home-alert-empty {
+  grid-column: 1 / -1;
+  padding: 12px;
+  text-align: center;
+}
+
 .role-home-management-link {
   justify-content: center;
   gap: 7px;
@@ -2330,6 +2449,14 @@ option {
 
   .role-home-actions {
     gap: 9px;
+  }
+
+  .role-home-alert-list {
+    grid-template-columns: 1fr;
+  }
+
+  .role-home-alert-center {
+    padding: 11px;
   }
 
   .role-home-actions > button {
