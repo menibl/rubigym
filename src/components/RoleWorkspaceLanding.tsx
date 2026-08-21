@@ -4,6 +4,8 @@ import {
   Bell,
   CalendarCheck,
   CalendarClock,
+  Check,
+  CheckCheck,
   ChevronLeft,
   ClipboardList,
   CreditCard,
@@ -44,6 +46,7 @@ interface RoleWorkspaceLandingProps {
   payments?: Payment[];
   onSendMessage?: (content: string, receiverId: string) => void;
   onUpdateAnnouncements?: (announcements: Announcement[]) => void;
+  onAcknowledgeStaffAlerts?: (alertIds: string[]) => void;
 }
 
 type HomeAction = {
@@ -65,7 +68,8 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   messages = [],
   payments = [],
   onSendMessage,
-  onUpdateAnnouncements
+  onUpdateAnnouncements,
+  onAcknowledgeStaffAlerts
 }) => {
   const isTrainee = activeUser.role === UserRole.TRAINEE;
   const coaches = users.filter(user => user.role === UserRole.COACH || user.role === UserRole.MANAGER);
@@ -198,8 +202,11 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
         timestamp: message.timestamp
       }));
 
-    return alerts.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  }, [incomingStaffMessages, isTrainee, payments, users]);
+    const acknowledged = new Set(activeUser.staffAlertAcknowledgements || []);
+    return alerts
+      .filter(alert => !acknowledged.has(alert.id))
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  }, [activeUser.staffAlertAcknowledgements, incomingStaffMessages, isTrainee, payments, users]);
 
   const latestClubAnnouncements = useMemo(() => [...announcements]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -275,7 +282,10 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
           <section className="role-home-alert-center" aria-label="הודעות חדשות למאמן ולמנהל">
             <header>
               <div><Bell size={18} /><strong>הודעות חדשות</strong></div>
-              {staffAlerts.length > 0 && <span>{staffAlerts.length}</span>}
+              <div className="role-home-alert-actions">
+                {staffAlerts.length > 0 && <button type="button" onClick={() => onAcknowledgeStaffAlerts?.(staffAlerts.map(alert => alert.id))}><CheckCheck size={15} /> אישור הכול</button>}
+                {staffAlerts.length > 0 && <span>{staffAlerts.length}</span>}
+              </div>
             </header>
             <div className="role-home-alert-list">
               {staffAlerts.slice(0, 6).map(alert => {
@@ -288,6 +298,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
                       <p>{alert.detail}</p>
                     </div>
                     <time>{new Date(alert.timestamp).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' })}</time>
+                    <button type="button" className="role-home-alert-ack" onClick={() => onAcknowledgeStaffAlerts?.([alert.id])} aria-label={`אישור ההתראה: ${alert.title}`}><Check size={15} /> אישור</button>
                   </article>
                 );
               })}

@@ -186,6 +186,11 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     ]);
     const merged = { ...current };
     for (const key of allowed) if (Array.isArray(incoming[key])) merged[key] = incoming[key];
+    const requestedCoach = incoming.users.find(user => user.id === userId);
+    if (requestedCoach && Array.isArray(requestedCoach.staffAlertAcknowledgements)) {
+      const acknowledgements = [...new Set(requestedCoach.staffAlertAcknowledgements.filter(value => typeof value === 'string'))].slice(-500);
+      merged.users = current.users.map(user => user.id === userId ? { ...user, staffAlertAcknowledgements: acknowledgements } : user);
+    }
     return merged;
   }
 

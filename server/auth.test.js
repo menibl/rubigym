@@ -77,3 +77,27 @@ test('family members are visible to each other and the payer can manage tracks a
   const removed = mergePayloadForUser(payload, { ...payload, users: [payload.users[0], payload.users[2]] }, 'payer', 'TRAINEE');
   assert.equal(removed.users.some(user => user.id === 'child'), false);
 });
+
+test('coach can persist only their own staff alert acknowledgements', () => {
+  const current = {
+    users: [
+      { id: 'coach-1', role: 'COACH', name: 'Coach', staffAlertAcknowledgements: [] },
+      { id: 'trainee-1', role: 'TRAINEE', name: 'Trainee' }
+    ],
+    sessions: [], openGymSessions: [], workoutPlans: [], nutritionPlans: [], blackPoints: [], announcements: [],
+    messages: [], attendanceLogs: [], traineeProfiles: [], traineeMemoryEntries: [], gymEquipment: [],
+    coachPdfDocuments: [], workoutAssistantMessages: [], workoutAssistantDrafts: [], groupWorkoutPrograms: []
+  };
+  const incoming = {
+    ...current,
+    users: [
+      { ...current.users[0], name: 'Tampered', staffAlertAcknowledgements: ['purchase-1', 'chat-2', 'purchase-1', 7] },
+      { ...current.users[1], name: 'Changed by coach' }
+    ]
+  };
+
+  const merged = mergePayloadForUser(current, incoming, 'coach-1', 'COACH');
+  assert.equal(merged.users[0].name, 'Coach');
+  assert.deepEqual(merged.users[0].staffAlertAcknowledgements, ['purchase-1', 'chat-2']);
+  assert.equal(merged.users[1].name, 'Trainee');
+});
