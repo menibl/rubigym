@@ -128,7 +128,7 @@ sudo bash deploy/scripts/install-all.sh "$USER"
 - ניטור כל דקה, בדיקת אבטחה יומית וגיבוי יומי.
 - בדיקה אוטומטית של `main` כל חמש דקות ופריסה רק כאשר ה־commit השתנה.
 
-הסקריפט מסרב להמשיך אם קבצי production כוללים placeholder כמו `CHANGE_ME` או `example.com`.
+הסקריפט מסרב להמשיך אם קבצי production כוללים placeholder כמו `CHANGE_ME`, `example.com` או `your-production-domain`.
 
 ## שלב 5 — פעולות חד־פעמיות לאחר המתקין
 

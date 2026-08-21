@@ -8,6 +8,8 @@ grep -Fq 'DOCKER_CONFIG=${PRODUCTION_STATE}/docker' "${SOURCE}"
 grep -Fq 'COMPOSE_BAKE=false' "${SOURCE}"
 grep -Fq 'export DOCKER_CONFIG COMPOSE_BAKE' "${SOURCE}"
 grep -Fq 'install -d -m 0700 "${DOCKER_CONFIG}"' "${SOURCE}"
+grep -Fq 'your-production-domain' "${SOURCE}"
+grep -Fq 'YOUR_DOMAIN' "${SOURCE}"
 
 function_source=$(awk '
   /^backup_database\(\)/ { capture=1 }
