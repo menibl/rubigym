@@ -163,13 +163,13 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
           paymentMethod: `Cardcom${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
           isMock: false
         };
-        markTransactionProcessed(transactionKey);
-        clearPendingCardcomPayment();
-        clearCardcomReturnParams();
-        return onRegister(draft.user, payment);
+        return onRegister(draft.user, payment).then(() => {
+          markTransactionProcessed(transactionKey);
+          clearPendingCardcomPayment();
+          clearCardcomReturnParams();
+        });
       })
       .catch(paymentError => {
-        clearCardcomReturnParams();
         setError(paymentError instanceof Error ? paymentError.message : 'לא ניתן לאמת את התשלום מול Cardcom.');
       })
       .finally(() => setPaymentStarting(false));

@@ -64,8 +64,8 @@ jobs:
       - name: Validate server entrypoint
         run: node --check server/node-entry.js
 
-      - name: Test database TLS policy
-        run: node --test server/database.test.js
+      - name: Test server behavior
+        run: node --test server/*.test.js
 
       - name: Build production container
         run: |
