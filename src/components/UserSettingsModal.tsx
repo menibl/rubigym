@@ -118,6 +118,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const familyMembersList = currentFamilyId
     ? [currentUser, ...allUsers.filter(u => u.id !== currentUser.id && u.familyId === currentFamilyId)]
     : [];
+  const canManageFamily = Boolean(currentUser.isFamilyPayer || isAdminMode);
 
   // Coupon application handler
   const handleApplyCoupon = () => {
@@ -216,26 +217,46 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     onClose();
   };
 
-  const handleProfileImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfileImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       setMsg({ type: 'error', text: 'יש לבחור קובץ תמונה בלבד.' });
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setMsg({ type: 'error', text: 'גודל התמונה המרבי הוא 2MB.' });
+    if (file.size > 8 * 1024 * 1024) {
+      setMsg({ type: 'error', text: 'גודל קובץ המקור המרבי הוא 8MB.' });
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setProfileImage(reader.result);
-        setMsg(null);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const source = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('IMAGE_READ_FAILED'));
+        reader.onerror = () => reject(reader.error || new Error('IMAGE_READ_FAILED'));
+        reader.readAsDataURL(file);
+      });
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const nextImage = new Image();
+        nextImage.onload = () => resolve(nextImage);
+        nextImage.onerror = () => reject(new Error('IMAGE_DECODE_FAILED'));
+        nextImage.src = source;
+      });
+      const maxSide = 512;
+      const scale = Math.min(1, maxSide / image.naturalWidth, maxSide / image.naturalHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('IMAGE_CANVAS_FAILED');
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      setProfileImage(canvas.toDataURL('image/jpeg', 0.82));
+      setMsg({ type: 'success', text: 'התמונה הוכנה לשמירה. לחץ על שמור שינויים.' });
+    } catch {
+      setMsg({ type: 'error', text: 'לא ניתן לעבד את התמונה. נסה תמונת JPG או PNG אחרת.' });
+    } finally {
+      event.target.value = '';
+    }
   };
 
   const handlePushToggle = async (enabled: boolean) => {
@@ -762,7 +783,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     <div className="space-y-3 pt-2">
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-slate-800">רשימת משתמשי המשפחה:</span>
-                        {familyMembersList.length < (currentUser.familyMembersCount || 10) && (
+                        {canManageFamily && familyMembersList.length < (currentUser.familyMembersCount || 10) && (
                           <button
                             type="button"
                             onClick={() => setShowAddSubMember(!showAddSubMember)}
@@ -924,7 +945,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                                 </div>
                               </div>
 
-                              {!m.isFamilyPayer && (
+                              {canManageFamily && !m.isFamilyPayer && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveFamilyMember(m.id)}
@@ -942,6 +963,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                               <select
                                 value={m.membershipType || MembershipType.GROUP_MONTHLY}
                                 onChange={(e) => handleChangeMemberTrack(m.id, e.target.value as MembershipType)}
+                                disabled={!canManageFamily}
                                 className="px-2.5 py-1 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 text-[11px] focus:outline-none focus:border-indigo-500"
                               >
                                 {[...CURRENT_PRIMARY_MEMBERSHIP_PLANS, ...CURRENT_MEMBERSHIP_ADD_ONS].map(typeKey => (
