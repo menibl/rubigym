@@ -163,6 +163,7 @@ const createSignedOrder = async (body, env) => {
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(body.mode)) throw new Error('INVALID_MODE');
   const payload = encodePayload({
     o: crypto.randomUUID(),
+    u: body.userId ? String(body.userId).slice(0, 100) : undefined,
     m: body.membershipType,
     d: body.mode,
     v: body.purchaseVariant || undefined,
@@ -237,9 +238,62 @@ const getLowProfileResult = async (lowProfileId, env) => {
   return { result, order };
 };
 
+const persistVerifiedNutritionPurchase = async (env, order, payment, fallbackUserId) => {
+  if (!env.STATE_STORE || order.d === 'REGISTRATION' || order.m !== 'NUTRITION_COACHING') return;
+  const userId = order.u || fallbackUserId;
+  if (!userId) return;
+  const paymentId = `payment-cardcom-${payment.transactionId || payment.lowProfileId}`;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
+    if (!state) throw new Error('CLUB_STATE_MISSING');
+    const user = (state.payload.users || []).find(candidate => candidate.id === userId);
+    if (!user) throw new Error('PAYMENT_USER_NOT_FOUND');
+    if ((state.payload.payments || []).some(existing => existing.id === paymentId)) return;
+
+    const secondaryMemberships = user.secondaryMemberships || [];
+    const payload = {
+      ...state.payload,
+      users: (state.payload.users || []).map(candidate => candidate.id === userId ? {
+        ...candidate,
+        nutritionPlanPaid: true,
+        secondaryMemberships: secondaryMemberships.includes('NUTRITION_COACHING')
+          ? secondaryMemberships
+          : [...secondaryMemberships, 'NUTRITION_COACHING']
+      } : candidate),
+      nutritionPlans: (state.payload.nutritionPlans || []).map(plan => plan.traineeId === userId ? {
+        ...plan,
+        isPaid: true,
+        price: Number(order.a),
+        paymentStatus: 'PAID'
+      } : plan),
+      payments: [{
+        id: paymentId,
+        traineeId: userId,
+        traineeName: user.name,
+        amount: Number(order.a),
+        date: new Date().toISOString().slice(0, 10),
+        status: 'PAID',
+        membershipTypePurchased: 'NUTRITION_COACHING',
+        paymentMethod: `Cardcom${payment.last4Digits ? ` •••• ${payment.last4Digits}` : ''}`,
+        isMock: String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true'
+      }, ...(state.payload.payments || [])]
+    };
+    const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', payload, state.revision);
+    if (!saved.conflict) return;
+  }
+  throw new Error('PAYMENT_STATE_CONFLICT');
+};
+
 const handleCreatePayment = async (request, env) => {
   requirePaymentEnv(env);
   const body = await request.json();
+  if (body.mode !== 'REGISTRATION') {
+    const identity = await getAuthenticatedSession(request, env.STATE_STORE);
+    if (!identity || identity.user_id !== body.userId) {
+      return json({ message: 'לא ניתן ליצור תשלום עבור משתמש אחר.' }, 403, corsHeaders(request, env));
+    }
+  }
   let purchase;
   try { purchase = resolvePurchase(body, String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true'); }
   catch { return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env)); }
@@ -289,9 +343,14 @@ const handleVerifyPayment = async (request, env) => {
   if (!lowProfileId) return json({ message: 'חסר מזהה עסקה.' }, 400, corsHeaders(request, env));
   if (String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
     const order = await verifySignedOrder(lowProfileId, env);
-    return json({
+    const identity = order.d === 'REGISTRATION' ? null : await getAuthenticatedSession(request, env.STATE_STORE);
+    if (order.d !== 'REGISTRATION' && (!identity || (order.u && identity.user_id !== order.u))) {
+      return json({ message: 'לא ניתן לשייך את התשלום למשתמש המחובר.' }, 403, corsHeaders(request, env));
+    }
+    const payment = {
       success: true,
       lowProfileId,
+      userId: order.u || identity?.user_id,
       membershipType: order.m,
       mode: order.d,
       purchaseVariant: order.v,
@@ -301,12 +360,19 @@ const handleVerifyPayment = async (request, env) => {
       amount: order.a,
       transactionId: `demo-${order.o}`,
       last4Digits: '1111'
-    }, 200, corsHeaders(request, env));
+    };
+    await persistVerifiedNutritionPurchase(env, order, payment, identity?.user_id);
+    return json(payment, 200, corsHeaders(request, env));
   }
   const { result, order } = await getLowProfileResult(lowProfileId, env);
-  return json({
+  const identity = order.d === 'REGISTRATION' ? null : await getAuthenticatedSession(request, env.STATE_STORE);
+  if (order.d !== 'REGISTRATION' && (!identity || (order.u && identity.user_id !== order.u))) {
+    return json({ message: 'לא ניתן לשייך את התשלום למשתמש המחובר.' }, 403, corsHeaders(request, env));
+  }
+  const payment = {
     success: true,
     lowProfileId,
+    userId: order.u || identity?.user_id,
     membershipType: order.m,
     mode: order.d,
     purchaseVariant: order.v,
@@ -316,7 +382,9 @@ const handleVerifyPayment = async (request, env) => {
     amount: order.a,
     transactionId: String(result.TranzactionId || result.TranzactionInfo?.TranzactionId || ''),
     last4Digits: result.TranzactionInfo?.Last4CardDigitsString || result.TranzactionInfo?.Last4CardDigits
-  }, 200, corsHeaders(request, env));
+  };
+  await persistVerifiedNutritionPurchase(env, order, payment, identity?.user_id);
+  return json(payment, 200, corsHeaders(request, env));
 };
 
 const handleWebhook = async (request, env) => {
@@ -327,7 +395,12 @@ const handleWebhook = async (request, env) => {
   else payload = Object.fromEntries(await request.formData());
   const lowProfileId = payload.LowProfileId || payload.lowProfileId || payload.LowProfileCode || payload.lowprofilecode;
   if (!lowProfileId) return new Response('missing LowProfileId', { status: 400 });
-  await getLowProfileResult(String(lowProfileId), env);
+  const { result, order } = await getLowProfileResult(String(lowProfileId), env);
+  await persistVerifiedNutritionPurchase(env, order, {
+    lowProfileId: String(lowProfileId),
+    transactionId: String(result.TranzactionId || result.TranzactionInfo?.TranzactionId || ''),
+    last4Digits: result.TranzactionInfo?.Last4CardDigitsString || result.TranzactionInfo?.Last4CardDigits
+  });
   return new Response('OK', { status: 200 });
 };
 

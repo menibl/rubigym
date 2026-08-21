@@ -464,8 +464,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/70 p-2 backdrop-blur-sm sm:items-center sm:p-4 dir-rtl">
-      <div className="my-1 max-h-[calc(100dvh-0.5rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 sm:my-8 sm:max-h-[calc(100dvh-2rem)]">
+    <div className="user-settings-modal fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/70 p-2 backdrop-blur-sm sm:items-center sm:p-4 dir-rtl">
+      <div className="user-settings-dialog my-1 max-h-[calc(100dvh-0.5rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 sm:my-8 sm:max-h-[calc(100dvh-2rem)]">
         
         {/* Header */}
         <div className="sticky top-0 z-20 bg-slate-900 p-5 text-white relative flex items-center justify-between">

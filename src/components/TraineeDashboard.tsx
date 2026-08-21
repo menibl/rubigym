@@ -165,15 +165,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const membershipAddOns = membershipPlanConfigs.filter(plan => plan.category === 'ADD_ON');
   const selectedMembershipConfig = membershipPlanConfigs.find(plan => plan.id === selectedMembershipPurchase);
   const selectedMembershipPrice = selectedMembershipConfig?.price ?? (selectedMembershipPurchase ? MEMBERSHIP_PRICES[selectedMembershipPurchase] : 0) ?? 0;
-  const [selectedBookingDate, setSelectedBookingDate] = useState(() => {
-    const today = toLocalIsoDate(new Date());
-    return [...sessions]
-      .filter(session => session.date >= today)
-      .sort((a, b) => `${a.date}T${a.time || '00:00'}`.localeCompare(`${b.date}T${b.time || '00:00'}`))[0]?.date || today;
-  });
+  const [selectedBookingDate, setSelectedBookingDate] = useState(() => toLocalIsoDate(new Date()));
   const [bookingView, setBookingView] = useState<'DAY' | 'WEEK'>('DAY');
   const [bookingNameFilter, setBookingNameFilter] = useState('');
-  const [bookingTypeFilter, setBookingTypeFilter] = useState<'ALL' | 'GROUP' | 'PERSONAL'>('ALL');
+  const [bookingTypeFilter, setBookingTypeFilter] = useState<'ALL' | 'GROUP' | 'PERSONAL' | 'OPEN_GYM'>('ALL');
+  const [showAllBookingOptions, setShowAllBookingOptions] = useState(false);
   // Notification banner for feedback
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -451,6 +447,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const isDuoSession = Boolean(session.isPersonalTraining && session.coTrainees?.length);
     const dedicatedMemberships = userMemberships.filter(membership => [MembershipType.DEDICATED_GROUP_HALF_YEAR, MembershipType.WEIGHT_LOSS_HALF_YEAR, MembershipType.POSTPARTUM_HALF_YEAR].includes(membership));
 
+    if (
+      session.isPersonalTraining &&
+      session.targetTraineeId &&
+      session.targetTraineeId !== activeUser.id &&
+      !session.coTrainees?.includes(activeUser.id)
+    ) {
+      return { eligible: false, reason: 'האימון האישי משויך למתאמן אחר.' };
+    }
+
     if (dedicatedMemberships.length > 0 && !session.isPersonalTraining && !session.allowedMemberships?.some(membership => dedicatedMemberships.includes(membership))) {
       return { eligible: false, reason: 'האימון אינו שייך לקבוצה הייעודית החצי־שנתית שלך.' };
     }
@@ -526,6 +531,84 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
 
     return { eligible: true };
+  };
+
+  const checkOpenGymBookingEligibility = (og: OpenGymSession): { eligible: boolean; reason?: string } => {
+    if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) return { eligible: false, reason: 'כבר נרשמת למשבצת זו.' };
+    if (!isHealthDeclarationValid()) return { eligible: false, reason: 'נדרשת הצהרת בריאות בתוקף.' };
+    if (freezeActive) return { eligible: false, reason: `המנוי מוקפא עד ${activeUser.membershipFrozenUntil || 'תום ההקפאה'}.` };
+
+    const payer = activeUser.familyPayerId ? users.find(user => user.id === activeUser.familyPayerId) : undefined;
+    const isPaid = (activeUser.membershipStatus === MembershipStatus.ACTIVE && !cancellationEffective)
+      || activeUser.offlinePaymentApproved
+      || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved) && !isMembershipCancellationEffective(payer));
+    if (!isPaid) return { eligible: false, reason: 'המנוי אינו פעיל או לא שולם.' };
+
+    const effectiveExpiry = payer?.membershipExpiry || activeUser.membershipExpiry;
+    if (!effectiveExpiry || effectiveExpiry < toLocalIsoDate(new Date())) return { eligible: false, reason: 'תוקף המנוי פג.' };
+
+    const memberships = [activeUser.membershipType, ...(activeUser.secondaryMemberships || [])].filter(Boolean) as MembershipType[];
+    const includedOpenGymAccess = memberships.some(type => [
+      MembershipType.OPEN_GYM,
+      MembershipType.OPEN_GYM_WITH_PLAN,
+      MembershipType.CORE_GROUPS,
+      MembershipType.FAMILY_MEMBERSHIP,
+      MembershipType.GROUP_MONTHLY,
+      MembershipType.GROUP_ANNUAL,
+      MembershipType.OPEN_MONTHLY,
+      MembershipType.OPEN_ANNUAL
+    ].includes(type));
+    const usesPunchCard = !includedOpenGymAccess && memberships.includes(MembershipType.OPEN_PUNCH_CARD);
+    if (!includedOpenGymAccess && !usesPunchCard) return { eligible: false, reason: 'המסלול אינו כולל Open Gym.' };
+    if (usesPunchCard && (activeUser.punchCardRemaining ?? 0) <= 0) return { eligible: false, reason: 'אזלו הניקובים בכרטיסייה.' };
+
+    const [openStart, openEnd] = og.timeSlot.split('-').map(timeToMinutes);
+    const hasOverlap = sessions.some(session => {
+      if (session.date !== og.date || !session.registeredUsers.includes(activeUser.id)) return false;
+      const start = timeToMinutes(session.time);
+      return overlaps(openStart, openEnd, start, start + session.durationMinutes);
+    }) || openGymSessions.some(existing => {
+      if (existing.id === og.id || existing.date !== og.date || !existing.registeredUsers.includes(activeUser.id)) return false;
+      const [start, end] = existing.timeSlot.split('-').map(timeToMinutes);
+      return overlaps(openStart, openEnd, start, end);
+    });
+    return hasOverlap ? { eligible: false, reason: 'המשבצת חופפת לאימון שכבר נרשמת אליו.' } : { eligible: true };
+  };
+
+  const activeMembershipTypes = [activeUser.membershipType, ...(activeUser.secondaryMemberships || [])].filter(Boolean) as MembershipType[];
+  const hasOpenGymMembershipAccess = activeMembershipTypes.some(type => [
+    MembershipType.OPEN_GYM,
+    MembershipType.OPEN_GYM_WITH_PLAN,
+    MembershipType.CORE_GROUPS,
+    MembershipType.FAMILY_MEMBERSHIP,
+    MembershipType.GROUP_MONTHLY,
+    MembershipType.GROUP_ANNUAL,
+    MembershipType.OPEN_MONTHLY,
+    MembershipType.OPEN_ANNUAL,
+    MembershipType.OPEN_PUNCH_CARD
+  ].includes(type));
+  const isSessionRelevantToTrainee = (session: TrainingSession) => {
+    if (session.genderRestriction === Gender.FEMALE && activeUser.gender !== Gender.FEMALE) return false;
+    if (session.genderRestriction === Gender.MALE && activeUser.gender !== Gender.MALE) return false;
+    if (session.ageMin && activeUser.age < session.ageMin) return false;
+    if (session.ageMax && activeUser.age > session.ageMax) return false;
+    if (session.isPersonalTraining) {
+      if (session.targetTraineeId) return session.targetTraineeId === activeUser.id || Boolean(session.coTrainees?.includes(activeUser.id));
+      return activeMembershipTypes.some(type => [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(type));
+    }
+    const groupMemberships = [
+      MembershipType.CORE_GROUPS,
+      MembershipType.YOUTH_TWICE_WEEKLY,
+      MembershipType.YOUTH_ONCE_WEEKLY,
+      MembershipType.DEDICATED_GROUP_HALF_YEAR,
+      MembershipType.FAMILY_MEMBERSHIP,
+      MembershipType.GROUP_MONTHLY,
+      MembershipType.GROUP_ANNUAL,
+      MembershipType.WEIGHT_LOSS_HALF_YEAR,
+      MembershipType.POSTPARTUM_HALF_YEAR
+    ];
+    return activeMembershipTypes.some(type => groupMemberships.includes(type))
+      && (!session.allowedMemberships?.length || session.allowedMemberships.some(type => activeMembershipTypes.includes(type)) || activeMembershipTypes.some(type => [MembershipType.CORE_GROUPS, MembershipType.FAMILY_MEMBERSHIP, MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL].includes(type)));
   };
 
   // FREEZE MEMBERSHIP (one continuous calendar month per rolling membership year)
@@ -650,7 +733,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     openMembershipCheckout(MembershipType.WORKOUT_COACHING, 'ADDON');
   };
 
-  // PAY FOR NUTRITION PLAN (150 ILS individual fee)
+  // PAY FOR NUTRITION COACHING (350 ILS)
   const handlePayNutritionPlan = () => {
     setActiveTab('membership');
     openMembershipCheckout(MembershipType.NUTRITION_COACHING, 'ADDON');
@@ -1243,19 +1326,36 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const sessionCapacity = nextSession?.maxParticipants || 12;
   const registeredCount = nextSession?.registeredUsers.length || 0;
   const bookingDays = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
+    const date = new Date(`${selectedBookingDate}T12:00:00`);
     date.setDate(date.getDate() + index);
     return {
       key: toLocalIsoDate(date),
-      day: date.toLocaleDateString('he-IL', { weekday: 'short' }).replace('יום ', ''),
-      number: date.getDate()
+      day: date.toLocaleDateString('he-IL', { weekday: 'long' }),
+      number: date.getDate(),
+      month: date.toLocaleDateString('he-IL', { month: 'short' }),
+      isToday: toLocalIsoDate(date) === toLocalIsoDate(new Date())
     };
   });
-  const filteredBookingSessions = sessions
-    .filter(session => session.date === selectedBookingDate)
-    .filter(session => session.title.toLocaleLowerCase('he-IL').includes(bookingNameFilter.trim().toLocaleLowerCase('he-IL')))
-    .filter(session => bookingTypeFilter === 'ALL' || (bookingTypeFilter === 'PERSONAL' ? session.isPersonalTraining : !session.isPersonalTraining))
-    .sort((a, b) => `${a.date}T${a.time || '00:00'}-${a.title}`.localeCompare(`${b.date}T${b.time || '00:00'}-${b.title}`, 'he'));
+  type BookingListItem =
+    | { kind: 'SESSION'; startTime: string; session: TrainingSession }
+    | { kind: 'OPEN_GYM'; startTime: string; openGym: OpenGymSession };
+  const bookingItemsForDay = (dateKey: string): BookingListItem[] => {
+    const nameNeedle = bookingNameFilter.trim().toLocaleLowerCase('he-IL');
+    const sessionItems: BookingListItem[] = sessions
+      .filter(session => session.date === dateKey)
+      .filter(session => !nameNeedle || session.title.toLocaleLowerCase('he-IL').includes(nameNeedle))
+      .filter(session => bookingTypeFilter === 'ALL' || (bookingTypeFilter === 'PERSONAL' ? session.isPersonalTraining : bookingTypeFilter === 'GROUP' ? !session.isPersonalTraining : false))
+      .filter(session => showAllBookingOptions || isBooked(session) || isWaitlisted(session) || isSessionRelevantToTrainee(session))
+      .map(session => ({ kind: 'SESSION', startTime: session.time, session }));
+    const openGymItems: BookingListItem[] = openGymSessions
+      .filter(openGym => openGym.date === dateKey)
+      .filter(() => bookingTypeFilter === 'ALL' || bookingTypeFilter === 'OPEN_GYM')
+      .filter(() => !nameNeedle || 'open gym אימון חופשי'.includes(nameNeedle))
+      .filter(openGym => showAllBookingOptions || isOpenGymBooked(openGym) || isOpenGymWaitlisted(openGym) || hasOpenGymMembershipAccess)
+      .map(openGym => ({ kind: 'OPEN_GYM', startTime: openGym.timeSlot.split('-')[0].trim(), openGym }));
+    return [...sessionItems, ...openGymItems]
+      .sort((a, b) => `${a.startTime}-${a.kind}`.localeCompare(`${b.startTime}-${b.kind}`, 'he'));
+  };
 
   return (
     <div className="space-y-6 trainee-app" id="trainee-dashboard">
@@ -1542,43 +1642,22 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         
         {/* TAB 1: CLASSES BOOKING */}
         {activeTab === 'classes' && (
-          <div className="space-y-6">
+          <div className="space-y-5 booking-flow">
             <div className="booking-view-toggle" dir="rtl">
-              <button type="button" className={bookingView === 'DAY' ? 'active' : ''} onClick={() => setBookingView('DAY')}>יום</button>
-              <button type="button" className={bookingView === 'WEEK' ? 'active' : ''} onClick={() => setBookingView('WEEK')}>שבוע</button>
+              <button type="button" className={bookingView === 'DAY' ? 'active' : ''} onClick={() => setBookingView('DAY')}>רשימה יומית</button>
+              <button type="button" className={bookingView === 'WEEK' ? 'active' : ''} onClick={() => setBookingView('WEEK')}>לוח שבועי</button>
             </div>
             {bookingView === 'DAY' && <>
-            <div className="mobile-booking-header">
+            <div className="booking-list-heading">
               <h2>רישום לאימון</h2>
-              <p>בחר יום כדי לראות אימונים פנויים</p>
-              <div className="mobile-day-picker">
-                {bookingDays.map(day => (
-                  <button
-                    key={day.key}
-                    type="button"
-                    className={selectedBookingDate === day.key ? 'active' : ''}
-                    onClick={() => setSelectedBookingDate(day.key)}
-                  >
-                    <span>{day.day}</span>
-                    <strong>{day.number}</strong>
-                  </button>
-                ))}
-              </div>
-              <label className="mobile-date-jump">
-                <CalendarIcon size={15} /> מעבר לתאריך אחר
-                <input
-                  type="date"
-                  value={selectedBookingDate}
-                  onChange={event => setSelectedBookingDate(event.target.value)}
-                  aria-label="בחירת תאריך מלוח חודשי"
-                />
-              </label>
+              <p>גלול מטה כדי לעבור בין הימים ולהירשם עד שבוע קדימה.</p>
             </div>
             <div className="booking-filter-panel" dir="rtl" aria-label="סינון אימונים">
               <label>
-                <span>תאריך האימון</span>
+                <span>התחל מתאריך</span>
                 <input
                   type="date"
+                  min={toLocalIsoDate(new Date())}
                   value={selectedBookingDate}
                   onChange={event => setSelectedBookingDate(event.target.value)}
                 />
@@ -1594,12 +1673,19 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </label>
               <label>
                 <span>סוג האימון</span>
-                <select value={bookingTypeFilter} onChange={event => setBookingTypeFilter(event.target.value as 'ALL' | 'GROUP' | 'PERSONAL')}>
+                <select value={bookingTypeFilter} onChange={event => setBookingTypeFilter(event.target.value as 'ALL' | 'GROUP' | 'PERSONAL' | 'OPEN_GYM')}>
                   <option value="ALL">כל הסוגים</option>
                   <option value="GROUP">אימון קבוצתי</option>
                   <option value="PERSONAL">אימון אישי</option>
+                  <option value="OPEN_GYM">Open Gym</option>
                 </select>
               </label>
+              <div className="booking-filter-actions">
+                <button type="button" onClick={() => setSelectedBookingDate(toLocalIsoDate(new Date()))}>חזרה להיום</button>
+                <button type="button" className={showAllBookingOptions ? 'active' : ''} onClick={() => setShowAllBookingOptions(value => !value)}>
+                  {showAllBookingOptions ? 'הצג רק אימונים שמתאימים לי' : 'צפה בכל אימוני המועדון'}
+                </button>
+              </div>
             </div>
             </>}
 
@@ -1626,155 +1712,88 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             </div>}
 
             {bookingView === 'DAY' && <>
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3 pt-4">
-              <h3 className="text-sm font-bold text-slate-800">אימונים קבוצתיים ברשימה</h3>
+            <div className="booking-list-notice">
+              <span>{showAllBookingOptions ? 'מוצגים כל אימוני המועדון, כולל אימונים שאינם כלולים במסלול שלך.' : 'מוצגים אימונים שמתאימים למסלול ולנתונים שלך, לצד ההרשמות הקיימות.'}</span>
               {activePenaltiesCount > 0 && (
                 <span className="bg-rose-100 text-rose-800 font-semibold text-[10px] px-2 py-1 rounded-full border border-rose-200">
                   ⚠️ יש לך {activePenaltiesCount} נקודות שחורות פעילות לחובתך!
                 </span>
               )}
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredBookingSessions.map(s => {
-                const booked = isBooked(s);
-                const waitlisted = isWaitlisted(s);
-                const isFull = s.registeredUsers.length >= s.maxParticipants;
-                const checkResult = checkBookingEligibility(s);
-                
+            <div className="booking-days-feed">
+              {bookingDays.map(day => {
+                const dayItems = bookingItemsForDay(day.key);
                 return (
-                  <div key={s.id} className="border border-slate-150 rounded-xl p-4 bg-slate-50 flex flex-col justify-between" id={`booking-card-${s.id}`}>
-                    <div>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">{s.title}</h4>
-                          <span className="text-[10px] text-slate-400">מאמן: {s.coachName}</span>
-                        </div>
-                        <span className="bg-slate-200 text-slate-700 text-[9px] font-bold px-2 py-0.5 rounded uppercase">
-                          {s.muscleGroup}
-                        </span>
+                  <section key={day.key} className="booking-day-section" id={`booking-day-${day.key}`}>
+                    <header>
+                      <div className={day.isToday ? 'today' : ''}>
+                        <strong>{day.day}</strong>
+                        <span>{day.number} {day.month}</span>
                       </div>
+                      {day.isToday && <b>היום</b>}
+                      <small>{dayItems.length} אימונים</small>
+                    </header>
+                    <div className="booking-day-grid">
+                      {dayItems.map(item => {
+                        if (item.kind === 'OPEN_GYM') {
+                          const og = item.openGym;
+                          const booked = isOpenGymBooked(og);
+                          const waitlisted = isOpenGymWaitlisted(og);
+                          const full = og.registeredUsers.length >= og.maxParticipants;
+                          const eligibility = checkOpenGymBookingEligibility(og);
+                          return (
+                            <article key={`open-${og.id}`} className={`booking-unified-card open-gym ${!eligibility.eligible && !booked && !waitlisted ? 'restricted' : ''}`} id={`booking-opengym-${og.id}`}>
+                              <div className="booking-card-main">
+                                <span className="booking-kind">Open Gym</span>
+                                <div><strong>אימון חופשי</strong><small>אימון עצמאי בשעות הפעילות ובהשגחה</small></div>
+                              </div>
+                              <div className="booking-card-meta"><b>{og.timeSlot}</b><span>{og.registeredUsers.length}/{og.maxParticipants} רשומים</span></div>
+                              {booked || waitlisted ? (
+                                <button type="button" className="cancel" onClick={() => handleCancelOpenGym(og)}>{waitlisted ? 'בטל המתנה' : 'בטל הרשמה'}</button>
+                              ) : (
+                                <button type="button" onClick={() => handleBookOpenGym(og)}>{full ? 'הצטרף להמתנה' : eligibility.eligible ? 'הרשמה' : 'בדיקת זכאות'}</button>
+                              )}
+                              {booked && <span className="booking-status success">✓ רשום לאימון</span>}
+                              {waitlisted && <span className="booking-status wait">⏳ ברשימת המתנה</span>}
+                              {!booked && !waitlisted && !eligibility.eligible && <span className="booking-reason">{eligibility.reason}</span>}
+                            </article>
+                          );
+                        }
 
-                      <div className="grid grid-cols-3 gap-1 text-center text-[10px] bg-white rounded p-2 my-3 border border-slate-100">
-                        <div className="border-l border-slate-100">
-                          <div className="text-slate-400">מועד</div>
-                          <div className="font-semibold font-mono text-slate-700">{s.date}</div>
-                        </div>
-                        <div className="border-l border-slate-100">
-                          <div className="text-slate-400">שעה</div>
-                          <div className="font-semibold font-mono text-slate-700">{s.time}</div>
-                        </div>
-                        <div>
-                          <div className="text-slate-400">רשומים</div>
-                          <div className={`font-semibold ${isFull ? 'text-rose-500' : 'text-slate-700'}`}>
-                            {s.registeredUsers.length} / {s.maxParticipants}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Requirement restrictions display */}
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {s.ageMin && (
-                          <span className="text-[8px] bg-slate-200 text-slate-600 px-1 py-0.5 rounded">גיל: {s.ageMin}+</span>
-                        )}
-                        {s.genderRestriction !== Gender.ALL && (
-                          <span className="text-[8px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1 py-0.5 rounded">
-                            {s.genderRestriction === Gender.FEMALE ? 'נשים בלבד 🚺' : 'גברים בלבד 🚹'}
-                          </span>
-                        )}
-                        {s.allowedMemberships.length < 5 && (
-                          <span className="text-[8px] bg-amber-50 text-amber-700 border border-amber-100 px-1 py-0.5 rounded">
-                            VIP בלבד
-                          </span>
-                        )}
-                      </div>
+                        const session = item.session;
+                        const booked = isBooked(session);
+                        const waitlisted = isWaitlisted(session);
+                        const full = session.registeredUsers.length >= session.maxParticipants;
+                        const eligibility = checkBookingEligibility(session);
+                        return (
+                          <article key={session.id} className={`booking-unified-card ${session.isPersonalTraining ? 'personal' : 'group'} ${!eligibility.eligible && !booked && !waitlisted ? 'restricted' : ''}`} id={`booking-card-${session.id}`}>
+                            <div className="booking-card-main">
+                              <span className="booking-kind">{session.isPersonalTraining ? 'אישי' : 'קבוצתי'}</span>
+                              <div><strong>{session.title}</strong><small>מאמן: {session.coachName}</small></div>
+                            </div>
+                            <div className="booking-card-meta"><b>{session.time}</b><span>{session.durationMinutes} דקות · {session.registeredUsers.length}/{session.maxParticipants}</span></div>
+                            {booked || waitlisted ? (
+                              <button type="button" className="cancel" onClick={() => handleCancelBooking(session)}>{waitlisted ? 'בטל המתנה' : 'בטל הרשמה'}</button>
+                            ) : (
+                              <button type="button" onClick={() => handleBookSession(session)}>{full ? 'הצטרף להמתנה' : eligibility.eligible ? 'הרשמה' : 'בדיקת זכאות'}</button>
+                            )}
+                            {booked && <span className="booking-status success">✓ רשום לאימון</span>}
+                            {waitlisted && <span className="booking-status wait">⏳ מקום {session.waitlistUsers.indexOf(activeUser.id) + 1} בהמתנה</span>}
+                            {!booked && !waitlisted && !eligibility.eligible && <span className="booking-reason">{eligibility.reason}</span>}
+                            {(booked || waitlisted) && (
+                              <div className="booking-calendar-links">
+                                <a href={getGoogleCalendarLink(session)} target="_blank" rel="noreferrer">Google Calendar</a>
+                                <button type="button" onClick={() => downloadIcsFile(session)}>Apple Calendar</button>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
+                      {dayItems.length === 0 && <div className="booking-day-empty">אין אימונים מתאימים ביום זה</div>}
                     </div>
-
-                    <div className="mt-4 pt-3 border-t border-slate-200 flex flex-col gap-2">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          {booked && <span className="text-xs text-emerald-600 font-bold flex items-center gap-0.5">✓ רשום לאימון!</span>}
-                          {waitlisted && (
-                            <span className="text-xs text-amber-600 font-bold flex items-center gap-0.5">
-                              ⏳ בתור המתנה (מיקום: {s.waitlistUsers.indexOf(activeUser.id) + 1})
-                            </span>
-                          )}
-                        </div>
-                        
-                        {/* Google and Apple Calendar integrations */}
-                        {(booked || waitlisted) && (
-                          <div className="flex gap-1.5">
-                            <a
-                              href={getGoogleCalendarLink(s)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[9px] text-slate-500 hover:text-slate-800 flex items-center gap-0.5 border border-slate-200 py-1 px-2 rounded bg-white"
-                              title="סנכרן ליומן גוגל"
-                            >
-                              Google 🗓️
-                            </a>
-                            <button
-                              onClick={() => downloadIcsFile(s)}
-                              className="text-[9px] text-slate-500 hover:text-slate-800 flex items-center gap-0.5 border border-slate-200 py-1 px-2 rounded bg-white"
-                              title="הורד קובץ יומן Apple"
-                            >
-                              Apple 🗓️
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mobile-card-capacity">
-                        <div>
-                          {Array.from({ length: Math.min(s.maxParticipants, 16) }).map((_, index) => (
-                            <i key={index} className={index < s.registeredUsers.length ? (isFull ? 'filled warning' : 'filled') : ''} />
-                          ))}
-                        </div>
-                        <span>{s.registeredUsers.length} מתוך {s.maxParticipants}</span>
-                      </div>
-
-                      {booked || waitlisted ? (
-                        <button
-                          onClick={() => handleCancelBooking(s)}
-                          className="w-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 py-2 rounded-lg text-xs font-semibold transition"
-                          id={`btn-cancel-session-${s.id}`}
-                        >
-                          {waitlisted ? 'בטל המתנה' : 'בטל הרשמה לאימון'}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleBookSession(s)}
-                          disabled={!checkResult.eligible && activeUser.membershipStatus !== MembershipStatus.ACTIVE}
-                          className={`w-full py-2 rounded-lg text-xs font-semibold transition ${
-                            !checkResult.eligible
-                              ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed'
-                              : isFull
-                              ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                          }`}
-                          id={`btn-book-session-${s.id}`}
-                        >
-                          {isFull ? 'היכנס לתור המתנה' : 'הרשם לאימון'}
-                        </button>
-                      )}
-                      
-                      {/* Booking restriction detail */}
-                      {!booked && !waitlisted && !checkResult.eligible && (
-                        <span className="text-[10px] text-rose-500 font-medium text-center bg-rose-50 p-1.5 rounded border border-rose-100">
-                          ⚠️ {checkResult.reason}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  </section>
                 );
               })}
-              {filteredBookingSessions.length === 0 && (
-                <div className="booking-empty-state">
-                  <CalendarIcon size={28} />
-                  <strong>לא נמצאו אימונים בתאריך ובסינון שנבחרו</strong>
-                  <span>אפשר לבחור תאריך אחר או לנקות את סינון השם והסוג.</span>
-                </div>
-              )}
             </div>
             </>}
           </div>
@@ -2043,11 +2062,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
               {(activeUser.nutritionPlanPaid || traineeNutrition?.isPaid) ? (
                 <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold px-3 py-1 rounded-lg">
-                  ✅ שולם (150 ₪) - תוכנית תזונה מורשית
+                  ✅ שולם (350 ₪) - תוכנית תזונה מורשית
                 </span>
               ) : (
                 <span className="bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold px-3 py-1 rounded-lg">
-                  🔒 בתשלום נוסף פרטני (150 ₪)
+                  🔒 בתשלום נוסף פרטני (350 ₪)
                 </span>
               )}
             </div>
@@ -2064,7 +2083,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   onClick={handlePayNutritionPlan}
                   className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 px-6 rounded-lg shadow-sm transition inline-flex items-center gap-2 cursor-pointer"
                 >
-                  💳 בצע תשלום עבור תוכנית תזונה (150 ₪)
+                  💳 בצע תשלום עבור תוכנית תזונה (350 ₪)
                 </button>
               </div>
             ) : traineeNutrition ? (
