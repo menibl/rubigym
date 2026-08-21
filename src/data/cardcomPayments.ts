@@ -43,6 +43,7 @@ interface CreatePaymentRequest {
 export interface VerifiedCardcomPayment {
   success: true;
   lowProfileId: string;
+  userId?: string;
   membershipType: MembershipType;
   amount: number;
   transactionId: string;
@@ -97,6 +98,7 @@ export const startCardcomPayment = async (request: CreatePaymentRequest) => {
   if (!apiBase) throw new Error('שירות התשלום עדיין לא הוגדר בשרת.');
   const response = await fetch(`${apiBase}/api/payments/cardcom/create`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       userId: request.userId,
@@ -167,11 +169,13 @@ export const verifyPendingCardcomPayment = async (pending: PendingCardcomPayment
   if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
   const response = await fetch(`${apiBase}/api/payments/cardcom/verify`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ lowProfileId: pending.lowProfileId })
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || !result.success) throw new Error(result.message || 'לא ניתן לאמת את העסקה מול Cardcom.');
+  if (result.userId && result.userId !== pending.userId) throw new Error('התשלום אינו משויך למשתמש המחובר.');
   if (result.membershipType !== pending.membershipType) throw new Error('פרטי העסקה אינם תואמים למסלול שנבחר.');
   if (result.mode !== pending.mode) throw new Error('סוג העסקה אינו תואם לפעולה שנבחרה.');
   if ((result.purchaseVariant || undefined) !== pending.purchaseVariant) throw new Error('חבילת התשלום אינה תואמת לחבילה שנבחרה.');

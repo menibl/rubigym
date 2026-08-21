@@ -112,10 +112,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   const [calendarViewMode, setCalendarViewMode] = useState<'HOURLY' | 'CARDS'>('HOURLY');
 
   // Mobile selected day filter: 'ALL' or dayIndex 0..5 (Sunday..Friday)
-  const [mobileSelectedDay, setMobileSelectedDay] = useState<number | 'ALL'>(() => {
-    const todayIdx = new Date().getDay();
-    return todayIdx < 6 ? todayIdx : 0;
-  });
+  const [mobileSelectedDay, setMobileSelectedDay] = useState<number | 'ALL'>('ALL');
 
   // Coach-specific toggle: My Sessions vs All Gym Sessions
   const [coachFilter, setCoachFilter] = useState<'MY_SESSIONS' | 'ALL_SESSIONS'>('ALL_SESSIONS');
@@ -151,8 +148,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
     sunday.setHours(0, 0, 0, 0);
     setCurrentWeekStart(sunday);
 
-    const todayIdx = today.getDay();
-    setMobileSelectedDay(todayIdx < 6 ? todayIdx : 0);
+    setMobileSelectedDay('ALL');
   };
 
   // Helper to format local date YYYY-MM-DD

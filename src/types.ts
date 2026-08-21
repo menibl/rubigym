@@ -359,7 +359,7 @@ export interface User {
 
   // Workout & Nutrition requests
   requestedWorkoutPlan?: boolean; // Trainee requested custom workout program
-  nutritionPlanPaid?: boolean; // Trainee paid for individual nutrition program (150 ILS)
+  nutritionPlanPaid?: boolean; // Trainee paid for nutrition coaching (350 ILS)
 
   // Annual & Monthly membership commitment options
   isMembershipFrozen?: boolean; // Frozen for up to 1 month
@@ -624,7 +624,7 @@ export interface NutritionPlan {
   assistantMessages?: NutritionAssistantMessage[];
   active: boolean;
   isPaid?: boolean; // Paid individual fee
-  price?: number; // Fee amount (e.g., 150 ILS)
+  price?: number; // Fee amount (currently 350 ILS for nutrition coaching)
   paymentStatus?: 'UNPAID' | 'PAID' | 'WAIVED';
 }
 
