@@ -16,6 +16,7 @@ interface UserSettingsModalProps {
   onUpdateUser: (updatedUser: User) => void;
   allUsers: User[];
   onUpdateAllUsers?: (updatedUsers: User[]) => void;
+  onCreateFamilyMember?: (user: User) => Promise<void>;
   discountCodes?: DiscountCode[];
   onUpdateDiscountCodes?: (discountCodes: DiscountCode[]) => void;
   isAdminMode?: boolean; // If opened from admin panel to edit another user
@@ -31,6 +32,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   onUpdateUser,
   allUsers,
   onUpdateAllUsers,
+  onCreateFamilyMember,
   discountCodes = [],
   onUpdateDiscountCodes,
   isAdminMode = false,
@@ -70,6 +72,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [showAddSubMember, setShowAddSubMember] = useState(false);
   const [subName, setSubName] = useState('');
   const [subUsername, setSubUsername] = useState('');
+  const [subEmail, setSubEmail] = useState('');
   const [subPassword, setSubPassword] = useState('');
   const [subPhone, setSubPhone] = useState('');
   const [subBirthDate, setSubBirthDate] = useState('');
@@ -79,6 +82,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [subHealthDeclaration, setSubHealthDeclaration] = useState<HealthDeclarationResult | null>(null);
   const [showSubHealthForm, setShowSubHealthForm] = useState(false);
   const [subAgreementApproved, setSubAgreementApproved] = useState(false);
+  const [subAccountPending, setSubAccountPending] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -325,10 +329,15 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     onOpenFamilyPurchase?.();
   };
 
-  const handleAddFamilyMember = (e: React.FormEvent) => {
+  const handleAddFamilyMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subName.trim() || !subUsername.trim() || !subPassword.trim()) {
-      setMsg({ type: 'error', text: 'אנא מלא שם מלא, שם משתמש וסיסמה עבור בן המשפחה' });
+    const normalizedEmail = subEmail.trim().toLowerCase();
+    if (!subName.trim() || !subUsername.trim() || !normalizedEmail || !subPassword.trim()) {
+      setMsg({ type: 'error', text: 'אנא מלא שם מלא, שם משתמש, אימייל וסיסמה עבור בן המשפחה' });
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setMsg({ type: 'error', text: 'יש להזין כתובת אימייל תקינה עבור בן המשפחה' });
       return;
     }
     if (subPassword.trim().length < 8) {
@@ -336,8 +345,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       return;
     }
 
-    if (allUsers.some(u => u.username?.toLowerCase() === subUsername.trim().toLowerCase())) {
-      setMsg({ type: 'error', text: 'שם המשתמש כבר תפוס' });
+    if (allUsers.some(u => [u.username, u.email].filter(Boolean).some(value => {
+      const normalized = String(value).trim().toLowerCase();
+      return normalized === subUsername.trim().toLowerCase() || normalized === normalizedEmail;
+    }))) {
+      setMsg({ type: 'error', text: 'שם המשתמש או כתובת האימייל כבר תפוסים' });
       return;
     }
     if (!subBirthDate || !subHealthApproved || !subAgreementApproved) {
@@ -358,8 +370,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       name: subName.trim(),
       username: subUsername.trim(),
       password: subPassword.trim(),
-      email: `${subUsername.trim().toLowerCase().replace(/\s+/g, '')}@rubisgym.com`,
-      phone: subPhone.trim() || currentUser.phone,
+      email: normalizedEmail,
+      phone: subPhone.trim(),
       role: UserRole.TRAINEE,
       gender: subGender,
       age: Math.max(0, subAge),
@@ -402,13 +414,23 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       familyPayerId: currentUser.id
     };
 
-    if (onUpdateAllUsers) {
-      onUpdateAllUsers([newSubUser, ...allUsers]);
+    if (!onCreateFamilyMember) {
+      setMsg({ type: 'error', text: 'שירות פתיחת חשבון משפחתי אינו זמין כרגע.' });
+      return;
+    }
+    setSubAccountPending(true);
+    try {
+      await onCreateFamilyMember(newSubUser);
+    } catch (error) {
+      setMsg({ type: 'error', text: error instanceof Error ? error.message : 'לא ניתן היה ליצור את חשבון בן המשפחה.' });
+      setSubAccountPending(false);
+      return;
     }
 
     setShowAddSubMember(false);
     setSubName('');
     setSubUsername('');
+    setSubEmail('');
     setSubPassword('');
     setSubPhone('');
     setSubBirthDate('');
@@ -416,6 +438,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     setSubHealthDeclaration(null);
     setShowSubHealthForm(false);
     setSubAgreementApproved(false);
+    setSubAccountPending(false);
     setMsg({ type: 'success', text: `בן המשפחה ${newSubUser.name} נוסף בהצלחה!` });
   };
 
@@ -773,7 +796,16 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                               className="p-2 border rounded-lg font-mono text-xs"
                             />
                             <input
-                              type="text"
+                              type="email"
+                              required
+                              placeholder="אימייל להתחברות *"
+                              value={subEmail}
+                              onChange={(e) => setSubEmail(e.target.value)}
+                              autoComplete="email"
+                              className="p-2 border rounded-lg text-xs"
+                            />
+                            <input
+                              type="password"
                               required
                               placeholder="סיסמה *"
                               value={subPassword}
@@ -864,9 +896,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                             </button>
                             <button
                               type="submit"
-                              className="px-3 py-1 bg-emerald-600 text-white font-bold rounded-lg text-xs"
+                              disabled={subAccountPending}
+                              className="px-3 py-1 bg-emerald-600 text-white font-bold rounded-lg text-xs disabled:cursor-wait disabled:opacity-60"
                             >
-                              אישור והוספה
+                              {subAccountPending ? 'יוצר חשבון…' : 'אישור והוספה'}
                             </button>
                           </div>
                         </form>

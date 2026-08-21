@@ -137,6 +137,18 @@ activate_release() {
   wait_for_health
 }
 
+install_release_operations() {
+  local sha=$1 target
+  target=$(release_path "${sha}")
+  [[ -f ${target}/deploy/scripts/production-deploy.sh && -f ${target}/deploy/scripts/daily-management.sh && -f ${target}/deploy/scripts/gymflow-ops ]] || {
+    echo "Release ${sha} is missing production operation scripts." >&2
+    return 1
+  }
+  install -m 0755 "${target}/deploy/scripts/production-deploy.sh" /usr/local/lib/gymflow-deploy/production-deploy.sh
+  install -m 0755 "${target}/deploy/scripts/daily-management.sh" /usr/local/lib/gymflow-deploy/daily-management.sh
+  install -m 0755 "${target}/deploy/scripts/gymflow-ops" /usr/local/sbin/gymflow-ops
+}
+
 cleanup_old_releases() {
   mapfile -t releases < <(find "${PRODUCTION_RELEASES}" -mindepth 1 -maxdepth 1 -type d \
     -printf '%T@ %f\n' | sort -nr | awk '{print $2}')
@@ -205,7 +217,7 @@ prepare_release "${target}"
 if [[ -n ${current} ]]; then backup_database "${current}"; fi
 notify "🚀 GymFlow production deployment" "Deploying main commit ${target}."
 
-if activate_release "${target}"; then
+if activate_release "${target}" && install_release_operations "${target}"; then
   [[ -n ${current} ]] && printf '%s\n' "${current}" >"${PREVIOUS_FILE}"
   printf '%s\n' "${target}" >"${CURRENT_FILE}"
   ln -sfn "$(release_path "${target}")" /opt/gymflow/current

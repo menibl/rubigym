@@ -1181,6 +1181,37 @@ option {
   --calendar-accent: var(--app-gold);
 }
 
+.weekly-calendar-root .calendar-event-card {
+  background: #252a35 !important;
+  border-color: #596171 !important;
+  color: #f5f3ea !important;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, .22) !important;
+}
+
+.weekly-calendar-root .calendar-event-card:hover {
+  background: #303642 !important;
+  border-color: #c9a867 !important;
+}
+
+.weekly-calendar-root .calendar-event-open {
+  background: #29243a !important;
+  border-color: #75669a !important;
+}
+
+.weekly-calendar-root .calendar-event-card .text-slate-900,
+.weekly-calendar-root .calendar-event-card .text-slate-800,
+.weekly-calendar-root .calendar-event-card .text-slate-700,
+.weekly-calendar-root .calendar-event-card .text-purple-900,
+.weekly-calendar-root .calendar-event-card .text-sky-950 {
+  color: #fffdf7 !important;
+}
+
+.weekly-calendar-root .calendar-event-card .text-slate-600,
+.weekly-calendar-root .calendar-event-card .text-slate-500,
+.weekly-calendar-root .calendar-event-card .text-slate-400 {
+  color: #d5d7de !important;
+}
+
 .trainee-content,
 #admin-dashboard .bg-white,
 #coach-dashboard .bg-white {
