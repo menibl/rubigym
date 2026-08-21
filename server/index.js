@@ -4,6 +4,7 @@ import {
   clearSessionCookie,
   createAuthenticatedSession,
   getAuthenticatedSession,
+  isValidEmail,
   mergePayloadForUser,
   normalizePhone,
   payloadForUser,
@@ -397,7 +398,9 @@ const handleApi = async (request, env, url) => {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
       const body = await request.json();
       const user = body.user;
-      if (!user?.id || !user?.password || user.role !== 'TRAINEE') return json({ message: 'פרטי ההרשמה אינם תקינים.' }, 400, headers);
+      if (!user?.id || !user?.password || !user?.email || !isValidEmail(user.email) || user.role !== 'TRAINEE') {
+        return json({ message: 'פרטי ההרשמה או כתובת האימייל אינם תקינים.' }, 400, headers);
+      }
       const duplicate = await env.STATE_STORE.getAccountByLogin(clubId, user.username)
         || await env.STATE_STORE.getAccountByLogin(clubId, user.email)
         || await env.STATE_STORE.getAccountByLogin(clubId, user.phone);
@@ -518,7 +521,7 @@ export default {
         successUrl.searchParams.set('cardcom', 'success');
         const cancelUrl = new URL(env.PUBLIC_APP_URL);
         cancelUrl.searchParams.set('cardcom', 'failed');
-        const html = `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>תשלום דמו</title><style>body{margin:0;background:#0b0d12;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh}.card{width:min(92vw,440px);background:#171a22;border:1px solid #333846;border-radius:24px;padding:28px;box-shadow:0 24px 70px #0008}h1{margin:0 0 8px;color:#d7b765}.demo{background:#442b05;color:#ffd78a;padding:10px;border-radius:12px;font-weight:700}.sum{font-size:42px;font-weight:900;margin:24px 0}button,a{display:block;width:100%;box-sizing:border-box;text-align:center;border:0;border-radius:14px;padding:15px;margin-top:10px;font-size:16px;font-weight:900;text-decoration:none}.pay{background:#d7b765;color:#111}.cancel{background:#272b35;color:#ddd}</style><main class="card"><h1>BALY WELLNESS</h1><p>${label.replace(/[<>&"']/g, '')}</p><div class="demo">סביבת דמו בלבד — לא מתבצע חיוב אמיתי</div><div class="sum">₪${amount}</div><button class="pay" onclick="location.href='${successUrl.toString()}'">אישור תשלום דמו</button><a class="cancel" href="${cancelUrl.toString()}">ביטול</a></main></html>`;
+        const html = `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>תשלום דמו</title><style>body{margin:0;background:#0b0d12;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh}.card{width:min(92vw,440px);background:#171a22;border:1px solid #333846;border-radius:24px;padding:28px;box-shadow:0 24px 70px #0008}h1{margin:0 0 8px;color:#d7b765}.demo{background:#442b05;color:#ffd78a;padding:10px;border-radius:12px;font-weight:700}.sum{font-size:42px;font-weight:900;margin:24px 0}a{display:block;width:100%;box-sizing:border-box;text-align:center;border:0;border-radius:14px;padding:15px;margin-top:10px;font-size:16px;font-weight:900;text-decoration:none}.pay{background:#d7b765;color:#111}.cancel{background:#272b35;color:#ddd}</style><main class="card"><h1>BALY WELLNESS</h1><p>${label.replace(/[<>&"']/g, '')}</p><div class="demo">סביבת דמו בלבד — לא מתבצע חיוב אמיתי</div><div class="sum">₪${amount}</div><a class="pay" href="${successUrl.toString()}">אישור תשלום דמו</a><a class="cancel" href="${cancelUrl.toString()}">ביטול</a></main></html>`;
         return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
       } catch {
         return new Response('Invalid demo payment', { status: 400 });
