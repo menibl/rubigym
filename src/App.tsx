@@ -41,7 +41,7 @@ import {
   INITIAL_SETTINGS,
   INITIAL_DISCOUNT_CODES
 } from './data/initialData';
-import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logoutServerSession, registerServerUser, saveClubState, updateServerPassword } from './data/clubServer';
+import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logoutServerSession, registerFamilyMember, registerServerUser, saveClubState, updateServerPassword } from './data/clubServer';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
@@ -294,8 +294,8 @@ export default function App() {
     setMessages(prev => [newMessage, ...prev]);
   };
 
-  const handleGatewayRegistration = async (newUser: User, payment: Payment) => {
-    const { user } = await registerServerUser(newUser, payment);
+  const handleGatewayRegistration = async (newUser: User, payment: Payment, familyUsers: User[] = []) => {
+    const { user } = await registerServerUser(newUser, payment, familyUsers);
     await loadAuthenticatedState(user);
     if (newUser.healthDeclarationRequiresMedicalCertificate) {
       const submittedMessage = newUser.healthDeclarationMedicalCertificateFileName
@@ -315,6 +315,12 @@ export default function App() {
         }));
       setMessages(previous => [...managerMessages, ...previous]);
     }
+  };
+
+  const handleCreateFamilyMember = async (newUser: User) => {
+    await registerFamilyMember(newUser);
+    const latest = await getClubState();
+    applyServerPayload(latest.payload, latest.revision);
   };
 
   const finishServerLogin = async (user: User) => {
@@ -673,6 +679,7 @@ export default function App() {
         onUpdateUser={handleUpdateUser}
         allUsers={users}
         onUpdateAllUsers={setUsers}
+        onCreateFamilyMember={handleCreateFamilyMember}
         discountCodes={discountCodes}
         onUpdateDiscountCodes={setDiscountCodes}
         isAdminMode={activeUser.role === UserRole.MANAGER && userToEdit?.id !== activeUser.id}

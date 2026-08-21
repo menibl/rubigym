@@ -92,25 +92,46 @@ export const loginWithPhone = async (phone: string, otp: string) => {
   return request<{ user: User }>('/api/auth/phone-login', { method: 'POST', body: JSON.stringify({ phone, otp }) });
 };
 
-export const registerServerUser = async (user: User, payment: Payment) => {
+export const registerServerUser = async (user: User, payment: Payment, familyUsers: User[] = []) => {
   if (isPagesDemoMode()) {
     const state = readDemoState();
     const users = (state.payload.users as User[]) || [];
-    if (users.some(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean).some(value =>
-      [user.username, user.email, user.phone].filter(Boolean).some(input => normalizeLogin(String(value)) === normalizeLogin(String(input)))
-    ))) throw new Error('שם המשתמש, האימייל או הטלפון כבר רשומים.');
+    const registrations = [user, ...familyUsers];
+    const identities = registrations.flatMap(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean).map(value => normalizeLogin(String(value))));
+    if (new Set(identities).size !== identities.length || users.some(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean).some(value => identities.includes(normalizeLogin(String(value)))))) {
+      throw new Error('שם המשתמש, האימייל או הטלפון כבר רשומים.');
+    }
+    const passwords = demoPasswords();
+    registrations.forEach(candidate => { passwords[candidate.id] = candidate.password || ''; });
+    localStorage.setItem(DEMO_PASSWORDS_KEY, JSON.stringify(passwords));
+    const { password: _password, ...safeUser } = user;
+    const safeFamilyUsers = familyUsers.map(({ password: _familyPassword, ...candidate }) => candidate as User);
+    const next = writeDemoState({
+      payload: { ...state.payload, users: [safeUser, ...safeFamilyUsers, ...users], payments: [payment, ...((state.payload.payments as Payment[]) || [])] },
+      revision: state.revision + 1
+    });
+    localStorage.setItem(DEMO_SESSION_KEY, safeUser.id);
+    return { user: safeUser as User, familyUsers: safeFamilyUsers, revision: next.revision };
+  }
+  return request<{ user: User; familyUsers: User[]; revision: number }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ user, payment, familyUsers }) });
+};
+
+export const registerFamilyMember = async (user: User) => {
+  if (isPagesDemoMode()) {
+    const state = readDemoState();
+    const users = (state.payload.users as User[]) || [];
+    const identities = [user.username, user.email, user.phone].filter(Boolean).map(value => normalizeLogin(String(value)));
+    if (users.some(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean).some(value => identities.includes(normalizeLogin(String(value)))))) {
+      throw new Error('שם המשתמש, האימייל או הטלפון כבר רשומים.');
+    }
     const passwords = demoPasswords();
     passwords[user.id] = user.password || '';
     localStorage.setItem(DEMO_PASSWORDS_KEY, JSON.stringify(passwords));
     const { password: _password, ...safeUser } = user;
-    const next = writeDemoState({
-      payload: { ...state.payload, users: [safeUser, ...users], payments: [payment, ...((state.payload.payments as Payment[]) || [])] },
-      revision: state.revision + 1
-    });
-    localStorage.setItem(DEMO_SESSION_KEY, safeUser.id);
+    const next = writeDemoState({ payload: { ...state.payload, users: [safeUser, ...users] }, revision: state.revision + 1 });
     return { user: safeUser as User, revision: next.revision };
   }
-  return request<{ user: User; revision: number }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ user, payment }) });
+  return request<{ user: User; revision: number }>('/api/auth/family-members', { method: 'POST', body: JSON.stringify({ user }) });
 };
 
 export const logoutServerSession = async () => {

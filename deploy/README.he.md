@@ -327,6 +327,8 @@ sudo /usr/local/sbin/gymflow-ops daily
 
 `deploy-main`, `rollback` ו־`restart-app` מחייבים אישור מפורש בטלגרם. OpenClaw משתמש ב־`/usr/local/bin/gymflow-prod`, שמעביר רק שם פעולה יחיד ל־broker המוגבל. אין פקודת shell כללית ואין אפשרות להעביר ארגומנטים חופשיים ל־broker.
 
+לאחר שינוי ערך ב־`/etc/gymflow/production.env`, לרבות `OPENAI_API_KEY`, יש להפעיל `restart-app`. הפקודה יוצרת מחדש את קונטיינר האפליקציה כדי לטעון את משתני הסביבה המעודכנים; אתחול רגיל של קונטיינר קיים אינו טוען אותם מחדש. אין צורך לבצע `deploy-main` אם קוד האפליקציה לא השתנה.
+
 ## שלב 8 — פריסה, גיבוי ו־rollback
 
 בכל commit חדש ב־main:
