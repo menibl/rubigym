@@ -3,13 +3,8 @@ import {
   ArrowLeft,
   CheckCircle2,
   CreditCard,
-  Dumbbell,
-  KeyRound,
   LockKeyhole,
-  MessageSquareText,
   Phone,
-  ShieldCheck,
-  UserPlus,
   BellRing,
   HeartPulse
 } from 'lucide-react';
@@ -46,6 +41,7 @@ import {
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { createMembershipTerm } from '../data/membershipPolicy';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
+import { PublicLandingPage } from './PublicLandingPage';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 import { isPagesDemoMode } from '../data/appMode';
 
@@ -474,40 +470,17 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
 
   if (screen === 'welcome') {
     return (
-      <main className="auth-gateway" dir="rtl">
-        <section className="auth-hero">
-          <div className="auth-brand">
-            <RubisLogo size={190} className="auth-brand-logo" />
-          </div>
-          <div className="auth-kicker">המקום שלך להתחזק, להתאזן ולהרגיש טוב</div>
-          <h1>האימון שלך.<br />בקצב שלך.</h1>
-          <p>אימונים קבוצתיים, Open Gym, תוכניות אישיות וליווי מקצועי — הכול במקום אחד.</p>
-          <div className="auth-benefits">
-            <div><Dumbbell size={18} /><span>אימונים מותאמים</span></div>
-            <div><ShieldCheck size={18} /><span>ליווי מקצועי</span></div>
-            <div><MessageSquareText size={18} /><span>קשר ישיר עם המאמן</span></div>
-          </div>
-          <div className="auth-actions">
-            <button className="auth-primary" onClick={() => openScreen('register')}>
-              <UserPlus size={18} /> הרשמה למועדון
-            </button>
-            <button className="auth-secondary" onClick={() => openScreen('login')}>
-              <KeyRound size={18} /> LOGIN
-            </button>
-          </div>
-          <section className="auth-contact" aria-label="יצירת קשר עם המועדון">
-            <div>
-              <span>יצירת קשר עם המועדון</span>
-              <strong>מנהל: רובי באלי</strong>
-              <a href="tel:+972546995885" dir="ltr"><Phone size={16} /> 054-6995885</a>
-            </div>
-            <a className="auth-whatsapp" href="https://wa.me/972546995885" target="_blank" rel="noopener noreferrer" aria-label="שליחת הודעת WhatsApp לרובי באלי">
-              <MessageSquareText size={19} /> הודעה ב־WhatsApp
-            </a>
-          </section>
-          <small className="auth-legal">בהמשך ההרשמה מאשרים את תקנון המועדון והצהרת הבריאות.</small>
-        </section>
-      </main>
+      <PublicLandingPage
+        plans={registrationPlans}
+        onLogin={() => openScreen('login')}
+        onRegister={plan => {
+          if (plan) {
+            setSelectedPlan(plan);
+            setIsFamilyPlan(false);
+          }
+          openScreen('register');
+        }}
+      />
     );
   }
 
