@@ -7,6 +7,7 @@ const sessionLifetimeMs = 30 * 24 * 60 * 60 * 1000;
 
 export const normalizeLogin = value => String(value || '').trim().toLowerCase();
 export const normalizePhone = value => String(value || '').replace(/\D/g, '');
+export const isValidEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeLogin(value));
 
 export const hashPassword = async password => {
   const salt = randomBytes(16);

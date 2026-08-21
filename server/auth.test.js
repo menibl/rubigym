@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hashPassword, mergePayloadForUser, payloadForUser, verifyPassword } from './auth.js';
+import { hashPassword, isValidEmail, mergePayloadForUser, payloadForUser, verifyPassword } from './auth.js';
+
+test('validates email addresses used as login identities', () => {
+  assert.equal(isValidEmail('trainee@example.com'), true);
+  assert.equal(isValidEmail(' Coach.Name+gym@Example.CO.IL '), true);
+  assert.equal(isValidEmail('missing-at.example.com'), false);
+  assert.equal(isValidEmail('missing-domain@'), false);
+});
 
 test('password hashes verify without storing plaintext', async () => {
   const hash = await hashPassword('Strong-password-42');

@@ -288,10 +288,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     event.preventDefault();
     const name = newCoach.name.trim();
     const username = newCoach.username.trim();
+    const email = newCoach.email.trim().toLowerCase();
     const password = newCoach.password.trim();
-    if (!name || !username || password.length < 4) return;
-    if (users.some(user => user.username?.toLowerCase() === username.toLowerCase())) {
-      window.alert('שם המשתמש כבר קיים במערכת.');
+    if (!name || !username || !email || password.length < 8) return;
+    if (users.some(user => [user.username, user.email].filter(Boolean).some(value => value?.trim().toLowerCase() === username.toLowerCase() || value?.trim().toLowerCase() === email))) {
+      window.alert('שם המשתמש או כתובת האימייל כבר קיימים במערכת.');
       return;
     }
     const coach: User = {
@@ -299,7 +300,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       name,
       username,
       password,
-      email: newCoach.email.trim(),
+      email,
       phone: newCoach.phone.trim(),
       role: UserRole.COACH,
       gender: Gender.ALL,
@@ -1308,9 +1309,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <input required value={newCoach.name} onChange={event => setNewCoach(current => ({ ...current, name: event.target.value }))} placeholder="שם מלא" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
                   <input required value={newCoach.username} onChange={event => setNewCoach(current => ({ ...current, username: event.target.value }))} placeholder="שם משתמש" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
-                  <input required minLength={4} type="password" value={newCoach.password} onChange={event => setNewCoach(current => ({ ...current, password: event.target.value }))} placeholder="סיסמה, לפחות 4 תווים" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
+                  <input required minLength={8} type="password" value={newCoach.password} onChange={event => setNewCoach(current => ({ ...current, password: event.target.value }))} placeholder="סיסמה, לפחות 8 תווים" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
                   <input value={newCoach.phone} onChange={event => setNewCoach(current => ({ ...current, phone: event.target.value }))} placeholder="טלפון" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
-                  <input type="email" value={newCoach.email} onChange={event => setNewCoach(current => ({ ...current, email: event.target.value }))} placeholder="דוא״ל" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
+                  <input required type="email" value={newCoach.email} onChange={event => setNewCoach(current => ({ ...current, email: event.target.value }))} placeholder="דוא״ל" autoComplete="email" className="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
                 </div>
                 <div className="mt-3 flex gap-2"><button type="submit" className="rounded-xl bg-indigo-700 px-5 py-2.5 text-xs font-black text-white">צור חשבון מאמן</button><button type="button" onClick={() => setShowAddCoach(false)} className="rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600">ביטול</button></div>
               </form>

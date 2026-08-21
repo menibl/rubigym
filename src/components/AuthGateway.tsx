@@ -62,6 +62,7 @@ type AuthScreen = 'welcome' | 'login' | 'register';
 type LoginMethod = 'password' | 'phone';
 
 const TEST_OTP = '1111';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const calculateAge = (birthDate: string) => {
   const birth = new Date(birthDate);
   const today = new Date();
@@ -86,6 +87,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [registerOtp, setRegisterOtp] = useState('');
   const [registerName, setRegisterName] = useState('');
   const [registerUsername, setRegisterUsername] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   const [registerBirthDate, setRegisterBirthDate] = useState('');
   const [registerGender, setRegisterGender] = useState<Gender>(Gender.FEMALE);
@@ -245,8 +247,13 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const handleRegistrationDetails = async (event: React.FormEvent) => {
     event.preventDefault();
     resetMessages();
-    if (!registerName.trim() || !registerUsername.trim() || !registerPassword || !registerBirthDate) {
+    const normalizedEmail = registerEmail.trim().toLowerCase();
+    if (!registerName.trim() || !registerUsername.trim() || !normalizedEmail || !registerPassword || !registerBirthDate) {
       setError('יש להשלים את כל השדות.');
+      return;
+    }
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setError('יש להזין כתובת אימייל תקינה.');
       return;
     }
     if (registerPassword.length < 8) {
@@ -255,6 +262,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     }
     if (users.some(item => item.username?.toLowerCase() === registerUsername.trim().toLowerCase())) {
       setError('שם המשתמש כבר תפוס.');
+      return;
+    }
+    if (users.some(item => item.email?.trim().toLowerCase() === normalizedEmail)) {
+      setError('כתובת האימייל כבר רשומה. ניתן לעבור למסך הכניסה.');
       return;
     }
     if (!healthApproved) {
@@ -315,7 +326,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       name: registerName.trim(),
       username: registerUsername.trim(),
       password: registerPassword,
-      email: `${registerUsername.trim().toLowerCase().replace(/\s+/g, '')}@balywellness.co.il`,
+      email: registerEmail.trim().toLowerCase(),
       phone: registerPhone.trim(),
       role: UserRole.TRAINEE,
       gender: registerGender,
@@ -440,7 +451,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
             {demoMode && <div className="auth-message notice">סביבת הדגמה — פרטי הכניסה של רובי כבר מולאו. אפשר גם להיכנס בטלפון 054-6995885 עם הקוד 1111.</div>}
             <div className="auth-method-tabs">
               <button className={loginMethod === 'password' ? 'active' : ''} onClick={() => { setLoginMethod('password'); resetMessages(); }}>
-                <LockKeyhole size={16} /> משתמש וסיסמה
+                <LockKeyhole size={16} /> משתמש / אימייל וסיסמה
               </button>
               <button className={loginMethod === 'phone' ? 'active' : ''} onClick={() => { setLoginMethod('phone'); resetMessages(); }}>
                 <Phone size={16} /> טלפון ו־SMS
@@ -449,7 +460,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
 
             {loginMethod === 'password' ? (
               <form onSubmit={handlePasswordLogin} className="auth-form">
-                <label>שם משתמש או אימייל<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" /></label>
+                <label>שם משתמש או אימייל<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" placeholder="שם משתמש או name@example.com" /></label>
                 <label>סיסמה<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label>
                 <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? 'מתחבר…' : 'כניסה'}</button>
               </form>
@@ -487,6 +498,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
               <form onSubmit={handleRegistrationDetails} className="auth-form">
                 <label>שם מלא<input value={registerName} onChange={event => setRegisterName(event.target.value)} /></label>
                 <label>שם משתמש<input value={registerUsername} onChange={event => setRegisterUsername(event.target.value)} autoComplete="username" /></label>
+                <label>כתובת אימייל<input required type="email" value={registerEmail} onChange={event => setRegisterEmail(event.target.value)} autoComplete="email" placeholder="name@example.com" /></label>
                 <label>סיסמה<input type="password" value={registerPassword} onChange={event => setRegisterPassword(event.target.value)} autoComplete="new-password" /></label>
                 <label>תאריך לידה<input type="date" value={registerBirthDate} onChange={event => setRegisterBirthDate(event.target.value)} /></label>
                 <div className="auth-gender">

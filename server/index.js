@@ -4,6 +4,7 @@ import {
   clearSessionCookie,
   createAuthenticatedSession,
   getAuthenticatedSession,
+  isValidEmail,
   mergePayloadForUser,
   normalizePhone,
   payloadForUser,
@@ -397,7 +398,9 @@ const handleApi = async (request, env, url) => {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
       const body = await request.json();
       const user = body.user;
-      if (!user?.id || !user?.password || user.role !== 'TRAINEE') return json({ message: 'פרטי ההרשמה אינם תקינים.' }, 400, headers);
+      if (!user?.id || !user?.password || !user?.email || !isValidEmail(user.email) || user.role !== 'TRAINEE') {
+        return json({ message: 'פרטי ההרשמה או כתובת האימייל אינם תקינים.' }, 400, headers);
+      }
       const duplicate = await env.STATE_STORE.getAccountByLogin(clubId, user.username)
         || await env.STATE_STORE.getAccountByLogin(clubId, user.email)
         || await env.STATE_STORE.getAccountByLogin(clubId, user.phone);
