@@ -691,6 +691,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       traineeName: trainee.name,
       amount: paymentAmount,
       date: new Date().toISOString().split('T')[0],
+      timestamp: new Date().toISOString(),
       status: 'PAID',
       membershipTypePurchased: purchasedType,
       paymentMethod: 'סליקה מדומה (כרטיס אשראי)',

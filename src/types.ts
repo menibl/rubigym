@@ -694,6 +694,7 @@ export interface Payment {
   traineeName: string;
   amount: number;
   date: string; // YYYY-MM-DD
+  timestamp?: string; // ISO timestamp used for real-time staff alerts
   status: 'PAID' | 'REFUNDED' | 'PENDING';
   membershipTypePurchased: MembershipType;
   paymentMethod: string;
