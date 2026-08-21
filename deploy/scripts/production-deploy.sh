@@ -31,7 +31,7 @@ COMPOSE_BAKE=false
 export DOCKER_CONFIG COMPOSE_BAKE
 
 [[ -r ${PRODUCTION_ENV_FILE} ]] || { echo "Missing ${PRODUCTION_ENV_FILE}" >&2; exit 1; }
-if grep -Eq 'CHANGE_ME|replace-with|example\.com' "${PRODUCTION_ENV_FILE}"; then
+if grep -Eiq 'CHANGE_ME|replace-with|example\.com|your-production-domain|YOUR_DOMAIN' "${PRODUCTION_ENV_FILE}"; then
   echo "Production environment still contains placeholder values." >&2
   exit 1
 fi
