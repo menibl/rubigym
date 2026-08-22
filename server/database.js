@@ -73,6 +73,25 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions (expires_at);
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      club_id text NOT NULL,
+      user_id text NOT NULL,
+      endpoint text NOT NULL,
+      p256dh text NOT NULL,
+      auth text NOT NULL,
+      user_agent text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (club_id, user_id, endpoint)
+    );
+    CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx ON push_subscriptions (club_id, user_id);
+    CREATE TABLE IF NOT EXISTS push_deliveries (
+      club_id text NOT NULL,
+      delivery_key text NOT NULL,
+      delivered_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (club_id, delivery_key)
+    );
+    CREATE INDEX IF NOT EXISTS push_deliveries_time_idx ON push_deliveries (delivered_at);
   `);
   return {
     async getClubState(clubId) {
@@ -163,6 +182,34 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
     },
     async deleteSession(tokenHash) {
       await pool.query('DELETE FROM auth_sessions WHERE token_hash=$1', [tokenHash]);
+    },
+    async upsertPushSubscription(clubId, userId, subscription, userAgent) {
+      await pool.query(`INSERT INTO push_subscriptions (club_id,user_id,endpoint,p256dh,auth,user_agent)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        ON CONFLICT (club_id,user_id,endpoint) DO UPDATE SET
+          p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,user_agent=EXCLUDED.user_agent,updated_at=now()`,
+      [clubId, userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, userAgent || null]);
+    },
+    async deletePushSubscription(clubId, userId, endpoint) {
+      await pool.query('DELETE FROM push_subscriptions WHERE club_id=$1 AND user_id=$2 AND ($3::text IS NULL OR endpoint=$3)', [clubId, userId, endpoint || null]);
+    },
+    async getPushSubscriptions(clubId, userIds) {
+      if (!userIds.length) return [];
+      const result = await pool.query(`SELECT user_id,endpoint,p256dh,auth FROM push_subscriptions
+        WHERE club_id=$1 AND user_id = ANY($2::text[])`, [clubId, userIds]);
+      return result.rows;
+    },
+    async claimPushDelivery(clubId, deliveryKey) {
+      const result = await pool.query(`INSERT INTO push_deliveries (club_id,delivery_key) VALUES ($1,$2)
+        ON CONFLICT DO NOTHING RETURNING delivery_key`, [clubId, deliveryKey]);
+      return result.rowCount === 1;
+    },
+    async releasePushDelivery(clubId, deliveryKey) {
+      await pool.query('DELETE FROM push_deliveries WHERE club_id=$1 AND delivery_key=$2', [clubId, deliveryKey]);
+    },
+    async getAllClubStates() {
+      const result = await pool.query('SELECT club_id,payload FROM club_state');
+      return result.rows;
     },
     async close() { await pool.end(); }
   };

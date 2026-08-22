@@ -407,7 +407,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
 
             {onOpenCreateSessionModal && (
               <button
-                onClick={onOpenCreateSessionModal}
+                onClick={() => onOpenCreateSessionModal()}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
