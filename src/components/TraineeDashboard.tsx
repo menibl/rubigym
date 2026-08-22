@@ -2474,7 +2474,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <div className="scanner-frame"><video ref={scannerVideoRef} muted playsInline /></div>
                 {scannerError && <p className="mt-3 text-xs leading-5 text-amber-200">{scannerError}</p>}
                 <div className="scanner-actions">
-                  <button type="button" onClick={completeClubScan}>אישור סריקת בדיקה</button>
+                  <button type="button" onClick={() => completeClubScan()}>אישור סריקת בדיקה</button>
                   <button type="button" className="secondary" onClick={stopScanner}>סגירה</button>
                 </div>
               </div>
