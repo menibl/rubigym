@@ -41,7 +41,7 @@ import {
   INITIAL_SETTINGS,
   INITIAL_DISCOUNT_CODES
 } from './data/initialData';
-import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logoutServerSession, registerFamilyMember, registerServerUser, saveClubState, updateServerPassword } from './data/clubServer';
+import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logoutServerSession, registerFamilyMember, registerServerUser, saveClubState, syncServerPushSubscription, updateServerPassword } from './data/clubServer';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
@@ -53,6 +53,7 @@ import { ClubWorkoutDisplay } from './components/ClubWorkoutDisplay';
 import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
 import { isMembershipCancellationEffective } from './data/membershipPolicy';
 import { hasNotificationMarker, saveNotificationMarker, showBrowserNotification } from './utils/browserNotifications';
+import { isPagesDemoMode } from './data/appMode';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const isClubWorkoutDisplay = () => window.location.hash === '#club-workout-display';
@@ -193,9 +194,18 @@ export default function App() {
     };
   }, []);
 
+  // Keep this authenticated device registered for production Web Push.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void syncServerPushSubscription(Boolean(activeUser.pushNotificationsEnabled)).catch(error => {
+      console.warn('Unable to synchronize push subscription', error);
+    });
+  }, [activeUser.id, activeUser.pushNotificationsEnabled, isAuthenticated]);
+
   // In-app notification delivery while the application is open.
   useEffect(() => {
     if (
+      !isPagesDemoMode() ||
       !isAuthenticated ||
       !activeUser.pushNotificationsEnabled ||
       !('Notification' in window) ||
