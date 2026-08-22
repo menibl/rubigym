@@ -1,4 +1,5 @@
 import { handleWorkoutAi, resolveOpenAiApiKey } from './workout-ai.js';
+import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validatePushSubscription } from './push.js';
 import {
   accountFromUser,
   clearSessionCookie,
@@ -208,7 +209,7 @@ const corsHeaders = (request, env) => {
   return allowed.includes(origin) ? {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
     'Access-Control-Allow-Credentials': 'true',
     'Vary': 'Origin'
   } : {};
@@ -364,7 +365,14 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
       }, ...(state.payload.payments || [])]
     };
     const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', payload, state.revision);
-    if (!saved.conflict) return;
+    if (!saved.conflict) {
+      try {
+        await dispatchStateChangePushes(env.STATE_STORE, env, env.CLUB_ID || 'baly-wellness', state.payload, payload);
+      } catch (error) {
+        console.warn('Unable to dispatch payment push notification', error?.message || error);
+      }
+      return;
+    }
   }
   throw new Error('PAYMENT_STATE_CONFLICT');
 };
@@ -500,6 +508,14 @@ const handleApi = async (request, env, url) => {
       return account ? { session, account } : null;
     };
 
+    const notifyStateChange = async (stateBefore, stateAfter, targetClubId = clubId) => {
+      try {
+        await dispatchStateChangePushes(env.STATE_STORE, env, targetClubId, stateBefore, stateAfter);
+      } catch (error) {
+        console.warn('Unable to dispatch state change push notifications', error?.message || error);
+      }
+    };
+
     if (url.pathname === '/api/auth/login' && request.method === 'POST') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
       const body = await request.json();
@@ -600,6 +616,7 @@ const handleApi = async (request, env, url) => {
       for (const candidate of registrations) {
         await env.STATE_STORE.upsertAccount(await accountFromUser(clubId, stripCredentials(candidate), candidate.password));
       }
+      await notifyStateChange(state.payload, nextPayload);
       const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, safeUser.id);
       return json({ user: safeUser, familyUsers: safeFamilyUsers, revision: saved.revision }, 201, { ...headers, 'Set-Cookie': auth.cookie });
     }
@@ -633,7 +650,50 @@ const handleApi = async (request, env, url) => {
       }, state.revision);
       if (saved.conflict) return json(saved, 409, headers);
       await env.STATE_STORE.upsertAccount(await accountFromUser(identity.session.club_id, safeUser, candidate.password));
+      await notifyStateChange(state.payload, {
+        ...state.payload,
+        users: [safeUser, ...(state.payload.users || [])]
+      }, identity.session.club_id);
       return json({ user: safeUser, revision: saved.revision }, 201, headers);
+    }
+    if (url.pathname === '/api/push/public-key' && request.method === 'GET') {
+      return isPushConfigured(env)
+        ? json({publicKey: env.VAPID_PUBLIC_KEY}, 200, headers)
+        : json({message: 'Push notifications are not configured'}, 503, headers);
+    }
+    if (url.pathname === '/api/push/subscriptions' && request.method === 'POST') {
+      if (!env.STATE_STORE || !isPushConfigured(env)) return json({message: 'Push notifications are not configured'}, 503, headers);
+      const identity = await getIdentity();
+      if (!identity) return json({message: 'Unauthorized'}, 401, headers);
+      const subscription = validatePushSubscription(await request.json());
+      if (!subscription) return json({message: 'Invalid push subscription'}, 400, headers);
+      await env.STATE_STORE.upsertPushSubscription(
+        identity.session.club_id,
+        identity.account.user_id,
+        subscription,
+        request.headers.get('User-Agent')?.slice(0, 500)
+      );
+      return json({ok: true}, 201, headers);
+    }
+    if (url.pathname === '/api/push/subscriptions' && request.method === 'DELETE') {
+      if (!env.STATE_STORE) return json({message: 'Database is not configured'}, 503, headers);
+      const identity = await getIdentity();
+      if (!identity) return json({message: 'Unauthorized'}, 401, headers);
+      const body = await request.json().catch(() => ({}));
+      await env.STATE_STORE.deletePushSubscription(identity.session.club_id, identity.account.user_id, body.endpoint);
+      return json({ok: true}, 200, headers);
+    }
+    if (url.pathname === '/api/push/test' && request.method === 'POST') {
+      if (!env.STATE_STORE || !isPushConfigured(env)) return json({message: 'Push notifications are not configured'}, 503, headers);
+      const identity = await getIdentity();
+      if (!identity) return json({message: 'Unauthorized'}, 401, headers);
+      const result = await sendPushToUsers(env.STATE_STORE, env, identity.session.club_id, [identity.account.user_id], {
+        title: 'התראות BALY WELLNESS פעילות',
+        body: 'המכשיר מחובר בהצלחה לקבלת עדכונים ותזכורות.',
+        tag: `push-test-${identity.account.user_id}`,
+        url: '/',
+      });
+      return json({ok: true, ...result}, 200, headers);
     }
     if (url.pathname === '/api/live-display/active' && request.method === 'GET') {
       const program = env.STATE_STORE ? await env.STATE_STORE.getActiveProgram(env.CLUB_ID || 'baly-wellness') : liveDisplayState.program;
@@ -702,6 +762,7 @@ const handleApi = async (request, env, url) => {
         for (const user of merged.users || []) {
           if (await env.STATE_STORE.getAccount(identity.session.club_id, user.id)) await env.STATE_STORE.updateAccountIdentity(identity.session.club_id, user);
         }
+        await notifyStateChange(current.payload, merged, identity.session.club_id);
       }
       return result.conflict ? json(result, 409, headers) : json(result, 200, headers);
     }

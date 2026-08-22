@@ -307,12 +307,18 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       return;
     }
 
-    if (pushApproved && 'Notification' in window && Notification.permission === 'default') {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
+    if (pushApproved) {
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         setPushApproved(false);
         setPushWorkoutReminders(false);
-        setNotice('הדפדפן לא אישר התראות. ניתן להפעיל אותן מאוחר יותר בפרופיל.');
+        setNotice('המכשיר אינו תומך כרגע ב־PUSH. ב־iPhone ניתן להפעיל לאחר התקנת האפליקציה במסך הבית.');
+      } else if (Notification.permission === 'default') {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          setPushApproved(false);
+          setPushWorkoutReminders(false);
+          setNotice('הדפדפן לא אישר התראות. ניתן להפעיל אותן מאוחר יותר בפרופיל.');
+        }
       }
     }
 
@@ -385,7 +391,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       healthDeclarationHistory: [healthRecord],
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
-      pushNotificationsEnabled: pushApproved && (!('Notification' in window) || Notification.permission === 'granted'),
+      pushNotificationsEnabled: pushApproved && 'Notification' in window && Notification.permission === 'granted',
       workoutRemindersEnabled: pushApproved && pushWorkoutReminders,
       membershipType: isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan,
       membershipStatus: MembershipStatus.ACTIVE,

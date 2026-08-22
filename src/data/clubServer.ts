@@ -152,6 +152,51 @@ export const updateServerPassword = async (password: string) => {
   return request<{ ok: boolean }>('/api/auth/password', { method: 'PUT', body: JSON.stringify({ password }) });
 };
 
+const urlBase64ToBytes = (value: string) => {
+  const padded = `${value}${'='.repeat((4 - value.length % 4) % 4)}`.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(padded), character => character.charCodeAt(0));
+};
+
+export const syncServerPushSubscription = async (enabled: boolean) => {
+  if (isPagesDemoMode() || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return {supported: false, subscribed: false};
+  }
+
+  const registration = await navigator.serviceWorker.ready;
+  const existing = await registration.pushManager.getSubscription();
+
+  if (!enabled) {
+    if (existing) {
+      await request<{ok: boolean}>('/api/push/subscriptions', {
+        method: 'DELETE',
+        body: JSON.stringify({endpoint: existing.endpoint}),
+      });
+      await existing.unsubscribe();
+    }
+    return {supported: true, subscribed: false};
+  }
+
+  if (!('Notification' in window) || Notification.permission !== 'granted') {
+    return {supported: true, subscribed: false};
+  }
+
+  const {publicKey} = await request<{publicKey: string}>('/api/push/public-key');
+  const subscription = existing || await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToBytes(publicKey),
+  });
+  await request<{ok: boolean}>('/api/push/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(subscription.toJSON()),
+  });
+  return {supported: true, subscribed: true};
+};
+
+export const sendPushTest = async () => {
+  if (isPagesDemoMode()) return {ok: false, sent: 0};
+  return request<{ok: boolean; sent: number}>('/api/push/test', {method: 'POST'});
+};
+
 export const getClubState = async () => isPagesDemoMode() ? readDemoState() : request<ClubStateEnvelope>('/api/state');
 
 export const saveClubState = async (payload: Record<string, unknown>, expectedRevision: number) => {

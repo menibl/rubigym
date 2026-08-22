@@ -49,3 +49,22 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions (expires_at);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  club_id text NOT NULL,
+  user_id text NOT NULL,
+  endpoint text NOT NULL,
+  p256dh text NOT NULL,
+  auth text NOT NULL,
+  user_agent text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (club_id, user_id, endpoint)
+);
+CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx ON push_subscriptions (club_id, user_id);
+CREATE TABLE IF NOT EXISTS push_deliveries (
+  club_id text NOT NULL,
+  delivery_key text NOT NULL,
+  delivered_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (club_id, delivery_key)
+);
+CREATE INDEX IF NOT EXISTS push_deliveries_time_idx ON push_deliveries (delivered_at);
