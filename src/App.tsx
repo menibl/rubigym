@@ -369,9 +369,10 @@ export default function App() {
     return user;
   };
 
-  const handlePasswordLogin = async (login: string, password: string) => {
-    const { user } = await loginWithPassword(login, password);
-    return finishServerLogin(user);
+  const handlePasswordLogin = async (login: string, password: string, otp = '') => {
+    const result = await loginWithPassword(login, password, otp);
+    if ('user' in result) return { user: await finishServerLogin(result.user) };
+    return result;
   };
 
   const handlePhoneLogin = async (phone: string, otp: string) => {

@@ -70,16 +70,25 @@ export const getServerSession = async () => {
   return request<{ authenticated: boolean; user: User }>('/api/auth/session');
 };
 
-export const loginWithPassword = async (login: string, password: string) => {
+export type PasswordLoginResult = { user: User } | {
+  requiresSmsVerification: true;
+  maskedPhone: string;
+  expiresInSeconds: number;
+  testMode?: boolean;
+};
+
+export const loginWithPassword = async (login: string, password: string, otp = ''): Promise<PasswordLoginResult> => {
   if (isPagesDemoMode()) {
     const user = findDemoUser(login);
     const passwords = demoPasswords();
     const expected = passwords[user?.id || ''] || (user?.id === 'user-robi' ? import.meta.env.VITE_DEMO_MANAGER_PASSWORD : '');
     if (!user || !expected || password !== expected) throw new Error('שם המשתמש או הסיסמה אינם נכונים.');
+    if (!otp) return { requiresSmsVerification: true, maskedPhone: `***-***-${String(user.phone || '').replace(/\D/g, '').slice(-4)}`, expiresInSeconds: 300, testMode: true };
+    if (otp !== '1111') throw new Error('קוד האימות אינו תקין או שפג תוקפו.');
     localStorage.setItem(DEMO_SESSION_KEY, user.id);
     return { user };
   }
-  return request<{ user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ login, password }) });
+  return request<PasswordLoginResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ login, password, otp: otp || undefined }) });
 };
 
 export const loginWithPhone = async (phone: string, otp: string) => {
