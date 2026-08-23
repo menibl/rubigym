@@ -3,13 +3,8 @@ import {
   ArrowLeft,
   CheckCircle2,
   CreditCard,
-  Dumbbell,
-  KeyRound,
   LockKeyhole,
-  MessageSquareText,
   Phone,
-  ShieldCheck,
-  UserPlus,
   BellRing,
   HeartPulse
 } from 'lucide-react';
@@ -58,9 +53,12 @@ interface AuthGatewayProps {
   onRequestPhoneCode: (phone: string, purpose: 'LOGIN' | 'REGISTER') => Promise<{ ok: true; expiresInSeconds: number; testMode?: boolean }>;
   onVerifyRegistrationPhone: (phone: string, otp: string) => Promise<{ verified: true; phoneVerificationToken: string }>;
   onRegister: (user: User, payment: Payment, familyUsers?: User[], phoneVerificationToken?: string) => Promise<void>;
+  initialScreen?: 'login' | 'register';
+  initialPlan?: MembershipType;
+  landingUrl?: string;
 }
 
-type AuthScreen = 'welcome' | 'login' | 'register';
+type AuthScreen = 'login' | 'register';
 type LoginMethod = 'password' | 'phone';
 type FamilyAccountDraft = {
   name: string;
@@ -82,10 +80,10 @@ const calculateAge = (birthDate: string) => {
   return Math.max(age, 0);
 };
 
-export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRequestPhoneCode, onVerifyRegistrationPhone, onRegister }) => {
+export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRequestPhoneCode, onVerifyRegistrationPhone, onRegister, initialScreen = 'login', initialPlan, landingUrl }) => {
   const demoMode = isPagesDemoMode();
   const demoManagerPassword = import.meta.env.VITE_DEMO_MANAGER_PASSWORD || '';
-  const [screen, setScreen] = useState<AuthScreen>('welcome');
+  const [screen, setScreen] = useState<AuthScreen>(initialScreen);
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
   const [username, setUsername] = useState(demoMode ? 'רובי באלי' : '');
   const [password, setPassword] = useState(demoMode ? demoManagerPassword : '');
@@ -108,7 +106,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [agreementApproved, setAgreementApproved] = useState(false);
   const [pushApproved, setPushApproved] = useState(false);
   const [pushWorkoutReminders, setPushWorkoutReminders] = useState(true);
-  const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.OPEN_GYM);
+  const [selectedPlan, setSelectedPlan] = useState<MembershipType>(initialPlan || MembershipType.OPEN_GYM);
   const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [isFamilyPlan, setIsFamilyPlan] = useState(false);
   const [familyName, setFamilyName] = useState('');
@@ -501,51 +499,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     }
   };
 
-  if (screen === 'welcome') {
-    return (
-      <main className="auth-gateway" dir="rtl">
-        <section className="auth-hero">
-          <div className="auth-brand">
-            <RubisLogo size={190} className="auth-brand-logo" />
-          </div>
-          <div className="auth-kicker">המקום שלך להתחזק, להתאזן ולהרגיש טוב</div>
-          <h1>האימון שלך.<br />בקצב שלך.</h1>
-          <p>אימונים קבוצתיים, Open Gym, תוכניות אישיות וליווי מקצועי — הכול במקום אחד.</p>
-          <div className="auth-benefits">
-            <div><Dumbbell size={18} /><span>אימונים מותאמים</span></div>
-            <div><ShieldCheck size={18} /><span>ליווי מקצועי</span></div>
-            <div><MessageSquareText size={18} /><span>קשר ישיר עם המאמן</span></div>
-          </div>
-          <div className="auth-actions">
-            <button className="auth-primary" onClick={() => openScreen('register')}>
-              <UserPlus size={18} /> הרשמה למועדון
-            </button>
-            <button className="auth-secondary" onClick={() => openScreen('login')}>
-              <KeyRound size={18} /> LOGIN
-            </button>
-          </div>
-          <section className="auth-contact" aria-label="יצירת קשר עם המועדון">
-            <div>
-              <span>יצירת קשר עם המועדון</span>
-              <strong>מנהל: רובי באלי</strong>
-              <a href="tel:+972546995885" dir="ltr"><Phone size={16} /> 054-6995885</a>
-            </div>
-            <a className="auth-whatsapp" href="https://wa.me/972546995885" target="_blank" rel="noopener noreferrer" aria-label="שליחת הודעת WhatsApp לרובי באלי">
-              <MessageSquareText size={19} /> הודעה ב־WhatsApp
-            </a>
-          </section>
-          <small className="auth-legal">בהמשך ההרשמה מאשרים את תקנון המועדון והצהרת הבריאות.</small>
-        </section>
-      </main>
-    );
-  }
-
   return (
     <main className="auth-gateway" dir="rtl">
       <section className="auth-panel">
-        <button className="auth-back" onClick={() => openScreen('welcome')}>
-          <ArrowLeft size={18} /> חזרה
-        </button>
+        {landingUrl && <a className="auth-back" href={landingUrl}><ArrowLeft size={18} /> חזרה לדף המועדון</a>}
         <RubisLogo size={145} className="auth-panel-logo" />
 
         {screen === 'login' && (

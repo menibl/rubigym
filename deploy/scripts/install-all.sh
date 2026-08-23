@@ -13,6 +13,7 @@ DEPLOY_DIR=${ROOT_DIR}/deploy
 [[ -f ${ROOT_DIR}/package.json ]] || { echo "Run from the GymFlow repository." >&2; exit 1; }
 
 read -rp "Production domain (for example gym.example.com): " APP_DOMAIN
+read -rp "Marketing landing subdomain (for example join.example.com): " LANDING_DOMAIN
 read -rp "ACME email: " ACME_EMAIL
 read -rp "Git repository URL [https://github.com/menibl/rubigym.git]: " PRODUCTION_GIT_URL
 PRODUCTION_GIT_URL=${PRODUCTION_GIT_URL:-https://github.com/menibl/rubigym.git}
@@ -45,6 +46,8 @@ if [[ ${DEMO_PAYMENT_MODE} == false ]]; then
 fi
 
 [[ ${APP_DOMAIN} =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid domain." >&2; exit 2; }
+[[ ${LANDING_DOMAIN} =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid landing domain." >&2; exit 2; }
+[[ ${LANDING_DOMAIN,,} != ${APP_DOMAIN,,} ]] || { echo "Landing domain must differ from the app domain." >&2; exit 2; }
 [[ ${ACME_EMAIL} == *@* ]] || { echo "Invalid email." >&2; exit 2; }
 [[ ${TELEGRAM_USER_ID} =~ ^[0-9]+$ ]] || { echo "Telegram user ID must be numeric." >&2; exit 2; }
 [[ ${TELEGRAM_CHAT_ID} =~ ^-?[0-9]+$ ]] || { echo "Telegram chat ID must be numeric." >&2; exit 2; }
@@ -62,6 +65,7 @@ printf '%s' "${TELEGRAM_BOT_TOKEN}" >/etc/gymflow/secrets/telegram-bot-token
 
 cat >/etc/gymflow/production.env <<EOF
 APP_DOMAIN=${APP_DOMAIN}
+LANDING_DOMAIN=${LANDING_DOMAIN}
 ACME_EMAIL=${ACME_EMAIL}
 OPENAI_API_KEY=${OPENAI_API_KEY}
 INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
@@ -89,6 +93,7 @@ CARDCOM_API_PASSWORD=${CARDCOM_API_PASSWORD}
 DEMO_PAYMENT_MODE=${DEMO_PAYMENT_MODE}
 PAYMENT_SIGNING_SECRET=${PAYMENT_SIGNING_SECRET}
 PUBLIC_APP_URL=https://${APP_DOMAIN}/
+PUBLIC_LANDING_URL=https://${LANDING_DOMAIN}/
 PAYMENT_ALLOWED_ORIGIN=https://${APP_DOMAIN},${STAGING_ORIGIN}
 VITE_PAYMENT_API_URL=https://${APP_DOMAIN}
 MAX_REQUEST_BODY_BYTES=1048576
