@@ -42,6 +42,7 @@ import {
 } from '../types';
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
 import { createMembershipTerm } from '../data/membershipPolicy';
+import { LandingImageManager } from './LandingImageManager';
 import {
   Calendar,
   Settings,
@@ -1990,6 +1991,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             id="settings-form"
           >
             <h3 className="text-sm font-semibold text-slate-800 border-b border-slate-200 pb-2">קביעת חוקי ופרמטרי מועדון הכושר</h3>
+
+            <LandingImageManager />
 
             <section className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">

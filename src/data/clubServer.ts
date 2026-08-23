@@ -92,7 +92,26 @@ export const loginWithPhone = async (phone: string, otp: string) => {
   return request<{ user: User }>('/api/auth/phone-login', { method: 'POST', body: JSON.stringify({ phone, otp }) });
 };
 
-export const registerServerUser = async (user: User, payment: Payment, familyUsers: User[] = []) => {
+export const requestPhoneCode = async (phone: string, purpose: 'LOGIN' | 'REGISTER') => {
+  if (isPagesDemoMode()) return { ok: true as const, expiresInSeconds: 300, testMode: true };
+  return request<{ ok: true; expiresInSeconds: number; testMode?: boolean }>('/api/auth/request-phone-code', {
+    method: 'POST',
+    body: JSON.stringify({ phone, purpose })
+  });
+};
+
+export const verifyRegistrationPhone = async (phone: string, otp: string) => {
+  if (isPagesDemoMode()) {
+    if (otp !== '1111') throw new Error('קוד האימות אינו תקין או שפג תוקפו.');
+    return { verified: true as const, phoneVerificationToken: 'pages-demo' };
+  }
+  return request<{ verified: true; phoneVerificationToken: string }>('/api/auth/verify-registration-phone', {
+    method: 'POST',
+    body: JSON.stringify({ phone, otp })
+  });
+};
+
+export const registerServerUser = async (user: User, payment: Payment, familyUsers: User[] = [], phoneVerificationToken = '') => {
   if (isPagesDemoMode()) {
     const state = readDemoState();
     const users = (state.payload.users as User[]) || [];
@@ -113,7 +132,10 @@ export const registerServerUser = async (user: User, payment: Payment, familyUse
     localStorage.setItem(DEMO_SESSION_KEY, safeUser.id);
     return { user: safeUser as User, familyUsers: safeFamilyUsers, revision: next.revision };
   }
-  return request<{ user: User; familyUsers: User[]; revision: number }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ user, payment, familyUsers }) });
+  return request<{ user: User; familyUsers: User[]; revision: number }>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ user, payment, familyUsers, phoneVerificationToken })
+  });
 };
 
 export const registerFamilyMember = async (user: User) => {

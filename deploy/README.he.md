@@ -31,7 +31,7 @@ Telegram
 ## דרישות מוקדמות
 
 1. פרויקט GCP פעיל.
-2. דומיין עם אפשרות ליצור רשומת DNS מסוג A.
+2. דומיין עם אפשרות ליצור שתי רשומות DNS מסוג A: כתובת האפליקציה ו־subdomain שיווקי לדף הנחיתה.
 3. מאגר GitHub המכיל את הקבצים שבחבילה זו.
 4. חשבון ChatGPT/Codex שתומך בהתחברות OpenClaw.
 5. Telegram bot שיצרת דרך `@BotFather`.
@@ -57,7 +57,12 @@ Telegram
 - TCP 22 רק מכתובת הניהול שלך, או דרך IAP.
 - אל תפתח 3000, 5432, 8080 או 18789.
 
-צור רשומת DNS מסוג A מהדומיין אל ה־IP הסטטי והמתן עד ש־DNS מתעדכן.
+צור שתי רשומות DNS מסוג A שמצביעות לאותו IP סטטי והמתן עד ש־DNS מתעדכן:
+
+- `APP_DOMAIN` — כתובת האפליקציה, לדוגמה `app.example.com`.
+- `LANDING_DOMAIN` — דף הנחיתה השיווקי, לדוגמה `join.example.com`.
+
+Caddy ינפיק תעודת TLS לשתי הכתובות. השרת יזהה את ה־hostname ויציג בכל כתובת את הממשק המתאים; כפתורי דף הנחיתה יעבירו אל מסכי הכניסה והרישום ב־`APP_DOMAIN`.
 
 מומלץ להפעיל:
 
@@ -106,7 +111,8 @@ sudo bash deploy/scripts/install-all.sh "$USER"
 
 הסקריפט יבקש באופן אינטראקטיבי:
 
-- דומיין production.
+- דומיין production של האפליקציה.
+- subdomain שיווקי נפרד לדף הנחיתה.
 - דוא"ל עבור תעודת TLS.
 - כתובת מאגר GitHub.
 - origin של GitHub Pages.
@@ -351,6 +357,24 @@ sudo /usr/local/sbin/gymflow-ops rollback
 ```
 
 Rollback של קוד אינו בהכרח rollback של schema. כל migration עתידי חייב להיות backward-compatible לפחות לגרסה אחת אחורה.
+
+## אימות טלפוני באמצעות Pulseem
+
+השרת שולח קודי OTP דרך `POST https://api.pulseem.com/api/v1/SmsApi/SendSms`. המפתח נשלח בכותרת `APIKey` ונשמר רק בקובץ `/etc/gymflow/production.env` בהרשאות `0600`; אין להוסיף אותו למשתנה שמתחיל ב־`VITE_`, ל־Git או ל־GitHub Secrets של סביבת Pages.
+
+הגדרות הייצור הנדרשות:
+
+```dotenv
+PULSEEM_API_KEY=
+PULSEEM_FROM_NUMBER=
+PULSEEM_PHONE_FORMAT=local
+SMS_OTP_SIGNING_SECRET=
+SMS_TEST_MODE=false
+```
+
+`PULSEEM_FROM_NUMBER` חייב להיות שולח שאושר בחשבון Pulseem. ברירת המחדל שולחת מספרים ישראליים בפורמט מקומי; אם החשבון דורש קידומת בינלאומית יש להגדיר `PULSEEM_PHONE_FORMAT=international`. את `SMS_OTP_SIGNING_SECRET` יש ליצור באמצעות `openssl rand -hex 48`. קוד ה־OTP נשמר במסד הנתונים כ־HMAC בלבד, תקף לחמש דקות, מוגבל לחמישה ניסיונות ולחמש בקשות בשעה לכל מספר ומטרה.
+
+GitHub Pages ממשיך לעבוד במצב הדגמה מקומי עם הקוד `1111` ואינו פונה ל־Pulseem. Production חייב לפעול עם `SMS_TEST_MODE=false`.
 
 ## שלב 9 — ניהול יומי
 

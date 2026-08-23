@@ -3,7 +3,7 @@
   admin 127.0.0.1:2019
 }
 
-{$APP_DOMAIN} {
+{$APP_DOMAIN}, {$LANDING_DOMAIN} {
   encode zstd gzip
 
   header {

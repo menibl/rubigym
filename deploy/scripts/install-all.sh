@@ -13,6 +13,7 @@ DEPLOY_DIR=${ROOT_DIR}/deploy
 [[ -f ${ROOT_DIR}/package.json ]] || { echo "Run from the GymFlow repository." >&2; exit 1; }
 
 read -rp "Production domain (for example gym.example.com): " APP_DOMAIN
+read -rp "Marketing landing subdomain (for example join.example.com): " LANDING_DOMAIN
 read -rp "ACME email: " ACME_EMAIL
 read -rp "Git repository URL [https://github.com/menibl/rubigym.git]: " PRODUCTION_GIT_URL
 PRODUCTION_GIT_URL=${PRODUCTION_GIT_URL:-https://github.com/menibl/rubigym.git}
@@ -27,6 +28,8 @@ read -rp "Numeric Telegram user ID: " TELEGRAM_USER_ID
 read -rp "Telegram chat ID: " TELEGRAM_CHAT_ID
 read -rsp "Telegram bot token: " TELEGRAM_BOT_TOKEN; echo
 read -rsp "OpenAI API key for the workout assistant (leave empty to configure later): " OPENAI_API_KEY; echo
+read -rsp "Pulseem API key (leave empty to configure later): " PULSEEM_API_KEY; echo
+read -rp "Pulseem approved sender number/name (leave empty to configure later): " PULSEEM_FROM_NUMBER
 read -rsp "Initial password for Ruby Bali manager (minimum 8 characters): " INITIAL_ADMIN_PASSWORD; echo
 if [[ ${#INITIAL_ADMIN_PASSWORD} -lt 8 ]]; then echo "Initial manager password must contain at least 8 characters." >&2; exit 1; fi
 read -rp "Use Cardcom demo mode for the first deployment? [Y/n]: " DEMO_CHOICE
@@ -43,13 +46,17 @@ if [[ ${DEMO_PAYMENT_MODE} == false ]]; then
 fi
 
 [[ ${APP_DOMAIN} =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid domain." >&2; exit 2; }
+[[ ${LANDING_DOMAIN} =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid landing domain." >&2; exit 2; }
+[[ ${LANDING_DOMAIN,,} != ${APP_DOMAIN,,} ]] || { echo "Landing domain must differ from the app domain." >&2; exit 2; }
 [[ ${ACME_EMAIL} == *@* ]] || { echo "Invalid email." >&2; exit 2; }
 [[ ${TELEGRAM_USER_ID} =~ ^[0-9]+$ ]] || { echo "Telegram user ID must be numeric." >&2; exit 2; }
 [[ ${TELEGRAM_CHAT_ID} =~ ^-?[0-9]+$ ]] || { echo "Telegram chat ID must be numeric." >&2; exit 2; }
 [[ ${#TELEGRAM_BOT_TOKEN} -ge 20 ]] || { echo "Telegram token is too short." >&2; exit 2; }
 
 PAYMENT_SIGNING_SECRET=$(openssl rand -hex 48)
+SMS_OTP_SIGNING_SECRET=$(openssl rand -hex 48)
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
+SMS_TEST_MODE=false
 
 bash "${DEPLOY_DIR}/scripts/bootstrap-server.sh" "${ADMIN_USER}"
 install -d -m 0750 /etc/gymflow/secrets /var/log/gymflow /var/lib/gymflow-deploy /var/backups/gymflow
@@ -58,12 +65,23 @@ printf '%s' "${TELEGRAM_BOT_TOKEN}" >/etc/gymflow/secrets/telegram-bot-token
 
 cat >/etc/gymflow/production.env <<EOF
 APP_DOMAIN=${APP_DOMAIN}
+LANDING_DOMAIN=${LANDING_DOMAIN}
 ACME_EMAIL=${ACME_EMAIL}
 OPENAI_API_KEY=${OPENAI_API_KEY}
 INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
 INITIAL_ADMIN_EMAIL=robi@rubisgym.co.il
 INITIAL_ADMIN_PHONE=054-6995885
-SMS_TEST_MODE=true
+PULSEEM_API_KEY=${PULSEEM_API_KEY}
+PULSEEM_FROM_NUMBER=${PULSEEM_FROM_NUMBER}
+PULSEEM_PHONE_FORMAT=local
+PULSEEM_TIMEOUT_MS=10000
+SMS_OTP_SIGNING_SECRET=${SMS_OTP_SIGNING_SECRET}
+SMS_OTP_TTL_SECONDS=300
+SMS_OTP_MAX_ATTEMPTS=5
+SMS_OTP_REQUESTS_PER_HOUR=5
+SMS_OTP_COOLDOWN_SECONDS=60
+SMS_PHONE_VERIFICATION_TTL_SECONDS=7200
+SMS_TEST_MODE=${SMS_TEST_MODE}
 OPENAI_WORKOUT_MODEL=gpt-5.4-mini
 OPENAI_WORKOUT_MAX_OUTPUT_TOKENS=12000
 AI_REQUESTS_PER_HOUR=30
@@ -75,6 +93,7 @@ CARDCOM_API_PASSWORD=${CARDCOM_API_PASSWORD}
 DEMO_PAYMENT_MODE=${DEMO_PAYMENT_MODE}
 PAYMENT_SIGNING_SECRET=${PAYMENT_SIGNING_SECRET}
 PUBLIC_APP_URL=https://${APP_DOMAIN}/
+PUBLIC_LANDING_URL=https://${LANDING_DOMAIN}/
 PAYMENT_ALLOWED_ORIGIN=https://${APP_DOMAIN},${STAGING_ORIGIN}
 VITE_PAYMENT_API_URL=https://${APP_DOMAIN}
 MAX_REQUEST_BODY_BYTES=1048576
