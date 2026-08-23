@@ -43,12 +43,13 @@ import { createMembershipTerm } from '../data/membershipPolicy';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 import { isPagesDemoMode } from '../data/appMode';
+import type { PasswordLoginResult } from '../data/clubServer';
 
 interface AuthGatewayProps {
   users: User[];
   discountCodes: DiscountCode[];
   settings: SystemSettings;
-  onPasswordLogin: (login: string, password: string) => Promise<User>;
+  onPasswordLogin: (login: string, password: string, otp?: string) => Promise<PasswordLoginResult>;
   onPhoneLogin: (phone: string, otp: string) => Promise<User>;
   onRequestPhoneCode: (phone: string, purpose: 'LOGIN' | 'REGISTER') => Promise<{ ok: true; expiresInSeconds: number; testMode?: boolean }>;
   onVerifyRegistrationPhone: (phone: string, otp: string) => Promise<{ verified: true; phoneVerificationToken: string }>;
@@ -84,9 +85,12 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const demoMode = isPagesDemoMode();
   const demoManagerPassword = import.meta.env.VITE_DEMO_MANAGER_PASSWORD || '';
   const [screen, setScreen] = useState<AuthScreen>(initialScreen);
-  const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>('phone');
   const [username, setUsername] = useState(demoMode ? 'רובי באלי' : '');
   const [password, setPassword] = useState(demoMode ? demoManagerPassword : '');
+  const [passwordOtp, setPasswordOtp] = useState('');
+  const [passwordOtpSent, setPasswordOtpSent] = useState(false);
+  const [passwordPhoneHint, setPasswordPhoneHint] = useState('');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
@@ -227,7 +231,14 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     resetMessages();
     setAuthPending(true);
     try {
-      await onPasswordLogin(username.trim(), password);
+      const result = await onPasswordLogin(username.trim(), password, passwordOtpSent ? passwordOtp : '');
+      if ('requiresSmsVerification' in result) {
+        setPasswordOtpSent(true);
+        setPasswordPhoneHint(result.maskedPhone);
+        setNotice(result.testMode
+          ? 'הסיסמה אומתה. קוד הבדיקה ל-SMS הוא 1111.'
+          : `הסיסמה אומתה. קוד נוסף נשלח ב-SMS למספר ${result.maskedPhone}.`);
+      }
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : 'לא ניתן להתחבר כרגע.');
     } finally {
@@ -511,19 +522,21 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
             <p>בחרו את הדרך הנוחה להיכנס.</p>
             {demoMode && <div className="auth-message notice">סביבת הדגמה — פרטי הכניסה של רובי כבר מולאו. אפשר גם להיכנס בטלפון 054-6995885 עם הקוד 1111.</div>}
             <div className="auth-method-tabs">
-              <button className={loginMethod === 'password' ? 'active' : ''} onClick={() => { setLoginMethod('password'); resetMessages(); }}>
-                <LockKeyhole size={16} /> משתמש / אימייל וסיסמה
-              </button>
               <button className={loginMethod === 'phone' ? 'active' : ''} onClick={() => { setLoginMethod('phone'); resetMessages(); }}>
                 <Phone size={16} /> טלפון ו־SMS
+              </button>
+              <button className={loginMethod === 'password' ? 'active' : ''} onClick={() => { setLoginMethod('password'); resetMessages(); }}>
+                <LockKeyhole size={16} /> משתמש וסיסמה + SMS
               </button>
             </div>
 
             {loginMethod === 'password' ? (
               <form onSubmit={handlePasswordLogin} className="auth-form">
-                <label>שם משתמש או אימייל<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" placeholder="שם משתמש או name@example.com" /></label>
-                <label>סיסמה<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label>
-                <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? 'מתחבר…' : 'כניסה'}</button>
+                <label>שם משתמש או אימייל<input value={username} disabled={passwordOtpSent} onChange={event => { setUsername(event.target.value); setPasswordOtpSent(false); setPasswordOtp(''); }} autoComplete="username" placeholder="שם משתמש או name@example.com" /></label>
+                <label>סיסמה<input type="password" value={password} disabled={passwordOtpSent} onChange={event => { setPassword(event.target.value); setPasswordOtpSent(false); setPasswordOtp(''); }} autoComplete="current-password" /></label>
+                {passwordOtpSent && <label>קוד אימות ב-SMS {passwordPhoneHint && <small>({passwordPhoneHint})</small>}<input inputMode="numeric" maxLength={demoMode ? 4 : 6} value={passwordOtp} onChange={event => setPasswordOtp(event.target.value.replace(/\D/g, ''))} placeholder={demoMode ? '1111' : '6 ספרות'} autoComplete="one-time-code" /></label>}
+                <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? (passwordOtpSent ? 'מאמת…' : 'שולח קוד…') : passwordOtpSent ? 'אימות וכניסה' : 'המשך ושליחת קוד SMS'}</button>
+                {passwordOtpSent && <button className="auth-text-link" type="button" onClick={() => { setPasswordOtpSent(false); setPasswordOtp(''); setPasswordPhoneHint(''); resetMessages(); }}>שינוי פרטי הכניסה</button>}
               </form>
             ) : (
               <form onSubmit={handlePhoneLogin} className="auth-form">
