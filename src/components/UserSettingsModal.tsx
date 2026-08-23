@@ -8,6 +8,7 @@ import { User, UserRole, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABEL
 import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
 import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
+import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -267,18 +268,39 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       return;
     }
 
-    if ('Notification' in window && Notification.permission === 'default') {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setMsg({ type: 'error', text: 'המכשיר או הדפדפן אינם תומכים בהתראות PUSH. ב־iPhone יש להתקין תחילה את האפליקציה במסך הבית.' });
+      return;
+    }
+
+    if (Notification.permission === 'default') {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         setMsg({ type: 'error', text: 'לא ניתן להפעיל PUSH ללא אישור התראות בדפדפן.' });
         return;
       }
     }
-    if ('Notification' in window && Notification.permission === 'denied') {
+    if (Notification.permission === 'denied') {
       setMsg({ type: 'error', text: 'ההתראות חסומות בדפדפן. יש לאפשר אותן בהגדרות האתר.' });
       return;
     }
     setPushEnabled(true);
+  };
+
+  const handlePushTest = async () => {
+    try {
+      const subscription = await syncServerPushSubscription(true);
+      if (!subscription.supported || !subscription.subscribed) {
+        setMsg({ type: 'error', text: 'לא ניתן לרשום את המכשיר להתראות. ודא שהאפליקציה מותקנת ושהרשאת ההתראות פעילה.' });
+        return;
+      }
+      const result = await sendPushTest();
+      setMsg(result.sent > 0
+        ? { type: 'success', text: 'התראת בדיקה נשלחה למכשיר.' }
+        : { type: 'error', text: 'המכשיר נרשם, אך לא ניתן היה למסור אליו את התראת הבדיקה.' });
+    } catch {
+      setMsg({ type: 'error', text: 'שירות ה־PUSH עדיין אינו מוגדר בשרת או שהמכשיר חסם את ההתראה.' });
+    }
   };
 
   const handleRenewHealthDeclaration = (result: HealthDeclarationResult) => {
@@ -658,8 +680,17 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     />
                   </label>
                 )}
+                {!isAdminMode && pushEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => void handlePushTest()}
+                    className="w-full rounded-lg bg-sky-700 px-3 py-2 text-[11px] font-bold text-white"
+                  >
+                    שליחת התראת בדיקה למכשיר
+                  </button>
+                )}
                 <p className="text-[10px] text-sky-700">
-                  ניתן להפעיל או לבטל בכל עת. התראות כשהאפליקציה סגורה יחוברו לספק PUSH בגרסת Production.
+                  ניתן להפעיל או לבטל בכל עת. ההתראות מתקבלות גם כשהאפליקציה סגורה לאחר התקנתה ואישור ההרשאה במכשיר.
                 </p>
               </div>
 

@@ -2366,7 +2366,7 @@ option {
   margin-bottom: 10px;
 }
 
-.role-home-alert-center > header > div {
+.role-home-alert-center > header > div:not(.role-home-alert-actions) {
   gap: 8px;
   color: var(--app-gold);
 }
@@ -2376,7 +2376,35 @@ option {
   font-size: 14px;
 }
 
-.role-home-alert-center > header > span {
+.role-home-alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-home-alert-actions > button,
+.role-home-alert-ack {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid rgba(201, 168, 103, 0.34);
+  border-radius: 9px;
+  background: rgba(201, 168, 103, 0.1);
+  color: var(--app-gold);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.role-home-alert-actions > button:hover,
+.role-home-alert-ack:hover {
+  border-color: rgba(201, 168, 103, 0.68);
+  background: rgba(201, 168, 103, 0.17);
+}
+
+.role-home-alert-actions > span {
   display: grid;
   min-width: 25px;
   height: 25px;
@@ -2456,6 +2484,10 @@ option {
 }
 
 .role-home-alert time {
+  flex: 0 0 auto;
+}
+
+.role-home-alert-ack {
   flex: 0 0 auto;
 }
 
@@ -2771,6 +2803,19 @@ option {
 
   .role-home-alert-center {
     padding: 11px;
+  }
+
+  .role-home-alert {
+    flex-wrap: wrap;
+  }
+
+  .role-home-alert > div {
+    flex-basis: calc(100% - 86px);
+  }
+
+  .role-home-alert-ack {
+    min-height: 34px;
+    margin-right: 43px;
   }
 
   .role-home-actions > button {

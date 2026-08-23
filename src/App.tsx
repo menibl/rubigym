@@ -41,7 +41,7 @@ import {
   INITIAL_SETTINGS,
   INITIAL_DISCOUNT_CODES
 } from './data/initialData';
-import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logoutServerSession, registerFamilyMember, registerServerUser, saveClubState, updateServerPassword } from './data/clubServer';
+import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logoutServerSession, registerFamilyMember, registerServerUser, saveClubState, syncServerPushSubscription, updateServerPassword } from './data/clubServer';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
@@ -52,6 +52,8 @@ import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
 import { ClubWorkoutDisplay } from './components/ClubWorkoutDisplay';
 import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
 import { isMembershipCancellationEffective } from './data/membershipPolicy';
+import { hasNotificationMarker, saveNotificationMarker, showBrowserNotification } from './utils/browserNotifications';
+import { isPagesDemoMode } from './data/appMode';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const isClubWorkoutDisplay = () => window.location.hash === '#club-workout-display';
@@ -192,51 +194,66 @@ export default function App() {
     };
   }, []);
 
+  // Keep this authenticated device registered for production Web Push.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void syncServerPushSubscription(Boolean(activeUser.pushNotificationsEnabled)).catch(error => {
+      console.warn('Unable to synchronize push subscription', error);
+    });
+  }, [activeUser.id, activeUser.pushNotificationsEnabled, isAuthenticated]);
+
   // In-app notification delivery while the application is open.
   useEffect(() => {
     if (
+      !isPagesDemoMode() ||
       !isAuthenticated ||
       !activeUser.pushNotificationsEnabled ||
       !('Notification' in window) ||
       Notification.permission !== 'granted'
     ) return;
 
-    if (activeUser.workoutRemindersEnabled) {
-      const now = Date.now();
-      const nextBooked = sessions
-        .filter(session => session.registeredUsers.includes(activeUser.id))
-        .map(session => ({
-          session,
-          startsAt: new Date(`${session.date}T${session.time}:00`).getTime()
-        }))
-        .filter(item => item.startsAt > now && item.startsAt - now <= 24 * 60 * 60 * 1000)
-        .sort((a, b) => a.startsAt - b.startsAt)[0];
+    const deliverNotifications = async () => {
+      if (activeUser.workoutRemindersEnabled) {
+        const now = Date.now();
+        const nextBooked = sessions
+          .filter(session => session.registeredUsers.includes(activeUser.id))
+          .map(session => ({
+            session,
+            startsAt: new Date(`${session.date}T${session.time}:00`).getTime()
+          }))
+          .filter(item => item.startsAt > now && item.startsAt - now <= 24 * 60 * 60 * 1000)
+          .sort((a, b) => a.startsAt - b.startsAt)[0];
 
-      if (nextBooked) {
-        const reminderKey = `baly-push-reminder-${activeUser.id}-${nextBooked.session.id}`;
-        if (!localStorage.getItem(reminderKey)) {
-          new Notification(`תזכורת לאימון: ${nextBooked.session.title}`, {
-            body: `האימון מחר/היום בשעה ${nextBooked.session.time} עם ${nextBooked.session.coachName}.`
-          });
-          localStorage.setItem(reminderKey, new Date().toISOString());
+        if (nextBooked) {
+          const reminderKey = `baly-push-reminder-${activeUser.id}-${nextBooked.session.id}`;
+          if (!hasNotificationMarker(reminderKey)) {
+            const displayed = await showBrowserNotification(`תזכורת לאימון: ${nextBooked.session.title}`, {
+              body: `האימון מחר/היום בשעה ${nextBooked.session.time} עם ${nextBooked.session.coachName}.`
+            });
+            if (displayed) saveNotificationMarker(reminderKey);
+          }
         }
       }
-    }
 
-    if (activeUser.role === UserRole.MANAGER && activeUser.managerPushNotificationsEnabled) {
-      const unreadForManager = messages.find(message =>
-        message.receiverId === activeUser.id && !message.read
-      );
-      if (unreadForManager) {
-        const managerPushKey = `baly-manager-push-${unreadForManager.id}`;
-        if (!localStorage.getItem(managerPushKey)) {
-          new Notification(`פנייה חדשה למנהל מאת ${unreadForManager.senderName}`, {
-            body: unreadForManager.content
-          });
-          localStorage.setItem(managerPushKey, new Date().toISOString());
+      if (activeUser.role === UserRole.MANAGER && activeUser.managerPushNotificationsEnabled) {
+        const unreadForManager = messages.find(message =>
+          message.receiverId === activeUser.id && !message.read
+        );
+        if (unreadForManager) {
+          const managerPushKey = `baly-manager-push-${unreadForManager.id}`;
+          if (!hasNotificationMarker(managerPushKey)) {
+            const displayed = await showBrowserNotification(`פנייה חדשה למנהל מאת ${unreadForManager.senderName}`, {
+              body: unreadForManager.content
+            });
+            if (displayed) saveNotificationMarker(managerPushKey);
+          }
         }
       }
-    }
+    };
+
+    void deliverNotifications().catch(error => {
+      console.warn('Unable to deliver in-app notifications', error);
+    });
   }, [activeUser, isAuthenticated, messages, sessions]);
 
 
@@ -292,6 +309,16 @@ export default function App() {
     };
 
     setMessages(prev => [newMessage, ...prev]);
+  };
+
+  const handleAcknowledgeStaffAlerts = (alertIds: string[]) => {
+    if (!alertIds.length) return;
+    const acknowledged = new Set([...(activeUser.staffAlertAcknowledgements || []), ...alertIds]);
+    const staffAlertAcknowledgements = [...acknowledged].slice(-500);
+    setActiveUser(current => ({ ...current, staffAlertAcknowledgements }));
+    setUsers(current => current.map(user => user.id === activeUser.id ? { ...user, staffAlertAcknowledgements } : user));
+    const alertIdSet = new Set(alertIds);
+    setMessages(current => current.map(message => alertIdSet.has(`chat-${message.id}`) ? { ...message, read: true } : message));
   };
 
   const handleGatewayRegistration = async (newUser: User, payment: Payment, familyUsers: User[] = []) => {
@@ -565,6 +592,7 @@ export default function App() {
               payments={payments}
               onSendMessage={handleSendMessage}
               onUpdateAnnouncements={setAnnouncements}
+              onAcknowledgeStaffAlerts={handleAcknowledgeStaffAlerts}
             />
           )}
 
