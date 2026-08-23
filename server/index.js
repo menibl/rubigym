@@ -1,6 +1,13 @@
 import { handleWorkoutAi, resolveOpenAiApiKey } from './workout-ai.js';
 import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validatePushSubscription } from './push.js';
 import {
+  createPhoneVerificationToken,
+  normalizeIsraeliMobile,
+  requestPhoneCode,
+  verifyPhoneCode,
+  verifyPhoneVerificationToken
+} from './sms-auth.js';
+import {
   accountFromUser,
   clearSessionCookie,
   createAuthenticatedSession,
@@ -530,14 +537,48 @@ const handleApi = async (request, env, url) => {
       return json({ user: stripCredentials(user) }, 200, { ...headers, 'Set-Cookie': auth.cookie });
     }
 
+    if (url.pathname === '/api/auth/request-phone-code' && request.method === 'POST') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      const body = await request.json();
+      const phone = normalizeIsraeliMobile(body.phone);
+      const purpose = String(body.purpose || '').toUpperCase();
+      if (!phone || !['LOGIN', 'REGISTER'].includes(purpose)) {
+        return json({ message: 'יש להזין מספר טלפון נייד תקין.' }, 400, headers);
+      }
+      const existingAccount = await env.STATE_STORE.getAccountByLogin(clubId, phone);
+      if (purpose === 'LOGIN' && !existingAccount) {
+        return json({ ok: true, expiresInSeconds: 300 }, 202, headers);
+      }
+      if (purpose === 'REGISTER' && existingAccount) {
+        return json({ message: 'מספר הטלפון כבר רשום. ניתן לעבור למסך הכניסה.' }, 409, headers);
+      }
+      try {
+        const result = await requestPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose });
+        return json({ ok: true, expiresInSeconds: result.expiresInSeconds, testMode: result.testMode }, 202, headers);
+      } catch (error) {
+        if (error?.message === 'OTP_RATE_LIMITED') return json({ message: 'נשלחו יותר מדי קודים. יש להמתין לפני ניסיון נוסף.' }, 429, headers);
+        if (error?.message === 'SMS_NOT_CONFIGURED') return json({ message: 'שירות ה-SMS עדיין לא הוגדר בשרת.' }, 503, headers);
+        if (error?.message === 'SMS_PROVIDER_UNAVAILABLE') return json({ message: 'שליחת ה-SMS נכשלה. נסו שוב מאוחר יותר.' }, 502, headers);
+        throw error;
+      }
+    }
+
+    if (url.pathname === '/api/auth/verify-registration-phone' && request.method === 'POST') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      const body = await request.json();
+      const verified = await verifyPhoneCode({ store: env.STATE_STORE, env, clubId, phone: body.phone, purpose: 'REGISTER', code: body.otp });
+      if (!verified) return json({ message: 'קוד האימות אינו תקין או שפג תוקפו.' }, 401, headers);
+      const phoneVerificationToken = await createPhoneVerificationToken({ env, clubId, phone: body.phone });
+      return json({ verified: true, phoneVerificationToken }, 200, headers);
+    }
+
     if (url.pathname === '/api/auth/phone-login' && request.method === 'POST') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
       const body = await request.json();
-      if (String(env.SMS_TEST_MODE).toLowerCase() !== 'true' || String(body.otp) !== '1111') {
-        return json({ message: 'קוד האימות אינו תקין או ששירות ה-SMS אינו מוגדר.' }, 401, headers);
-      }
-      const account = await env.STATE_STORE.getAccountByLogin(clubId, normalizePhone(body.phone));
-      if (!account) return json({ message: 'לא נמצא משתמש עם מספר הטלפון הזה.' }, 404, headers);
+      const phone = normalizeIsraeliMobile(body.phone);
+      const account = phone ? await env.STATE_STORE.getAccountByLogin(clubId, phone) : null;
+      const verified = account && await verifyPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose: 'LOGIN', code: body.otp });
+      if (!verified) return json({ message: 'מספר הטלפון או קוד האימות אינם תקינים.' }, 401, headers);
       const state = await env.STATE_STORE.getClubState(clubId);
       const user = state?.payload?.users?.find(candidate => candidate.id === account.user_id);
       if (!user) return json({ message: 'חשבון המשתמש אינו קיים בנתוני המועדון.' }, 409, headers);
@@ -575,6 +616,9 @@ const handleApi = async (request, env, url) => {
       const familyUsers = Array.isArray(body.familyUsers) ? body.familyUsers : [];
       if (!user?.id || typeof user?.password !== 'string' || user.password.length < 8 || !user?.email || !isValidEmail(user.email) || user.role !== 'TRAINEE') {
         return json({ message: 'פרטי ההרשמה או כתובת האימייל אינם תקינים.' }, 400, headers);
+      }
+      if (!await verifyPhoneVerificationToken({ env, clubId, phone: user.phone, token: body.phoneVerificationToken })) {
+        return json({ message: 'אימות מספר הטלפון חסר או שפג תוקפו. יש לשלוח קוד חדש.' }, 401, headers);
       }
       if (familyUsers.length > 5 || (familyUsers.length && (!user.isFamilyPayer || !user.familyId))) {
         return json({ message: 'פרטי החשבון המשפחתי אינם תקינים.' }, 400, headers);

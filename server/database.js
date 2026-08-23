@@ -73,6 +73,19 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions (expires_at);
+    CREATE TABLE IF NOT EXISTS sms_otp_challenges (
+      id text PRIMARY KEY,
+      club_id text NOT NULL,
+      phone_normalized text NOT NULL,
+      purpose text NOT NULL,
+      code_hash text NOT NULL,
+      expires_at timestamptz NOT NULL,
+      attempts integer NOT NULL DEFAULT 0,
+      max_attempts integer NOT NULL DEFAULT 5,
+      consumed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS sms_otp_lookup_idx ON sms_otp_challenges (club_id, phone_normalized, purpose, created_at DESC);
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       club_id text NOT NULL,
       user_id text NOT NULL,
@@ -182,6 +195,39 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
     },
     async deleteSession(tokenHash) {
       await pool.query('DELETE FROM auth_sessions WHERE token_hash=$1', [tokenHash]);
+    },
+    async getOtpRequestStats(clubId, phone, purpose) {
+      const result = await pool.query(`SELECT
+        count(*) FILTER (WHERE created_at > now() - interval '1 hour')::integer AS requests_last_hour,
+        max(created_at) AS last_requested_at
+        FROM sms_otp_challenges WHERE club_id=$1 AND phone_normalized=$2 AND purpose=$3`, [clubId, phone, purpose]);
+      return {
+        requestsLastHour: Number(result.rows[0]?.requests_last_hour || 0),
+        lastRequestedAt: result.rows[0]?.last_requested_at || null
+      };
+    },
+    async createOtpChallenge(challenge) {
+      await pool.query("DELETE FROM sms_otp_challenges WHERE created_at < now() - interval '24 hours'");
+      await pool.query(`INSERT INTO sms_otp_challenges
+        (id,club_id,phone_normalized,purpose,code_hash,expires_at,max_attempts)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)`, [challenge.id, challenge.clubId, challenge.phone, challenge.purpose, challenge.codeHash, challenge.expiresAt, challenge.maxAttempts]);
+    },
+    async getLatestOtpChallenge(clubId, phone, purpose) {
+      const result = await pool.query(`SELECT id,code_hash,expires_at,attempts,max_attempts,consumed_at
+        FROM sms_otp_challenges WHERE club_id=$1 AND phone_normalized=$2 AND purpose=$3
+        ORDER BY created_at DESC LIMIT 1`, [clubId, phone, purpose]);
+      return result.rows[0] || null;
+    },
+    async consumeOtpChallenge(id, expectedHash) {
+      const result = await pool.query(`UPDATE sms_otp_challenges SET
+        attempts=attempts+1,
+        consumed_at=CASE WHEN code_hash=$2 THEN now() ELSE consumed_at END
+        WHERE id=$1 AND consumed_at IS NULL AND expires_at > now() AND attempts < max_attempts
+        RETURNING code_hash=$2 AS verified`, [id, expectedHash]);
+      return result.rows[0]?.verified === true;
+    },
+    async invalidateOtpChallenge(id) {
+      await pool.query('UPDATE sms_otp_challenges SET consumed_at=now() WHERE id=$1', [id]);
     },
     async upsertPushSubscription(clubId, userId, subscription, userAgent) {
       await pool.query(`INSERT INTO push_subscriptions (club_id,user_id,endpoint,p256dh,auth,user_agent)

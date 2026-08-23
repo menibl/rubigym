@@ -41,7 +41,7 @@ import {
   INITIAL_SETTINGS,
   INITIAL_DISCOUNT_CODES
 } from './data/initialData';
-import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logoutServerSession, registerFamilyMember, registerServerUser, saveClubState, syncServerPushSubscription, updateServerPassword } from './data/clubServer';
+import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logoutServerSession, registerFamilyMember, registerServerUser, requestPhoneCode, saveClubState, syncServerPushSubscription, updateServerPassword, verifyRegistrationPhone } from './data/clubServer';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
@@ -321,8 +321,8 @@ export default function App() {
     setMessages(current => current.map(message => alertIdSet.has(`chat-${message.id}`) ? { ...message, read: true } : message));
   };
 
-  const handleGatewayRegistration = async (newUser: User, payment: Payment, familyUsers: User[] = []) => {
-    const { user } = await registerServerUser(newUser, payment, familyUsers);
+  const handleGatewayRegistration = async (newUser: User, payment: Payment, familyUsers: User[] = [], phoneVerificationToken = '') => {
+    const { user } = await registerServerUser(newUser, payment, familyUsers, phoneVerificationToken);
     await loadAuthenticatedState(user);
     if (newUser.healthDeclarationRequiresMedicalCertificate) {
       const submittedMessage = newUser.healthDeclarationMedicalCertificateFileName
@@ -430,6 +430,8 @@ export default function App() {
         settings={settings}
         onPasswordLogin={handlePasswordLogin}
         onPhoneLogin={handlePhoneLogin}
+        onRequestPhoneCode={requestPhoneCode}
+        onVerifyRegistrationPhone={verifyRegistrationPhone}
         onRegister={handleGatewayRegistration}
       />
     );
