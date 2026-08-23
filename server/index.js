@@ -155,6 +155,15 @@ const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(d
   headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers }
 });
 
+const smsFailureResponse = (error, headers) => {
+  if (error?.message === 'OTP_RATE_LIMITED') return json({ message: 'נשלחו יותר מדי קודים. יש להמתין לפני ניסיון נוסף.' }, 429, headers);
+  if (error?.message === 'SMS_NOT_CONFIGURED') return json({ message: 'שירות ה-SMS עדיין לא הוגדר בשרת.' }, 503, headers);
+  if (error?.message === 'SMS_PROVIDER_UNAVAILABLE') return json({ message: 'שליחת ה-SMS נכשלה. נסו שוב מאוחר יותר.' }, 502, headers);
+  return null;
+};
+
+const maskedPhone = phone => `***-***-${String(phone || '').slice(-4)}`;
+
 const landingMediaSlots = new Set(['hero', 'coaching']);
 const landingImageMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const maxLandingImageBytes = 800_000;
@@ -629,6 +638,25 @@ const handleApi = async (request, env, url) => {
       const state = await env.STATE_STORE.getClubState(clubId);
       const user = state?.payload?.users?.find(candidate => candidate.id === account.user_id);
       if (!user) return json({ message: 'חשבון המשתמש אינו קיים בנתוני המועדון.' }, 409, headers);
+      const phone = normalizeIsraeliMobile(account.phone_normalized || user.phone);
+      if (!phone) return json({ message: 'לא מוגדר מספר טלפון נייד לחשבון. יש לפנות למועדון לעדכון הפרטים.' }, 409, headers);
+      if (!body.otp) {
+        try {
+          const result = await requestPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose: 'LOGIN' });
+          return json({
+            requiresSmsVerification: true,
+            maskedPhone: maskedPhone(phone),
+            expiresInSeconds: result.expiresInSeconds,
+            testMode: result.testMode
+          }, 202, headers);
+        } catch (error) {
+          const response = smsFailureResponse(error, headers);
+          if (response) return response;
+          throw error;
+        }
+      }
+      const verified = await verifyPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose: 'LOGIN', code: body.otp });
+      if (!verified) return json({ message: 'קוד האימות אינו תקין או שפג תוקפו.' }, 401, headers);
       const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, user.id);
       return json({ user: stripCredentials(user) }, 200, { ...headers, 'Set-Cookie': auth.cookie });
     }
@@ -652,9 +680,8 @@ const handleApi = async (request, env, url) => {
         const result = await requestPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose });
         return json({ ok: true, expiresInSeconds: result.expiresInSeconds, testMode: result.testMode }, 202, headers);
       } catch (error) {
-        if (error?.message === 'OTP_RATE_LIMITED') return json({ message: 'נשלחו יותר מדי קודים. יש להמתין לפני ניסיון נוסף.' }, 429, headers);
-        if (error?.message === 'SMS_NOT_CONFIGURED') return json({ message: 'שירות ה-SMS עדיין לא הוגדר בשרת.' }, 503, headers);
-        if (error?.message === 'SMS_PROVIDER_UNAVAILABLE') return json({ message: 'שליחת ה-SMS נכשלה. נסו שוב מאוחר יותר.' }, 502, headers);
+        const response = smsFailureResponse(error, headers);
+        if (response) return response;
         throw error;
       }
     }
