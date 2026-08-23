@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from './index.js';
+import { createPhoneVerificationToken } from './sms-auth.js';
 
 test('family registration creates separate login accounts without storing plaintext passwords', async () => {
   let state = { payload: { users: [], payments: [] }, revision: 1 };
@@ -24,12 +25,14 @@ test('family registration creates separate login accounts without storing plaint
     id: 'member-1', name: 'Child', username: 'child', email: 'child@example.com', phone: '',
     password: 'child-password', role: 'TRAINEE', familyPayerId: payer.id, familyId: payer.familyId
   };
+  const env = { SMS_OTP_SIGNING_SECRET: 'family-registration-test-signing-secret-value', CLUB_ID: 'test-club' };
+  const phoneVerificationToken = await createPhoneVerificationToken({ env, clubId: env.CLUB_ID, phone: payer.phone });
 
   const response = await worker.fetch(new Request('https://balywellness.test/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user: payer, familyUsers: [member], payment: { id: 'payment-1', status: 'PAID' } })
-  }), { STATE_STORE: store, CLUB_ID: 'test-club' });
+    body: JSON.stringify({ user: payer, familyUsers: [member], payment: { id: 'payment-1', status: 'PAID' }, phoneVerificationToken })
+  }), { STATE_STORE: store, ...env });
 
   assert.equal(response.status, 201);
   assert.equal(state.payload.users.length, 2);

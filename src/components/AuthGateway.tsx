@@ -50,7 +50,9 @@ interface AuthGatewayProps {
   settings: SystemSettings;
   onPasswordLogin: (login: string, password: string) => Promise<User>;
   onPhoneLogin: (phone: string, otp: string) => Promise<User>;
-  onRegister: (user: User, payment: Payment, familyUsers?: User[]) => Promise<void>;
+  onRequestPhoneCode: (phone: string, purpose: 'LOGIN' | 'REGISTER') => Promise<{ ok: true; expiresInSeconds: number; testMode?: boolean }>;
+  onVerifyRegistrationPhone: (phone: string, otp: string) => Promise<{ verified: true; phoneVerificationToken: string }>;
+  onRegister: (user: User, payment: Payment, familyUsers?: User[], phoneVerificationToken?: string) => Promise<void>;
   initialScreen?: 'login' | 'register';
   initialPlan?: MembershipType;
   landingUrl?: string;
@@ -68,7 +70,6 @@ type FamilyAccountDraft = {
   gender: Gender;
 };
 
-const TEST_OTP = '1111';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const calculateAge = (birthDate: string) => {
   const birth = new Date(birthDate);
@@ -79,7 +80,7 @@ const calculateAge = (birthDate: string) => {
   return Math.max(age, 0);
 };
 
-export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRegister, initialScreen = 'login', initialPlan, landingUrl }) => {
+export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRequestPhoneCode, onVerifyRegistrationPhone, onRegister, initialScreen = 'login', initialPlan, landingUrl }) => {
   const demoMode = isPagesDemoMode();
   const demoManagerPassword = import.meta.env.VITE_DEMO_MANAGER_PASSWORD || '';
   const [screen, setScreen] = useState<AuthScreen>(initialScreen);
@@ -92,6 +93,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [registerStep, setRegisterStep] = useState<1 | 2 | 3 | 4>(1);
   const [registerPhone, setRegisterPhone] = useState('');
   const [registerOtp, setRegisterOtp] = useState('');
+  const [phoneVerificationToken, setPhoneVerificationToken] = useState('');
   const [registerName, setRegisterName] = useState('');
   const [registerUsername, setRegisterUsername] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
@@ -174,7 +176,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
           setScreen('login');
           return;
         }
-        const draft = pending.registrationDraft as { user?: User; familyUsers?: User[] } | undefined;
+        const draft = pending.registrationDraft as { user?: User; familyUsers?: User[]; phoneVerificationToken?: string } | undefined;
         if (!draft?.user || draft.user.id !== pending.userId) throw new Error('פרטי ההרשמה לא נמצאו במכשיר זה. יש לפנות למועדון עם אישור העסקה.');
         const payment: Payment = {
           id: `payment-cardcom-${transactionKey}`,
@@ -188,7 +190,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
           paymentMethod: `Cardcom${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
           isMock: false
         };
-        return onRegister(draft.user, payment, draft.familyUsers || []).then(() => {
+        return onRegister(draft.user, payment, draft.familyUsers || [], draft.phoneVerificationToken || '').then(() => {
           markTransactionProcessed(transactionKey);
           clearPendingCardcomPayment();
           clearCardcomReturnParams();
@@ -202,10 +204,22 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const sendLoginOtp = () => {
+  const sendLoginOtp = async () => {
     resetMessages();
-    setOtpSent(true);
-    setNotice('הקוד נשלח בהדמיה. קוד הבדיקה הוא 1111.');
+    if (phone.replace(/\D/g, '').length < 9) {
+      setError('יש להזין מספר טלפון תקין.');
+      return;
+    }
+    setAuthPending(true);
+    try {
+      const result = await onRequestPhoneCode(phone, 'LOGIN');
+      setOtpSent(true);
+      setNotice(result.testMode ? 'הקוד נשלח בהדמיה. קוד הבדיקה הוא 1111.' : 'קוד אימות נשלח אליך ב-SMS.');
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'לא ניתן לשלוח קוד כרגע.');
+    } finally {
+      setAuthPending(false);
+    }
   };
 
   const handlePasswordLogin = async (event: React.FormEvent) => {
@@ -225,11 +239,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     event.preventDefault();
     resetMessages();
     if (!otpSent) {
-      sendLoginOtp();
-      return;
-    }
-    if (otp !== TEST_OTP) {
-      setError('הקוד שהוזן אינו נכון. קוד הבדיקה הוא 1111.');
+      await sendLoginOtp();
       return;
     }
     setAuthPending(true);
@@ -242,7 +252,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     }
   };
 
-  const handleRegistrationPhone = (event: React.FormEvent) => {
+  const handleRegistrationPhone = async (event: React.FormEvent) => {
     event.preventDefault();
     resetMessages();
     if (registerPhone.replace(/\D/g, '').length < 9) {
@@ -253,18 +263,31 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       setError('מספר הטלפון כבר רשום. ניתן לעבור למסך הכניסה.');
       return;
     }
-    setRegisterStep(2);
-    setNotice('הקוד נשלח בהדמיה. קוד הבדיקה הוא 1111.');
+    setAuthPending(true);
+    try {
+      const result = await onRequestPhoneCode(registerPhone, 'REGISTER');
+      setRegisterStep(2);
+      setNotice(result.testMode ? 'הקוד נשלח בהדמיה. קוד הבדיקה הוא 1111.' : 'קוד אימות נשלח אליך ב-SMS.');
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'לא ניתן לשלוח קוד כרגע.');
+    } finally {
+      setAuthPending(false);
+    }
   };
 
-  const handleRegistrationOtp = (event: React.FormEvent) => {
+  const handleRegistrationOtp = async (event: React.FormEvent) => {
     event.preventDefault();
     resetMessages();
-    if (registerOtp !== TEST_OTP) {
-      setError('הקוד שהוזן אינו נכון. קוד הבדיקה הוא 1111.');
-      return;
+    setAuthPending(true);
+    try {
+      const result = await onVerifyRegistrationPhone(registerPhone, registerOtp);
+      setPhoneVerificationToken(result.phoneVerificationToken);
+      setRegisterStep(3);
+    } catch (verifyError) {
+      setError(verifyError instanceof Error ? verifyError.message : 'קוד האימות אינו תקין או שפג תוקפו.');
+    } finally {
+      setAuthPending(false);
     }
-    setRegisterStep(3);
   };
 
   const handleRegistrationDetails = async (event: React.FormEvent) => {
@@ -468,7 +491,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         discountCode: appliedDiscount?.code,
         planAmount: !isFamilyPlan ? selectedPlanPrice * (isTrainingCard ? trainingCardSize : 1) : undefined,
         planLabel: !isFamilyPlan ? selectedPlanConfig?.label : undefined,
-        registrationDraft: { user: newUser, familyUsers }
+        registrationDraft: { user: newUser, familyUsers, phoneVerificationToken }
       });
     } catch (paymentError) {
       setPaymentStarting(false);
@@ -504,9 +527,9 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
               </form>
             ) : (
               <form onSubmit={handlePhoneLogin} className="auth-form">
-                <label>מספר טלפון<input inputMode="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="05X-XXXXXXX" /></label>
-                {otpSent && <label>קוד אימות<input inputMode="numeric" maxLength={4} value={otp} onChange={event => setOtp(event.target.value)} placeholder="1111" /></label>}
-                <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? 'מתחבר…' : otpSent ? 'אימות וכניסה' : 'שליחת קוד SMS'}</button>
+                <label>מספר טלפון<input inputMode="tel" value={phone} onChange={event => { setPhone(event.target.value); setOtpSent(false); setOtp(''); }} placeholder="05X-XXXXXXX" /></label>
+                {otpSent && <label>קוד אימות<input inputMode="numeric" maxLength={demoMode ? 4 : 6} value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, ''))} placeholder={demoMode ? '1111' : '6 ספרות'} /></label>}
+                <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? (otpSent ? 'מאמת…' : 'שולח…') : otpSent ? 'אימות וכניסה' : 'שליחת קוד SMS'}</button>
               </form>
             )}
             <button className="auth-text-link" onClick={() => openScreen('register')}>עדיין לא רשומים? להרשמה</button>
@@ -521,15 +544,15 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
 
             {registerStep === 1 && (
               <form onSubmit={handleRegistrationPhone} className="auth-form">
-                <label>מספר טלפון<input inputMode="tel" value={registerPhone} onChange={event => setRegisterPhone(event.target.value)} placeholder="05X-XXXXXXX" /></label>
-                <button className="auth-primary" type="submit">שליחת קוד SMS</button>
+                <label>מספר טלפון<input inputMode="tel" value={registerPhone} onChange={event => { setRegisterPhone(event.target.value); setRegisterOtp(''); setPhoneVerificationToken(''); }} placeholder="05X-XXXXXXX" /></label>
+                <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? 'שולח…' : 'שליחת קוד SMS'}</button>
               </form>
             )}
             {registerStep === 2 && (
               <form onSubmit={handleRegistrationOtp} className="auth-form">
-                <label>קוד אימות<input inputMode="numeric" maxLength={4} value={registerOtp} onChange={event => setRegisterOtp(event.target.value)} placeholder="1111" /></label>
-                <button className="auth-primary" type="submit">אימות מספר הטלפון</button>
-                <button className="auth-text-link" type="button" onClick={() => setRegisterStep(1)}>שינוי מספר טלפון</button>
+                <label>קוד אימות<input inputMode="numeric" maxLength={demoMode ? 4 : 6} value={registerOtp} onChange={event => setRegisterOtp(event.target.value.replace(/\D/g, ''))} placeholder={demoMode ? '1111' : '6 ספרות'} /></label>
+                <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? 'מאמת…' : 'אימות מספר הטלפון'}</button>
+                <button className="auth-text-link" type="button" onClick={() => { setRegisterStep(1); setPhoneVerificationToken(''); }}>שינוי מספר טלפון</button>
               </form>
             )}
             {registerStep === 3 && (

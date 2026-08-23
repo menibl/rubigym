@@ -49,6 +49,19 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions (expires_at);
+CREATE TABLE IF NOT EXISTS sms_otp_challenges (
+  id text PRIMARY KEY,
+  club_id text NOT NULL,
+  phone_normalized text NOT NULL,
+  purpose text NOT NULL,
+  code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  attempts integer NOT NULL DEFAULT 0,
+  max_attempts integer NOT NULL DEFAULT 5,
+  consumed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sms_otp_lookup_idx ON sms_otp_challenges (club_id, phone_normalized, purpose, created_at DESC);
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   club_id text NOT NULL,
   user_id text NOT NULL,

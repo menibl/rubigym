@@ -28,6 +28,8 @@ read -rp "Numeric Telegram user ID: " TELEGRAM_USER_ID
 read -rp "Telegram chat ID: " TELEGRAM_CHAT_ID
 read -rsp "Telegram bot token: " TELEGRAM_BOT_TOKEN; echo
 read -rsp "OpenAI API key for the workout assistant (leave empty to configure later): " OPENAI_API_KEY; echo
+read -rsp "Pulseem API key (leave empty to configure later): " PULSEEM_API_KEY; echo
+read -rp "Pulseem approved sender number/name (leave empty to configure later): " PULSEEM_FROM_NUMBER
 read -rsp "Initial password for Ruby Bali manager (minimum 8 characters): " INITIAL_ADMIN_PASSWORD; echo
 if [[ ${#INITIAL_ADMIN_PASSWORD} -lt 8 ]]; then echo "Initial manager password must contain at least 8 characters." >&2; exit 1; fi
 read -rp "Use Cardcom demo mode for the first deployment? [Y/n]: " DEMO_CHOICE
@@ -52,7 +54,9 @@ fi
 [[ ${#TELEGRAM_BOT_TOKEN} -ge 20 ]] || { echo "Telegram token is too short." >&2; exit 2; }
 
 PAYMENT_SIGNING_SECRET=$(openssl rand -hex 48)
+SMS_OTP_SIGNING_SECRET=$(openssl rand -hex 48)
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
+SMS_TEST_MODE=false
 
 bash "${DEPLOY_DIR}/scripts/bootstrap-server.sh" "${ADMIN_USER}"
 install -d -m 0750 /etc/gymflow/secrets /var/log/gymflow /var/lib/gymflow-deploy /var/backups/gymflow
@@ -67,7 +71,17 @@ OPENAI_API_KEY=${OPENAI_API_KEY}
 INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
 INITIAL_ADMIN_EMAIL=robi@rubisgym.co.il
 INITIAL_ADMIN_PHONE=054-6995885
-SMS_TEST_MODE=true
+PULSEEM_API_KEY=${PULSEEM_API_KEY}
+PULSEEM_FROM_NUMBER=${PULSEEM_FROM_NUMBER}
+PULSEEM_PHONE_FORMAT=local
+PULSEEM_TIMEOUT_MS=10000
+SMS_OTP_SIGNING_SECRET=${SMS_OTP_SIGNING_SECRET}
+SMS_OTP_TTL_SECONDS=300
+SMS_OTP_MAX_ATTEMPTS=5
+SMS_OTP_REQUESTS_PER_HOUR=5
+SMS_OTP_COOLDOWN_SECONDS=60
+SMS_PHONE_VERIFICATION_TTL_SECONDS=7200
+SMS_TEST_MODE=${SMS_TEST_MODE}
 OPENAI_WORKOUT_MODEL=gpt-5.4-mini
 OPENAI_WORKOUT_MAX_OUTPUT_TOKENS=12000
 AI_REQUESTS_PER_HOUR=30
