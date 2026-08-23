@@ -148,6 +148,52 @@ const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(d
   headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers }
 });
 
+const landingMediaSlots = new Set(['hero', 'coaching']);
+const landingImageMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const maxLandingImageBytes = 800_000;
+
+const configuredHosts = value => String(value || '')
+  .split(',')
+  .map(host => host.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0].split(':')[0])
+  .filter(Boolean);
+
+const publicLandingPayload = async (request, env, url, clubId) => {
+  const requestHost = String(request.headers.get('x-forwarded-host') || url.hostname).split(':')[0].toLowerCase();
+  const landingHosts = configuredHosts(env.LANDING_DOMAIN);
+  const isDevelopmentPreview = env.NODE_ENV !== 'production' && url.searchParams.get('surface') === 'landing';
+  const surface = landingHosts.includes(requestHost) || isDevelopmentPreview ? 'landing' : 'app';
+  const state = env.STATE_STORE ? await env.STATE_STORE.getClubState(clubId) : null;
+  const plans = Array.isArray(state?.payload?.settings?.membershipPlans)
+    ? state.payload.settings.membershipPlans.filter(plan => plan?.active).map(plan => ({
+      id: plan.id,
+      label: plan.label,
+      description: plan.description,
+      price: plan.price,
+      category: plan.category,
+      active: true,
+      priceUnit: plan.priceUnit,
+      supportsTrainingCard: Boolean(plan.supportsTrainingCard)
+    }))
+    : [];
+  const media = env.STATE_STORE?.listLandingMedia
+    ? await env.STATE_STORE.listLandingMedia(clubId)
+    : [];
+  const mediaBySlot = Object.fromEntries(media.map(item => [item.slot, item]));
+  const imageUrl = slot => mediaBySlot[slot]
+    ? `/api/public/landing-media/${slot}?v=${new Date(mediaBySlot[slot].updated_at).getTime()}`
+    : null;
+  return {
+    surface,
+    appUrl: env.PUBLIC_APP_URL || `${url.origin}/`,
+    landingUrl: env.PUBLIC_LANDING_URL || (surface === 'landing' ? `${url.origin}/` : ''),
+    plans,
+    images: {
+      hero: imageUrl('hero'),
+      coaching: imageUrl('coaching')
+    }
+  };
+};
+
 const base64Url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const encodePayload = value => base64Url(new TextEncoder().encode(JSON.stringify(value)));
 const decodePayload = value => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4)), char => char.charCodeAt(0))));
@@ -515,6 +561,56 @@ const handleApi = async (request, env, url) => {
         console.warn('Unable to dispatch state change push notifications', error?.message || error);
       }
     };
+
+    if (url.pathname === '/api/public/landing' && request.method === 'GET') {
+      return json(await publicLandingPayload(request, env, url, clubId), 200, {
+        ...headers,
+        'Cache-Control': 'no-store'
+      });
+    }
+
+    const publicLandingMediaMatch = url.pathname.match(/^\/api\/public\/landing-media\/(hero|coaching)$/);
+    if (publicLandingMediaMatch && request.method === 'GET') {
+      const media = env.STATE_STORE?.getLandingMedia
+        ? await env.STATE_STORE.getLandingMedia(clubId, publicLandingMediaMatch[1])
+        : null;
+      if (!media) return new Response(null, { status: 404, headers });
+      return new Response(media.body, {
+        status: 200,
+        headers: {
+          ...headers,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          'Content-Length': String(media.body.length),
+          'Content-Type': media.mime_type
+        }
+      });
+    }
+
+    const landingMediaMatch = url.pathname.match(/^\/api\/landing-media\/(hero|coaching)$/);
+    if (landingMediaMatch && request.method === 'PUT') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'Unauthorized' }, 401, headers);
+      if (!env.STATE_STORE?.putLandingMedia) return json({ message: 'Landing media storage is not configured' }, 503, headers);
+      const slot = landingMediaMatch[1];
+      const mimeType = String(request.headers.get('Content-Type') || '').split(';')[0].toLowerCase();
+      if (!landingMediaSlots.has(slot) || !landingImageMimeTypes.has(mimeType)) {
+        return json({ message: 'יש לבחור תמונת JPG, PNG או WebP.' }, 415, headers);
+      }
+      const body = new Uint8Array(await request.arrayBuffer());
+      if (!body.length || body.length > maxLandingImageBytes) {
+        return json({ message: 'התמונה גדולה מדי. הגודל המרבי לאחר כיווץ הוא 800KB.' }, 413, headers);
+      }
+      const saved = await env.STATE_STORE.putLandingMedia(identity.session.club_id, slot, mimeType, body);
+      return json({ ok: true, slot, size: Number(saved.size), updatedAt: saved.updated_at }, 200, headers);
+    }
+
+    if (landingMediaMatch && request.method === 'DELETE') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'Unauthorized' }, 401, headers);
+      if (!env.STATE_STORE?.deleteLandingMedia) return json({ message: 'Landing media storage is not configured' }, 503, headers);
+      await env.STATE_STORE.deleteLandingMedia(identity.session.club_id, landingMediaMatch[1]);
+      return json({ ok: true, slot: landingMediaMatch[1] }, 200, headers);
+    }
 
     if (url.pathname === '/api/auth/login' && request.method === 'POST') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
