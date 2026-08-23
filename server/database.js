@@ -92,6 +92,14 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       PRIMARY KEY (club_id, delivery_key)
     );
     CREATE INDEX IF NOT EXISTS push_deliveries_time_idx ON push_deliveries (delivered_at);
+    CREATE TABLE IF NOT EXISTS landing_media (
+      club_id text NOT NULL,
+      slot text NOT NULL CHECK (slot IN ('hero', 'coaching')),
+      mime_type text NOT NULL,
+      body bytea NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (club_id, slot)
+    );
   `);
   return {
     async getClubState(clubId) {
@@ -114,6 +122,30 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
         await client.query('COMMIT');
         return { conflict: false, revision: nextRevision };
       } finally { client.release(); }
+    },
+    async getLandingMedia(clubId, slot) {
+      const result = await pool.query(
+        'SELECT mime_type, body, updated_at FROM landing_media WHERE club_id=$1 AND slot=$2',
+        [clubId, slot]
+      );
+      return result.rows[0] || null;
+    },
+    async listLandingMedia(clubId) {
+      const result = await pool.query(
+        'SELECT slot, mime_type, octet_length(body) AS size, updated_at FROM landing_media WHERE club_id=$1',
+        [clubId]
+      );
+      return result.rows;
+    },
+    async putLandingMedia(clubId, slot, mimeType, body) {
+      const result = await pool.query(`INSERT INTO landing_media (club_id,slot,mime_type,body)
+        VALUES ($1,$2,$3,$4)
+        ON CONFLICT (club_id,slot) DO UPDATE SET mime_type=EXCLUDED.mime_type,body=EXCLUDED.body,updated_at=now()
+        RETURNING mime_type,octet_length(body) AS size,updated_at`, [clubId, slot, mimeType, body]);
+      return result.rows[0];
+    },
+    async deleteLandingMedia(clubId, slot) {
+      await pool.query('DELETE FROM landing_media WHERE club_id=$1 AND slot=$2', [clubId, slot]);
     },
     async getActiveProgram(clubId) {
       const result = await pool.query('SELECT program FROM live_display WHERE club_id=$1', [clubId]);

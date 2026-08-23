@@ -41,7 +41,6 @@ import {
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { createMembershipTerm } from '../data/membershipPolicy';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
-import { PublicLandingPage } from './PublicLandingPage';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 import { isPagesDemoMode } from '../data/appMode';
 
@@ -52,9 +51,12 @@ interface AuthGatewayProps {
   onPasswordLogin: (login: string, password: string) => Promise<User>;
   onPhoneLogin: (phone: string, otp: string) => Promise<User>;
   onRegister: (user: User, payment: Payment, familyUsers?: User[]) => Promise<void>;
+  initialScreen?: 'login' | 'register';
+  initialPlan?: MembershipType;
+  landingUrl?: string;
 }
 
-type AuthScreen = 'welcome' | 'login' | 'register';
+type AuthScreen = 'login' | 'register';
 type LoginMethod = 'password' | 'phone';
 type FamilyAccountDraft = {
   name: string;
@@ -77,10 +79,10 @@ const calculateAge = (birthDate: string) => {
   return Math.max(age, 0);
 };
 
-export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRegister }) => {
+export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRegister, initialScreen = 'login', initialPlan, landingUrl }) => {
   const demoMode = isPagesDemoMode();
   const demoManagerPassword = import.meta.env.VITE_DEMO_MANAGER_PASSWORD || '';
-  const [screen, setScreen] = useState<AuthScreen>('welcome');
+  const [screen, setScreen] = useState<AuthScreen>(initialScreen);
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
   const [username, setUsername] = useState(demoMode ? 'רובי באלי' : '');
   const [password, setPassword] = useState(demoMode ? demoManagerPassword : '');
@@ -102,7 +104,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [agreementApproved, setAgreementApproved] = useState(false);
   const [pushApproved, setPushApproved] = useState(false);
   const [pushWorkoutReminders, setPushWorkoutReminders] = useState(true);
-  const [selectedPlan, setSelectedPlan] = useState<MembershipType>(MembershipType.OPEN_GYM);
+  const [selectedPlan, setSelectedPlan] = useState<MembershipType>(initialPlan || MembershipType.OPEN_GYM);
   const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [isFamilyPlan, setIsFamilyPlan] = useState(false);
   const [familyName, setFamilyName] = useState('');
@@ -474,28 +476,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     }
   };
 
-  if (screen === 'welcome') {
-    return (
-      <PublicLandingPage
-        plans={registrationPlans}
-        onLogin={() => openScreen('login')}
-        onRegister={plan => {
-          if (plan) {
-            setSelectedPlan(plan);
-            setIsFamilyPlan(false);
-          }
-          openScreen('register');
-        }}
-      />
-    );
-  }
-
   return (
     <main className="auth-gateway" dir="rtl">
       <section className="auth-panel">
-        <button className="auth-back" onClick={() => openScreen('welcome')}>
-          <ArrowLeft size={18} /> חזרה
-        </button>
+        {landingUrl && <a className="auth-back" href={landingUrl}><ArrowLeft size={18} /> חזרה לדף המועדון</a>}
         <RubisLogo size={145} className="auth-panel-logo" />
 
         {screen === 'login' && (

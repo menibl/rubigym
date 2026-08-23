@@ -68,3 +68,11 @@ CREATE TABLE IF NOT EXISTS push_deliveries (
   PRIMARY KEY (club_id, delivery_key)
 );
 CREATE INDEX IF NOT EXISTS push_deliveries_time_idx ON push_deliveries (delivered_at);
+CREATE TABLE IF NOT EXISTS landing_media (
+  club_id text NOT NULL,
+  slot text NOT NULL CHECK (slot IN ('hero', 'coaching')),
+  mime_type text NOT NULL,
+  body bytea NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (club_id, slot)
+);

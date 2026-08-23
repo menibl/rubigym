@@ -25,7 +25,8 @@ import {
   TraineeMemoryEntry,
   TraineeProfessionalProfile,
   UserRole,
-  MembershipStatus
+  MembershipStatus,
+  MembershipType
 } from './types';
 import {
   INITIAL_USERS,
@@ -46,6 +47,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
 import { AuthGateway } from './components/AuthGateway';
+import { PublicLandingPage } from './components/PublicLandingPage';
 import { RubisLogo } from './components/RubisLogo';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
@@ -54,6 +56,7 @@ import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceL
 import { isMembershipCancellationEffective } from './data/membershipPolicy';
 import { hasNotificationMarker, saveNotificationMarker, showBrowserNotification } from './utils/browserNotifications';
 import { isPagesDemoMode } from './data/appMode';
+import { getPublicLandingConfig, PublicLandingConfig } from './data/publicLanding';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const isClubWorkoutDisplay = () => window.location.hash === '#club-workout-display';
@@ -100,6 +103,7 @@ export default function App() {
   const [personalWorkoutDisplayId, setPersonalWorkoutDisplayId] = useState(getPersonalWorkoutDisplayId);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
   const [showTraineeAccessAlert, setShowTraineeAccessAlert] = useState(true);
+  const [publicLandingConfig, setPublicLandingConfig] = useState<PublicLandingConfig | null>(null);
 
   // Modals state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -153,10 +157,18 @@ export default function App() {
   };
 
   useEffect(() => {
-    getServerSession()
-      .then(({ user }) => loadAuthenticatedState(user))
+    let cancelled = false;
+    getPublicLandingConfig()
+      .then(async config => {
+        if (cancelled) return;
+        setPublicLandingConfig(config);
+        if (config.surface === 'landing') return;
+        const { user } = await getServerSession();
+        if (!cancelled) await loadAuthenticatedState(user);
+      })
       .catch(() => undefined)
-      .finally(() => setIsBootstrapping(false));
+      .finally(() => { if (!cancelled) setIsBootstrapping(false); });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -383,6 +395,32 @@ export default function App() {
     setSettingsInitialSection('profile');
   };
 
+  if (isBootstrapping) {
+    return <div className="min-h-screen grid place-items-center bg-zinc-950 text-amber-400 font-bold" dir="rtl">טוען את נתוני המועדון…</div>;
+  }
+
+  if (publicLandingConfig?.surface === 'landing') {
+    const plans = publicLandingConfig.plans.length
+      ? publicLandingConfig.plans
+      : (INITIAL_SETTINGS.membershipPlans || []).filter(plan => plan.active);
+    const openAppScreen = (screen: 'login' | 'register', plan?: string) => {
+      const appUrl = new URL(publicLandingConfig.appUrl, window.location.href);
+      appUrl.searchParams.set('screen', screen);
+      appUrl.searchParams.set('surface', 'app');
+      if (plan) appUrl.searchParams.set('plan', plan);
+      window.location.assign(appUrl.toString());
+    };
+    return (
+      <PublicLandingPage
+        plans={plans}
+        heroImageUrl={publicLandingConfig.images.hero}
+        coachingImageUrl={publicLandingConfig.images.coaching}
+        onLogin={() => openAppScreen('login')}
+        onRegister={plan => openAppScreen('register', plan)}
+      />
+    );
+  }
+
   if (clubWorkoutDisplay) return <ClubWorkoutDisplay />;
 
   if (groupWorkoutDisplayId) {
@@ -418,11 +456,12 @@ export default function App() {
     return <GroupWorkoutDisplay program={displayProgram} />;
   }
 
-  if (isBootstrapping) {
-    return <div className="min-h-screen grid place-items-center bg-zinc-950 text-amber-400 font-bold" dir="rtl">טוען את נתוני המועדון…</div>;
-  }
-
   if (!isAuthenticated) {
+    const authParams = new URLSearchParams(window.location.search);
+    const requestedPlan = authParams.get('plan');
+    const initialPlan = requestedPlan && Object.values(MembershipType).includes(requestedPlan as MembershipType)
+      ? requestedPlan as MembershipType
+      : undefined;
     return (
       <AuthGateway
         users={users}
@@ -431,6 +470,9 @@ export default function App() {
         onPasswordLogin={handlePasswordLogin}
         onPhoneLogin={handlePhoneLogin}
         onRegister={handleGatewayRegistration}
+        initialScreen={authParams.get('screen') === 'register' ? 'register' : 'login'}
+        initialPlan={initialPlan}
+        landingUrl={publicLandingConfig?.landingUrl || undefined}
       />
     );
   }

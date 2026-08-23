@@ -23,6 +23,8 @@ import { RubisLogo } from './RubisLogo';
 
 interface PublicLandingPageProps {
   plans: MembershipPlanConfig[];
+  heroImageUrl?: string | null;
+  coachingImageUrl?: string | null;
   onLogin: () => void;
   onRegister: (plan?: MembershipType) => void;
 }
@@ -41,7 +43,7 @@ const planIcons: Partial<Record<MembershipType, React.ReactNode>> = {
   [MembershipType.YOUTH_TWICE_WEEKLY]: <Sparkles size={24} />
 };
 
-export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ plans, onLogin, onRegister }) => {
+export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ plans, heroImageUrl, coachingImageUrl, onLogin, onRegister }) => {
   const preferredPlans = featuredPlanOrder
     .map(type => plans.find(plan => plan.id === type))
     .filter((plan): plan is MembershipPlanConfig => Boolean(plan));
@@ -74,7 +76,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ plans, onL
       </header>
 
       <section className="landing-hero" id="top">
-        <img src={clubHero} alt="תמונת אווירה של אימון קבוצתי בסטודיו כושר בוטיק" />
+        <img src={heroImageUrl || clubHero} alt="תמונת אווירה של אימון קבוצתי בסטודיו כושר בוטיק" />
         <div className="landing-hero-shade" />
         <div className="landing-hero-content">
           <div className="landing-eyebrow"><MapPin size={16} /> מושב שילת · מועדון כושר בוטיק</div>
@@ -137,7 +139,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ plans, onL
 
       <section className="landing-rubi landing-section" id="rubi">
         <div className="landing-rubi-image">
-          <img src={personalCoaching} alt="תמונת אווירה המדגימה ליווי אישי ותיקון טכניקה באימון" loading="lazy" />
+          <img src={coachingImageUrl || personalCoaching} alt="תמונת אווירה המדגימה ליווי אישי ותיקון טכניקה באימון" loading="lazy" />
           <span>תמונת אווירה · ליווי אישי במועדון</span>
         </div>
         <div className="landing-rubi-copy">
