@@ -9,27 +9,27 @@ button { font: inherit; }
 .tv-ready-card p { margin: 1.6vh 0 0; color: #a7b0c0; font-size: 2.5vh; }
 .tv-error-note { margin-top: 2vh; color: #fda4af; font-weight: bold; }
 .tv-shell { display: flex; height: 100%; flex-direction: column; }
-.tv-header { height: 11vh; min-height: 72px; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; padding: 1.2vh 2vw; border-bottom: 1px solid #293142; background: #0b0f18; }
+.tv-header { height: 9.5vh; min-height: 66px; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; padding: .8vh 1.5vw; border-bottom: 1px solid #364155; background: #0b0f18; }
 .tv-brand { display: flex; min-width: 0; align-items: center; }
-.tv-logo { width: 10vw; max-width: 170px; min-width: 105px; max-height: 8vh; object-fit: contain; margin-left: 1.4vw; }
+.tv-logo { width: 9vw; max-width: 160px; min-width: 105px; max-height: 7.6vh; object-fit: contain; margin-left: 1.2vw; }
 .tv-title-wrap { min-width: 0; }
-.tv-group { overflow: hidden; color: #c9ad6a; font-size: 2vh; font-weight: bold; text-overflow: ellipsis; white-space: nowrap; }
-.tv-title { overflow: hidden; margin: .5vh 0 0; font-size: 3.2vh; text-overflow: ellipsis; white-space: nowrap; }
+.tv-group { overflow: hidden; color: #dcc27f; font-size: 2.15vh; font-weight: bold; text-overflow: ellipsis; white-space: nowrap; }
+.tv-title { overflow: hidden; margin: .25vh 0 0; font-size: 3.25vh; text-overflow: ellipsis; white-space: nowrap; }
 .tv-header-info { display: flex; align-items: center; }
 .tv-clock { min-width: 7.5vw; color: #d9e0eb; font-size: 2.7vh; font-weight: bold; direction: ltr; }
 .tv-meta { margin-left: 2vw; color: #98a2b3; font-size: 1.8vh; }
 .tv-progress { height: .8vh; flex: 0 0 auto; background: #1c2533; }
 .tv-progress-bar { height: 100%; background: #3ed39f; }
 .tv-content { display: flex; min-height: 0; flex: 1 1 auto; }
-.tv-main { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; padding: 1.4vh 1.2vw; }
-.tv-sidebar { width: 23vw; min-width: 250px; display: flex; flex: 0 0 auto; flex-direction: column; padding: 1.3vh 1vw; overflow: hidden; border-right: 1px solid #293142; background: #0e1420; }
-.tv-phase-line { height: 10vh; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
-.tv-phase { min-width: 10vw; padding: 1vh 2vw; border-radius: 999px; background: #208c69; text-align: center; font-size: 2.6vh; font-weight: bold; }
+.tv-main { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; padding: .9vh .8vw; }
+.tv-sidebar { width: 19vw; min-width: 260px; max-width: 340px; display: flex; flex: 0 0 auto; flex-direction: column; padding: 1vh .8vw; overflow: hidden; border-right: 1px solid #364155; background: #0e1420; }
+.tv-phase-line { height: 9vh; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
+.tv-phase { min-width: 10vw; padding: .8vh 1.6vw; border-radius: 999px; background: #208c69; text-align: center; font-size: 2.8vh; font-weight: bold; }
 .tv-phase.rest { background: #d9ae52; color: #17130b; }
 .tv-phase.prepare { background: #2878b8; }
 .tv-phase.transition { background: #8b4cc4; }
 .tv-phase.complete { background: #6557cf; }
-.tv-timer { margin-right: 2vw; font-family: Consolas, monospace; font-size: 8vh; font-weight: bold; line-height: 1; direction: ltr; }
+.tv-timer { margin-right: 1.5vw; font-family: Consolas, monospace; font-size: 8.5vh; font-weight: bold; line-height: 1; direction: ltr; }
 .tv-timer.urgent { color: #fb7185; }
 .tv-linear-stage { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .tv-exercise-name { max-width: 95%; margin: 0; font-size: 6vh; line-height: 1.05; }
@@ -37,11 +37,11 @@ button { font: inherit; }
 .tv-exercise-stats { display: flex; margin-top: 1.4vh; align-items: center; justify-content: center; }
 .tv-chip { margin: 0 .4vw; padding: 1vh 1.2vw; border-radius: 1vh; background: #1a2230; color: #d8dee9; font-size: 2vh; font-weight: bold; }
 .tv-notes { max-width: 75%; margin-top: 1.3vh; padding: 1.1vh 1.4vw; border: 1px solid #866d32; border-radius: 1vh; background: #302716; color: #ffe4a8; font-size: 2vh; }
-.tv-controls { height: 8vh; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
+.tv-controls { height: 7vh; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
 .tv-button { min-width: 5vw; height: 5.7vh; margin: 0 .35vw; border: 0; border-radius: 1vh; background: #202a39; color: #fff; cursor: pointer; font-size: 2.5vh; font-weight: bold; }
 .tv-button.primary { min-width: 7vw; background: #27a979; }
 .tv-button.pause { background: #d9ae52; color: #15110a; }
-.tv-sidebar-title { height: 5vh; margin: 0; flex: 0 0 auto; font-size: 2.5vh; }
+.tv-sidebar-title { height: 4.5vh; margin: 0; flex: 0 0 auto; font-size: 2.65vh; }
 .tv-list { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
 .tv-list-item { display: flex; min-height: 0; flex: 1 1 0; align-items: center; margin-bottom: .6vh; padding: .6vh .7vw; overflow: hidden; border: 1px solid #293142; border-radius: 1vh; background: #141b27; }
 .tv-list-item.active { border-color: #6f82e8; background: #242b54; }
@@ -53,28 +53,36 @@ button { font: inherit; }
 .tv-list-copy strong, .tv-list-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tv-list-copy strong { font-size: 2vh; }
 .tv-list-copy small { margin-top: .4vh; color: #9aa5b5; font-size: 1.45vh; }
-.tv-stations { display: flex; min-height: 0; flex: 1 1 auto; margin: 0 -.4vw; }
-.tv-station { display: flex; min-width: 0; flex: 1 1 0; flex-direction: column; margin: 0 .4vw; padding: 1vh .7vw; overflow: hidden; border: 1px solid #293142; border-radius: 1.3vh; background: #101722; }
-.tv-station-head { height: 6vh; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; }
-.tv-station-head h2 { overflow: hidden; margin: 0; font-size: 2.5vh; text-overflow: ellipsis; white-space: nowrap; }
-.tv-station-head span { color: #b8c0ff; font-size: 1.7vh; font-weight: bold; }
+.tv-stations { display: flex; min-height: 0; flex: 1 1 auto; margin: 0 -.35vw; }
+.tv-station { display: flex; min-width: 0; flex: 1 1 0; flex-direction: column; margin: 0 .35vw; padding: .8vh .6vw; overflow: hidden; border: 1px solid #3b465a; border-radius: 1.4vh; background: #101722; box-shadow: 0 .6vh 2vh rgba(0,0,0,.22); }
+.tv-station-head { min-height: 7vh; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: .5vw; padding: 0 .2vw .6vh; }
+.tv-station-head div { min-width: 0; }
+.tv-station-head h2 { overflow: hidden; margin: 0; color: #fff; font-size: 3vh; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.tv-station-head span { display: block; overflow: hidden; margin-top: .5vh; color: #c7d0ff; font-size: 2vh; font-weight: bold; text-overflow: ellipsis; white-space: nowrap; }
+.tv-station-head b { flex: 0 0 auto; padding: .55vh .55vw; border-radius: .7vh; background: #252f59; color: #dce1ff; font-size: 1.65vh; }
 .tv-station-exercises { display: flex; min-height: 0; flex: 1 1 auto; flex-wrap: wrap; }
 .tv-station-exercise { width: 50%; min-height: 0; padding: .4vh .3vw; }
-.tv-exercise-card { height: 100%; padding: .7vh .6vw; overflow: hidden; border: 1px solid #293142; border-radius: 1vh; background: #171f2c; }
-.tv-exercise-card.active { border-color: #42d4a0; background: #17392f; }
-.tv-exercise-card h3 { overflow: hidden; margin: 0; font-size: 2.15vh; text-overflow: ellipsis; white-space: nowrap; }
-.tv-exercise-card p { overflow: hidden; margin: .5vh 0 0; color: #b5becb; font-size: 1.55vh; text-overflow: ellipsis; white-space: nowrap; }
-.tv-participant-tags { margin-top: .6vh; overflow: hidden; white-space: nowrap; }
-.tv-person-tag { display: inline-block; margin-left: .3vw; padding: .4vh .5vw; border-radius: 999px; background: #48d6a3; color: #082119; font-size: 1.45vh; font-weight: bold; }
-.tv-group-card { min-height: 0; flex: 1 1 0; margin-bottom: .7vh; padding: .8vh .7vw; overflow: hidden; border: 1px solid #394a77; border-radius: 1vh; background: #17213a; }
-.tv-group-card h3 { margin: 0 0 .5vh; color: #c7d0ff; font-size: 2vh; }
-.tv-group-card p { overflow: hidden; margin: .35vh 0; font-size: 1.55vh; text-overflow: ellipsis; white-space: nowrap; }
+.tv-exercise-card { height: 100%; display: flex; flex-direction: column; padding: .9vh .65vw; overflow: hidden; border: 1px solid #3b465a; border-radius: 1.1vh; background: #192230; }
+.tv-exercise-card.active { border: 2px solid #4de0ad; background: #173b31; box-shadow: 0 0 2vh rgba(77,224,173,.16); }
+.tv-exercise-card-head { display: flex; min-width: 0; align-items: flex-start; }
+.tv-exercise-number { width: 2.7vw; height: 2.7vw; min-width: 34px; min-height: 34px; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; margin-left: .55vw; border-radius: 50%; background: #303b4e; color: #fff; font-size: 2.05vh; font-weight: bold; }
+.tv-exercise-card.active .tv-exercise-number { background: #4de0ad; color: #082119; }
+.tv-exercise-copy { min-width: 0; flex: 1 1 auto; }
+.tv-exercise-card h3 { margin: 0; color: #fff; font-size: 2.5vh; line-height: 1.15; overflow-wrap: break-word; word-wrap: break-word; }
+.tv-exercise-card p { margin: .55vh 0 0; color: #e1e7ef; font-size: 1.9vh; line-height: 1.2; overflow-wrap: break-word; word-wrap: break-word; }
+.tv-exercise-note { margin-top: .7vh; color: #ffe29a; font-size: 1.7vh; line-height: 1.25; overflow-wrap: break-word; word-wrap: break-word; }
+.tv-participant-tags { margin-top: auto; padding-top: .7vh; overflow: hidden; white-space: normal; }
+.tv-person-tag { display: inline-block; margin: .2vh 0 .2vh .3vw; padding: .45vh .55vw; border-radius: 999px; background: #55e4b3; color: #082119; font-size: 1.7vh; font-weight: bold; }
+.tv-group-card { min-height: 0; flex: 1 1 0; margin-bottom: .7vh; padding: .9vh .75vw; overflow: hidden; border: 1px solid #465a91; border-radius: 1vh; background: #17213a; }
+.tv-group-card h3 { margin: 0 0 .65vh; color: #d8deff; font-size: 2.25vh; line-height: 1.15; }
+.tv-group-card p { margin: .45vh 0; color: #f1f5f9; font-size: 1.85vh; line-height: 1.2; overflow-wrap: break-word; word-wrap: break-word; }
+.tv-group-card p strong { color: #fff; }
 .tv-finished { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .tv-finished-icon { font-size: 10vh; }
 .tv-finished h2 { margin: 1vh 0 0; font-size: 6vh; }
 @media (max-width: 1100px) {
-  .tv-sidebar { width: 27vw; min-width: 220px; }
+  .tv-sidebar { width: 22vw; min-width: 220px; }
   .tv-title { font-size: 2.8vh; }
   .tv-exercise-name { font-size: 5vh; }
-  .tv-station-exercise { width: 100%; }
+  .tv-exercise-card h3 { font-size: 2.25vh; }
 }

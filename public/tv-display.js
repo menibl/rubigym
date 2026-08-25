@@ -221,12 +221,15 @@
     for (i = 0; i < stations.length; i += 1) {
       station = stations[i]; names = [];
       for (j = 0; j < assignments.length; j += 1) if (assignments[j].station && assignments[j].station.id === station.id && names.indexOf(assignments[j].groupName) < 0) names.push(assignments[j].groupName);
-      stationsHtml += '<article class="tv-station"><div class="tv-station-head"><h2>' + escapeHtml(station.name) + '</h2><span>' + escapeHtml(names.join(', ') || 'ללא קבוצה') + '</span></div><div class="tv-station-exercises">';
+      var stationRows = Math.max(1, Math.ceil(station.exercises.length / 2));
+      stationsHtml += '<article class="tv-station"><div class="tv-station-head"><div><h2>' + escapeHtml(station.name) + '</h2><span>' + escapeHtml(names.join(', ') || 'ללא קבוצה') + '</span></div><b>בלוק ' + (i + 1) + '</b></div><div class="tv-station-exercises">';
       for (j = 0; j < station.exercises.length; j += 1) {
         exercise = station.exercises[j]; active = [];
         for (var k = 0; k < assignments.length; k += 1) if (assignments[k].station && assignments[k].station.id === station.id && assignments[k].activeIndex === j) active.push(assignments[k].participant.name);
-        stationsHtml += '<div class="tv-station-exercise"><div class="tv-exercise-card' + (active.length ? ' active' : '') + '"><h3>' + (j + 1) + '. ' + escapeHtml(exercise.name) +
-          '</h3><p>' + escapeHtml(exercise.weight || exercise.reps || '') + '</p><div class="tv-participant-tags">';
+        stationsHtml += '<div class="tv-station-exercise" style="height:' + (100 / stationRows) + '%"><div class="tv-exercise-card' + (active.length ? ' active' : '') + '">' +
+          '<div class="tv-exercise-card-head"><span class="tv-exercise-number">' + (j + 1) + '</span><div class="tv-exercise-copy"><h3>' + escapeHtml(exercise.name) +
+          '</h3>' + (exercise.weight || exercise.reps ? '<p>' + escapeHtml(exercise.weight || exercise.reps) + '</p>' : '') + '</div></div>' +
+          (exercise.notes ? '<div class="tv-exercise-note">דגש: ' + escapeHtml(exercise.notes) + '</div>' : '') + '<div class="tv-participant-tags">';
         for (k = 0; k < active.length; k += 1) stationsHtml += '<span class="tv-person-tag">' + escapeHtml(active[k]) + '</span>';
         stationsHtml += '</div></div></div>';
       }
