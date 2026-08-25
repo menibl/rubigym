@@ -217,13 +217,14 @@
 
   function renderRotating() {
     var stations = program.stations || [], assignments = participantAssignments(), progress = rotatingProgress(), stationsHtml = '', i, j, station, exercise, active, names;
-    var stationColumns, displayRows, stationHeight, rowIndex, rowStart, rowItemCount, columnIndex, stationItemWidth, stationTop, stationRight;
+    var stationColumns, displayRows, stationWidth, stationHeight, rowIndex, rowStart, rowItemCount, columnIndex, rowOffset, stationTop, stationRight;
     if (!stations.length) { renderEmpty('לא הוגדרו תחנות בתוכנית'); return; }
     if (stations.length <= 3) stationColumns = stations.length;
     else if (stations.length === 4) stationColumns = 2;
     else if (stations.length <= 6 || stations.length === 9) stationColumns = 3;
     else stationColumns = 4;
     displayRows = Math.ceil(stations.length / stationColumns);
+    stationWidth = 100 / stationColumns;
     stationHeight = 100 / displayRows;
     for (i = 0; i < stations.length; i += 1) {
       station = stations[i]; names = [];
@@ -231,12 +232,12 @@
       rowStart = rowIndex * stationColumns;
       rowItemCount = Math.min(stationColumns, stations.length - rowStart);
       columnIndex = i - rowStart;
-      stationItemWidth = 100 / rowItemCount;
+      rowOffset = (stationColumns - rowItemCount) * stationWidth / 2;
       stationTop = rowIndex * stationHeight;
-      stationRight = columnIndex * stationItemWidth;
+      stationRight = rowOffset + columnIndex * stationWidth;
       for (j = 0; j < assignments.length; j += 1) if (assignments[j].station && assignments[j].station.id === station.id && names.indexOf(assignments[j].groupName) < 0) names.push(assignments[j].groupName);
       var stationRows = Math.max(1, Math.ceil(station.exercises.length / 2));
-      stationsHtml += '<div class="tv-station-slot" style="width:' + stationItemWidth + '%;height:' + stationHeight + '%;top:' + stationTop + '%;right:' + stationRight + '%"><article class="tv-station"><div class="tv-station-head"><div><h2>' + escapeHtml(station.name) + '</h2><span>' + escapeHtml(names.join(', ') || 'ללא קבוצה') + '</span></div><b>בלוק ' + (i + 1) + '</b></div><div class="tv-station-exercises">';
+      stationsHtml += '<div class="tv-station-slot" style="width:' + stationWidth + '%;height:' + stationHeight + '%;top:' + stationTop + '%;right:' + stationRight + '%"><article class="tv-station"><div class="tv-station-head"><div><h2>' + escapeHtml(station.name) + '</h2><span>' + escapeHtml(names.join(', ') || 'ללא קבוצה') + '</span></div><b>בלוק ' + (i + 1) + '</b></div><div class="tv-station-exercises">';
       for (j = 0; j < station.exercises.length; j += 1) {
         exercise = station.exercises[j]; active = [];
         for (var k = 0; k < assignments.length; k += 1) if (assignments[k].station && assignments[k].station.id === station.id && assignments[k].activeIndex === j) active.push(assignments[k].participant.name);
