@@ -2,7 +2,9 @@ import { GroupWorkoutProgram } from '../types';
 
 const apiBase = () => (import.meta.env.VITE_PAYMENT_API_URL || '').replace(/\/$/, '');
 
-export const clubDisplayUrl = () => `${window.location.origin}${window.location.pathname}#club-workout-display`;
+export const clubDisplayUrl = () => import.meta.env.BASE_URL === '/'
+  ? `${window.location.origin}/tv`
+  : `${window.location.origin}${import.meta.env.BASE_URL}tv.html`;
 
 export const activateClubDisplay = async (program: GroupWorkoutProgram) => {
   const base = apiBase();

@@ -959,6 +959,12 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) return handleApi(request, env, url);
+    const userAgent = request.headers.get('User-Agent') || '';
+    const isLgTelevision = /(?:Web0S|WebOS|NetCast|SmartTV)/i.test(userAgent) && /LG|Web0S|WebOS|NetCast/i.test(userAgent);
+    if (url.pathname === '/tv' || (url.pathname === '/' && isLgTelevision)) {
+      return env.ASSETS.fetch(new Request(new URL('/tv.html', url), request));
+    }
+    if (url.pathname === '/tv/') return Response.redirect(new URL('/tv', url), 302);
     if (url.pathname === '/demo-checkout' && String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
       try {
         const token = url.searchParams.get('token');
