@@ -1,16 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bot,
   BookOpen,
   Check,
-  ChevronDown,
-  ChevronUp,
   Dumbbell,
-  Loader2,
   MessageSquareText,
   Plus,
-  RotateCcw,
-  Send,
   Sparkles,
   Trash2,
   UserRoundCheck,
@@ -25,10 +20,12 @@ import {
   TraineeProfessionalProfile,
   User,
   WorkoutAssistantDraft,
-  WorkoutAssistantMessage
+  WorkoutAssistantMessage,
+  WorkoutPlan
 } from '../types';
 import { getPdfDocumentContent } from '../data/pdfLibraryStorage';
 import { generatePersonalWorkoutWithAi } from '../data/workoutAi';
+import { AiBuilderChatScreen } from './AiBuilderChatScreen';
 
 interface WorkoutAssistantPanelProps {
   activeUser: User;
@@ -39,6 +36,7 @@ interface WorkoutAssistantPanelProps {
   pdfDocuments: CoachPdfDocument[];
   messages: WorkoutAssistantMessage[];
   draft?: WorkoutAssistantDraft;
+  libraryPlans?: WorkoutPlan[];
   canPublish: boolean;
   onUpdateMessages: (messages: WorkoutAssistantMessage[]) => void;
   onUpdateDraft: (draft: WorkoutAssistantDraft) => void;
@@ -309,6 +307,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
   pdfDocuments,
   messages,
   draft,
+  libraryPlans = [],
   canPublish,
   onUpdateMessages,
   onUpdateDraft,
@@ -316,10 +315,10 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
 }) => {
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showContext, setShowContext] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [selectedDraftDay, setSelectedDraftDay] = useState(1);
-  const endRef = useRef<HTMLDivElement>(null);
 
   const traineeMessages = useMemo(
     () => messages.filter(message => message.traineeId === trainee.id),
@@ -335,10 +334,6 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
   useEffect(() => {
     setSelectedSourceIds(readySources.slice(0, 3).map(source => source.id));
   }, [trainee.id]);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [traineeMessages.length, isGenerating]);
 
   useEffect(() => {
     setSelectedDraftDay(day => Math.min(Math.max(1, day), draft?.trainingDaysPerWeek || 1));
@@ -489,86 +484,76 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
     onUpdateMessages(messages.filter(message => message.traineeId !== trainee.id));
   };
 
+  const loadLibraryPlan = (plan: WorkoutPlan) => {
+    const now = new Date().toISOString();
+    onUpdateDraft({
+      id: draft?.id || `assistant-draft-${Date.now()}`,
+      traineeId: trainee.id,
+      coachId: activeUser.id,
+      coachName: activeUser.name,
+      objective: plan.title || draft?.objective || 'תוכנית אישית מהמאגר',
+      coachNotes: draft?.coachNotes || `נטענה תוכנית מהמאגר של ${plan.coachName}.`,
+      exercises: plan.exercises.map((exercise, index) => ({ ...exercise, id: `assistant-library-${Date.now()}-${index}` })),
+      trainingDaysPerWeek: plan.trainingDaysPerWeek || 1,
+      dayLabels: plan.dayLabels || ['יום 1'],
+      sourceDocumentIds: draft?.sourceDocumentIds || [],
+      createdAt: draft?.createdAt || now,
+      updatedAt: now,
+      status: 'DRAFT'
+    });
+    onUpdateMessages([...messages, {
+      id: `assistant-library-message-${Date.now()}`,
+      traineeId: trainee.id,
+      coachId: activeUser.id,
+      coachName: activeUser.name,
+      role: 'ASSISTANT',
+      content: `טענתי את התוכנית „${plan.title || 'תוכנית מהמאגר'}” כטיוטה עבור ${trainee.name}. אפשר לבקש ממני להתאים ימים, תרגילים ועומסים.`,
+      createdAt: now
+    }]);
+    setSelectedDraftDay(1);
+    setDrawerOpen(false);
+  };
+
   return (
-    <section className="overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-sm" dir="rtl">
-      <div className="bg-gradient-to-l from-violet-950 via-slate-900 to-slate-900 p-4 text-white">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-violet-500/20 p-2 text-violet-300"><Bot size={24} /></div>
-            <div>
-              <div className="flex items-center gap-2"><h3 className="font-black">עוזר בניית תוכנית</h3><span className="rounded-full bg-emerald-300 px-2 py-0.5 text-[10px] font-black text-slate-900">OpenAI</span></div>
-              <p className="mt-0.5 text-xs text-slate-300">הקשר נפרד עבור {trainee.name} · פרופיל, מגבלות, ציוד ומקורות נבחרים</p>
-            </div>
-          </div>
-          <button onClick={clearConversation} className="flex items-center justify-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-white/10"><RotateCcw size={14} /> איפוס שיחה</button>
+    <>
+      <section className="overflow-hidden rounded-2xl border border-amber-300/30 bg-zinc-950 text-white shadow-sm" dir="rtl">
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-amber-400 text-zinc-950"><Bot size={23} /></span><div><div className="flex items-center gap-2"><h3 className="text-sm font-black">עוזר בנייה חכם AI</h3><span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[9px] font-black text-emerald-300">OpenAI</span></div><p className="mt-1 text-[11px] text-zinc-400">שיחה מלאה לבנייה ולעדכון התוכנית של {trainee.name}</p></div></div>
+          <button type="button" onClick={() => setChatOpen(true)} className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 text-sm font-black text-zinc-950 shadow-lg shadow-amber-400/10"><MessageSquareText size={18} /> פתח עוזר בנייה חכם</button>
         </div>
-      </div>
+      </section>
 
-      <button onClick={() => setShowContext(value => !value)} className="flex w-full items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3 text-right">
-        <span className="flex items-center gap-2 text-sm font-black text-slate-800"><Sparkles size={16} className="text-violet-600" /> ההקשר שהעוזר יקבל</span>
-        <span className="flex items-center gap-2 text-xs text-slate-500">{availableEquipment.length} מכשירים · {readySources.length} מקורות · {confirmedMemory.length} פריטי זיכרון {showContext ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
-      </button>
+      <AiBuilderChatScreen
+        open={chatOpen}
+        title="עוזר בניית תוכנית אימון אישית"
+        subtitle={`${trainee.name} · פרופיל, מגבלות, ציוד ומקורות נבחרים`}
+        messages={traineeMessages.map(message => ({ id: message.id, role: message.role, content: message.content, author: message.coachName }))}
+        input={input}
+        onInputChange={setInput}
+        onSubmit={() => void handleSend()}
+        onClose={() => setChatOpen(false)}
+        onConfirm={() => setChatOpen(false)}
+        confirmDisabled={!draft?.exercises.length}
+        isGenerating={isGenerating}
+        suggestions={['בנה תוכנית כוח ל־3 ימים בשבוע', 'ביום השני החלף את הבטן בסקוואט', 'הוסף פלאנק ליום השלישי']}
+        onSuggestion={suggestion => void handleSend(undefined, suggestion)}
+        drawerOpen={drawerOpen}
+        onDrawerToggle={() => setDrawerOpen(value => !value)}
+        drawerTitle="מאגר ומקורות"
+        drawerDescription="טען תוכנית קיימת כטיוטה או בחר מקורות PDF לשיחה."
+        statusText={draft ? `${draft.trainingDaysPerWeek || 1} ימים · ${draft.exercises.length} תרגילים` : 'ממתין לטיוטה'}
+        emptyTitle="איך תרצה לבנות את האימון?"
+        emptyDescription="כתוב מטרה, מספר ימים, משך, רמת קושי ומגבלות. העוזר ישאל רק על מידע שחסר ויעדכן את הטיוטה לאורך השיחה."
+        onReset={clearConversation}
+        drawerContent={<div className="space-y-4">
+          <section className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="flex items-center gap-2 text-xs font-black"><UserRoundCheck size={15} className="text-amber-300" /> נתוני המתאמן</h4><p className="mt-2 text-[11px] leading-5 text-zinc-300">גיל {trainee.age} · {profile?.experienceLevel === 'BEGINNER' ? 'מתחיל' : profile?.experienceLevel === 'ADVANCED' ? 'מתקדם' : 'בינוני'}</p><p className="text-[11px] leading-5 text-zinc-300">מטרה: {profile?.primaryGoal || 'טרם הוגדרה'}</p><p className="text-[11px] leading-5 text-amber-200">מגבלות: {profile?.limitations || profile?.painAreas || 'לא תועדו'}</p></section>
+          <section><h4 className="mb-2 flex items-center gap-2 text-xs font-black"><Dumbbell size={15} className="text-amber-300" /> תוכניות מהמאגר</h4><div className="space-y-2">{libraryPlans.map(plan => <button key={plan.id} type="button" onClick={() => loadLibraryPlan(plan)} className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-right hover:border-amber-400/60"><strong className="block text-xs text-white">{plan.title || `תוכנית של ${plan.coachName}`}</strong><span className="mt-1 block text-[10px] text-zinc-400">{plan.trainingDaysPerWeek || 1} ימים · {plan.exercises.length} תרגילים</span></button>)}{libraryPlans.length === 0 && <p className="rounded-xl border border-dashed border-white/10 p-3 text-center text-[11px] text-zinc-500">אין עדיין תוכניות במאגר.</p>}</div></section>
+          <section><h4 className="mb-2 flex items-center gap-2 text-xs font-black"><BookOpen size={15} className="text-amber-300" /> מקורות PDF</h4><div className="space-y-2">{readySources.map(source => <label key={source.id} className="flex cursor-pointer items-center gap-2 rounded-lg bg-white/5 p-2 text-[11px] text-zinc-300"><input type="checkbox" checked={selectedSourceIds.includes(source.id)} onChange={() => setSelectedSourceIds(ids => ids.includes(source.id) ? ids.filter(id => id !== source.id) : [...ids, source.id])} /><span className="truncate">{source.title}</span></label>)}{readySources.length === 0 && <p className="text-[11px] text-zinc-500">אין מקורות PDF מוכנים.</p>}</div></section>
+          <section className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="flex items-center gap-2 text-xs font-black"><Wrench size={15} className="text-amber-300" /> ציוד וזיכרון</h4><p className="mt-2 text-[10px] leading-5 text-zinc-400">{availableEquipment.length} מכשירים זמינים · {confirmedMemory.length} פריטי זיכרון מאושרים</p></section>
+        </div>}
+      />
 
-      {showContext && (
-        <div className="grid gap-3 border-b border-slate-200 bg-slate-50 p-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <h4 className="mb-2 flex items-center gap-1.5 text-xs font-black text-slate-800"><UserRoundCheck size={15} className="text-violet-600" /> פרופיל וזיכרון</h4>
-            <p className="text-xs leading-5 text-slate-600">גיל {trainee.age} · {profile?.experienceLevel === 'BEGINNER' ? 'מתחיל' : profile?.experienceLevel === 'ADVANCED' ? 'מתקדם' : 'בינוני'}</p>
-            <p className="text-xs leading-5 text-slate-600">מטרה: {profile?.primaryGoal || 'טרם הוגדרה'}</p>
-            <p className="text-xs leading-5 text-amber-700">מגבלות: {profile?.limitations || profile?.painAreas || 'לא תועדו'}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <h4 className="mb-2 flex items-center gap-1.5 text-xs font-black text-slate-800"><Wrench size={15} className="text-violet-600" /> ציוד זמין</h4>
-            <p className="line-clamp-3 text-xs leading-5 text-slate-600">{availableEquipment.length ? availableEquipment.slice(0, 10).map(item => item.name).join(', ') : 'לא הוזן ציוד. העוזר ישתמש בתרגילי משקל גוף.'}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <h4 className="mb-2 flex items-center gap-1.5 text-xs font-black text-slate-800"><BookOpen size={15} className="text-violet-600" /> מקורות PDF</h4>
-            <div className="max-h-24 space-y-1 overflow-y-auto">
-              {readySources.length ? readySources.map(source => (
-                <label key={source.id} className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
-                  <input type="checkbox" checked={selectedSourceIds.includes(source.id)} onChange={() => setSelectedSourceIds(ids => ids.includes(source.id) ? ids.filter(id => id !== source.id) : [...ids, source.id])} />
-                  <span className="truncate">{source.title}</span>
-                </label>
-              )) : <p className="text-xs text-slate-500">אין עדיין מקור מוכן לצ׳אט.</p>}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="grid min-h-[480px] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div className="flex min-h-[430px] flex-col border-b border-slate-200 lg:border-b-0 lg:border-l">
-          <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50 p-4 lg:max-h-[620px]">
-            {traineeMessages.length === 0 && (
-              <div className="rounded-xl border border-dashed border-violet-200 bg-white p-5 text-center">
-                <MessageSquareText className="mx-auto mb-2 text-violet-500" size={28} />
-                <p className="text-sm font-black text-slate-800">איך תרצה לבנות את האימון?</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">כתוב מטרה, משך, רמת קושי ודגשים. העוזר ייצור טיוטה לעריכת המאמן.</p>
-              </div>
-            )}
-            {traineeMessages.map(message => (
-              <div key={message.id} className={`flex ${message.role === 'COACH' ? 'justify-start' : 'justify-end'}`}>
-                <div className={`max-w-[88%] rounded-2xl px-3 py-2.5 text-xs leading-6 ${message.role === 'COACH' ? 'bg-slate-900 text-white' : 'border border-violet-100 bg-white text-slate-700 shadow-sm'}`}>
-                  <strong className={`mb-1 block text-[10px] ${message.role === 'COACH' ? 'text-slate-300' : 'text-violet-600'}`}>{message.role === 'COACH' ? message.coachName : 'עוזר התוכנית'}</strong>
-                  {message.content}
-                </div>
-              </div>
-            ))}
-            {isGenerating && <div className="flex justify-end"><div className="flex items-center gap-2 rounded-2xl border border-violet-100 bg-white px-3 py-2 text-xs text-violet-700"><Loader2 className="animate-spin" size={15} /> קורא הקשר ומכין טיוטה...</div></div>}
-            <div ref={endRef} />
-          </div>
-          <div className="border-t border-slate-200 bg-white p-3">
-            <div className="mb-2 flex flex-wrap gap-1.5">
-              {['בנה תוכנית כוח ל־3 ימים בשבוע', 'ביום השני החלף את הבטן בסקוואט', 'הוסף פלאנק ליום השלישי'].map(suggestion => (
-                <button key={suggestion} onClick={() => handleSend(undefined, suggestion)} className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100">{suggestion}</button>
-              ))}
-            </div>
-            <form onSubmit={handleSend} className="flex gap-2">
-              <textarea value={input} onChange={event => setInput(event.target.value)} rows={2} className="min-w-0 flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2 text-xs" placeholder="לדוגמה: תבנה תוכנית כוח ל־3 ימים, וביום השני תחליף את הבטן בסקוואט..." />
-              <button disabled={!input.trim() || isGenerating} className="self-stretch rounded-xl bg-violet-600 px-3 text-white disabled:opacity-40"><Send size={18} /></button>
-            </form>
-          </div>
-        </div>
-
+      <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" dir="rtl">
         <div className="bg-white p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div><h4 className="flex items-center gap-2 text-sm font-black text-slate-900"><Dumbbell size={17} className="text-violet-600" /> טיוטת המאמן</h4><p className="mt-0.5 text-[11px] text-slate-500">ניתן לערוך כל שדה לפני פרסום</p></div>
@@ -609,7 +594,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
             </div>
           )}
         </div>
-      </div>
-    </section>
+      </section>
+    </>
   );
 };
