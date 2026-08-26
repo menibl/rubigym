@@ -17,7 +17,6 @@ import {
   Plus,
   RotateCcw,
   Save,
-  Send,
   SkipForward,
   TimerReset,
   Trash2,
@@ -30,6 +29,7 @@ import { getGroupWorkoutStatus, GroupWorkoutLiveStatus, sendGroupWorkoutCommand,
 import { activateClubDisplay, clubDisplayUrl } from '../data/clubDisplayRemote';
 import { generateGroupWorkoutWithAi } from '../data/workoutAi';
 import { ProgramBriefPanel, ProgramSetupWizard, WizardAnswers, WizardQuestion } from './ProgramSetupWizard';
+import { AiBuilderChatScreen } from './AiBuilderChatScreen';
 
 interface GroupWorkoutProgramManagerProps {
   activeUser: User;
@@ -110,6 +110,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   const [liveStatus, setLiveStatus] = useState<GroupWorkoutLiveStatus>();
   const [assistantInput, setAssistantInput] = useState('');
   const [isAssistantGenerating, setIsAssistantGenerating] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
   const [assistantMessages, setAssistantMessages] = useState<string[]>([
     'בחרו תוכנית או צרו חדשה, ואז כתבו כיצד תרצו לבנות או לשנות את האימון.'
   ]);
@@ -494,7 +496,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     }
     if (isAssistantGenerating) return;
     const coachLine = `מאמן: ${request.trim()}`;
-    setAssistantMessages(messages => [...messages, coachLine].slice(-8));
+    setAssistantMessages(messages => [...messages, coachLine].slice(-100));
     setIsAssistantGenerating(true);
     try {
       const linkedSession = sessions.find(session => session.id === selectedProgram.sessionId);
@@ -569,20 +571,48 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         updatedAt: new Date().toISOString()
       };
       onUpdatePrograms(programs.map(program => program.id === updatedProgram.id ? updatedProgram : program));
-      setAssistantMessages(messages => [...messages, result.assistantMessage].slice(-8));
+      setAssistantMessages(messages => [...messages, result.assistantMessage].slice(-100));
     } catch (error) {
-      setAssistantMessages(messages => [...messages, error instanceof Error ? error.message : 'שירות ה־AI אינו זמין כרגע.'].slice(-8));
+      setAssistantMessages(messages => [...messages, error instanceof Error ? error.message : 'שירות ה־AI אינו זמין כרגע.'].slice(-100));
     } finally {
       setIsAssistantGenerating(false);
     }
   };
 
-  const submitAssistant = (event: React.FormEvent) => {
-    event.preventDefault();
+  const sendAssistantInput = () => {
     const request = assistantInput.trim();
     if (!request) return;
     setAssistantInput('');
     void runAssistantCommand(request);
+  };
+
+  const loadTemplateIntoAssistant = (template: GroupWorkoutProgram) => {
+    if (!selectedProgram) return;
+    const now = new Date().toISOString();
+    const updated: GroupWorkoutProgram = {
+      ...template,
+      id: selectedProgram.id,
+      sessionId: selectedProgram.sessionId,
+      sessionDate: selectedProgram.sessionDate,
+      sessionTime: selectedProgram.sessionTime,
+      participants: selectedProgram.participants,
+      participantCount: selectedProgram.participantCount,
+      coachId: activeUser.id,
+      coachName: activeUser.name,
+      exercises: template.exercises.map((exercise, index) => ({ ...exercise, id: `group-library-exercise-${Date.now()}-${index}` })),
+      stations: (template.stations || []).map((station, stationIndex) => ({
+        ...station,
+        id: `group-library-station-${Date.now()}-${stationIndex}`,
+        exercises: station.exercises.map((exercise, index) => ({ ...exercise, id: `group-library-station-exercise-${Date.now()}-${stationIndex}-${index}` }))
+      })),
+      status: 'DRAFT',
+      createdAt: selectedProgram.createdAt,
+      updatedAt: now,
+      publishedAt: undefined
+    };
+    onUpdatePrograms(programs.map(program => program.id === updated.id ? updated : program));
+    setAssistantMessages(messages => [...messages, `טענתי את „${template.title}” מהמאגר כטיוטה. אפשר לבקש ממני להתאים תחנות, תרגילים, זמנים וסבבים.`].slice(-100));
+    setAssistantDrawerOpen(false);
   };
 
   const setupQuestions: WizardQuestion[] = [
@@ -701,20 +731,49 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       ]} />}
       <section className="rounded-2xl border border-amber-400/25 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2"><span className="rounded-xl bg-amber-400/15 p-2 text-amber-300"><MessageCircle size={19} /></span><div><h3 className="text-sm font-black text-white">עוזר בניית אימון קבוצתי</h3><p className="text-[10px] text-zinc-400">הצ׳אט מעדכן את הטיוטה, והמאמן מאשר ומפרסם</p></div></div>
+          <div className="flex items-center gap-2"><span className="rounded-xl bg-amber-400/15 p-2 text-amber-300"><MessageCircle size={19} /></span><div><h3 className="text-sm font-black text-white">עוזר בנייה חכם AI</h3><p className="text-[10px] text-zinc-400">מסך צ׳אט מלא לבניית האימון ועדכון התחנות</p></div></div>
           <span className="rounded-full bg-emerald-400/15 px-2 py-1 text-[9px] font-black text-emerald-300">OpenAI</span>
         </div>
-        <div className="mt-3 max-h-40 space-y-2 overflow-auto rounded-xl border border-zinc-700 bg-zinc-950 p-3">
-          {assistantMessages.map((message, index) => <p key={`${index}-${message}`} className={`rounded-lg px-3 py-2 text-xs leading-5 ${message.startsWith('מאמן:') ? 'mr-8 bg-amber-400 text-zinc-950' : 'ml-5 bg-zinc-800 text-zinc-200'}`}>{message}</p>)}
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {['בנה אימון כוח עם 12 תרגילים ב־3 תחנות', 'החלף סקוואט במכרעים', 'הוסף פלאנק לתחנה 2', 'מנוחה 30 שניות'].map(suggestion => <button key={suggestion} type="button" disabled={isAssistantGenerating} onClick={() => void runAssistantCommand(suggestion)} className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-[10px] font-bold text-zinc-200 hover:border-amber-400 hover:text-amber-300 disabled:opacity-40">{suggestion}</button>)}
-        </div>
-        <form onSubmit={submitAssistant} className="mt-3 flex gap-2">
-          <input value={assistantInput} onChange={event => setAssistantInput(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-xs text-white placeholder:text-zinc-500" placeholder="לדוגמה: בנה אימון כוח עם 12 תרגילים ב־3 תחנות" />
-          <button type="submit" disabled={!assistantInput.trim() || isAssistantGenerating} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-amber-400 px-4 text-xs font-black text-zinc-950 disabled:opacity-40"><Send size={15} /> {isAssistantGenerating ? 'חושב...' : 'שלח'}</button>
-        </form>
+        <button type="button" onClick={() => setAssistantOpen(true)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 text-sm font-black text-zinc-950 transition hover:bg-amber-300">
+          <MessageCircle size={18} /> פתח עוזר בנייה חכם
+        </button>
       </section>
+
+      <AiBuilderChatScreen
+        open={assistantOpen}
+        title="עוזר בניית תוכנית אימון קבוצתית"
+        subtitle={selectedProgram ? `${selectedProgram.groupName} · ${selectedProgram.title}` : 'אימון קבוצתי חדש'}
+        messages={assistantMessages.map((message, index) => ({
+          id: `group-assistant-${index}`,
+          role: message.startsWith('מאמן:') ? 'COACH' : 'ASSISTANT',
+          content: message.replace(/^מאמן:\s*/, ''),
+          author: activeUser.name
+        }))}
+        input={assistantInput}
+        onInputChange={setAssistantInput}
+        onSubmit={sendAssistantInput}
+        onClose={() => setAssistantOpen(false)}
+        onConfirm={() => setAssistantOpen(false)}
+        confirmDisabled={!selectedProgram || programExerciseCount(selectedProgram) === 0}
+        isGenerating={isAssistantGenerating}
+        suggestions={['בנה אימון כוח עם 12 תרגילים ב־3 תחנות', 'החלף סקוואט במכרעים', 'הוסף פלאנק לתחנה 2', 'מנוחה 30 שניות']}
+        onSuggestion={suggestion => void runAssistantCommand(suggestion)}
+        drawerOpen={assistantDrawerOpen}
+        onDrawerToggle={() => setAssistantDrawerOpen(value => !value)}
+        drawerTitle="מאגר אימונים קבוצתיים"
+        drawerDescription="בחר אימון קיים כנקודת פתיחה והמשך לערוך אותו בצ׳אט."
+        statusText={selectedProgram ? `${programExerciseCount(selectedProgram)} תרגילים · ${selectedProgram.roundsPerStation || 1} סבבים` : 'טרם נבחר אימון'}
+        emptyTitle="איך תרצה לבנות את האימון?"
+        emptyDescription="אפשר לבקש סוג אימון, מספר תחנות, סבבים וזמני עבודה ומנוחה."
+        drawerContent={<div className="space-y-3">
+          {templatePrograms.length === 0 && <p className="rounded-xl border border-dashed border-zinc-700 p-4 text-xs text-zinc-400">אין עדיין אימונים קבוצתיים שמורים במאגר.</p>}
+          {templatePrograms.map(template => <button key={template.id} type="button" onClick={() => loadTemplateIntoAssistant(template)} className="w-full rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-right transition hover:border-amber-400/70">
+            <span className="block text-sm font-black text-white">{template.title}</span>
+            <span className="mt-1 block text-[11px] text-zinc-400">{template.groupName} · {programExerciseCount(template)} תרגילים · {template.roundsPerStation || 1} סבבים</span>
+          </button>)}
+          {selectedProgram && <div className="rounded-xl bg-zinc-900 p-3 text-xs text-zinc-300"><span className="font-black text-white">הגדרות האימון הנוכחי</span><p className="mt-1">{selectedProgram.mode === 'ROTATING_GROUPS' ? `${selectedProgram.stations.length} תחנות` : 'רצף משותף'} · {selectedProgram.effortMetric === 'REPS' ? `${selectedProgram.defaultRepetitions} חזרות` : `${selectedProgram.defaultWorkSeconds} שנ׳ עבודה / ${selectedProgram.defaultRestSeconds} שנ׳ מנוחה`}</p></div>}
+        </div>}
+      />
 
       <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="grid gap-3 md:grid-cols-2">

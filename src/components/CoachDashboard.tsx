@@ -1322,6 +1322,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     pdfDocuments={coachPdfDocuments}
                     messages={workoutAssistantMessages}
                     draft={selectedAssistantDraft}
+                    libraryPlans={personalTemplatePlans}
                     canPublish={selectedHasWorkoutPlanAccess}
                     onUpdateMessages={onUpdateWorkoutAssistantMessages}
                     onUpdateDraft={handleUpdateAssistantDraft}
@@ -1765,6 +1766,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   mealsDescription={nutritionForm.mealsDescription}
                   categories={nutritionForm.categories}
                   messages={nutritionForm.assistantMessages}
+                  libraryPlans={nutritionPlans.filter(plan => plan.traineeId !== selectedTrainee.id)}
                   onUpdateMessages={assistantMessages => setNutritionForm(current => ({ ...current, assistantMessages }))}
                   onApplyPlan={plan => {
                     setNutritionForm(current => ({
