@@ -1,3 +1,5 @@
+import { isPagesDemoMode } from './appMode';
+
 export type GroupWorkoutRemoteAction = 'PAUSE' | 'RESUME' | 'ADD_REST' | 'NEXT_STEP' | 'RESET';
 
 export interface GroupWorkoutRemoteCommand {
@@ -20,7 +22,12 @@ export interface GroupWorkoutLiveStatus {
 
 const commandKey = (programId: string) => `gym_group_workout_remote_command_v1_${programId}`;
 const statusKey = (programId: string) => `gym_group_workout_live_status_v1_${programId}`;
-const apiBase = () => (import.meta.env.VITE_PAYMENT_API_URL || '').replace(/\/$/, '');
+const apiBase = () => (
+  import.meta.env.VITE_LIVE_DISPLAY_API_URL
+  || import.meta.env.VITE_PAYMENT_API_URL
+  || (isPagesDemoMode() ? 'https://balywellness.com' : '')
+).replace(/\/$/, '');
+const apiPath = () => isPagesDemoMode() ? '/api/demo/live-display' : '/api/live-display';
 
 export const sendGroupWorkoutCommand = (programId: string, action: GroupWorkoutRemoteAction, seconds?: number) => {
   const command: GroupWorkoutRemoteCommand = {
@@ -31,7 +38,7 @@ export const sendGroupWorkoutCommand = (programId: string, action: GroupWorkoutR
   };
   localStorage.setItem(commandKey(programId), JSON.stringify(command));
   const base = apiBase();
-  if (base) void fetch(`${base}/api/live-display/${encodeURIComponent(programId)}/commands`, {
+  if (base) void fetch(`${base}${apiPath()}/${encodeURIComponent(programId)}/commands`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -49,7 +56,7 @@ export const subscribeToGroupWorkoutCommands = (programId: string, callback: (co
   const base = apiBase();
   const poll = base ? window.setInterval(async () => {
     try {
-      const response = await fetch(`${base}/api/live-display/${encodeURIComponent(programId)}/commands`, { cache: 'no-store' });
+      const response = await fetch(`${base}${apiPath()}/${encodeURIComponent(programId)}/commands`, { cache: 'no-store' });
       if (!response.ok) return;
       const command = await response.json() as GroupWorkoutRemoteCommand | null;
       if (command?.id && command.id !== lastRemoteId) {
@@ -64,7 +71,7 @@ export const subscribeToGroupWorkoutCommands = (programId: string, callback: (co
 export const publishGroupWorkoutStatus = (status: GroupWorkoutLiveStatus) => {
   localStorage.setItem(statusKey(status.programId), JSON.stringify(status));
   const base = apiBase();
-  if (base) void fetch(`${base}/api/live-display/${encodeURIComponent(status.programId)}/status`, {
+  if (base) void fetch(`${base}${apiPath()}/${encodeURIComponent(status.programId)}/status`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(status)
   }).catch(() => undefined);
 };
@@ -87,7 +94,7 @@ export const subscribeToGroupWorkoutStatus = (programId: string, callback: (stat
   const base = apiBase();
   const poll = base ? window.setInterval(async () => {
     try {
-      const response = await fetch(`${base}/api/live-display/${encodeURIComponent(programId)}/status`, { cache: 'no-store' });
+      const response = await fetch(`${base}${apiPath()}/${encodeURIComponent(programId)}/status`, { cache: 'no-store' });
       if (response.ok) callback(await response.json());
     } catch { /* Local storage remains available as a fallback. */ }
   }, 1000) : undefined;

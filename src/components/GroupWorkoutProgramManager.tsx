@@ -27,6 +27,7 @@ import { GroupWorkoutExercise, GroupWorkoutParticipant, GroupWorkoutProgram, Gro
 import { ExerciseMedia } from './ExerciseMedia';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import { getGroupWorkoutStatus, GroupWorkoutLiveStatus, sendGroupWorkoutCommand, subscribeToGroupWorkoutStatus } from '../data/groupWorkoutRemote';
+import { activateClubDisplay, clubDisplayUrl } from '../data/clubDisplayRemote';
 import { generateGroupWorkoutWithAi } from '../data/workoutAi';
 import { ProgramBriefPanel, ProgramSetupWizard, WizardAnswers, WizardQuestion } from './ProgramSetupWizard';
 
@@ -466,9 +467,15 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     });
   };
 
-  const openDisplay = (program: GroupWorkoutProgram) => {
-    const displayUrl = `${window.location.origin}${window.location.pathname}#group-workout-display=${encodeURIComponent(program.id)}`;
-    window.open(displayUrl, '_blank', 'noopener,noreferrer');
+  const openDisplay = async (program: GroupWorkoutProgram) => {
+    const displayWindow = window.open(clubDisplayUrl(), '_blank', 'noopener,noreferrer');
+    try {
+      await activateClubDisplay(program);
+      if (!displayWindow) window.alert('האימון הוצג במסך המועדון. הדפדפן חסם פתיחת חלון נוסף.');
+    } catch (error) {
+      displayWindow?.close();
+      window.alert(error instanceof Error ? error.message : 'לא ניתן לפתוח את מסך האימון.');
+    }
   };
 
   const publishProgram = () => {
@@ -911,7 +918,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
               <p className="flex items-center gap-2 text-xs font-bold text-slate-600"><Save size={15} className="text-emerald-600" /> נשמר לאחרונה {new Date(selectedProgram.updatedAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</p>
               <div className="flex flex-wrap gap-2">
                 <button onClick={publishProgram} disabled={programExerciseCount(selectedProgram) === 0 || (selectedProgram.mode === 'ROTATING_GROUPS' ? (selectedProgram.stations || []).flatMap(station => station.exercises) : selectedProgram.exercises).some(exercise => !exercise.name.trim())} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40"><CheckCircle2 size={16} /> פרסם תוכנית</button>
-                <button onClick={() => openDisplay(selectedProgram)} disabled={selectedProgram.status !== 'PUBLISHED'} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40"><MonitorPlay size={16} /> פתח מסך אימון <ExternalLink size={13} /></button>
+                <button onClick={() => void openDisplay(selectedProgram)} disabled={selectedProgram.status !== 'PUBLISHED'} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40"><MonitorPlay size={16} /> פתח מסך אימון <ExternalLink size={13} /></button>
               </div>
             </div>
           </div>
