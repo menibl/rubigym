@@ -69,7 +69,12 @@ button { font: inherit; }
 .tv-list-copy strong, .tv-list-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tv-list-copy strong { font-size: 2vh; }
 .tv-list-copy small { margin-top: .4vh; color: #9aa5b5; font-size: 1.45vh; }
-.tv-stations { position: relative; min-height: 0; flex: 1 1 auto; }
+.tv-stations { min-height: 0; flex: 1 1 auto; overflow: hidden; }
+.tv-stations-table { width: 100%; height: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
+.tv-stations-table tbody { height: 100%; }
+.tv-station-row { min-height: 0; }
+.tv-station-cell { min-width: 0; min-height: 0; padding: .35vh .35vw; vertical-align: top; }
+.tv-station-spacer { padding: 0; }
 .tv-station-slot { position: absolute; min-width: 0; min-height: 0; padding: .35vh .35vw; }
 .tv-station { width: 100%; height: 100%; display: flex; min-width: 0; flex-direction: column; padding: .8vh .6vw; overflow: hidden; border: 1px solid #3b465a; border-radius: 1.4vh; background: #101722; box-shadow: 0 .6vh 2vh rgba(0,0,0,.22); }
 .tv-station-head { min-height: 7vh; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: .5vw; padding: 0 .2vw .6vh; }
