@@ -37,6 +37,22 @@ button { font: inherit; }
 .tv-exercise-stats { display: flex; margin-top: 1.4vh; align-items: center; justify-content: center; }
 .tv-chip { margin: 0 .4vw; padding: 1vh 1.2vw; border-radius: 1vh; background: #1a2230; color: #d8dee9; font-size: 2vh; font-weight: bold; }
 .tv-notes { max-width: 75%; margin-top: 1.3vh; padding: 1.1vh 1.4vw; border: 1px solid #866d32; border-radius: 1vh; background: #302716; color: #ffe4a8; font-size: 2vh; }
+.tv-linear-grid { display: flex; min-height: 0; flex: 1 1 auto; flex-wrap: wrap; align-content: stretch; }
+.tv-linear-exercise-slot { min-width: 0; min-height: 0; padding: .4vh .3vw; }
+.tv-linear-card { width: 100%; height: 100%; display: flex; min-width: 0; flex-direction: column; padding: 1.1vh .8vw; overflow: hidden; border: 1px solid #3b465a; border-radius: 1.25vh; background: #141c28; box-shadow: 0 .5vh 1.5vh rgba(0,0,0,.2); }
+.tv-linear-card.active { border: 2px solid #4de0ad; background: #163d32; box-shadow: 0 0 2.2vh rgba(77,224,173,.2); }
+.tv-linear-card.done { border-color: #2d6b55; background: #10271f; }
+.tv-linear-card-head { display: flex; min-width: 0; align-items: flex-start; }
+.tv-linear-number { width: 2.8vw; height: 2.8vw; min-width: 36px; min-height: 36px; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; margin-left: .7vw; border-radius: 50%; background: #303b4e; color: #fff; font-size: 2.15vh; font-weight: bold; }
+.tv-linear-card.active .tv-linear-number { background: #4de0ad; color: #082119; }
+.tv-linear-card.done .tv-linear-number { background: #27936c; color: #fff; }
+.tv-linear-copy { min-width: 0; flex: 1 1 auto; }
+.tv-linear-copy h2 { margin: 0; color: #fff; font-size: 2.75vh; line-height: 1.12; overflow-wrap: break-word; word-wrap: break-word; }
+.tv-linear-copy p { margin: .65vh 0 0; color: #cbd5e1; font-size: 1.65vh; line-height: 1.25; overflow-wrap: break-word; word-wrap: break-word; }
+.tv-linear-note { margin-top: .8vh; color: #ffe29a; font-size: 1.65vh; line-height: 1.25; overflow: hidden; overflow-wrap: break-word; word-wrap: break-word; }
+.tv-linear-current { margin-top: auto; align-self: flex-start; padding: .55vh .7vw; border-radius: 999px; background: #4de0ad; color: #082119; font-size: 1.6vh; font-weight: bold; }
+.tv-linear-grid.few .tv-linear-copy h2 { font-size: 3.4vh; }
+.tv-linear-grid.few .tv-linear-copy p, .tv-linear-grid.few .tv-linear-note { font-size: 2vh; }
 .tv-controls { height: 7vh; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
 .tv-button { min-width: 5vw; height: 5.7vh; margin: 0 .35vw; border: 0; border-radius: 1vh; background: #202a39; color: #fff; cursor: pointer; font-size: 2.5vh; font-weight: bold; }
 .tv-button.primary { min-width: 7vw; background: #27a979; }
@@ -86,6 +102,9 @@ button { font: inherit; }
   .tv-station-exercise { padding: .3vh .2vw; }
   .tv-exercise-card { padding: .7vh .45vw; }
   .tv-exercise-number { width: 2.2vw; height: 2.2vw; min-width: 27px; min-height: 27px; margin-left: .3vw; }
+  .tv-linear-card { padding: .8vh .55vw; }
+  .tv-linear-number { width: 2.3vw; height: 2.3vw; min-width: 29px; min-height: 29px; margin-left: .4vw; }
+  .tv-linear-copy h2 { font-size: 2.45vh; }
 }
 @media (max-width: 1100px) {
   .tv-sidebar { width: 22vw; min-width: 220px; }
