@@ -131,3 +131,10 @@ test('linear TV workouts render every exercise in the full-screen card grid', as
   assert.match(script, /for \(i = 0; i < exercises\.length; i \+= 1\)/);
   assert.doesNotMatch(script, /stage \+ controlsHtml\(\) \+ '<\/main>' \+ linearSidebarHtml\(\)/);
 });
+
+test('rotating TV stations use a legacy-compatible table instead of overlapping absolute slots', async () => {
+  const script = await readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8');
+  assert.match(script, /<table class="tv-stations-table">/);
+  assert.match(script, /<td class="tv-station-cell" colspan="2">/);
+  assert.doesNotMatch(script, /<div class="tv-station-slot" style=/);
+});
