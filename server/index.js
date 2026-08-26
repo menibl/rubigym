@@ -23,7 +23,49 @@ import {
 } from './auth.js';
 
 const CARDCOM_BASE_URL = 'https://secure.cardcom.solutions/api/v11';
-const liveDisplayState = { program: null, commands: new Map(), statuses: new Map() };
+const liveDisplayState = { program: null, demoProgram: null, demoSchedule: [], commands: new Map(), statuses: new Map() };
+const DEMO_DISPLAY_CLUB_ID = 'baly-wellness-pages-demo';
+const DEMO_DISPLAY_SCHEDULE_ID = `${DEMO_DISPLAY_CLUB_ID}:schedule`;
+
+const israelClockParts = date => Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+}).formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
+
+const timelineMinute = (date, time) => {
+  const dateMatch = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const timeMatch = String(time || '').match(/^(\d{2}):(\d{2})/);
+  if (!dateMatch || !timeMatch) return Number.NaN;
+  return Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]), Number(timeMatch[1]), Number(timeMatch[2])) / 60000;
+};
+
+export const findScheduledLiveDisplayProgram = (payload, now = new Date()) => {
+  const programs = Array.isArray(payload?.groupWorkoutPrograms) ? payload.groupWorkoutPrograms : [];
+  const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
+  const parts = israelClockParts(now);
+  const currentMinute = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute) / 60000;
+  return programs
+    .filter(program => program?.id && program.status === 'PUBLISHED' && (program.sessionId || (program.sessionDate && program.sessionTime)))
+    .map(program => {
+      const session = sessions.find(item => item.id === program.sessionId);
+      const startMinute = timelineMinute(program.sessionDate || session?.date, program.sessionTime || session?.time);
+      return { program, startMinute, durationMinutes: Math.max(1, Number(session?.durationMinutes) || 180) };
+    })
+    .filter(item => Number.isFinite(item.startMinute) && currentMinute >= item.startMinute && currentMinute < item.startMinute + item.durationMinutes)
+    .sort((a, b) => b.startMinute - a.startMinute || String(b.program.updatedAt || '').localeCompare(String(a.program.updatedAt || '')))[0]?.program;
+};
+
+const scheduledProgramForClub = async (env, clubId) => {
+  if (!env.STATE_STORE?.getClubState) return undefined;
+  const state = await env.STATE_STORE.getClubState(clubId);
+  return findScheduledLiveDisplayProgram(state?.payload);
+};
+
+const scheduledDemoProgram = async env => {
+  const envelope = env.STATE_STORE
+    ? await env.STATE_STORE.getActiveProgram(DEMO_DISPLAY_SCHEDULE_ID)
+    : { programs: liveDisplayState.demoSchedule };
+  return findScheduledLiveDisplayProgram({ groupWorkoutPrograms: envelope?.programs || [] });
+};
 
 const membershipPrices = {
   OPEN_GYM: 280,
@@ -559,7 +601,16 @@ const handleWebhook = async (request, env) => {
 };
 
 const handleApi = async (request, env, url) => {
-  const headers = corsHeaders(request, env);
+  const origin = request.headers.get('Origin') || '';
+  const isPagesDisplayRequest = url.pathname.startsWith('/api/demo/live-display') && origin === 'https://menibl.github.io';
+  const headers = isPagesDisplayRequest ? {
+    ...corsHeaders(request, env),
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
+    'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin'
+  } : corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   try {
     const clubId = env.CLUB_ID || 'baly-wellness';
@@ -862,8 +913,64 @@ const handleApi = async (request, env, url) => {
       });
       return json({ok: true, ...result}, 200, headers);
     }
+    if (url.pathname === '/api/demo/live-display/schedule' && request.method === 'PUT') {
+      const body = await request.json();
+      if (!Array.isArray(body?.programs) || body.programs.length > 250) return json({ message: 'Invalid schedule' }, 400, headers);
+      const programs = body.programs.filter(program => program?.id && program.status === 'PUBLISHED' && program.sessionDate && program.sessionTime);
+      if (env.STATE_STORE) await env.STATE_STORE.setActiveProgram(DEMO_DISPLAY_SCHEDULE_ID, { programs });
+      else liveDisplayState.demoSchedule = programs;
+      return json({ ok: true, count: programs.length }, 200, headers);
+    }
+    if (url.pathname === '/api/demo/live-display/active' && request.method === 'GET') {
+      const scheduled = await scheduledDemoProgram(env);
+      let program = env.STATE_STORE ? await env.STATE_STORE.getActiveProgram(DEMO_DISPLAY_CLUB_ID) : liveDisplayState.demoProgram;
+      if (scheduled && (scheduled.id !== program?.id || scheduled.updatedAt !== program?.updatedAt)) {
+        program = scheduled;
+        if (env.STATE_STORE) await env.STATE_STORE.setActiveProgram(DEMO_DISPLAY_CLUB_ID, program);
+        else liveDisplayState.demoProgram = program;
+      }
+      return program ? json({ program }, 200, headers) : new Response(null, { status: 204, headers });
+    }
+    if (url.pathname === '/api/demo/live-display/active' && request.method === 'PUT') {
+      const body = await request.json();
+      if (!body?.program?.id) return json({ message: 'Invalid program' }, 400, headers);
+      if (env.STATE_STORE) await env.STATE_STORE.setActiveProgram(DEMO_DISPLAY_CLUB_ID, body.program);
+      else liveDisplayState.demoProgram = body.program;
+      return json({ ok: true, programId: body.program.id }, 200, headers);
+    }
+    const demoCommandMatch = url.pathname.match(/^\/api\/demo\/live-display\/([^/]+)\/commands$/);
+    if (demoCommandMatch && request.method === 'GET') {
+      const programId = `demo:${decodeURIComponent(demoCommandMatch[1])}`;
+      return json(env.STATE_STORE ? await env.STATE_STORE.getCommand(programId) : liveDisplayState.commands.get(programId) || null, 200, headers);
+    }
+    if (demoCommandMatch && request.method === 'POST') {
+      const command = await request.json();
+      if (!command?.id || !command?.action) return json({ message: 'Invalid command' }, 400, headers);
+      const programId = `demo:${decodeURIComponent(demoCommandMatch[1])}`;
+      if (env.STATE_STORE) await env.STATE_STORE.setCommand(programId, command); else liveDisplayState.commands.set(programId, command);
+      return json({ ok: true }, 200, headers);
+    }
+    const demoStatusMatch = url.pathname.match(/^\/api\/demo\/live-display\/([^/]+)\/status$/);
+    if (demoStatusMatch && request.method === 'GET') {
+      const programId = `demo:${decodeURIComponent(demoStatusMatch[1])}`;
+      const status = env.STATE_STORE ? await env.STATE_STORE.getStatus(programId) : liveDisplayState.statuses.get(programId);
+      return status ? json(status, 200, headers) : new Response(null, { status: 204, headers });
+    }
+    if (demoStatusMatch && request.method === 'PUT') {
+      const status = await request.json();
+      const programId = `demo:${decodeURIComponent(demoStatusMatch[1])}`;
+      if (env.STATE_STORE) await env.STATE_STORE.setStatus(programId, status); else liveDisplayState.statuses.set(programId, status);
+      return json({ ok: true }, 200, headers);
+    }
     if (url.pathname === '/api/live-display/active' && request.method === 'GET') {
-      const program = env.STATE_STORE ? await env.STATE_STORE.getActiveProgram(env.CLUB_ID || 'baly-wellness') : liveDisplayState.program;
+      const targetClubId = env.CLUB_ID || 'baly-wellness';
+      const scheduled = await scheduledProgramForClub(env, targetClubId);
+      let program = env.STATE_STORE ? await env.STATE_STORE.getActiveProgram(targetClubId) : liveDisplayState.program;
+      if (scheduled && (scheduled.id !== program?.id || scheduled.updatedAt !== program?.updatedAt)) {
+        program = scheduled;
+        if (env.STATE_STORE) await env.STATE_STORE.setActiveProgram(targetClubId, program);
+        else liveDisplayState.program = program;
+      }
       return program ? json({ program }, 200, headers) : new Response(null, { status: 204, headers });
     }
     if (url.pathname === '/api/live-display/active' && request.method === 'PUT') {
@@ -959,6 +1066,12 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) return handleApi(request, env, url);
+    const userAgent = request.headers.get('User-Agent') || '';
+    const isLgTelevision = /(?:Web0S|WebOS|NetCast|SmartTV)/i.test(userAgent) && /LG|Web0S|WebOS|NetCast/i.test(userAgent);
+    if (url.pathname === '/tv' || (url.pathname === '/' && isLgTelevision)) {
+      return env.ASSETS.fetch(new Request(new URL('/tv.html', url), request));
+    }
+    if (url.pathname === '/tv/') return Response.redirect(new URL('/tv', url), 302);
     if (url.pathname === '/demo-checkout' && String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
       try {
         const token = url.searchParams.get('token');
