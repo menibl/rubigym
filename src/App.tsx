@@ -57,6 +57,7 @@ import { isMembershipCancellationEffective } from './data/membershipPolicy';
 import { hasNotificationMarker, saveNotificationMarker, showBrowserNotification } from './utils/browserNotifications';
 import { isPagesDemoMode } from './data/appMode';
 import { getPublicLandingConfig, PublicLandingConfig } from './data/publicLanding';
+import { syncClubDisplaySchedule } from './data/clubDisplayRemote';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const isClubWorkoutDisplay = () => window.location.hash === '#club-workout-display';
@@ -193,6 +194,16 @@ export default function App() {
     }, 700);
     return () => window.clearTimeout(timer);
   }, [settings, users, sessions, openGymSessions, workoutPlans, nutritionPlans, blackPoints, announcements, payments, messages, attendanceLogs, discountCodes, traineeProfiles, traineeMemoryEntries, gymEquipment, coachPdfDocuments, workoutAssistantMessages, workoutAssistantDrafts, groupWorkoutPrograms, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !hydratedRef.current || !isPagesDemoMode()) return;
+    const timer = window.setTimeout(() => {
+      void syncClubDisplaySchedule(groupWorkoutPrograms).catch(error => {
+        console.warn('Unable to synchronize the demo TV schedule', error);
+      });
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [groupWorkoutPrograms, isAuthenticated]);
 
   useEffect(() => {
     const handleHashChange = () => {

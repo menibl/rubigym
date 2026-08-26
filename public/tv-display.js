@@ -4,6 +4,7 @@
   var app = document.getElementById('tv-app');
   var isPages = window.location.hostname.indexOf('github.io') !== -1;
   var apiBase = isPages ? 'https://balywellness.com' : window.location.origin;
+  var apiPath = isPages ? '/api/demo/live-display' : '/api/live-display';
   var program = null;
   var programVersion = '';
   var phase = 'PREPARE';
@@ -358,7 +359,7 @@
 
   function publishStatus() {
     if (!program) return;
-    request('PUT', '/api/live-display/' + encodeURIComponent(program.id) + '/status', {
+    request('PUT', apiPath + '/' + encodeURIComponent(program.id) + '/status', {
       programId: program.id, phase: phase, isRunning: running, secondsLeft: secondsLeft,
       rotationIndex: rotationIndex, chainRound: chainRound, exerciseSlot: exerciseSlot,
       updatedAt: new Date().toISOString()
@@ -377,7 +378,7 @@
   }
 
   function pollProgram() {
-    request('GET', '/api/live-display/active', null, function (error, result, status) {
+    request('GET', apiPath + '/active', null, function (error, result, status) {
       if (error && status !== 204) { offline = true; render(); return; }
       offline = false;
       var next = result && result.program ? result.program : null;
@@ -389,7 +390,7 @@
 
   function pollCommand() {
     if (!program) return;
-    request('GET', '/api/live-display/' + encodeURIComponent(program.id) + '/commands', null, function (error, command) {
+    request('GET', apiPath + '/' + encodeURIComponent(program.id) + '/commands', null, function (error, command) {
       if (!error) applyCommand(command);
     });
   }
