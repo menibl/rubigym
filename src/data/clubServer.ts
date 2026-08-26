@@ -190,7 +190,7 @@ const urlBase64ToBytes = (value: string) => {
 
 export const syncServerPushSubscription = async (enabled: boolean) => {
   if (isPagesDemoMode() || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-    return {supported: false, subscribed: false};
+    return {supported: false, subscribed: false, endpoint: undefined};
   }
 
   const registration = await navigator.serviceWorker.ready;
@@ -204,11 +204,11 @@ export const syncServerPushSubscription = async (enabled: boolean) => {
       });
       await existing.unsubscribe();
     }
-    return {supported: true, subscribed: false};
+    return {supported: true, subscribed: false, endpoint: undefined};
   }
 
   if (!('Notification' in window) || Notification.permission !== 'granted') {
-    return {supported: true, subscribed: false};
+    return {supported: true, subscribed: false, endpoint: undefined};
   }
 
   const {publicKey} = await request<{publicKey: string}>('/api/push/public-key');
@@ -220,12 +220,15 @@ export const syncServerPushSubscription = async (enabled: boolean) => {
     method: 'POST',
     body: JSON.stringify(subscription.toJSON()),
   });
-  return {supported: true, subscribed: true};
+  return {supported: true, subscribed: true, endpoint: subscription.endpoint};
 };
 
-export const sendPushTest = async () => {
+export const sendPushTest = async (subscription: PushSubscription) => {
   if (isPagesDemoMode()) return {ok: false, sent: 0};
-  return request<{ok: boolean; sent: number}>('/api/push/test', {method: 'POST'});
+  return request<{ok: boolean; sent: number}>('/api/push/test', {
+    method: 'POST',
+    body: JSON.stringify(subscription.toJSON())
+  });
 };
 
 export const getClubState = async () => isPagesDemoMode() ? readDemoState() : request<ClubStateEnvelope>('/api/state');

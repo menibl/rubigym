@@ -262,7 +262,11 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       await pool.query('UPDATE sms_otp_challenges SET consumed_at=now() WHERE id=$1', [id]);
     },
     async upsertPushSubscription(clubId, userId, subscription, userAgent) {
-      await pool.query(`INSERT INTO push_subscriptions (club_id,user_id,endpoint,p256dh,auth,user_agent)
+      await pool.query(`WITH reassigned AS (
+          DELETE FROM push_subscriptions
+          WHERE club_id=$1 AND endpoint=$3 AND user_id<>$2
+        )
+        INSERT INTO push_subscriptions (club_id,user_id,endpoint,p256dh,auth,user_agent)
         VALUES ($1,$2,$3,$4,$5,$6)
         ON CONFLICT (club_id,user_id,endpoint) DO UPDATE SET
           p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,user_agent=EXCLUDED.user_agent,updated_at=now()`,
