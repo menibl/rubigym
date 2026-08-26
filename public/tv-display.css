@@ -1,5 +1,5 @@
 * { box-sizing: border-box; }
-html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #080b12; color: #f8fafc; font-family: Arial, Helvetica, sans-serif; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #080b12; color: #f8fafc; font-family: "Arial Hebrew", "Noto Sans Hebrew", "Segoe UI", Tahoma, Arial, sans-serif; }
 button { font: inherit; }
 #tv-app { width: 100%; height: 100%; }
 .tv-loading, .tv-empty, .tv-error { display: flex; align-items: center; justify-content: center; padding: 4vh 5vw; text-align: center; }
@@ -90,7 +90,7 @@ button { font: inherit; }
 .tv-exercise-number { width: 2.7vw; height: 2.7vw; min-width: 34px; min-height: 34px; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; margin-left: .55vw; border-radius: 50%; background: #303b4e; color: #fff; font-size: 2.05vh; font-weight: bold; }
 .tv-exercise-card.active .tv-exercise-number { background: #4de0ad; color: #082119; }
 .tv-exercise-copy { min-width: 0; flex: 1 1 auto; }
-.tv-exercise-card h3 { margin: 0; color: #fff; font-size: 2.5vh; line-height: 1.15; overflow-wrap: break-word; word-wrap: break-word; }
+.tv-exercise-card h3 { margin: 0; color: #fff; font-family: "Arial Hebrew", "Noto Sans Hebrew", "Segoe UI", Tahoma, Arial, sans-serif; font-size: 2.5vh; font-weight: 700; line-height: 1.22; overflow-wrap: break-word; word-wrap: break-word; }
 .tv-exercise-card p { margin: .55vh 0 0; color: #e1e7ef; font-size: 1.9vh; line-height: 1.2; overflow-wrap: break-word; word-wrap: break-word; }
 .tv-exercise-note { margin-top: .7vh; color: #ffe29a; font-size: 1.7vh; line-height: 1.25; overflow-wrap: break-word; word-wrap: break-word; }
 .tv-participant-tags { margin-top: auto; padding-top: .7vh; overflow: hidden; white-space: normal; }

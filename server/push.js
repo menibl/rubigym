@@ -45,9 +45,10 @@ const sendToSubscription = async (subscription, payload, env) => {
   });
 };
 
-export const sendPushToUsers = async (store, env, clubId, userIds, payload) => {
+export const sendPushToUsers = async (store, env, clubId, userIds, payload, endpoint) => {
   if (!store || !isPushConfigured(env) || !userIds.length) return {sent: 0};
-  const subscriptions = await store.getPushSubscriptions(clubId, [...new Set(userIds)]);
+  const subscriptions = (await store.getPushSubscriptions(clubId, [...new Set(userIds)]))
+    .filter(row => !endpoint || row.endpoint === endpoint);
   let sent = 0;
   await Promise.all(subscriptions.map(async row => {
     try {

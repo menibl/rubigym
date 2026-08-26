@@ -137,4 +137,5 @@ test('rotating TV stations use a legacy-compatible table instead of overlapping 
   assert.match(script, /<table class="tv-stations-table">/);
   assert.match(script, /<td class="tv-station-cell" colspan="2">/);
   assert.doesNotMatch(script, /<div class="tv-station-slot" style=/);
+  assert.doesNotMatch(script, /rotatingSidebarHtml/);
 });

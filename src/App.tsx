@@ -311,6 +311,7 @@ export default function App() {
   }, []);
 
   const handleLogout = async () => {
+    await syncServerPushSubscription(false).catch(() => undefined);
     await logoutServerSession().catch(() => undefined);
     hydratedRef.current = false;
     setIsAuthenticated(false);

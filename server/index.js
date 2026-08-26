@@ -905,12 +905,15 @@ const handleApi = async (request, env, url) => {
       if (!env.STATE_STORE || !isPushConfigured(env)) return json({message: 'Push notifications are not configured'}, 503, headers);
       const identity = await getIdentity();
       if (!identity) return json({message: 'Unauthorized'}, 401, headers);
+      const body = await request.json().catch(() => ({}));
+      const subscription = validatePushSubscription(body);
+      if (!subscription) return json({message: 'Invalid push subscription'}, 400, headers);
       const result = await sendPushToUsers(env.STATE_STORE, env, identity.session.club_id, [identity.account.user_id], {
         title: 'התראות BALY WELLNESS פעילות',
         body: 'המכשיר מחובר בהצלחה לקבלת עדכונים ותזכורות.',
         tag: `push-test-${identity.account.user_id}`,
         url: '/',
-      });
+      }, subscription.endpoint);
       return json({ok: true, ...result}, 200, headers);
     }
     if (url.pathname === '/api/demo/live-display/schedule' && request.method === 'PUT') {
