@@ -158,22 +158,43 @@
   }
 
   function renderLinear() {
-    var exercises = program.exercises || [];
+    var exercises = program.exercises || [], gridHtml = '', columns, rows, i, item, state, badge, details;
     if (!exercises.length) { renderEmpty('לא הוגדרו תרגילים בתוכנית'); return; }
     if (exerciseIndex >= exercises.length) exerciseIndex = 0;
-    var exercise = exercises[exerciseIndex];
     var progress = linearProgress();
     var stage = phase === 'COMPLETE'
       ? '<div class="tv-finished"><div class="tv-finished-icon">🏆</div><h2>כל הכבוד!</h2></div>'
-      : '<div class="tv-linear-stage"><h2 class="tv-exercise-name">' + escapeHtml(exercise.name) + '</h2>' + mediaHtml(exercise) +
-        '<div class="tv-exercise-stats"><span class="tv-chip">תחנה ' + (exerciseIndex + 1) + '/' + exercises.length + '</span>' +
-        '<span class="tv-chip">סבב ' + round + '/' + (exercise.rounds || 1) + '</span>' +
-        (exercise.weight || exercise.reps ? '<span class="tv-chip">' + escapeHtml(exercise.weight || exercise.reps) + '</span>' : '') + '</div>' +
-        (exercise.notes ? '<div class="tv-notes">דגש המאמן: ' + escapeHtml(exercise.notes) + '</div>' : '') + '</div>';
+      : '';
+    if (phase !== 'COMPLETE') {
+      if (exercises.length <= 4) columns = exercises.length;
+      else if (exercises.length <= 12) columns = 4;
+      else if (exercises.length <= 15) columns = 5;
+      else columns = 6;
+      rows = Math.ceil(exercises.length / columns);
+      for (i = 0; i < exercises.length; i += 1) {
+        item = exercises[i];
+        state = i === exerciseIndex ? ' active' : (i < exerciseIndex ? ' done' : '');
+        badge = i < exerciseIndex ? '✓' : String(i + 1);
+        details = [];
+        if (item.reps && item.reps !== 'לפי זמן') details.push(escapeHtml(item.reps) + ' חזרות');
+        if (item.weight) details.push(escapeHtml(item.weight));
+        details.push((Number(item.workSeconds) || 0) + ' שנ׳ עבודה');
+        if (Number(item.restSeconds)) details.push((Number(item.restSeconds) || 0) + ' שנ׳ מנוחה');
+        details.push((Number(item.rounds) || 1) + ' סבבים');
+        gridHtml += '<div class="tv-linear-exercise-slot" style="width:' + (100 / columns) + '%;height:' + (100 / rows) + '%">' +
+          '<article class="tv-linear-card' + state + '"><div class="tv-linear-card-head"><span class="tv-linear-number">' + badge + '</span>' +
+          '<div class="tv-linear-copy"><h2 dir="auto">' + escapeHtml(item.name) + '</h2><p>' + details.join(' · ') + '</p></div></div>' +
+          (item.notes ? '<div class="tv-linear-note">דגש: ' + escapeHtml(item.notes) + '</div>' : '') +
+          (i === exerciseIndex ? '<div class="tv-linear-current">עכשיו · סבב ' + round + '/' + (Number(item.rounds) || 1) + '</div>' : '') +
+          '</article></div>';
+      }
+      stage = '<div class="tv-linear-grid' + (exercises.length <= 6 ? ' few' : '') + '">' + gridHtml + '</div>';
+    }
     app.className = '';
     app.innerHTML = headerHtml(progress) + '<div class="tv-content"><main class="tv-main"><div class="tv-phase-line"><span class="tv-phase ' +
       phaseClass() + '">' + phaseLabel() + '</span><span class="tv-timer ' + (secondsLeft <= 3 && phase !== 'COMPLETE' ? 'urgent' : '') + '">' +
-      formatTime(secondsLeft) + '</span></div>' + stage + controlsHtml() + '</main>' + linearSidebarHtml() + '</div></div>';
+      formatTime(secondsLeft) + '</span><span class="tv-meta">תחנה ' + (exerciseIndex + 1) + '/' + exercises.length + '</span></div>' +
+      stage + controlsHtml() + '</main></div></div>';
     bindControls();
   }
 

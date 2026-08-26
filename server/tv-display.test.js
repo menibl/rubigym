@@ -124,3 +124,10 @@ test('Pages TV polls the demo display channel instead of the production channel'
   const script = await readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8');
   assert.match(script, /isPages \? '\/api\/demo\/live-display' : '\/api\/live-display'/);
 });
+
+test('linear TV workouts render every exercise in the full-screen card grid', async () => {
+  const script = await readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8');
+  assert.match(script, /tv-linear-grid/);
+  assert.match(script, /for \(i = 0; i < exercises\.length; i \+= 1\)/);
+  assert.doesNotMatch(script, /stage \+ controlsHtml\(\) \+ '<\/main>' \+ linearSidebarHtml\(\)/);
+});
