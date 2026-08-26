@@ -218,25 +218,6 @@
     return assignments;
   }
 
-  function rotatingSidebarHtml(assignments) {
-    var groups = {}, order = [], i, item, key, exercise, html = '<aside class="tv-sidebar"><h2 class="tv-sidebar-title">קבוצות ומתאמנים</h2><div class="tv-list">';
-    for (i = 0; i < assignments.length; i += 1) {
-      key = String(assignments[i].groupIndex);
-      if (!groups[key]) { groups[key] = []; order.push(key); }
-      groups[key].push(assignments[i]);
-    }
-    for (i = 0; i < order.length; i += 1) {
-      item = groups[order[i]];
-      html += '<section class="tv-group-card"><h3>' + escapeHtml(item[0].groupName) + ' — ' + escapeHtml(item[0].station ? item[0].station.name : 'בהמתנה') + '</h3>';
-      for (var j = 0; j < item.length; j += 1) {
-        exercise = item[j].station && item[j].station.exercises[item[j].activeIndex];
-        html += '<p><strong>' + escapeHtml(item[j].participant.name) + '</strong>: ' + escapeHtml(exercise ? exercise.name : 'המתנה') + '</p>';
-      }
-      html += '</section>';
-    }
-    return html + '</div></aside>';
-  }
-
   function renderRotating() {
     var stations = program.stations || [], assignments = participantAssignments(), progress = rotatingProgress(), stationsHtml = '', i, j, station, exercise, active, names;
     var stationColumns, displayRows, rowIndex, rowStart, rowItemCount, columnIndex, missingSlots;
@@ -280,7 +261,7 @@
     app.innerHTML = headerHtml(progress) + '<div class="tv-content"><main class="tv-main"><div class="tv-phase-line"><span class="tv-phase ' + phaseClass() + '">' +
       phaseLabel() + '</span><span class="tv-timer ' + (secondsLeft <= 3 && phase !== 'COMPLETE' ? 'urgent' : '') + '">' + formatTime(secondsLeft) +
       '</span><span class="tv-meta">סבב ' + chainRound + '/' + (program.roundsPerStation || 1) + ' · החלפה ' + (rotationIndex + 1) + '/' + stations.length +
-      '</span></div>' + stage + controlsHtml() + '</main>' + rotatingSidebarHtml(assignments) + '</div></div>';
+      '</span></div>' + stage + controlsHtml() + '</main></div></div>';
     bindControls();
   }
 

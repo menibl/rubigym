@@ -294,7 +294,13 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
         setMsg({ type: 'error', text: 'לא ניתן לרשום את המכשיר להתראות. ודא שהאפליקציה מותקנת ושהרשאת ההתראות פעילה.' });
         return;
       }
-      const result = await sendPushTest();
+      const registration = await navigator.serviceWorker.ready;
+      const currentSubscription = await registration.pushManager.getSubscription();
+      if (!currentSubscription || currentSubscription.endpoint !== subscription.endpoint) {
+        setMsg({ type: 'error', text: 'לא ניתן לזהות את המכשיר הנוכחי לצורך בדיקת ההתראה.' });
+        return;
+      }
+      const result = await sendPushTest(currentSubscription);
       setMsg(result.sent > 0
         ? { type: 'success', text: 'התראת בדיקה נשלחה למכשיר.' }
         : { type: 'error', text: 'המכשיר נרשם, אך לא ניתן היה למסור אליו את התראת הבדיקה.' });
