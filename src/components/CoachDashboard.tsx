@@ -567,8 +567,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     setIsEditingNutrition(true);
   };
 
-  const handleSaveNutrition = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveNutrition = (e?: React.FormEvent) => {
+    e?.preventDefault();
     let updatedPlans: NutritionPlan[];
 
     if (currentNutrition) {
@@ -1327,6 +1327,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     onUpdateMessages={onUpdateWorkoutAssistantMessages}
                     onUpdateDraft={handleUpdateAssistantDraft}
                     onPublish={handlePublishAssistantDraft}
+                    onUpdateEquipment={onUpdateGymEquipment}
+                    onUpdatePdfDocuments={onUpdateCoachPdfDocuments}
                   />}
 
                 {personalBuilderPanel === 'WORKOUT' && !selectedAssistantDraft && <section className="rounded-2xl border border-amber-300/30 bg-zinc-900 p-3 text-white">
@@ -1690,6 +1692,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 trainees={users.filter(user => user.role === UserRole.TRAINEE)}
                 sessions={sessions}
                 equipment={gymEquipment}
+                onUpdateEquipment={onUpdateGymEquipment}
+                pdfDocuments={coachPdfDocuments}
+                onUpdatePdfDocuments={onUpdateCoachPdfDocuments}
                 traineeProfiles={traineeProfiles}
                 memoryEntries={traineeMemoryEntries}
                 initialSessionId={groupProgramSessionId}
@@ -1767,6 +1772,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   categories={nutritionForm.categories}
                   messages={nutritionForm.assistantMessages}
                   libraryPlans={nutritionPlans.filter(plan => plan.traineeId !== selectedTrainee.id)}
+                  pdfDocuments={coachPdfDocuments}
+                  onUpdatePdfDocuments={onUpdateCoachPdfDocuments}
+                  onPublish={() => handleSaveNutrition()}
                   onUpdateMessages={assistantMessages => setNutritionForm(current => ({ ...current, assistantMessages }))}
                   onApplyPlan={plan => {
                     setNutritionForm(current => ({
