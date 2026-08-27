@@ -11,11 +11,9 @@ import {
   CreditCard,
   Dumbbell,
   Edit3,
-  Inbox,
   MessageCircle,
   Megaphone,
   QrCode,
-  Send,
   Settings2,
   Trash2,
   UserPlus,
@@ -33,7 +31,8 @@ export type WorkspaceView =
   | 'MY_NUTRITION'
   | 'MY_ACCOUNT'
   | 'MY_MEMBERSHIP'
-  | 'CHECK_IN';
+  | 'CHECK_IN'
+  | 'CHAT';
 
 interface RoleWorkspaceLandingProps {
   activeUser: User;
@@ -44,7 +43,6 @@ interface RoleWorkspaceLandingProps {
   announcements?: Announcement[];
   messages?: Message[];
   payments?: Payment[];
-  onSendMessage?: (content: string, receiverId: string) => void;
   onUpdateAnnouncements?: (announcements: Announcement[]) => void;
   onAcknowledgeStaffAlerts?: (alertIds: string[]) => void;
 }
@@ -56,6 +54,7 @@ type HomeAction = {
   icon: React.ComponentType<{ size?: number }>;
   view?: WorkspaceView;
   onClick?: () => void;
+  badge?: number;
 };
 
 export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
@@ -67,17 +66,10 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   announcements = [],
   messages = [],
   payments = [],
-  onSendMessage,
   onUpdateAnnouncements,
   onAcknowledgeStaffAlerts
 }) => {
   const isTrainee = activeUser.role === UserRole.TRAINEE;
-  const coaches = users.filter(user => user.role === UserRole.COACH || user.role === UserRole.MANAGER);
-  const [selectedCoachId, setSelectedCoachId] = useState(() => coaches[0]?.id || '');
-  const [chatInput, setChatInput] = useState('');
-  const staffRecipients = users.filter(user => user.id !== activeUser.id);
-  const [selectedRecipientId, setSelectedRecipientId] = useState(() => staffRecipients[0]?.id || '');
-  const [staffMessageInput, setStaffMessageInput] = useState('');
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementContent, setAnnouncementContent] = useState('');
   const [editingAnnouncementId, setEditingAnnouncementId] = useState('');
@@ -87,6 +79,15 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
     : activeUser.role === UserRole.COACH
       ? 'מאמן'
       : 'מתאמן';
+  const unreadChatCount = messages.filter(message => message.receiverId === activeUser.id && !message.read).length;
+  const openChat = (contactId = '') => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('workspace', 'chat');
+    if (contactId) url.searchParams.set('contact', contactId);
+    else url.searchParams.delete('contact');
+    window.history.replaceState({}, '', url);
+    onSelect('CHAT');
+  };
 
   const nextSession = useMemo(() => {
     const now = Date.now();
@@ -106,13 +107,15 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
         { key: 'booking', title: 'רישום לאימון', description: 'יומן, הרשמה וביטול', icon: CalendarCheck, view: 'BOOKING' },
         { key: 'profile', title: 'פרופיל', description: 'פרטים, מנוי ובריאות', icon: UserRound, view: 'MY_ACCOUNT' },
         { key: 'workout', title: 'תוכנית אימון', description: 'צפייה והפעלת האימון', icon: Dumbbell, view: 'MY_PROGRAM' },
-        { key: 'nutrition', title: 'תוכנית תזונה', description: 'ארוחות, יעדים והחלפות', icon: Apple, view: 'MY_NUTRITION' }
+        { key: 'nutrition', title: 'תוכנית תזונה', description: 'ארוחות, יעדים והחלפות', icon: Apple, view: 'MY_NUTRITION' },
+        { key: 'chat', title: 'צ׳אט עם המאמן', description: unreadChatCount ? `${unreadChatCount} הודעות חדשות` : 'שיחה עם צוות המועדון', icon: MessageCircle, onClick: () => openChat(), badge: unreadChatCount }
       ]
     : [
         { key: 'training', title: 'אימונים ולו״ז', description: 'האימונים הקרובים והפעלת מסך', icon: CalendarClock, view: 'TRAINING' },
         { key: 'profile', title: 'פרופיל', description: 'פרטים והגדרות חשבון', icon: UserRound, onClick: onOpenProfile },
         { key: 'workout-planning', title: 'בניית תוכניות אימון', description: 'אישי, קבוצתי, מאגר ושיבוץ ליומן', icon: ClipboardList, view: 'WORKOUT_PLANNING' },
-        { key: 'nutrition-planning', title: 'בניית תוכנית תזונה', description: 'יעדים, ארוחות ופרסום', icon: Apple, view: 'NUTRITION_PLANNING' }
+        { key: 'nutrition-planning', title: 'בניית תוכנית תזונה', description: 'יעדים, ארוחות ופרסום', icon: Apple, view: 'NUTRITION_PLANNING' },
+        { key: 'chat', title: 'צ׳אט עם מתאמנים', description: unreadChatCount ? `${unreadChatCount} הודעות חדשות` : 'שיחות והודעות אישיות', icon: MessageCircle, onClick: () => openChat(), badge: unreadChatCount }
       ];
 
   const targetedAnnouncements = useMemo(() => announcements
@@ -128,14 +131,6 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
       return true;
     })
     .sort((a, b) => b.date.localeCompare(a.date)), [activeUser, announcements]);
-
-  const coachMessages = useMemo(() => messages
-    .filter(message =>
-      (message.senderId === activeUser.id && message.receiverId === selectedCoachId)
-      || (message.senderId === selectedCoachId && message.receiverId === activeUser.id)
-    )
-    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-    .slice(-4), [activeUser.id, messages, selectedCoachId]);
 
   const incomingStaffMessages = useMemo(() => messages
     .filter(message => message.receiverId === activeUser.id)
@@ -153,6 +148,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
       title: string;
       detail: string;
       timestamp: string;
+      contactId?: string;
     }> = [];
 
     users
@@ -199,7 +195,8 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
         kind: 'CHAT',
         title: `ממתינה הודעה בצ׳אט מאת ${message.senderName}`,
         detail: message.content,
-        timestamp: message.timestamp
+        timestamp: message.timestamp,
+        contactId: message.senderId
       }));
 
     const acknowledged = new Set(activeUser.staffAlertAcknowledgements || []);
@@ -211,22 +208,6 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   const latestClubAnnouncements = useMemo(() => [...announcements]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5), [announcements]);
-
-  const sendChatMessage = (event: React.FormEvent) => {
-    event.preventDefault();
-    const content = chatInput.trim();
-    if (!content || !selectedCoachId || !onSendMessage) return;
-    onSendMessage(content, selectedCoachId);
-    setChatInput('');
-  };
-
-  const sendStaffMessage = (event: React.FormEvent) => {
-    event.preventDefault();
-    const content = staffMessageInput.trim();
-    if (!content || !selectedRecipientId || !onSendMessage) return;
-    onSendMessage(content, selectedRecipientId);
-    setStaffMessageInput('');
-  };
 
   const saveClubAnnouncement = (event: React.FormEvent) => {
     event.preventDefault();
@@ -298,6 +279,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
                       <p>{alert.detail}</p>
                     </div>
                     <time>{new Date(alert.timestamp).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' })}</time>
+                    {alert.kind === 'CHAT' && alert.contactId && <button type="button" className="role-home-alert-open" onClick={() => openChat(alert.contactId)}>פתיחת צ׳אט</button>}
                     <button type="button" className="role-home-alert-ack" onClick={() => onAcknowledgeStaffAlerts?.([alert.id])} aria-label={`אישור ההתראה: ${alert.title}`}><Check size={15} /> אישור</button>
                   </article>
                 );
@@ -326,6 +308,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
               <strong>{action.title}</strong>
               <small>{action.description}</small>
               <ChevronLeft size={17} className="role-home-action-arrow" />
+              {action.badge ? <b className="absolute left-3 top-3 grid h-6 min-w-6 place-items-center rounded-full bg-red-500 px-1 text-[11px] text-white shadow-lg">{action.badge}</b> : null}
             </button>
           );
         })}
@@ -356,51 +339,9 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
               </div>
             </section>
 
-            <section className="role-home-panel role-home-chat-panel">
-              <div className="role-home-panel-title">
-                <MessageCircle size={20} />
-                <div><h3>צ׳אט עם המאמן</h3><p>שאלה, עדכון או התייעצות</p></div>
-                <select value={selectedCoachId} onChange={event => setSelectedCoachId(event.target.value)} aria-label="בחירת מאמן">
-                  {coaches.map(coach => <option key={coach.id} value={coach.id}>{coach.name}</option>)}
-                </select>
-              </div>
-              <div className="role-home-chat-messages">
-                {coachMessages.map(message => (
-                  <div key={message.id} className={message.senderId === activeUser.id ? 'mine' : ''}>
-                    <strong>{message.senderId === activeUser.id ? 'אני' : message.senderName}</strong>
-                    <span>{message.content}</span>
-                  </div>
-                ))}
-                {coachMessages.length === 0 && <div className="role-home-empty">אפשר להתחיל שיחה חדשה עם המאמן.</div>}
-              </div>
-              <form onSubmit={sendChatMessage} className="role-home-compose">
-                <input value={chatInput} onChange={event => setChatInput(event.target.value)} placeholder="כתיבת הודעה למאמן..." aria-label="הודעה למאמן" />
-                <button type="submit" disabled={!chatInput.trim() || !selectedCoachId} aria-label="שליחת הודעה"><Send size={18} /></button>
-              </form>
-            </section>
           </>
         ) : (
           <>
-            <section className="role-home-panel">
-              <div className="role-home-panel-title"><Inbox size={20} /><div><h3>הודעות שהתקבלו</h3><p>פניות ממתאמנים ומצוות המועדון</p></div></div>
-              <form onSubmit={sendStaffMessage} className="role-home-staff-compose">
-                <select value={selectedRecipientId} onChange={event => setSelectedRecipientId(event.target.value)} aria-label="בחירת נמען">
-                  {staffRecipients.map(recipient => <option key={recipient.id} value={recipient.id}>{recipient.name}</option>)}
-                </select>
-                <input value={staffMessageInput} onChange={event => setStaffMessageInput(event.target.value)} placeholder="כתיבת הודעה אישית..." aria-label="הודעה אישית" />
-                <button type="submit" disabled={!staffMessageInput.trim() || !selectedRecipientId}><Send size={16} /> שליחה</button>
-              </form>
-              <div className="role-home-feed compact">
-                {incomingStaffMessages.slice(0, 5).map(message => (
-                  <article key={message.id} className={!message.read ? 'unread' : ''}>
-                    <div><strong>{message.senderName}</strong><time>{new Date(message.timestamp).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></div>
-                    <p>{message.content}</p>
-                  </article>
-                ))}
-                {incomingStaffMessages.length === 0 && <div className="role-home-empty">לא התקבלו עדיין הודעות.</div>}
-              </div>
-            </section>
-
             <section className="role-home-panel">
               <div className="role-home-panel-title"><Megaphone size={20} /><div><h3>הודעות המועדון</h3><p>פרסום, עריכה ומחיקה</p></div></div>
               <form onSubmit={saveClubAnnouncement} className="role-home-announcement-form">

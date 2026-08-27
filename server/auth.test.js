@@ -52,6 +52,24 @@ test('trainee can only change their own booking membership', () => {
   assert.deepEqual(merged.sessions[0].registeredUsers.sort(), ['t1', 't2']);
 });
 
+test('trainee can mark only received chat messages as read', () => {
+  const current = {
+    users: [{ id: 't1', role: 'TRAINEE', name: 'One' }, { id: 'm1', role: 'MANAGER', name: 'Manager' }],
+    sessions: [], openGymSessions: [], attendanceLogs: [], traineeProfiles: [],
+    messages: [
+      { id: 'incoming', senderId: 'm1', receiverId: 't1', content: 'Hello', read: false },
+      { id: 'outgoing', senderId: 't1', receiverId: 'm1', content: 'Hi', read: false }
+    ]
+  };
+  const incoming = {
+    ...current,
+    messages: current.messages.map(message => ({ ...message, read: true }))
+  };
+  const merged = mergePayloadForUser(current, incoming, 't1', 'TRAINEE');
+  assert.equal(merged.messages.find(message => message.id === 'incoming').read, true);
+  assert.equal(merged.messages.find(message => message.id === 'outgoing').read, false);
+});
+
 test('family members are visible to each other and the payer can manage tracks and removal', () => {
   const payload = {
     users: [

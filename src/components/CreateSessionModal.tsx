@@ -10,12 +10,11 @@ import {
   MuscleGroup,
   Gender,
   MembershipType,
-  MEMBERSHIP_TYPE_LABELS,
-  CURRENT_MEMBERSHIP_CATALOG,
   WorkoutPlan,
   GroupWorkoutProgram
 } from '../types';
 import { X, Calendar, Clock, Users, Plus, Dumbbell, Sparkles, Repeat, ShieldCheck } from 'lucide-react';
+import { SessionMembershipSelector } from './SessionMembershipSelector';
 
 export interface CreateSessionData {
   title: string;
@@ -165,9 +164,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   const [ageMin, setAgeMin] = useState<string>('');
   const [ageMax, setAgeMax] = useState<string>('');
   const [genderRestriction, setGenderRestriction] = useState<Gender>(Gender.ALL);
-  const [allowedMemberships, setAllowedMemberships] = useState<MembershipType[]>(
-    [...CURRENT_MEMBERSHIP_CATALOG]
-  );
+  const [allowedMemberships, setAllowedMemberships] = useState<MembershipType[]>([]);
   const [targetTraineeId, setTargetTraineeId] = useState('');
   const [selectedProgramId, setSelectedProgramId] = useState('');
 
@@ -191,7 +188,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
       setAgeMin('');
       setAgeMax('');
       setGenderRestriction(Gender.ALL);
-      setAllowedMemberships([...CURRENT_MEMBERSHIP_CATALOG]);
+      setAllowedMemberships([]);
       setRecurringType('NONE');
       setTargetTraineeId('');
       setSelectedProgramId('');
@@ -204,12 +201,6 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   }, [isOpen, initialDate, initialTime, activeUser.id]);
 
   if (!isOpen) return null;
-
-  const toggleMembership = (type: MembershipType) => {
-    setAllowedMemberships(prev =>
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-    );
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -588,26 +579,8 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
               <label className="block text-xs font-bold text-slate-800 mb-1.5">
                 סוגי מנוי המורשים להירשם לאימון זה:
               </label>
-              <div className="flex flex-wrap gap-1.5">
-                {CURRENT_MEMBERSHIP_CATALOG.map(typeEnum => {
-                  const info = MEMBERSHIP_TYPE_LABELS[typeEnum];
-                  const isSelected = allowedMemberships.includes(typeEnum);
-                  return (
-                    <button
-                      type="button"
-                      key={typeEnum}
-                      onClick={() => toggleMembership(typeEnum)}
-                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-2xs'
-                          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                      }`}
-                    >
-                      {isSelected ? '✓ ' : ''}{info.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <p className="mb-2 text-[10px] text-slate-500">ברירת המחדל ריקה. יש לבחור במפורש אילו מסלולים רשאים להירשם.</p>
+              <SessionMembershipSelector value={allowedMemberships} onChange={setAllowedMemberships} />
             </div>
           )}
 
