@@ -117,14 +117,13 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
   const groupSessions = sessions.filter(session => !session.isPersonalTraining)
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
-  const personalTemplates = workoutPlans.filter(plan => !plan.sessionId);
+  const personalTemplates = workoutPlans.filter(plan => !plan.sessionId && (plan.libraryEntry === true || plan.libraryEntry === undefined));
   const groupTemplates = groupPrograms.filter(program => !program.sessionId);
 
   const homeTiles: Tile[] = [
-    { title: 'תוכנית אימון אישית', description: 'למתאמן, לאימון 1:1 או למאגר', icon: UserRound, tone: 'gold', onClick: () => onRouteChange('PERSONAL') },
-    { title: 'תוכנית אימון קבוצתית', description: 'לקבוצה, לאירוע ביומן או לתחנות', icon: UsersRound, tone: 'indigo', onClick: () => onRouteChange('GROUP') },
-    { title: 'מאגר תוכניות', description: 'יצירה, עדכון ושכפול תבניות', icon: FolderOpen, tone: 'emerald', onClick: () => onRouteChange('LIBRARY') },
-    { title: 'שיבוץ תוכנית ליומן', description: 'בחירת אימון ותוכנית מוכנה', icon: CalendarCheck, tone: 'slate', onClick: () => onRouteChange('ASSIGN') }
+    { title: 'אימון חדש', description: 'בניית תוכנית אישית או קבוצתית חדשה', icon: Plus, tone: 'gold', onClick: () => onRouteChange('LIBRARY_NEW') },
+    { title: 'בחירה ממאגר', description: 'טעינה, צפייה ויצירת גרסה חדשה לעריכה', icon: FolderOpen, tone: 'emerald', onClick: () => onRouteChange('LIBRARY_EXISTING') },
+    { title: 'שיבוץ מהמאגר ליומן', description: 'שימוש בתוכנית בדיוק כפי שהיא באימון שנקבע', icon: CalendarCheck, tone: 'indigo', onClick: () => onRouteChange('ASSIGN') }
   ];
 
   const personalTiles: Tile[] = [
@@ -178,7 +177,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
 
     {(route === 'PERSONAL_EXISTING') && <SelectionList empty={personalTemplates.length === 0} emptyText="אין תוכניות אישיות במאגר">
       {personalTemplates.map(plan => <button type="button" key={plan.id} className="planning-selection-card" onClick={() => onOpenPersonalPlan(plan)}>
-        <span className="planning-list-icon"><BookOpen size={20} /></span><span><strong>{plan.title || 'תוכנית אישית'}</strong><small>{trainees.find(item => item.id === plan.traineeId)?.name || 'תבנית כללית'} · {plan.exercises.length} תרגילים</small></span><ChevronLeft size={18} />
+        <span className="planning-list-icon"><BookOpen size={20} /></span><span><strong>{plan.title || 'תוכנית אישית'}</strong><small>{trainees.find(item => item.id === plan.traineeId)?.name || 'תבנית כללית'} · {plan.exercises.length} תרגילים · טעינה כגרסה חדשה</small></span><ChevronLeft size={18} />
       </button>)}
     </SelectionList>}
 
@@ -198,7 +197,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
 
     {route === 'GROUP_EXISTING' && <SelectionList empty={groupTemplates.length === 0} emptyText="אין תוכניות קבוצתיות במאגר">
       {groupTemplates.map(program => <button type="button" key={program.id} className="planning-selection-card" onClick={() => onOpenGroupProgram(program)}>
-        <span className="planning-list-icon"><UsersRound size={20} /></span><span><strong>{program.title}</strong><small>{program.groupName} · {program.mode === 'ROTATING_GROUPS' ? 'תחנות מתחלפות' : 'רצף קבוצתי'}</small></span><ChevronLeft size={18} />
+        <span className="planning-list-icon"><UsersRound size={20} /></span><span><strong>{program.title}</strong><small>{program.groupName} · {program.mode === 'ROTATING_GROUPS' ? 'תחנות מתחלפות' : 'רצף קבוצתי'} · טעינה כגרסה חדשה</small></span><ChevronLeft size={18} />
       </button>)}
     </SelectionList>}
 

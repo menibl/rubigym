@@ -48,6 +48,16 @@ import { ExerciseMedia } from './ExerciseMedia';
 import { ProgramBriefPanel, ProgramSetupWizard, WizardAnswers, WizardQuestion } from './ProgramSetupWizard';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import {
+  createNutritionLibraryEntry,
+  createPersonalLibraryEntry,
+  isActiveNutritionPlan,
+  isActivePersonalPlan,
+  isNutritionLibraryEntry,
+  isPersonalLibraryEntry,
+  nutritionLibraryTitle,
+  personalLibraryTitle
+} from '../data/programLibrary';
+import {
   BookOpen,
   Apple,
   MessageSquare,
@@ -416,7 +426,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   // Nutrition Form State
   const [isEditingNutrition, setIsEditingNutrition] = useState(false);
-  const currentNutrition = nutritionPlans.find(np => np.traineeId === selectedTraineeId);
+  const currentNutrition = nutritionPlans.find(np => np.traineeId === selectedTraineeId && isActiveNutritionPlan(np));
   const [nutritionForm, setNutritionForm] = useState({
     dailyCalories: 2200,
     proteinGrams: 140,
@@ -569,36 +579,41 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   const handleSaveNutrition = (e?: React.FormEvent) => {
     e?.preventDefault();
-    let updatedPlans: NutritionPlan[];
+    if (!selectedTrainee) return;
+    const createdAt = new Date();
+    const sourcePlanId = String(nutritionSetupAnswers.templateId || currentNutrition?.sourcePlanId || '');
+    let activePlan: NutritionPlan;
 
     if (currentNutrition) {
-      updatedPlans = nutritionPlans.map(np => {
-        if (np.traineeId === selectedTraineeId) {
-          return {
-            ...np,
-            lastUpdated: new Date().toISOString().split('T')[0],
-            dailyCalories: Number(nutritionForm.dailyCalories),
-            proteinGrams: Number(nutritionForm.proteinGrams),
-            carbsGrams: Number(nutritionForm.carbsGrams),
-            fatGrams: Number(nutritionForm.fatGrams),
-            mealsDescription: nutritionForm.mealsDescription,
-            goal: nutritionForm.goal,
-            hydrationLiters: Number(nutritionForm.hydrationLiters),
-            fiberGrams: Number(nutritionForm.fiberGrams),
-            coachNotes: nutritionForm.coachNotes,
-            categories: nutritionForm.categories,
-            assistantMessages: nutritionForm.assistantMessages
-          };
-        }
-        return np;
-      });
+      activePlan = {
+        ...currentNutrition,
+        title: nutritionLibraryTitle(selectedTrainee.name, createdAt),
+        sourcePlanId: sourcePlanId || currentNutrition.sourcePlanId,
+        libraryEntry: false,
+        active: true,
+        lastUpdated: createdAt.toISOString().split('T')[0],
+        dailyCalories: Number(nutritionForm.dailyCalories),
+        proteinGrams: Number(nutritionForm.proteinGrams),
+        carbsGrams: Number(nutritionForm.carbsGrams),
+        fatGrams: Number(nutritionForm.fatGrams),
+        mealsDescription: nutritionForm.mealsDescription,
+        goal: nutritionForm.goal,
+        hydrationLiters: Number(nutritionForm.hydrationLiters),
+        fiberGrams: Number(nutritionForm.fiberGrams),
+        coachNotes: nutritionForm.coachNotes,
+        categories: nutritionForm.categories,
+        assistantMessages: nutritionForm.assistantMessages
+      };
     } else {
-      const newPlan: NutritionPlan = {
+      activePlan = {
         id: `nut-${Date.now()}`,
         traineeId: selectedTraineeId,
         coachId: activeUser.id,
         coachName: activeUser.name,
-        lastUpdated: new Date().toISOString().split('T')[0],
+        title: nutritionLibraryTitle(selectedTrainee.name, createdAt),
+        sourcePlanId: sourcePlanId || undefined,
+        libraryEntry: false,
+        lastUpdated: createdAt.toISOString().split('T')[0],
         dailyCalories: Number(nutritionForm.dailyCalories),
         proteinGrams: Number(nutritionForm.proteinGrams),
         carbsGrams: Number(nutritionForm.carbsGrams),
@@ -612,10 +627,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         assistantMessages: nutritionForm.assistantMessages,
         active: true
       };
-      updatedPlans = [newPlan, ...nutritionPlans];
     }
 
-    onUpdateNutritionPlans(updatedPlans);
+    const libraryEntry = createNutritionLibraryEntry(activePlan, selectedTrainee, sourcePlanId || undefined, createdAt);
+    const remaining = nutritionPlans.filter(plan => plan.id !== currentNutrition?.id);
+    onUpdateNutritionPlans([activePlan, libraryEntry, ...remaining]);
     setIsEditingNutrition(false);
   };
 
@@ -636,7 +652,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     e.preventDefault();
     if (!selectedTraineeId) return;
 
-    const currentPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId && !wp.sessionId);
+    const currentPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId && isActivePersonalPlan(wp));
     const exerciseId = `ex-${Date.now()}`;
     let mediaStorageId: string | undefined;
     let resolvedMediaType = newExercise.mediaType;
@@ -673,7 +689,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
     if (currentPlan) {
       updatedPlans = workoutPlans.map(wp => {
-        if (wp.traineeId === selectedTraineeId && !wp.sessionId) {
+        if (wp.id === currentPlan.id) {
           return {
             ...wp,
             lastUpdated: new Date().toISOString().split('T')[0],
@@ -717,10 +733,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   // Workout Program delete exercise
   const handleDeleteExercise = (exerciseId: string) => {
-    const exercise = workoutPlans.find(plan => plan.traineeId === selectedTraineeId && !plan.sessionId)?.exercises.find(item => item.id === exerciseId);
+    const exercise = traineeWorkoutPlan?.exercises.find(item => item.id === exerciseId);
     if (exercise?.mediaStorageId) void deleteExerciseMedia(exercise.mediaStorageId).catch(() => undefined);
     const updatedPlans = workoutPlans.map(wp => {
-      if (wp.traineeId === selectedTraineeId && !wp.sessionId) {
+      if (wp.id === traineeWorkoutPlan?.id) {
         return {
           ...wp,
           exercises: wp.exercises.filter(ex => ex.id !== exerciseId)
@@ -732,7 +748,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   };
 
   const handleUpdateExercise = (exerciseId: string, changes: Partial<Exercise>) => {
-    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId && !plan.sessionId
+    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.id === traineeWorkoutPlan?.id
       ? {
           ...plan,
           lastUpdated: new Date().toISOString().split('T')[0],
@@ -768,7 +784,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       void deleteExerciseMedia(mediaStorageId).catch(() => undefined);
       mediaStorageId = undefined;
     }
-    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId && !plan.sessionId
+    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.id === traineeWorkoutPlan?.id
       ? {
           ...plan,
           lastUpdated: new Date().toISOString().split('T')[0],
@@ -786,7 +802,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   const removeExistingExerciseMedia = (exercise: Exercise) => {
     if (exercise.mediaStorageId) void deleteExerciseMedia(exercise.mediaStorageId).catch(() => undefined);
-    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.traineeId === selectedTraineeId && !plan.sessionId
+    onUpdateWorkoutPlans(workoutPlans.map(plan => plan.id === traineeWorkoutPlan?.id
       ? { ...plan, exercises: plan.exercises.map(item => item.id === exercise.id ? { ...item, mediaUrl: '', mediaStorageId: undefined } : item) }
       : plan));
     setEditingExerciseMediaId('');
@@ -874,7 +890,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     });
   };
 
-  const traineeWorkoutPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId && !wp.sessionId);
+  const traineeWorkoutPlan = workoutPlans.find(wp => wp.traineeId === selectedTraineeId && isActivePersonalPlan(wp));
   const workoutDays = Math.max(1, traineeWorkoutPlan?.trainingDaysPerWeek || 1);
   const exerciseLibrary = Array.from(new Map<string, Exercise>(
     workoutPlans.flatMap(plan => plan.exercises).map(exercise => [exercise.name.trim().toLowerCase(), exercise])
@@ -901,7 +917,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const selectedTraineeProfile = traineeProfiles.find(profile => profile.traineeId === selectedTraineeId);
   const selectedTraineeMemoryEntries = traineeMemoryEntries.filter(entry => entry.traineeId === selectedTraineeId);
   const selectedAssistantDraft = workoutAssistantDrafts.find(draft => draft.traineeId === selectedTraineeId);
-  const personalTemplatePlans = workoutPlans.filter(plan => !plan.sessionId && plan.traineeId !== selectedTraineeId);
+  const personalTemplatePlans = workoutPlans.filter(plan => isPersonalLibraryEntry(plan) || (!plan.sessionId && plan.traineeId !== selectedTraineeId));
+  const nutritionTemplatePlans = nutritionPlans.filter(plan => isNutritionLibraryEntry(plan) || plan.traineeId !== selectedTraineeId);
 
   const personalSetupQuestions: WizardQuestion[] = [
     { id: 'updateProfile', label: 'האם לעדכן עכשיו את נתוני המתאמן?', description: 'הנתונים נשמרים בזיכרון המקצועי ומשמשים את הצ׳אט.', type: 'choice', required: true, options: [{ value: true, label: 'כן, לעדכן' }, { value: false, label: 'לא, להשתמש בקיים' }] },
@@ -912,7 +929,6 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     { id: 'limitations', label: 'מגבלות, כאבים או תרגילים אסורים', type: 'textarea', placeholder: 'אם אין, כתבו: ללא', visibleWhen: answers => answers.updateProfile === true },
     { id: 'sourceMode', label: 'איך להתחיל את התוכנית?', type: 'choice', required: true, options: [{ value: 'NEW', label: 'לבנות חדשה', description: 'הצ׳אט יתחיל מנתוני המתאמן' }, { value: 'LIBRARY', label: 'מהמאגר', description: 'נטען תוכנית קיימת כטיוטה' }] },
     { id: 'templateId', label: 'בחירת תוכנית מהמאגר', type: 'select', required: true, visibleWhen: answers => answers.sourceMode === 'LIBRARY', options: personalTemplatePlans.map(plan => ({ value: plan.id, label: `${plan.coachName} · ${plan.trainingDaysPerWeek || 1} ימים · ${plan.exercises.length} תרגילים` })) },
-    { id: 'saveToLibrary', label: 'בסיום, לשמור עותק גם במאגר?', type: 'choice', required: true, options: [{ value: true, label: 'כן' }, { value: false, label: 'לא' }] }
   ];
 
   const completePersonalSetup = (answers: WizardAnswers) => {
@@ -976,18 +992,26 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     { id: 'mealsPerDay', label: 'מספר ארוחות ביום', type: 'number', min: 2, max: 8, required: true },
     { id: 'dietaryPreferences', label: 'העדפות תזונתיות', type: 'textarea', placeholder: 'צמחוני, כשר, מאכלים מועדפים...' },
     { id: 'restrictions', label: 'אלרגיות, רגישויות ומגבלות רפואיות', type: 'textarea', placeholder: 'אם אין, כתבו: ללא' },
-    { id: 'sourceMode', label: 'איך להתחיל?', type: 'choice', required: true, options: [{ value: 'NEW', label: 'תוכנית חדשה' }, { value: 'CURRENT', label: 'לעדכן קיימת', description: currentNutrition ? 'התוכנית הקיימת תיטען לעריכה' : 'אין תוכנית קיימת כרגע' }] },
-    { id: 'saveToLibrary', label: 'לשמור את המבנה גם במאגר?', type: 'choice', required: true, options: [{ value: true, label: 'כן' }, { value: false, label: 'לא' }] }
+    { id: 'sourceMode', label: 'איך להתחיל?', type: 'choice', required: true, options: [{ value: 'NEW', label: 'תוכנית חדשה' }, { value: 'LIBRARY', label: 'בחירה מהמאגר', description: 'טעינת תוכנית קיימת לצ׳אט ולעריכה' }] },
+    { id: 'templateId', label: 'בחירת תוכנית תזונה מהמאגר', type: 'select', required: true, visibleWhen: answers => answers.sourceMode === 'LIBRARY', options: nutritionTemplatePlans.map(plan => ({ value: plan.id, label: `${plan.title || plan.goal || `תוכנית של ${plan.coachName}`} · ${plan.dailyCalories} קלוריות` })) }
   ];
 
   const completeNutritionSetup = (answers: WizardAnswers) => {
     startEditingNutrition();
+    const source = answers.sourceMode === 'LIBRARY' ? nutritionPlans.find(plan => plan.id === answers.templateId) : undefined;
     setNutritionForm(current => ({
       ...current,
-      goal: String(answers.goal || selectedTraineeProfile?.primaryGoal || ''),
-      dailyCalories: Number(answers.dailyCalories || current.dailyCalories),
-      coachNotes: [current.coachNotes, `מספר ארוחות: ${answers.mealsPerDay || 4}`, `העדפות: ${answers.dietaryPreferences || 'ללא'}`, `מגבלות: ${answers.restrictions || 'ללא'}`].filter(Boolean).join('\n'),
-      assistantMessages: [...current.assistantMessages, { id: `nutrition-setup-${Date.now()}`, role: 'ASSISTANT', createdAt: new Date().toISOString(), content: 'קיבלתי את שאלון הפתיחה. הנתונים הועברו לצ׳אט; אפשר לכתוב “בנה תוכנית תזונה” ואז לעדכן כל ארוחה דרך הצ׳אט או ישירות.' }]
+      goal: source?.goal || String(answers.goal || selectedTraineeProfile?.primaryGoal || ''),
+      dailyCalories: source?.dailyCalories || Number(answers.dailyCalories || current.dailyCalories),
+      proteinGrams: source?.proteinGrams || current.proteinGrams,
+      carbsGrams: source?.carbsGrams || current.carbsGrams,
+      fatGrams: source?.fatGrams || current.fatGrams,
+      hydrationLiters: source?.hydrationLiters || current.hydrationLiters,
+      fiberGrams: source?.fiberGrams || current.fiberGrams,
+      mealsDescription: source?.mealsDescription || current.mealsDescription,
+      categories: source?.categories?.map((meal, index) => ({ ...meal, id: `nutrition-setup-meal-${Date.now()}-${index}` })) || current.categories,
+      coachNotes: [source?.coachNotes || current.coachNotes, `מספר ארוחות: ${answers.mealsPerDay || 4}`, `העדפות: ${answers.dietaryPreferences || 'ללא'}`, `מגבלות: ${answers.restrictions || 'ללא'}`].filter(Boolean).join('\n'),
+      assistantMessages: [...current.assistantMessages, { id: `nutrition-setup-${Date.now()}`, role: 'ASSISTANT', createdAt: new Date().toISOString(), content: source ? `טענתי את „${source.title || source.goal || 'התוכנית'}” מהמאגר. אפשר לפרסם כפי שהיא או לבקש ממני לערוך אותה.` : 'קיבלתי את שאלון הפתיחה. הנתונים הועברו לצ׳אט; אפשר לכתוב “בנה תוכנית תזונה” ואז לעדכן כל ארוחה דרך הצ׳אט או ישירות.' }]
     }));
     setNutritionSetupAnswers(answers);
     setNutritionSetupComplete(true);
@@ -1009,21 +1033,30 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   const handlePublishAssistantDraft = (draft: WorkoutAssistantDraft) => {
     if (!selectedTrainee || !selectedHasWorkoutPlanAccess || draft.exercises.length === 0) return;
+    const createdAt = new Date();
+    const sourcePlanId = String(personalSetupAnswers.templateId || traineeWorkoutPlan?.sourcePlanId || '');
+    const defaultTitle = personalLibraryTitle(selectedTrainee.name, createdAt);
+    const planTitle = draft.objective.trim()
+      ? `${draft.objective.trim()} · ${selectedTrainee.name} · ${createdAt.toLocaleDateString('he-IL')}`
+      : defaultTitle;
     const publishedPlan: WorkoutPlan = {
       id: traineeWorkoutPlan?.id || `plan-${Date.now()}`,
       traineeId: selectedTrainee.id,
+      title: planTitle,
+      sourcePlanId: sourcePlanId || undefined,
+      libraryEntry: false,
       coachId: activeUser.id,
       coachName: activeUser.name,
-      lastUpdated: new Date().toISOString().split('T')[0],
+      lastUpdated: createdAt.toISOString().split('T')[0],
       exercises: draft.exercises.map(exercise => ({ ...exercise })),
       trainingDaysPerWeek: draft.trainingDaysPerWeek || 1,
       dayLabels: draft.dayLabels,
       status: 'APPROVED_ASSIGNED',
       isRequested: false
     };
-    onUpdateWorkoutPlans(traineeWorkoutPlan
-      ? workoutPlans.map(plan => plan.traineeId === selectedTrainee.id && !plan.sessionId ? publishedPlan : plan)
-      : [publishedPlan, ...workoutPlans]);
+    const libraryEntry = createPersonalLibraryEntry(publishedPlan, selectedTrainee, sourcePlanId || undefined, createdAt);
+    const remaining = workoutPlans.filter(plan => plan.id !== traineeWorkoutPlan?.id);
+    onUpdateWorkoutPlans([publishedPlan, libraryEntry, ...remaining]);
     handleUpdateAssistantDraft({ ...draft, status: 'PUBLISHED', updatedAt: new Date().toISOString() });
     onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ופורסמה באזור תוכנית האימונים.`, selectedTrainee.id);
   };
@@ -1071,12 +1104,77 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     setWorkoutPlanningRoute('PERSONAL_BUILDER');
   };
 
+  const openPersonalLibraryCopy = (plan: WorkoutPlan) => {
+    const trainee = users.find(user => user.id === plan.traineeId) || traineesOnly[0];
+    if (!trainee) return;
+    const now = new Date().toISOString();
+    const draft: WorkoutAssistantDraft = {
+      id: `workout-library-draft-${Date.now()}`,
+      traineeId: trainee.id,
+      coachId: activeUser.id,
+      coachName: activeUser.name,
+      objective: plan.title || 'התאמת תוכנית מהמאגר',
+      coachNotes: `נטענה מהמאגר: ${plan.title || 'תוכנית אישית'}`,
+      exercises: plan.exercises.map((exercise, index) => ({ ...exercise, id: `workout-library-copy-${Date.now()}-${index}` })),
+      trainingDaysPerWeek: plan.trainingDaysPerWeek || 1,
+      dayLabels: plan.dayLabels,
+      sourceDocumentIds: [],
+      createdAt: now,
+      updatedAt: now,
+      status: 'DRAFT'
+    };
+    setSelectedTraineeId(trainee.id);
+    handleUpdateAssistantDraft(draft);
+    onUpdateWorkoutAssistantMessages([...workoutAssistantMessages, {
+      id: `workout-library-open-${Date.now()}`,
+      traineeId: trainee.id,
+      coachId: activeUser.id,
+      coachName: activeUser.name,
+      role: 'ASSISTANT',
+      content: `טענתי את „${plan.title || 'התוכנית'}” מהמאגר כגרסה חדשה. אפשר לפרסם כפי שהיא או לבקש ממני לערוך כל פרט.`,
+      createdAt: now
+    }]);
+    setPersonalSetupAnswers({ updateProfile: false, sourceMode: 'LIBRARY', templateId: plan.id });
+    setPersonalSetupComplete(true);
+    setPersonalBuilderPanel('WORKOUT');
+    setActiveTab('programs');
+    setWorkoutPlanningRoute('PERSONAL_BUILDER');
+  };
+
   const openGroupBuilder = (options: { sessionId?: string; programId?: string; audience?: string } = {}) => {
     setGroupProgramSessionId(options.sessionId || '');
     setGroupProgramId(options.programId || '');
     setGroupProgramAudience(options.audience || '');
     setActiveTab('group-programs');
     setWorkoutPlanningRoute('GROUP_BUILDER');
+  };
+
+  const openGroupLibraryCopy = (program: GroupWorkoutProgram) => {
+    const stamp = Date.now();
+    const now = new Date().toISOString();
+    const copy: GroupWorkoutProgram = {
+      ...program,
+      id: `group-library-copy-${stamp}`,
+      sourceProgramId: program.id,
+      libraryEntry: true,
+      sessionId: undefined,
+      sessionDate: undefined,
+      sessionTime: undefined,
+      title: `${program.title} · גרסה חדשה`,
+      participants: [],
+      exercises: program.exercises.map((exercise, index) => ({ ...exercise, id: `group-library-copy-exercise-${stamp}-${index}` })),
+      stations: (program.stations || []).map((station, stationIndex) => ({
+        ...station,
+        id: `group-library-copy-station-${stamp}-${stationIndex}`,
+        exercises: station.exercises.map((exercise, exerciseIndex) => ({ ...exercise, id: `group-library-copy-station-exercise-${stamp}-${stationIndex}-${exerciseIndex}` }))
+      })),
+      status: 'DRAFT',
+      createdAt: now,
+      updatedAt: now,
+      publishedAt: undefined
+    };
+    onUpdateGroupWorkoutPrograms([copy, ...groupWorkoutPrograms]);
+    openGroupBuilder({ programId: copy.id });
   };
 
   const openNutritionBuilder = (traineeId: string) => {
@@ -1106,10 +1204,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         groupPrograms={groupWorkoutPrograms}
         onOpenPersonalTrainee={openPersonalBuilder}
         onOpenPersonalSession={openWorkoutProgramFromCalendar}
-        onOpenPersonalPlan={plan => openPersonalBuilder(plan.traineeId)}
+        onOpenPersonalPlan={openPersonalLibraryCopy}
         onOpenGroupSession={session => openGroupBuilder({ sessionId: session.id })}
         onOpenGroupAudience={audience => openGroupBuilder({ audience })}
-        onOpenGroupProgram={program => openGroupBuilder({ programId: program.id })}
+        onOpenGroupProgram={openGroupLibraryCopy}
         onOpenPdfLibrary={() => { setActiveTab('pdf-library'); setWorkoutPlanningRoute('PDF_LIBRARY'); }}
         assignmentContent={<CoachTrainingMode
           activeUser={activeUser}
@@ -1293,7 +1391,6 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     preferredWorkoutMinutes: selectedTraineeProfile?.preferredWorkoutMinutes || 60,
                     limitations: selectedTraineeProfile?.limitations || '',
                     sourceMode: 'NEW',
-                    saveToLibrary: false,
                     ...personalSetupAnswers
                   }}
                   onComplete={completePersonalSetup}
@@ -1304,7 +1401,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   { label: 'אימונים בשבוע', value: personalSetupAnswers.weeklySessions || selectedTraineeProfile?.weeklySessions },
                   { label: 'משך', value: personalSetupAnswers.preferredWorkoutMinutes ? `${personalSetupAnswers.preferredWorkoutMinutes} דקות` : undefined },
                   { label: 'מקור', value: personalSetupAnswers.sourceMode === 'LIBRARY' ? 'תוכנית מהמאגר' : 'תוכנית חדשה' },
-                  { label: 'שמירה במאגר', value: personalSetupAnswers.saveToLibrary === true ? 'כן' : 'לא' }
+                  { label: 'שמירה במאגר', value: 'אוטומטית בפרסום' }
                 ]} />
                 <nav className="personal-builder-menu" aria-label="אזורי בניית תוכנית אישית">
                   <button type="button" onClick={() => setPersonalBuilderPanel('WORKOUT')} className={personalBuilderPanel === 'WORKOUT' ? 'active' : ''}><Dumbbell size={18} /><span><strong>התוכנית והצ׳אט</strong><small>צפייה, בנייה ועריכה</small></span></button>
@@ -1742,8 +1839,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     mealsPerDay: currentNutrition?.categories?.length || 4,
                     dietaryPreferences: '',
                     restrictions: selectedTraineeProfile?.limitations || '',
-                    sourceMode: currentNutrition ? 'CURRENT' : 'NEW',
-                    saveToLibrary: false,
+                    sourceMode: 'NEW',
                     ...nutritionSetupAnswers
                   }}
                   onComplete={completeNutritionSetup}
@@ -1754,7 +1850,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   { label: 'קלוריות', value: nutritionSetupAnswers.dailyCalories },
                   { label: 'ארוחות ביום', value: nutritionSetupAnswers.mealsPerDay },
                   { label: 'מגבלות', value: nutritionSetupAnswers.restrictions },
-                  { label: 'שמירה במאגר', value: nutritionSetupAnswers.saveToLibrary === true ? 'כן' : 'לא' }
+                  { label: 'מקור', value: nutritionSetupAnswers.sourceMode === 'LIBRARY' ? 'תוכנית מהמאגר' : 'תוכנית חדשה' },
+                  { label: 'שמירה במאגר', value: 'אוטומטית בפרסום' }
                 ]} />
                 <NutritionAssistantPanel
                   activeUser={activeUser}
@@ -1771,7 +1868,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   mealsDescription={nutritionForm.mealsDescription}
                   categories={nutritionForm.categories}
                   messages={nutritionForm.assistantMessages}
-                  libraryPlans={nutritionPlans.filter(plan => plan.traineeId !== selectedTrainee.id)}
+                  libraryPlans={nutritionTemplatePlans}
                   pdfDocuments={coachPdfDocuments}
                   onUpdatePdfDocuments={onUpdateCoachPdfDocuments}
                   onPublish={() => handleSaveNutrition()}

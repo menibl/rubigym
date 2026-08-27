@@ -33,6 +33,7 @@ import { AiBuilderChatScreen } from './AiBuilderChatScreen';
 import { AiEquipmentSelector } from './AiEquipmentSelector';
 import { AiPdfSourcePanel } from './AiPdfSourcePanel';
 import { getPdfDocumentContent } from '../data/pdfLibraryStorage';
+import { createGroupLibraryEntry, groupLibraryTitle } from '../data/programLibrary';
 
 interface GroupWorkoutProgramManagerProps {
   activeUser: User;
@@ -224,6 +225,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       defaultRepetitions: '12',
       preparationSeconds: 10,
       status: 'DRAFT',
+      libraryEntry: !session,
       createdAt: now,
       updatedAt: now
     };
@@ -243,6 +245,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     const assigned: GroupWorkoutProgram = {
       ...template,
       id: `group-program-${Date.now()}`,
+      sourceProgramId: template.id,
+      libraryEntry: false,
       sessionId: session.id,
       sessionDate: session.date,
       sessionTime: session.time,
@@ -503,7 +507,23 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       ? (selectedProgram.stations || []).flatMap(station => station.exercises)
       : selectedProgram.exercises;
     if (exercises.length === 0 || exercises.some(exercise => !exercise.name.trim())) return;
-    updateProgram({ status: 'PUBLISHED', publishedAt: new Date().toISOString() });
+    const createdAt = new Date();
+    const published: GroupWorkoutProgram = {
+      ...selectedProgram,
+      title: selectedProgram.sessionId
+        ? (selectedProgram.title.trim() || groupLibraryTitle(selectedProgram, createdAt))
+        : groupLibraryTitle(selectedProgram, createdAt),
+      libraryEntry: !selectedProgram.sessionId,
+      status: 'PUBLISHED',
+      publishedAt: createdAt.toISOString(),
+      updatedAt: createdAt.toISOString()
+    };
+    if (selectedProgram.sessionId) {
+      const libraryEntry = createGroupLibraryEntry(published, createdAt);
+      onUpdatePrograms([libraryEntry, ...programs.map(program => program.id === published.id ? published : program)]);
+    } else {
+      onUpdatePrograms(programs.map(program => program.id === published.id ? published : program));
+    }
   };
 
   const runAssistantCommand = async (request: string) => {
@@ -618,6 +638,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     const updated: GroupWorkoutProgram = {
       ...template,
       id: selectedProgram.id,
+      sourceProgramId: template.id,
+      libraryEntry: !selectedProgram.sessionId,
       sessionId: selectedProgram.sessionId,
       sessionDate: selectedProgram.sessionDate,
       sessionTime: selectedProgram.sessionTime,

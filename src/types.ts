@@ -453,6 +453,9 @@ export interface WorkoutPlan {
   dayLabels?: string[];
   status?: 'REQUIRED_OPEN_GYM' | 'REQUESTED_BY_TRAINEE' | 'APPROVED_ASSIGNED';
   isRequested?: boolean;
+  /** Saved immutable-ish version for reuse. Active trainee plans keep this false/undefined. */
+  libraryEntry?: boolean;
+  libraryCreatedAt?: string;
 }
 
 export type TraineeExperienceLevel = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
@@ -604,6 +607,9 @@ export interface GroupWorkoutProgram {
   createdAt: string;
   updatedAt: string;
   publishedAt?: string;
+  /** Identifies an automatically saved reusable version. */
+  libraryEntry?: boolean;
+  sourceProgramId?: string;
 }
 
 export interface NutritionPlan {
@@ -627,6 +633,10 @@ export interface NutritionPlan {
   isPaid?: boolean; // Paid individual fee
   price?: number; // Fee amount (currently 350 ILS for nutrition coaching)
   paymentStatus?: 'UNPAID' | 'PAID' | 'WAIVED';
+  title?: string;
+  sourcePlanId?: string;
+  libraryEntry?: boolean;
+  libraryCreatedAt?: string;
 }
 
 export interface NutritionMealCategory {
