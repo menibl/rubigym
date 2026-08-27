@@ -9,7 +9,11 @@ import { startPushReminderScheduler } from './push.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const port = Number(process.env.PORT || 8080);
-const maxBodyBytes = Number(process.env.MAX_REQUEST_BODY_BYTES || 1_048_576);
+// Club state updates currently include the complete scheduling payload. Profile
+// thumbnails and medical-certificate attachments can legitimately push that
+// request above the old 1 MiB default, causing optimistic calendar entries to
+// disappear as soon as the failed save is reconciled with the server state.
+const maxBodyBytes = Number(process.env.MAX_REQUEST_BODY_BYTES || 16_777_216);
 const databaseStore = await createDatabaseStore(process.env.DATABASE_URL, process.env.DATABASE_SSL);
 await ensureInitialManager(databaseStore, process.env);
 startPushReminderScheduler(databaseStore, process.env);

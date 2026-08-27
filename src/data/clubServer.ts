@@ -52,7 +52,13 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(result.message || (response.status === 409 ? 'STATE_CONFLICT' : 'שירות המועדון אינו זמין כרגע.')) as Error & { status?: number };
+    const fallback = response.status === 409
+      ? 'STATE_CONFLICT'
+      : response.status === 413
+        ? 'השינוי גדול ממגבלת השמירה של השרת. יש לפנות למנהל המערכת.'
+        : 'שירות המועדון אינו זמין כרגע.';
+    const serverMessage = result.message === 'Request too large' ? fallback : result.message;
+    const error = new Error(serverMessage || fallback) as Error & { status?: number };
     error.status = response.status;
     throw error;
   }
