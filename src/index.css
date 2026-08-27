@@ -1880,6 +1880,22 @@ option {
   text-decoration: underline;
 }
 
+.booking-calendar-links .workout-view-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-inline-end: auto;
+  padding: 6px 12px;
+  border-radius: 9px;
+  background: var(--app-gold);
+  color: #171810;
+  font-size: 11px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
 .booking-day-empty {
   grid-column: 1 / -1;
   padding: 22px;
