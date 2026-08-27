@@ -31,7 +31,8 @@ import {
   UserRole,
   DiscountCode,
   FamilyBillingMode,
-  FamilyMemberPlanSelection
+  FamilyMemberPlanSelection,
+  GroupWorkoutProgram
 } from '../types';
 import {
   Calendar as CalendarIcon,
@@ -91,6 +92,7 @@ interface TraineeDashboardProps {
   sessions: TrainingSession[];
   openGymSessions: OpenGymSession[];
   workoutPlans: WorkoutPlan[];
+  groupWorkoutPrograms: GroupWorkoutProgram[];
   nutritionPlans: NutritionPlan[];
   blackPoints: BlackPoint[];
   messages: Message[];
@@ -118,6 +120,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   sessions,
   openGymSessions,
   workoutPlans,
+  groupWorkoutPrograms,
   nutritionPlans,
   blackPoints,
   messages,
@@ -1357,6 +1360,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     return [...sessionItems, ...openGymItems]
       .sort((a, b) => `${a.startTime}-${a.kind}`.localeCompare(`${b.startTime}-${b.kind}`, 'he'));
   };
+  const sessionWorkoutProgram = (sessionId: string) => groupWorkoutPrograms.find(program =>
+    program.sessionId === sessionId
+    && program.status === 'PUBLISHED'
+    && !program.libraryEntry
+  );
+  const openSessionWorkoutDisplay = (session: TrainingSession) => {
+    if (!session.registeredUsers.includes(activeUser.id) || !sessionWorkoutProgram(session.id)) return;
+    const displayUrl = `${window.location.origin}${window.location.pathname}#trainee-session-workout=${encodeURIComponent(session.id)}`;
+    window.open(displayUrl, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div className="space-y-6 trainee-app" id="trainee-dashboard">
@@ -1709,6 +1722,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 if (og) handleCancelOpenGym(og);
               }}
               checkBookingEligibility={checkBookingEligibility}
+              canViewWorkoutProgram={session => Boolean(
+                session.registeredUsers.includes(activeUser.id)
+                && sessionWorkoutProgram(session.id)
+              )}
+              onViewWorkoutProgram={openSessionWorkoutDisplay}
             />
             </div>}
 
@@ -1783,6 +1801,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                             {!booked && !waitlisted && !eligibility.eligible && <span className="booking-reason">{eligibility.reason}</span>}
                             {(booked || waitlisted) && (
                               <div className="booking-calendar-links">
+                                {booked && sessionWorkoutProgram(session.id) && (
+                                  <button type="button" className="workout-view-button" onClick={() => openSessionWorkoutDisplay(session)}><MonitorPlay size={14} /> הצג אימון</button>
+                                )}
                                 <a href={getGoogleCalendarLink(session)} target="_blank" rel="noreferrer">Google Calendar</a>
                                 <button type="button" onClick={() => downloadIcsFile(session)}>Apple Calendar</button>
                               </div>

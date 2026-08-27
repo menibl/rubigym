@@ -46,6 +46,8 @@ interface WeeklyCalendarProps {
   onCancelOpenGym?: (openGymSessionId: string) => void;
   onEditSession?: (session: TrainingSession) => void;
   onOpenWorkoutProgram?: (session: TrainingSession) => void;
+  canViewWorkoutProgram?: (session: TrainingSession) => boolean;
+  onViewWorkoutProgram?: (session: TrainingSession) => void;
   onDeleteSession?: (sessionId: string, deleteSeries?: boolean) => void;
   onEditOpenGym?: (openGym: OpenGymSession) => void;
   onDeleteOpenGym?: (openGymId: string, deleteSeries?: boolean) => void;
@@ -93,6 +95,8 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   onDeleteSession,
   onEditSession,
   onOpenWorkoutProgram,
+  canViewWorkoutProgram,
+  onViewWorkoutProgram,
   onDeleteOpenGym,
   onEditOpenGym,
   checkBookingEligibility,
@@ -901,7 +905,15 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                 <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-2">
                   {/* TRAINEE BOOK / CANCEL ACTIONS */}
                   {role === UserRole.TRAINEE && (
-                    <>
+                    <div className="grid w-full gap-2">
+                      {selectedItem.session.registeredUsers.includes(activeUser.id) && canViewWorkoutProgram?.(selectedItem.session) && onViewWorkoutProgram && (
+                        <button
+                          onClick={() => onViewWorkoutProgram(selectedItem.session!)}
+                          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-400 text-xs font-black text-zinc-950 shadow-xs transition hover:bg-amber-300"
+                        >
+                          <Dumbbell className="h-4 w-4" /> הצג את תוכנית האימון
+                        </button>
+                      )}
                       {selectedItem.session.registeredUsers.includes(activeUser.id) ? (
                         <button
                           onClick={() => {
@@ -923,7 +935,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                           🟢 הרשמה לאימון זה
                         </button>
                       )}
-                    </>
+                    </div>
                   )}
 
                   {/* MANAGER / COACH ACTIONS FOR SESSION */}

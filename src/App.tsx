@@ -52,6 +52,7 @@ import { RubisLogo } from './components/RubisLogo';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
 import { ClubWorkoutDisplay } from './components/ClubWorkoutDisplay';
+import { TraineeSessionWorkoutView } from './components/TraineeSessionWorkoutView';
 import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
 import { isMembershipCancellationEffective } from './data/membershipPolicy';
 import { hasNotificationMarker, saveNotificationMarker, showBrowserNotification } from './utils/browserNotifications';
@@ -69,6 +70,11 @@ const getGroupWorkoutDisplayId = () => {
 
 const getPersonalWorkoutDisplayId = () => {
   const match = window.location.hash.match(/^#personal-workout-display=(.+)$/);
+  return match ? decodeURIComponent(match[1]) : '';
+};
+
+const getTraineeSessionWorkoutId = () => {
+  const match = window.location.hash.match(/^#trainee-session-workout=(.+)$/);
   return match ? decodeURIComponent(match[1]) : '';
 };
 
@@ -102,6 +108,7 @@ export default function App() {
   const [groupWorkoutDisplayId, setGroupWorkoutDisplayId] = useState(getGroupWorkoutDisplayId);
   const [clubWorkoutDisplay, setClubWorkoutDisplay] = useState(isClubWorkoutDisplay);
   const [personalWorkoutDisplayId, setPersonalWorkoutDisplayId] = useState(getPersonalWorkoutDisplayId);
+  const [traineeSessionWorkoutId, setTraineeSessionWorkoutId] = useState(getTraineeSessionWorkoutId);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
   const [showTraineeAccessAlert, setShowTraineeAccessAlert] = useState(true);
   const [publicLandingConfig, setPublicLandingConfig] = useState<PublicLandingConfig | null>(null);
@@ -210,6 +217,7 @@ export default function App() {
       setGroupWorkoutDisplayId(getGroupWorkoutDisplayId());
       setClubWorkoutDisplay(isClubWorkoutDisplay());
       setPersonalWorkoutDisplayId(getPersonalWorkoutDisplayId());
+      setTraineeSessionWorkoutId(getTraineeSessionWorkoutId());
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => {
@@ -492,6 +500,29 @@ export default function App() {
     );
   }
 
+  if (traineeSessionWorkoutId && activeUser.role === UserRole.TRAINEE) {
+    const session = sessions.find(item => item.id === traineeSessionWorkoutId);
+    const isRegistered = Boolean(session?.registeredUsers.includes(activeUser.id));
+    const groupProgram = groupWorkoutPrograms.find(program =>
+      program.sessionId === traineeSessionWorkoutId
+      && program.status === 'PUBLISHED'
+      && !program.libraryEntry
+    );
+    if (session && isRegistered && groupProgram) {
+      return <TraineeSessionWorkoutView session={session} program={groupProgram} />;
+    }
+    return (
+      <main className="grid min-h-dvh place-items-center bg-zinc-950 p-5 text-center text-zinc-100" dir="rtl">
+        <div className="max-w-sm rounded-2xl border border-zinc-700 bg-zinc-900 p-6 shadow-xl">
+          <Dumbbell className="mx-auto text-amber-400" size={34} />
+          <h1 className="mt-3 text-lg font-black">תוכנית האימון אינה זמינה</h1>
+          <p className="mt-2 text-sm leading-6 text-zinc-400">ניתן לצפות בתוכנית שפורסמה רק לאחר הרשמה לאימון המתאים ביומן.</p>
+          <button type="button" onClick={() => { window.location.hash = ''; }} className="mt-5 min-h-11 w-full rounded-xl bg-amber-400 font-black text-zinc-950">חזרה לאפליקציה</button>
+        </div>
+      </main>
+    );
+  }
+
   const renderCoachWorkspace = (
     mode: 'TRAINING' | 'PLANNING',
     initialPlanningTab: 'programs' | 'nutrition' = 'programs'
@@ -722,6 +753,7 @@ export default function App() {
               sessions={sessions}
               openGymSessions={openGymSessions}
               workoutPlans={workoutPlans}
+              groupWorkoutPrograms={groupWorkoutPrograms}
               nutritionPlans={nutritionPlans}
               blackPoints={blackPoints}
               messages={messages}
