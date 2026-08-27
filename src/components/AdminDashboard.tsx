@@ -43,6 +43,7 @@ import {
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
 import { createMembershipTerm } from '../data/membershipPolicy';
 import { LandingImageManager } from './LandingImageManager';
+import { SessionMembershipSelector } from './SessionMembershipSelector';
 import {
   Calendar,
   Settings,
@@ -525,7 +526,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ageMin: '',
     ageMax: '',
     genderRestriction: Gender.ALL,
-    allowedMemberships: [...CURRENT_MEMBERSHIP_CATALOG]
+    allowedMemberships: [] as MembershipType[]
   });
 
   // Form states for creating a new bulletin announcement
@@ -542,6 +543,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Handle Session Creation
   const handleCreateSession = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (sessionTypeCategory !== 'OPEN_GYM' && newSession.allowedMemberships.length === 0) {
+      alert('יש לבחור לפחות סוג מנוי אחד המורשה להירשם לאימון.');
+      return;
+    }
 
     if (sessionTypeCategory === 'OPEN_GYM') {
       const timeSlotStr = `${newSession.time}-${String(parseInt(newSession.time.split(':')[0]) + 2).padStart(2, '0')}:00`;
@@ -592,7 +598,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ageMin: '',
       ageMax: '',
       genderRestriction: Gender.ALL,
-      allowedMemberships: [...CURRENT_MEMBERSHIP_CATALOG]
+      allowedMemberships: [] as MembershipType[]
     });
   };
 
@@ -1169,26 +1175,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div className="border-t border-slate-200 pt-3">
                   <span className="block text-xs text-slate-600 font-medium mb-2">סוגי מנוי מורשים להירשם לאימון זה:</span>
-                  <div className="flex flex-wrap gap-2">
-                    {CURRENT_MEMBERSHIP_CATALOG.map(typeEnum => {
-                      const info = MEMBERSHIP_TYPE_LABELS[typeEnum];
-                      const isSelected = newSession.allowedMemberships.includes(typeEnum);
-                      return (
-                        <button
-                          type="button"
-                          key={typeEnum}
-                          onClick={() => toggleMembershipSelection(typeEnum, 'session')}
-                          className={`px-3 py-1.5 rounded-full text-[10px] font-medium border transition ${
-                            isSelected
-                              ? 'bg-emerald-100 border-emerald-300 text-emerald-800 font-bold'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                          }`}
-                        >
-                          {info.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <p className="mb-2 text-[10px] text-slate-500">לא מסומן מסלול כברירת מחדל. „קבוצתי” כולל חודשי ושנתי.</p>
+                  <SessionMembershipSelector value={newSession.allowedMemberships} onChange={allowedMemberships => setNewSession({ ...newSession, allowedMemberships })} />
                 </div>
 
                 <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">

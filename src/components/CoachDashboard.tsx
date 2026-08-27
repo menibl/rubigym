@@ -46,6 +46,7 @@ import { CoachTrainingMode } from './CoachTrainingMode';
 import { WorkoutPlanningNavigator, WorkoutPlanningRoute } from './WorkoutPlanningNavigator';
 import { ExerciseMedia } from './ExerciseMedia';
 import { ProgramBriefPanel, ProgramSetupWizard, WizardAnswers, WizardQuestion } from './ProgramSetupWizard';
+import { SessionMembershipSelector } from './SessionMembershipSelector';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import {
   createNutritionLibraryEntry,
@@ -455,7 +456,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     maxParticipants: 10,
     ageMin: '',
     genderRestriction: Gender.ALL,
-    allowedMemberships: [...CURRENT_MEMBERSHIP_CATALOG]
+    allowedMemberships: [] as MembershipType[]
   });
 
   // Personal Training Scheduling State
@@ -886,7 +887,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       maxParticipants: 10,
       ageMin: '',
       genderRestriction: Gender.ALL,
-      allowedMemberships: [...CURRENT_MEMBERSHIP_CATALOG]
+      allowedMemberships: [] as MembershipType[]
     });
   };
 
@@ -1306,20 +1307,6 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
           >
             <Apple size={14} />
             תפריט תזונה
-          </button>
-          <button
-            onClick={() => setActiveTab('messages')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer relative ${
-              activeTab === 'messages' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'
-            }`}
-          >
-            <MessageSquare size={14} />
-            צ'אט והודעות אישיות
-            {messages.filter(m => m.receiverId === activeUser.id && !m.read).length > 0 && (
-              <span className="absolute -top-1 -left-1 bg-sky-500 text-white rounded-full w-4 h-4 text-[8px] flex items-center justify-center font-bold">
-                {messages.filter(m => m.receiverId === activeUser.id && !m.read).length}
-              </span>
-            )}
           </button>
           <button
             onClick={() => setActiveTab('sessions')}
@@ -2280,22 +2267,8 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-white p-3 rounded-lg border border-slate-200 text-xs">
-                        {CURRENT_MEMBERSHIP_CATALOG.map(typeEnum => {
-                          const info = MEMBERSHIP_TYPE_LABELS[typeEnum];
-                          return (
-                            <label key={typeEnum} className="flex items-center gap-1.5 cursor-pointer hover:text-emerald-700">
-                              <input
-                                type="checkbox"
-                                checked={newSession.allowedMemberships.includes(typeEnum)}
-                                onChange={() => toggleAllowedMembership(typeEnum)}
-                                className="rounded text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <span>{info.label}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
+                      <p className="text-[10px] text-slate-500">לא מסומן מסלול כברירת מחדל. „קבוצתי” כולל חודשי ושנתי.</p>
+                      <SessionMembershipSelector value={newSession.allowedMemberships} onChange={allowedMemberships => setNewSession({ ...newSession, allowedMemberships })} />
                     </div>
 
                     <div className="flex justify-end border-t border-slate-200 pt-3">

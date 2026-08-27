@@ -220,6 +220,13 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     .map(stripCredentials);
   const ownNewMessages = (incoming.messages || []).filter(message => message.senderId === userId);
   const existingMessageIds = new Set((current.messages || []).map(message => message.id));
+  const readIncomingMessageIds = new Set((incoming.messages || [])
+    .filter(message => message.receiverId === userId && message.read === true)
+    .map(message => message.id));
+  const messagesWithReadReceipts = (current.messages || []).map(message =>
+    message.receiverId === userId && readIncomingMessageIds.has(message.id)
+      ? { ...message, read: true }
+      : message);
   const ownNewAttendance = (incoming.attendanceLogs || []).filter(log => log.traineeId === userId);
   const existingAttendanceIds = new Set((current.attendanceLogs || []).map(log => log.id));
   return {
@@ -227,7 +234,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     users: [...nextUsers, ...newFamilyMembers],
     sessions: mergeOwnBooking(current.sessions, incoming.sessions, userId),
     openGymSessions: mergeOwnBooking(current.openGymSessions, incoming.openGymSessions, userId),
-    messages: [...(current.messages || []), ...ownNewMessages.filter(message => !existingMessageIds.has(message.id))],
+    messages: [...messagesWithReadReceipts, ...ownNewMessages.filter(message => !existingMessageIds.has(message.id))],
     attendanceLogs: [...(current.attendanceLogs || []), ...ownNewAttendance.filter(log => !existingAttendanceIds.has(log.id))],
     traineeProfiles: [
       ...(current.traineeProfiles || []).filter(profile => profile.traineeId !== userId),

@@ -53,6 +53,7 @@ import { UserSettingsModal } from './components/UserSettingsModal';
 import { GroupWorkoutDisplay } from './components/GroupWorkoutDisplay';
 import { ClubWorkoutDisplay } from './components/ClubWorkoutDisplay';
 import { TraineeSessionWorkoutView } from './components/TraineeSessionWorkoutView';
+import { ClubChatCenter } from './components/ClubChatCenter';
 import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
 import { isMembershipCancellationEffective } from './data/membershipPolicy';
 import { hasNotificationMarker, saveNotificationMarker, showBrowserNotification } from './utils/browserNotifications';
@@ -233,6 +234,32 @@ export default function App() {
     });
   }, [activeUser.id, activeUser.pushNotificationsEnabled, isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('workspace') === 'chat') setWorkspaceView('CHAT');
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || workspaceView !== 'CHAT') return;
+    let cancelled = false;
+    const refreshChatState = async () => {
+      try {
+        const latest = await getClubState();
+        if (!cancelled && latest.revision > revisionRef.current) applyServerPayload(latest.payload, latest.revision);
+      } catch (error) {
+        console.warn('Unable to refresh chat messages', error);
+      }
+    };
+    const firstRefresh = window.setTimeout(() => void refreshChatState(), 2500);
+    const interval = window.setInterval(() => void refreshChatState(), 4000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(firstRefresh);
+      window.clearInterval(interval);
+    };
+  }, [isAuthenticated, workspaceView]);
+
   // In-app notification delivery while the application is open.
   useEffect(() => {
     if (
@@ -266,18 +293,17 @@ export default function App() {
         }
       }
 
-      if (activeUser.role === UserRole.MANAGER && activeUser.managerPushNotificationsEnabled) {
-        const unreadForManager = messages.find(message =>
-          message.receiverId === activeUser.id && !message.read
-        );
-        if (unreadForManager) {
-          const managerPushKey = `baly-manager-push-${unreadForManager.id}`;
-          if (!hasNotificationMarker(managerPushKey)) {
-            const displayed = await showBrowserNotification(`פנייה חדשה למנהל מאת ${unreadForManager.senderName}`, {
-              body: unreadForManager.content
-            });
-            if (displayed) saveNotificationMarker(managerPushKey);
-          }
+      const unreadMessage = messages.find(message => message.receiverId === activeUser.id && !message.read);
+      const staffPushAllowed = activeUser.role !== UserRole.MANAGER || activeUser.managerPushNotificationsEnabled;
+      if (unreadMessage && staffPushAllowed) {
+        const messagePushKey = `baly-message-push-${unreadMessage.id}`;
+        if (!hasNotificationMarker(messagePushKey)) {
+          const displayed = await showBrowserNotification(`הודעה חדשה מאת ${unreadMessage.senderName}`, {
+            body: unreadMessage.content,
+            tag: `message-${unreadMessage.id}`,
+            data: { url: `?workspace=chat&contact=${encodeURIComponent(unreadMessage.senderId)}` }
+          });
+          if (displayed) saveNotificationMarker(messagePushKey);
         }
       }
     };
@@ -678,7 +704,6 @@ export default function App() {
               announcements={announcements}
               messages={messages}
               payments={payments}
-              onSendMessage={handleSendMessage}
               onUpdateAnnouncements={setAnnouncements}
               onAcknowledgeStaffAlerts={handleAcknowledgeStaffAlerts}
             />
@@ -687,11 +712,35 @@ export default function App() {
           {workspaceView && (
             <button
               type="button"
-              onClick={() => setWorkspaceView(null)}
+              onClick={() => {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('workspace');
+                url.searchParams.delete('contact');
+                window.history.replaceState({}, '', url);
+                setWorkspaceView(null);
+              }}
               className="mb-4 flex min-h-11 items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-black text-white transition hover:border-amber-400 hover:text-amber-400"
             >
               <ArrowRight size={17} /> חזרה לבחירת אזור
             </button>
+          )}
+
+          {workspaceView === 'CHAT' && (
+            <ClubChatCenter
+              activeUser={activeUser}
+              users={users}
+              messages={messages}
+              initialContactId={new URLSearchParams(window.location.search).get('contact') || ''}
+              onSendMessage={handleSendMessage}
+              onUpdateMessages={setMessages}
+              onBack={() => {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('workspace');
+                url.searchParams.delete('contact');
+                window.history.replaceState({}, '', url);
+                setWorkspaceView(null);
+              }}
+            />
           )}
 
           {activeUser.role === UserRole.MANAGER && workspaceView === 'CLUB_MANAGEMENT' && (
@@ -745,7 +794,7 @@ export default function App() {
           {activeUser.role === UserRole.COACH && workspaceView === 'WORKOUT_PLANNING' && renderCoachWorkspace('PLANNING')}
           {activeUser.role === UserRole.COACH && workspaceView === 'NUTRITION_PLANNING' && renderCoachWorkspace('PLANNING', 'nutrition')}
 
-          {activeUser.role === UserRole.TRAINEE && workspaceView && (
+          {activeUser.role === UserRole.TRAINEE && workspaceView && workspaceView !== 'CHAT' && (
             <TraineeDashboard
               key={`${activeUser.id}-${workspaceView}`}
               activeUser={activeUser}

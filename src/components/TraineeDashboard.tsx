@@ -2507,7 +2507,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h4 className="font-bold text-md tracking-tight font-sans text-emerald-400">GymFit Premium</h4>
+                  <h4 className="font-bold text-md tracking-tight font-sans text-emerald-400">BALLYWELLNESS</h4>
                   <span className="text-[8px] text-slate-400 font-mono uppercase">MOBILE MEMBERSHIP</span>
                 </div>
                 <span className="bg-emerald-500 text-slate-900 font-mono font-bold text-[8px] px-2 py-0.5 rounded-full">
@@ -2533,7 +2533,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <span>||| | |||| || | |||| || |||</span>
                   <span className="text-[9px] font-bold">SCAN ME</span>
                 </div>
-                <div className="text-[9px] text-slate-400 font-mono mt-1">GymFit-{activeUser.id}</div>
+                <div className="text-[9px] text-slate-400 font-mono mt-1">BALLYWELLNESS-{activeUser.id}</div>
               </div>
 
               <div className="text-[8px] text-slate-400">

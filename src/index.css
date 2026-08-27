@@ -2441,7 +2441,8 @@ option {
 }
 
 .role-home-alert-actions > button,
-.role-home-alert-ack {
+.role-home-alert-ack,
+.role-home-alert-open {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2457,7 +2458,8 @@ option {
 }
 
 .role-home-alert-actions > button:hover,
-.role-home-alert-ack:hover {
+.role-home-alert-ack:hover,
+.role-home-alert-open:hover {
   border-color: rgba(201, 168, 103, 0.68);
   background: rgba(201, 168, 103, 0.17);
 }
@@ -2549,6 +2551,12 @@ option {
   flex: 0 0 auto;
 }
 
+.role-home-alert-open {
+  flex: 0 0 auto;
+  border-color: rgba(96, 165, 250, 0.45);
+  color: #bfdbfe;
+}
+
 .role-home-alert-empty {
   grid-column: 1 / -1;
   padding: 12px;
@@ -2573,6 +2581,10 @@ option {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 14px;
+}
+
+.role-home-communications > :only-child {
+  grid-column: 1 / -1;
 }
 
 .role-home-actions > button {

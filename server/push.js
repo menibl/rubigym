@@ -79,6 +79,13 @@ const newItems = (before, after) => {
   return (after || []).filter(item => item?.id && !existingIds.has(item.id));
 };
 
+export const messagePushPayload = message => ({
+  title: cleanText(`הודעה חדשה מאת ${message.senderName}`, 'הודעה חדשה'),
+  body: cleanText(message.content, 'ממתינה לך הודעה חדשה במערכת.'),
+  tag: `message-${message.id}`,
+  url: `?workspace=chat&contact=${encodeURIComponent(message.senderId)}`,
+});
+
 export const dispatchStateChangePushes = async (store, env, clubId, before, after) => {
   if (!isPushConfigured(env)) return;
   const users = after.users || [];
@@ -87,12 +94,7 @@ export const dispatchStateChangePushes = async (store, env, clubId, before, afte
   for (const message of newItems(before.messages, after.messages)) {
     const receiver = userById.get(message.receiverId);
     if (!pushEnabled(receiver) || (receiver.role === 'MANAGER' && !receiver.managerPushNotificationsEnabled)) continue;
-    await sendPushToUsers(store, env, clubId, [receiver.id], {
-      title: cleanText(`הודעה חדשה מאת ${message.senderName}`, 'הודעה חדשה'),
-      body: cleanText(message.content, 'ממתינה לך הודעה חדשה במערכת.'),
-      tag: `message-${message.id}`,
-      url: '/',
-    });
+    await sendPushToUsers(store, env, clubId, [receiver.id], messagePushPayload(message));
   }
 
   const staffIds = staffRecipients(users);

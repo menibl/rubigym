@@ -10,11 +10,10 @@ import {
   OpenGymSession,
   MuscleGroup,
   Gender,
-  MembershipType,
-  MEMBERSHIP_TYPE_LABELS,
-  CURRENT_MEMBERSHIP_CATALOG
+  MembershipType
 } from '../types';
 import { X, Calendar, Clock, Users, Dumbbell, Sparkles, Repeat, ShieldCheck, Edit3 } from 'lucide-react';
+import { SessionMembershipSelector } from './SessionMembershipSelector';
 
 interface EditSessionModalProps {
   isOpen: boolean;
@@ -58,9 +57,7 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
   const [ageMin, setAgeMin] = useState<string>(session?.ageMin ? String(session.ageMin) : '');
   const [ageMax, setAgeMax] = useState<string>(session?.ageMax ? String(session.ageMax) : '');
   const [genderRestriction, setGenderRestriction] = useState<Gender>(session?.genderRestriction || Gender.ALL);
-  const [allowedMemberships, setAllowedMemberships] = useState<MembershipType[]>(
-    session?.allowedMemberships || [...CURRENT_MEMBERSHIP_CATALOG]
-  );
+  const [allowedMemberships, setAllowedMemberships] = useState<MembershipType[]>(session?.allowedMemberships || []);
   const [isPersonalTraining, setIsPersonalTraining] = useState<boolean>(session?.isPersonalTraining || false);
 
   // Recurrence scope state
@@ -78,7 +75,7 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
       setAgeMin(session.ageMin ? String(session.ageMin) : '');
       setAgeMax(session.ageMax ? String(session.ageMax) : '');
       setGenderRestriction(session.genderRestriction || Gender.ALL);
-      setAllowedMemberships(session.allowedMemberships || [...CURRENT_MEMBERSHIP_CATALOG]);
+      setAllowedMemberships(session.allowedMemberships || []);
       setIsPersonalTraining(session.isPersonalTraining || false);
     } else if (openGym) {
       setDate(openGym.date);
@@ -90,19 +87,14 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
 
   const coaches = users.filter(u => u.role === 'COACH' || u.role === 'MANAGER');
 
-  const toggleMembership = (type: MembershipType) => {
-    if (allowedMemberships.includes(type)) {
-      if (allowedMemberships.length === 1) return;
-      setAllowedMemberships(allowedMemberships.filter(t => t !== type));
-    } else {
-      setAllowedMemberships([...allowedMemberships, type]);
-    }
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (session) {
+      if (allowedMemberships.length === 0) {
+        alert('יש לבחור לפחות סוג מנוי אחד המורשה להירשם לאימון.');
+        return;
+      }
       const selectedCoach = users.find(u => u.id === coachId) || activeUser;
       const updated: TrainingSession = {
         ...session,
@@ -351,29 +343,7 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
               {/* ALLOWED MEMBERSHIPS */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">מנויים מורשים להרשמה</label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {CURRENT_MEMBERSHIP_CATALOG.map(mType => {
-                    const isChecked = allowedMemberships.includes(mType);
-                    return (
-                      <label
-                        key={mType}
-                        className={`flex items-center gap-2 p-1.5 rounded-lg border text-[11px] font-bold cursor-pointer transition ${
-                          isChecked
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                            : 'bg-slate-50 border-slate-200 text-slate-500'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleMembership(mType)}
-                          className="rounded text-emerald-600 focus:ring-emerald-500"
-                        />
-                        <span>{MEMBERSHIP_TYPE_LABELS[mType].label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
+                <SessionMembershipSelector value={allowedMemberships} onChange={setAllowedMemberships} />
               </div>
             </>
           )}
