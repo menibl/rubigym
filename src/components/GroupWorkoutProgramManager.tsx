@@ -22,7 +22,7 @@ import {
   Trash2,
   UsersRound
 } from 'lucide-react';
-import { GroupWorkoutExercise, GroupWorkoutParticipant, GroupWorkoutProgram, GroupWorkoutStation, GymEquipment, MuscleGroup, TraineeMemoryEntry, TraineeProfessionalProfile, TrainingSession, User } from '../types';
+import { CoachPdfDocument, GroupWorkoutExercise, GroupWorkoutParticipant, GroupWorkoutProgram, GroupWorkoutStation, GymEquipment, MuscleGroup, TraineeMemoryEntry, TraineeProfessionalProfile, TrainingSession, User } from '../types';
 import { ExerciseMedia } from './ExerciseMedia';
 import { deleteExerciseMedia, saveExerciseMedia } from '../data/exerciseMediaStorage';
 import { getGroupWorkoutStatus, GroupWorkoutLiveStatus, sendGroupWorkoutCommand, subscribeToGroupWorkoutStatus } from '../data/groupWorkoutRemote';
@@ -30,6 +30,9 @@ import { activateClubDisplay, clubDisplayUrl } from '../data/clubDisplayRemote';
 import { generateGroupWorkoutWithAi } from '../data/workoutAi';
 import { ProgramBriefPanel, ProgramSetupWizard, WizardAnswers, WizardQuestion } from './ProgramSetupWizard';
 import { AiBuilderChatScreen } from './AiBuilderChatScreen';
+import { AiEquipmentSelector } from './AiEquipmentSelector';
+import { AiPdfSourcePanel } from './AiPdfSourcePanel';
+import { getPdfDocumentContent } from '../data/pdfLibraryStorage';
 
 interface GroupWorkoutProgramManagerProps {
   activeUser: User;
@@ -38,6 +41,9 @@ interface GroupWorkoutProgramManagerProps {
   trainees: User[];
   sessions: TrainingSession[];
   equipment: GymEquipment[];
+  onUpdateEquipment: (equipment: GymEquipment[]) => void;
+  pdfDocuments: CoachPdfDocument[];
+  onUpdatePdfDocuments: (documents: CoachPdfDocument[]) => void;
   traineeProfiles: TraineeProfessionalProfile[];
   memoryEntries: TraineeMemoryEntry[];
   initialSessionId?: string;
@@ -96,6 +102,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   trainees,
   sessions,
   equipment,
+  onUpdateEquipment,
+  pdfDocuments,
+  onUpdatePdfDocuments,
   traineeProfiles,
   memoryEntries,
   initialSessionId,
@@ -112,6 +121,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   const [isAssistantGenerating, setIsAssistantGenerating] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
+  const [assistantDrawerTab, setAssistantDrawerTab] = useState<'PREVIEW' | 'SOURCES' | 'EQUIPMENT'>('SOURCES');
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [selectedEquipmentIds, setSelectedEquipmentIds] = useState<string[]>([]);
   const [assistantMessages, setAssistantMessages] = useState<string[]>([
     'בחרו תוכנית או צרו חדשה, ואז כתבו כיצד תרצו לבנות או לשנות את האימון.'
   ]);
@@ -123,6 +135,11 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     .filter(session => !session.isPersonalTraining)
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`)), [sessions]);
   const selectedSession = sessions.find(session => session.id === selectedProgram?.sessionId);
+  const availableEquipment = equipment.filter(item => item.status !== 'OUT_OF_SERVICE' && item.quantity > 0);
+
+  useEffect(() => {
+    setSelectedEquipmentIds(availableEquipment.map(item => item.id));
+  }, [selectedProgramId]);
 
   const participantsFromSession = (session: TrainingSession, existing: GroupWorkoutParticipant[] = [], groupCount = 1) => {
     const counts = Array.from({ length: Math.max(1, groupCount) }, () => 0);
@@ -499,6 +516,12 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     setAssistantMessages(messages => [...messages, coachLine].slice(-100));
     setIsAssistantGenerating(true);
     try {
+      const sourceContents = await Promise.all(selectedSourceIds.map(id => getPdfDocumentContent(id).catch(() => undefined)));
+      const sourceDocuments = selectedSourceIds.flatMap((id, index) => {
+        const document = pdfDocuments.find(item => item.id === id);
+        const content = sourceContents[index];
+        return document && content ? [{ id, title: document.title, category: document.category, tags: document.tags, text: content.pages.map(page => page.text).join('\n').slice(0, 20_000) }] : [];
+      });
       const linkedSession = sessions.find(session => session.id === selectedProgram.sessionId);
       const participantIds = selectedProgram.participants?.map(participant => participant.id)
         || linkedSession?.registeredUsers
@@ -518,7 +541,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       const { result } = await generateGroupWorkoutWithAi({
         message: request,
         actor: activeUser,
-        equipment: equipment.filter(item => item.status !== 'OUT_OF_SERVICE' && item.quantity > 0),
+        equipment: availableEquipment.filter(item => selectedEquipmentIds.includes(item.id)),
+        sourceDocuments,
         conversation: [...conversation, { role: 'COACH', content: request }],
         currentDraft: selectedProgram,
         groupParticipants
@@ -572,6 +596,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       };
       onUpdatePrograms(programs.map(program => program.id === updatedProgram.id ? updatedProgram : program));
       setAssistantMessages(messages => [...messages, result.assistantMessage].slice(-100));
+      setAssistantDrawerTab('PREVIEW');
+      setAssistantDrawerOpen(true);
     } catch (error) {
       setAssistantMessages(messages => [...messages, error instanceof Error ? error.message : 'שירות ה־AI אינו זמין כרגע.'].slice(-100));
     } finally {
@@ -612,7 +638,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     };
     onUpdatePrograms(programs.map(program => program.id === updated.id ? updated : program));
     setAssistantMessages(messages => [...messages, `טענתי את „${template.title}” מהמאגר כטיוטה. אפשר לבקש ממני להתאים תחנות, תרגילים, זמנים וסבבים.`].slice(-100));
-    setAssistantDrawerOpen(false);
+    setAssistantDrawerTab('PREVIEW');
+    setAssistantDrawerOpen(true);
   };
 
   const setupQuestions: WizardQuestion[] = [
@@ -753,26 +780,33 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         onInputChange={setAssistantInput}
         onSubmit={sendAssistantInput}
         onClose={() => setAssistantOpen(false)}
-        onConfirm={() => setAssistantOpen(false)}
+        onConfirm={() => { setAssistantDrawerTab('PREVIEW'); setAssistantDrawerOpen(true); }}
+        confirmLabel="צפייה בתוכנית"
         confirmDisabled={!selectedProgram || programExerciseCount(selectedProgram) === 0}
         isGenerating={isAssistantGenerating}
         suggestions={['בנה אימון כוח עם 12 תרגילים ב־3 תחנות', 'החלף סקוואט במכרעים', 'הוסף פלאנק לתחנה 2', 'מנוחה 30 שניות']}
         onSuggestion={suggestion => void runAssistantCommand(suggestion)}
         drawerOpen={assistantDrawerOpen}
         onDrawerToggle={() => setAssistantDrawerOpen(value => !value)}
-        drawerTitle="מאגר אימונים קבוצתיים"
-        drawerDescription="בחר אימון קיים כנקודת פתיחה והמשך לערוך אותו בצ׳אט."
+        drawerTitle="מרכז האימון הקבוצתי"
+        drawerDescription="צפה באימון, טען מקור קיים או בחר את ציוד התחנות."
+        drawerTabs={[{ id: 'PREVIEW', label: 'האימון שנוצר' }, { id: 'SOURCES', label: 'מאגר ו־PDF' }, { id: 'EQUIPMENT', label: 'ציוד ומכשירים' }]}
+        activeDrawerTab={assistantDrawerTab}
+        onDrawerTabChange={tab => setAssistantDrawerTab(tab as typeof assistantDrawerTab)}
         statusText={selectedProgram ? `${programExerciseCount(selectedProgram)} תרגילים · ${selectedProgram.roundsPerStation || 1} סבבים` : 'טרם נבחר אימון'}
         emptyTitle="איך תרצה לבנות את האימון?"
         emptyDescription="אפשר לבקש סוג אימון, מספר תחנות, סבבים וזמני עבודה ומנוחה."
-        drawerContent={<div className="space-y-3">
+        drawerContent={assistantDrawerTab === 'PREVIEW' ? <div className="space-y-3">
+          {!selectedProgram || programExerciseCount(selectedProgram) === 0 ? <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-zinc-500">האימון יוצג כאן אוטומטית לאחר שהעוזר יסיים לבנות אותו.</p> : <>
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3"><strong className="text-sm text-white">{selectedProgram.title}</strong><p className="mt-1 text-[10px] text-zinc-300">{programExerciseCount(selectedProgram)} תרגילים · {selectedProgram.roundsPerStation || 1} סבבים · {selectedProgram.effortMetric === 'REPS' ? `${selectedProgram.defaultRepetitions} חזרות` : `${selectedProgram.defaultWorkSeconds}/${selectedProgram.defaultRestSeconds} שנ׳`}</p></div>
+            {(selectedProgram.mode === 'ROTATING_GROUPS' ? selectedProgram.stations : [{ id: 'linear', name: 'רצף האימון', exercises: selectedProgram.exercises }]).map((station, stationIndex) => <section key={station.id} className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="mb-2 text-xs font-black text-amber-200">{station.name || `תחנה ${stationIndex + 1}`}</h4><div className="space-y-2">{station.exercises.map((exercise, index) => <article key={exercise.id} className="rounded-lg bg-zinc-950 p-2.5"><div className="flex items-start gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-400 text-[9px] font-black text-zinc-950">{index + 1}</span><div><strong className="block text-xs text-white">{exercise.name}</strong><span className="text-[9px] text-zinc-400">{selectedProgram.effortMetric === 'REPS' ? `${exercise.reps} חזרות` : `${exercise.workSeconds} שנ׳ עבודה · ${exercise.restSeconds} שנ׳ מנוחה`}</span></div></div></article>)}</div></section>)}
+            <button type="button" onClick={() => { publishProgram(); setAssistantOpen(false); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-xs font-black text-white"><CheckCircle2 size={16} /> פרסם תוכנית קבוצתית</button>
+          </>}
+        </div> : assistantDrawerTab === 'SOURCES' ? <div className="space-y-3">
           {templatePrograms.length === 0 && <p className="rounded-xl border border-dashed border-zinc-700 p-4 text-xs text-zinc-400">אין עדיין אימונים קבוצתיים שמורים במאגר.</p>}
-          {templatePrograms.map(template => <button key={template.id} type="button" onClick={() => loadTemplateIntoAssistant(template)} className="w-full rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-right transition hover:border-amber-400/70">
-            <span className="block text-sm font-black text-white">{template.title}</span>
-            <span className="mt-1 block text-[11px] text-zinc-400">{template.groupName} · {programExerciseCount(template)} תרגילים · {template.roundsPerStation || 1} סבבים</span>
-          </button>)}
-          {selectedProgram && <div className="rounded-xl bg-zinc-900 p-3 text-xs text-zinc-300"><span className="font-black text-white">הגדרות האימון הנוכחי</span><p className="mt-1">{selectedProgram.mode === 'ROTATING_GROUPS' ? `${selectedProgram.stations.length} תחנות` : 'רצף משותף'} · {selectedProgram.effortMetric === 'REPS' ? `${selectedProgram.defaultRepetitions} חזרות` : `${selectedProgram.defaultWorkSeconds} שנ׳ עבודה / ${selectedProgram.defaultRestSeconds} שנ׳ מנוחה`}</p></div>}
-        </div>}
+          {templatePrograms.map(template => <button key={template.id} type="button" onClick={() => loadTemplateIntoAssistant(template)} className="w-full rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-right transition hover:border-amber-400/70"><span className="block text-sm font-black text-white">{template.title}</span><span className="mt-1 block text-[11px] text-zinc-400">{template.groupName} · {programExerciseCount(template)} תרגילים · {template.roundsPerStation || 1} סבבים</span></button>)}
+          <AiPdfSourcePanel activeUser={activeUser} category="אימונים קבוצתיים" documents={pdfDocuments} selectedIds={selectedSourceIds} onSelectedIdsChange={setSelectedSourceIds} onUpdateDocuments={onUpdatePdfDocuments} />
+        </div> : <AiEquipmentSelector activeUser={activeUser} equipment={equipment} selectedIds={selectedEquipmentIds} onSelectedIdsChange={setSelectedEquipmentIds} onUpdateEquipment={onUpdateEquipment} />}
       />
 
       <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-4 text-white shadow-sm">
