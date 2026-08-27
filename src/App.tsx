@@ -190,7 +190,15 @@ export default function App() {
     };
     const timer = window.setTimeout(() => {
       saveClubState(payload, revisionRef.current)
-        .then(result => { revisionRef.current = result.revision; })
+        .then(result => {
+          revisionRef.current = result.revision;
+          if (result.generatedMessages?.length) {
+            setMessages(current => {
+              const existingIds = new Set(current.map(message => message.id));
+              return [...result.generatedMessages!.filter(message => !existingIds.has(message.id)), ...current];
+            });
+          }
+        })
         .catch(async (error: Error & { status?: number }) => {
           if (error.status === 409) {
             const latest = await getClubState();

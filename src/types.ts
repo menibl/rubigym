@@ -686,6 +686,7 @@ export interface Message {
   content: string;
   timestamp: string; // ISO string
   read: boolean;
+  systemGenerated?: boolean;
 }
 
 export interface Announcement {

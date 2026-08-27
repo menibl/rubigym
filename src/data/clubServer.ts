@@ -250,5 +250,5 @@ export const saveClubState = async (payload: Record<string, unknown>, expectedRe
     const next = writeDemoState({ payload, revision: current.revision + 1 });
     return { revision: next.revision };
   }
-  return request<{ revision: number }>('/api/state', { method: 'PUT', body: JSON.stringify({ payload, expectedRevision }) });
+  return request<{ revision: number; generatedMessages?: import('../types').Message[] }>('/api/state', { method: 'PUT', body: JSON.stringify({ payload, expectedRevision }) });
 };
