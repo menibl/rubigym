@@ -119,3 +119,21 @@ test('coach can persist only their own staff alert acknowledgements', () => {
   assert.deepEqual(merged.users[0].staffAlertAcknowledgements, ['purchase-1', 'chat-2']);
   assert.equal(merged.users[1].name, 'Trainee');
 });
+
+test('manager and coach saves preserve server-generated chat updates', () => {
+  const systemMessage = {
+    id: 'system-update', senderId: 'trainee-1', receiverId: 'manager-1',
+    content: 'Membership changed', read: false, systemGenerated: true
+  };
+  const current = {
+    users: [{id: 'manager-1', role: 'MANAGER'}, {id: 'coach-1', role: 'COACH'}, {id: 'trainee-1', role: 'TRAINEE'}],
+    sessions: [], openGymSessions: [], workoutPlans: [], nutritionPlans: [], blackPoints: [], announcements: [],
+    messages: [systemMessage], attendanceLogs: [], traineeProfiles: [], traineeMemoryEntries: [], gymEquipment: [],
+    coachPdfDocuments: [], workoutAssistantMessages: [], workoutAssistantDrafts: [], groupWorkoutPrograms: []
+  };
+  const staleIncoming = {...current, messages: []};
+  const managerMerged = mergePayloadForUser(current, staleIncoming, 'manager-1', 'MANAGER');
+  const coachMerged = mergePayloadForUser(current, staleIncoming, 'coach-1', 'COACH');
+  assert.deepEqual(managerMerged.messages, [systemMessage]);
+  assert.deepEqual(coachMerged.messages, [systemMessage]);
+});

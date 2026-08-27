@@ -135,6 +135,12 @@ export const ClubChatCenter: React.FC<ClubChatCenterProps> = ({
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[radial-gradient(circle_at_top,#1b2a2f_0,#111b21_45%)] p-3 sm:p-5">
               {conversation.map(message => {
                 const mine = message.senderId === activeUser.id;
+                if (message.systemGenerated) return (
+                  <article key={message.id} className="mx-auto max-w-[92%] rounded-xl border border-amber-500/30 bg-amber-950/50 px-3 py-2 text-center shadow">
+                    <p className="whitespace-pre-wrap break-words text-xs font-bold leading-5 text-amber-100">{message.content}</p>
+                    <time className="mt-1 block text-[9px] text-amber-300/80">{messageTime(message.timestamp)}</time>
+                  </article>
+                );
                 return (
                   <article key={message.id} className={`w-fit max-w-[86%] rounded-xl px-3 py-2 shadow ${mine ? 'mr-auto bg-[#005c4b]' : 'ml-auto bg-[#202c33]'}`}>
                     <p className="whitespace-pre-wrap break-words text-sm leading-6 text-white">{message.content}</p>

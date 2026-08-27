@@ -177,7 +177,12 @@ const mergeOwnBooking = (currentItems = [], incomingItems = [], userId) => curre
 export const mergePayloadForUser = (currentPayload, incomingPayload, userId, role) => {
   const current = sanitizePayload(currentPayload);
   const incoming = sanitizePayload(incomingPayload);
-  if (role === 'MANAGER') return incoming;
+  const preserveSystemMessages = requestedMessages => {
+    const requested = Array.isArray(requestedMessages) ? requestedMessages : [];
+    const requestedIds = new Set(requested.map(message => message.id));
+    return [...requested, ...(current.messages || []).filter(message => message.systemGenerated && !requestedIds.has(message.id))];
+  };
+  if (role === 'MANAGER') return { ...incoming, messages: preserveSystemMessages(incoming.messages) };
   if (role === 'COACH') {
     const allowed = new Set([
       'sessions', 'openGymSessions', 'workoutPlans', 'nutritionPlans', 'blackPoints', 'announcements',
@@ -186,6 +191,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     ]);
     const merged = { ...current };
     for (const key of allowed) if (Array.isArray(incoming[key])) merged[key] = incoming[key];
+    merged.messages = preserveSystemMessages(merged.messages);
     const requestedCoach = incoming.users.find(user => user.id === userId);
     if (requestedCoach && Array.isArray(requestedCoach.staffAlertAcknowledgements)) {
       const acknowledgements = [...new Set(requestedCoach.staffAlertAcknowledgements.filter(value => typeof value === 'string'))].slice(-500);

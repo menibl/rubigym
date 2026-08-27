@@ -1,5 +1,6 @@
 import { handleWorkoutAi, resolveOpenAiApiKey } from './workout-ai.js';
 import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validatePushSubscription } from './push.js';
+import { appendUserChangeMessages } from './user-change-messages.js';
 import {
   createPhoneVerificationToken,
   normalizeIsraeliMobile,
@@ -476,7 +477,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     if ((state.payload.payments || []).some(existing => existing.id === paymentId)) return;
 
     const updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.a));
-    const payload = {
+    const payload = appendUserChangeMessages(state.payload, {
       ...state.payload,
       users: updatedUsers,
       nutritionPlans: ['NUTRITION_COACHING', 'NUTRITION_PLAN'].includes(order.m)
@@ -499,7 +500,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         paymentMethod: `Cardcom${payment.last4Digits ? ` •••• ${payment.last4Digits}` : ''}`,
         isMock: String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true'
       }, ...(state.payload.payments || [])]
-    };
+    });
     const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', payload, state.revision);
     if (!saved.conflict) {
       try {
@@ -862,11 +863,11 @@ const handleApi = async (request, env, url) => {
       if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
       const safeUser = stripCredentials(user);
       const safeFamilyUsers = familyUsers.map(stripCredentials);
-      const nextPayload = {
+      const nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
         users: [safeUser, ...safeFamilyUsers, ...(state.payload.users || [])],
         payments: body.payment ? [body.payment, ...(state.payload.payments || [])] : (state.payload.payments || [])
-      };
+      });
       const saved = await env.STATE_STORE.putClubState(clubId, nextPayload, state.revision);
       if (saved.conflict) return json(saved, 409, headers);
       for (const candidate of registrations) {
@@ -900,16 +901,14 @@ const handleApi = async (request, env, url) => {
         }
       }
       const safeUser = stripCredentials(candidate);
-      const saved = await env.STATE_STORE.putClubState(identity.session.club_id, {
+      const nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
         users: [safeUser, ...(state.payload.users || [])]
-      }, state.revision);
+      });
+      const saved = await env.STATE_STORE.putClubState(identity.session.club_id, nextPayload, state.revision);
       if (saved.conflict) return json(saved, 409, headers);
       await env.STATE_STORE.upsertAccount(await accountFromUser(identity.session.club_id, safeUser, candidate.password));
-      await notifyStateChange(state.payload, {
-        ...state.payload,
-        users: [safeUser, ...(state.payload.users || [])]
-      }, identity.session.club_id);
+      await notifyStateChange(state.payload, nextPayload, identity.session.club_id);
       return json({ user: safeUser, revision: saved.revision }, 201, headers);
     }
     if (url.pathname === '/api/push/public-key' && request.method === 'GET') {
@@ -1073,7 +1072,13 @@ const handleApi = async (request, env, url) => {
           || (candidate.role === 'TRAINEE' && candidate.familyPayerId === identity.account.user_id);
         if (mayProvision) await env.STATE_STORE.upsertAccount(await accountFromUser(identity.session.club_id, candidate, candidate.password));
       }
-      const merged = mergePayloadForUser(current.payload, body.payload, identity.account.user_id, identity.account.role);
+      const mergedBeforeAudit = mergePayloadForUser(current.payload, body.payload, identity.account.user_id, identity.account.role);
+      const merged = appendUserChangeMessages(
+        current.payload,
+        mergedBeforeAudit
+      );
+      const existingMessageIds = new Set((mergedBeforeAudit.messages || []).map(message => message.id));
+      const generatedMessages = (merged.messages || []).filter(message => !existingMessageIds.has(message.id));
       const result = await env.STATE_STORE.putClubState(identity.session.club_id, merged, current.revision);
       if (!result.conflict) {
         for (const user of merged.users || []) {
@@ -1081,7 +1086,7 @@ const handleApi = async (request, env, url) => {
         }
         await notifyStateChange(current.payload, merged, identity.session.club_id);
       }
-      return result.conflict ? json(result, 409, headers) : json(result, 200, headers);
+      return result.conflict ? json(result, 409, headers) : json({ ...result, generatedMessages }, 200, headers);
     }
     if (request.method === 'GET' && url.pathname === '/api/ai/status') {
       return json({
