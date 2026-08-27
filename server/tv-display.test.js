@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import worker, { findScheduledLiveDisplayProgram } from './index.js';
+import worker, { findScheduledLiveDisplayProgram, shouldPromoteScheduledDisplay } from './index.js';
 
 const createEnv = () => {
   const requestedPaths = [];
@@ -71,12 +71,21 @@ test('keeps the Pages display channel isolated and available without a productio
   assert.equal(putResponse.status, 200);
   assert.equal(putResponse.headers.get('Access-Control-Allow-Origin'), origin);
   assert.equal(putResponse.headers.get('Access-Control-Allow-Credentials'), 'true');
+  const putResult = await putResponse.json();
+  assert.match(putResult.displayRevision, /^manual-/);
 
   const getResponse = await worker.fetch(new Request('https://balywellness.test/api/demo/live-display/active', {
     headers: { Origin: origin }
   }), {});
   assert.equal(getResponse.status, 200);
   assert.equal((await getResponse.json()).program.id, program.id);
+  assert.equal(getResponse.headers.get('Cache-Control'), 'no-store, no-cache, must-revalidate');
+});
+
+test('manual club broadcast wins over the currently running scheduled workout', () => {
+  const active = { id: 'manual', displayActivation: 'MANUAL', displayActivatedMinute: 200 };
+  assert.equal(shouldPromoteScheduledDisplay({ program: { id: 'current' }, startMinute: 100 }, active), false);
+  assert.equal(shouldPromoteScheduledDisplay({ program: { id: 'next' }, startMinute: 201 }, active), true);
 });
 
 test('production display promotes the current scheduled workout over a previous manual selection', async () => {
@@ -110,12 +119,17 @@ test('Pages schedule switches the fixed demo screen at the scheduled start', asy
     updatedAt: new Date().toISOString()
   };
   const headers = { Origin: 'https://menibl.github.io', 'Content-Type': 'application/json' };
+  const activePrograms = new Map();
+  const store = {
+    async getActiveProgram(id) { return activePrograms.get(id); },
+    async setActiveProgram(id, value) { activePrograms.set(id, value); }
+  };
   const scheduleResponse = await worker.fetch(new Request('https://balywellness.test/api/demo/live-display/schedule', {
     method: 'PUT', headers, body: JSON.stringify({ programs: [program] })
-  }), {});
+  }), { STATE_STORE: store });
   assert.equal(scheduleResponse.status, 200);
 
-  const displayResponse = await worker.fetch(new Request('https://balywellness.test/api/demo/live-display/active', { headers }), {});
+  const displayResponse = await worker.fetch(new Request('https://balywellness.test/api/demo/live-display/active', { headers }), { STATE_STORE: store });
   assert.equal(displayResponse.status, 200);
   assert.equal((await displayResponse.json()).program.id, program.id);
 });
