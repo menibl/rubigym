@@ -18,6 +18,7 @@ export const activateClubDisplay = async (program: GroupWorkoutProgram) => {
   if (!base) throw new Error('שרת התצוגה עדיין לא הוגדר.');
   const response = await fetch(`${base}${apiPath()}/active`, {
     method: 'PUT',
+    cache: 'no-store',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ program })
@@ -27,7 +28,7 @@ export const activateClubDisplay = async (program: GroupWorkoutProgram) => {
 export const getActiveClubDisplay = async (): Promise<GroupWorkoutProgram | undefined> => {
   const base = apiBase();
   if (!base) return undefined;
-  const response = await fetch(`${base}${apiPath()}/active`, { cache: 'no-store' });
+  const response = await fetch(`${base}${apiPath()}/active?_tv=${Date.now()}`, { cache: 'no-store' });
   if (response.status === 204 || response.status === 404) return undefined;
   if (!response.ok) throw new Error('מסך המועדון אינו זמין כרגע.');
   const result = await response.json();

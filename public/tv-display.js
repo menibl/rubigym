@@ -387,7 +387,7 @@
       if (error && status !== 204) { offline = true; render(); return; }
       offline = false;
       var next = result && result.program ? result.program : null;
-      var nextVersion = next ? String(next.id) + ':' + String(next.updatedAt || '') : '';
+      var nextVersion = next ? String(next.id) + ':' + String(next.updatedAt || '') + ':' + String(next.displayRevision || '') : '';
       if (nextVersion !== programVersion) { program = next; programVersion = nextVersion; lastCommandId = ''; resetWorkout(); }
       else if (!program) render();
     });
@@ -405,7 +405,7 @@
     if (secondsLeft <= 1) { secondsLeft = 0; advancePhase(); }
     else { secondsLeft -= 1; if (secondsLeft <= 3) beep(secondsLeft === 1 ? 1050 : 850, .1); render(); publishStatus(); }
   }, 1000);
-  window.setInterval(pollProgram, 1500);
+  window.setInterval(pollProgram, 1000);
   window.setInterval(pollCommand, 700);
   window.setInterval(function () { var clock = document.getElementById('tv-clock'); if (clock) clock.innerHTML = nowTime(); }, 10000);
   document.onkeydown = function (event) {

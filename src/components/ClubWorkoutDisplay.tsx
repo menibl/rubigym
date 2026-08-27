@@ -15,7 +15,9 @@ export const ClubWorkoutDisplay: React.FC = () => {
       try {
         const active = await getActiveClubDisplay();
         if (!disposed) {
-          setProgram(current => active?.id === current?.id && active?.updatedAt === current?.updatedAt ? current : active);
+          setProgram(current => active?.id === current?.id
+            && active?.updatedAt === current?.updatedAt
+            && active?.displayRevision === current?.displayRevision ? current : active);
           setOffline(false);
         }
       } catch {
@@ -23,7 +25,7 @@ export const ClubWorkoutDisplay: React.FC = () => {
       }
     };
     void refresh();
-    const timer = window.setInterval(refresh, 1500);
+    const timer = window.setInterval(refresh, 1000);
     return () => { disposed = true; window.clearInterval(timer); };
   }, []);
 
