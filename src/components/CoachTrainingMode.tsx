@@ -85,6 +85,7 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
       traineeId,
       sessionId: session.id,
       sourcePlanId: source.id,
+      libraryEntry: false,
       coachId: activeUser.id,
       coachName: activeUser.name,
       lastUpdated: new Date().toISOString().split('T')[0],
@@ -107,6 +108,8 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
     const assigned: GroupWorkoutProgram = {
       ...source,
       id: `group-program-${stamp}`,
+      sourceProgramId: source.id,
+      libraryEntry: false,
       sessionId: session.id,
       sessionDate: session.date,
       sessionTime: session.time,
