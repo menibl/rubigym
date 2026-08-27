@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAuthenticatedSession} from './auth.js';
 import worker from './index.js';
-import {dispatchStateChangePushes, isPushConfigured, israelDateTimeToTimestamp, validatePushSubscription} from './push.js';
+import {dispatchStateChangePushes, isPushConfigured, israelDateTimeToTimestamp, messagePushPayload, validatePushSubscription} from './push.js';
 
 test('requires the complete VAPID configuration', () => {
   assert.equal(isPushConfigured({}), false);
@@ -31,6 +31,12 @@ test('calculates workout reminder times in the Israel time zone including daylig
   assert.equal(israelDateTimeToTimestamp('2026-08-23', '19:00'), Date.parse('2026-08-23T16:00:00Z'));
   assert.equal(israelDateTimeToTimestamp('2026-12-01', '19:00'), Date.parse('2026-12-01T17:00:00Z'));
   assert.equal(Number.isNaN(israelDateTimeToTimestamp('invalid', '19:00')), true);
+});
+
+test('message push opens the matching chat conversation', () => {
+  const payload = messagePushPayload({id: 'message-1', senderId: 'coach 1', senderName: 'רובי', content: 'נתראה באימון'});
+  assert.equal(payload.url, '?workspace=chat&contact=coach%201');
+  assert.equal(payload.tag, 'message-message-1');
 });
 
 test('routes registration and purchase notifications to enabled club staff', async () => {

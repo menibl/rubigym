@@ -28,8 +28,8 @@ const formatToGoogleTime = (dateStr: string, timeStr: string, durationMinutes: n
 export const getGoogleCalendarLink = (session: TrainingSession | { title: string; date: string; time: string; durationMinutes: number; coachName?: string }): string => {
   const { start, end } = formatToGoogleTime(session.date, session.time, session.durationMinutes);
   const title = session.title;
-  const details = `מאמן אחראי: ${session.coachName || 'Open Gym'}\nאימון כושר במועדון GymFit`;
-  const location = 'GymFit - מועדון כושר פרימיום';
+  const details = `מאמן אחראי: ${session.coachName || 'Open Gym'}\nאימון כושר במועדון BALLYWELLNESS`;
+  const location = 'BALLYWELLNESS';
   
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${start}/${end}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
 };
@@ -53,15 +53,15 @@ export const downloadIcsFile = (session: TrainingSession | { id: string; title: 
   const icsContent = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//GymFit//Gym Event//HE',
+    'PRODID:-//BALLYWELLNESS//Gym Event//HE',
     'BEGIN:VEVENT',
-    `UID:${uuid}@gymfit.com`,
+    `UID:${uuid}@ballywellness.com`,
     `DTSTAMP:${formatIcsDate(new Date())}`,
     `DTSTART:${formatIcsDate(start)}`,
     `DTEND:${formatIcsDate(end)}`,
     `SUMMARY:${session.title}`,
-    `DESCRIPTION:מאמן אחראי: ${session.coachName || 'Open Gym'}\\nמערכת GymFit`,
-    'LOCATION:GymFit - מועדון כושר פרימיום',
+    `DESCRIPTION:מאמן אחראי: ${session.coachName || 'Open Gym'}\\nמערכת BALLYWELLNESS`,
+    'LOCATION:BALLYWELLNESS',
     'END:VEVENT',
     'END:VCALENDAR'
   ].join('\r\n');
