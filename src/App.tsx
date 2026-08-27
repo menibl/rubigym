@@ -197,6 +197,9 @@ export default function App() {
             applyServerPayload(latest.payload, latest.revision);
           } else {
             console.error('Unable to save club state', error);
+            if (error.status === 413) {
+              window.alert(error.message);
+            }
           }
         });
     }, 700);
