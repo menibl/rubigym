@@ -610,6 +610,10 @@ export interface GroupWorkoutProgram {
   /** Identifies an automatically saved reusable version. */
   libraryEntry?: boolean;
   sourceProgramId?: string;
+  /** Server-issued value that changes on every broadcast to the club screen. */
+  displayRevision?: string;
+  displayActivation?: 'MANUAL' | 'SCHEDULED';
+  displayActivatedMinute?: number;
 }
 
 export interface NutritionPlan {
