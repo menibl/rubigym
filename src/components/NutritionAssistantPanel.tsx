@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Apple, Bot, MessageSquareText } from 'lucide-react';
-import { NutritionAssistantMessage, NutritionMealCategory, NutritionPlan, TraineeProfessionalProfile, User } from '../types';
+import { CoachPdfDocument, NutritionAssistantMessage, NutritionMealCategory, NutritionPlan, TraineeProfessionalProfile, User } from '../types';
 import { generateNutritionWithAi, NutritionAiResult } from '../data/workoutAi';
 import { AiBuilderChatScreen } from './AiBuilderChatScreen';
+import { AiPdfSourcePanel } from './AiPdfSourcePanel';
+import { getPdfDocumentContent } from '../data/pdfLibraryStorage';
 
 interface NutritionAssistantPanelProps {
   activeUser: User;
@@ -20,6 +22,9 @@ interface NutritionAssistantPanelProps {
   categories: NutritionMealCategory[];
   messages: NutritionAssistantMessage[];
   libraryPlans?: NutritionPlan[];
+  pdfDocuments: CoachPdfDocument[];
+  onUpdatePdfDocuments: (documents: CoachPdfDocument[]) => void;
+  onPublish: () => void;
   onUpdateMessages: (messages: NutritionAssistantMessage[]) => void;
   onApplyPlan: (plan: NutritionAiResult & { categories: NutritionMealCategory[] }) => void;
 }
@@ -40,6 +45,9 @@ export const NutritionAssistantPanel: React.FC<NutritionAssistantPanelProps> = (
   categories,
   messages,
   libraryPlans = [],
+  pdfDocuments,
+  onUpdatePdfDocuments,
+  onPublish,
   onUpdateMessages,
   onApplyPlan
 }) => {
@@ -47,6 +55,8 @@ export const NutritionAssistantPanel: React.FC<NutritionAssistantPanelProps> = (
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<'PREVIEW' | 'SOURCES'>('SOURCES');
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
 
   const handleSend = async (suggestedPrompt?: string) => {
     const prompt = (suggestedPrompt || input).trim();
@@ -56,17 +66,26 @@ export const NutritionAssistantPanel: React.FC<NutritionAssistantPanelProps> = (
     setInput('');
     setIsGenerating(true);
     try {
+      const sourceContents = await Promise.all(selectedSourceIds.map(id => getPdfDocumentContent(id).catch(() => undefined)));
+      const sourceDocuments = selectedSourceIds.flatMap((id, index) => {
+        const document = pdfDocuments.find(item => item.id === id);
+        const content = sourceContents[index];
+        return document && content ? [{ id, title: document.title, category: document.category, tags: document.tags, text: content.pages.map(page => page.text).join('\n').slice(0, 20_000) }] : [];
+      });
       const { result } = await generateNutritionWithAi({
         message: prompt,
         actor: activeUser,
         trainee,
         professionalProfile: profile,
+        sourceDocuments,
         conversation: [...messages, coachMessage],
         currentDraft: { goal, dailyCalories, proteinGrams, carbsGrams, fatGrams, hydrationLiters, fiberGrams, coachNotes, mealsDescription, categories }
       });
       const assistantMessage: NutritionAssistantMessage = { id: `nutrition-assistant-${Date.now()}`, role: 'ASSISTANT', createdAt: new Date().toISOString(), content: result.assistantMessage };
       onUpdateMessages([...messages, coachMessage, assistantMessage]);
       onApplyPlan({ ...result, categories: result.categories.slice(0, 12).map((meal, index) => ({ ...meal, id: categories[index]?.id || `meal-ai-${Date.now()}-${index}` })) });
+      setDrawerTab('PREVIEW');
+      setDrawerOpen(true);
     } catch (error) {
       onUpdateMessages([...messages, coachMessage, { id: `nutrition-error-${Date.now()}`, role: 'ASSISTANT', createdAt: new Date().toISOString(), content: error instanceof Error ? error.message : 'שירות ה־AI אינו זמין כרגע.' }]);
     } finally {
@@ -94,7 +113,8 @@ export const NutritionAssistantPanel: React.FC<NutritionAssistantPanelProps> = (
       content: `טענתי תוכנית מהמאגר עם ${plan.dailyCalories} קלוריות ו־${plan.categories?.length || 0} ארוחות. אפשר לבקש ממני לשנות כל ארוחה או יעד.`,
       createdAt: new Date().toISOString()
     }]);
-    setDrawerOpen(false);
+    setDrawerTab('PREVIEW');
+    setDrawerOpen(true);
   };
 
   return (
@@ -114,21 +134,31 @@ export const NutritionAssistantPanel: React.FC<NutritionAssistantPanelProps> = (
         onInputChange={setInput}
         onSubmit={() => void handleSend()}
         onClose={() => setChatOpen(false)}
-        onConfirm={() => setChatOpen(false)}
+        onConfirm={() => { setDrawerTab('PREVIEW'); setDrawerOpen(true); }}
+        confirmLabel="צפייה בתוכנית"
         confirmDisabled={categories.length === 0}
         isGenerating={isGenerating}
         suggestions={['בנה תוכנית לירידה במשקל עם 4 ארוחות', 'החלף את ארוחת הערב ללא חלב', 'הגדל חלבון ושמור על היעד הקלורי']}
         onSuggestion={suggestion => void handleSend(suggestion)}
         drawerOpen={drawerOpen}
         onDrawerToggle={() => setDrawerOpen(value => !value)}
-        drawerTitle="מאגר תוכניות תזונה"
-        drawerDescription="טען תוכנית קיימת כבסיס, ואז התאם אותה למתאמן בשיחה."
+        drawerTitle="מרכז תוכנית התזונה"
+        drawerDescription="צפה בתוכנית, טען תוכנית קיימת או הוסף PDF כבסיס."
+        drawerTabs={[{ id: 'PREVIEW', label: 'התוכנית שנוצרה' }, { id: 'SOURCES', label: 'מאגר ו־PDF' }]}
+        activeDrawerTab={drawerTab}
+        onDrawerTabChange={tab => setDrawerTab(tab as typeof drawerTab)}
         statusText={categories.length ? `${dailyCalories} קלוריות · ${categories.length} ארוחות` : 'ממתין לתוכנית'}
         emptyTitle="איך תרצה לבנות את תוכנית התזונה?"
         emptyDescription="כתוב מטרה, מספר ארוחות, העדפות, אלרגיות ומועדי אימון. העוזר יעדכן את הקלוריות, המאקרו והארוחות לאורך השיחה."
-        drawerContent={<div className="space-y-4">
-          <section className="grid grid-cols-2 gap-2 text-center">{[['קלוריות', dailyCalories], ['חלבון', `${proteinGrams}g`], ['פחמימה', `${carbsGrams}g`], ['שומן', `${fatGrams}g`]].map(([label, value]) => <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-2"><small className="block text-[9px] text-zinc-400">{label}</small><b className="text-xs text-white">{value}</b></div>)}</section>
+        drawerContent={drawerTab === 'PREVIEW' ? <div className="space-y-3">
+          {categories.length === 0 ? <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-zinc-500">התוכנית תופיע כאן אוטומטית לאחר שהעוזר יסיים לבנות אותה.</p> : <>
+            <section className="grid grid-cols-2 gap-2 text-center">{[['קלוריות', dailyCalories], ['חלבון', `${proteinGrams}g`], ['פחמימה', `${carbsGrams}g`], ['שומן', `${fatGrams}g`]].map(([label, value]) => <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-2"><small className="block text-[9px] text-zinc-400">{label}</small><b className="text-xs text-white">{value}</b></div>)}</section>
+            <div className="space-y-2">{categories.map((meal, index) => <article key={meal.id} className="rounded-xl border border-white/10 bg-white/5 p-3"><div className="flex items-start gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-400 text-[9px] font-black text-zinc-950">{index + 1}</span><div><strong className="block text-xs text-white">{meal.title}</strong><span className="text-[9px] text-zinc-400">{meal.suggestedTime || 'ללא שעה'} · {meal.calories} קלוריות</span><p className="mt-1 text-[10px] leading-5 text-zinc-300">{meal.foods}</p></div></div></article>)}</div>
+            <button type="button" onClick={() => { onPublish(); setChatOpen(false); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-xs font-black text-white">שמירה ופרסום למתאמן</button>
+          </>}
+        </div> : <div className="space-y-4">
           <section><h4 className="mb-2 flex items-center gap-2 text-xs font-black"><Apple size={15} className="text-amber-300" /> תוכניות זמינות</h4><div className="space-y-2">{libraryPlans.map(plan => <button key={plan.id} type="button" onClick={() => loadLibraryPlan(plan)} className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-right hover:border-amber-400/60"><strong className="block text-xs text-white">{plan.goal || `תוכנית של ${plan.coachName}`}</strong><span className="mt-1 block text-[10px] text-zinc-400">{plan.dailyCalories} קלוריות · {plan.categories?.length || 0} ארוחות</span></button>)}{libraryPlans.length === 0 && <p className="rounded-xl border border-dashed border-white/10 p-3 text-center text-[11px] text-zinc-500">אין עדיין תוכניות תזונה במאגר.</p>}</div></section>
+          <AiPdfSourcePanel activeUser={activeUser} category="תוכניות תזונה" documents={pdfDocuments} selectedIds={selectedSourceIds} onSelectedIdsChange={setSelectedSourceIds} onUpdateDocuments={onUpdatePdfDocuments} />
           <section className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="text-xs font-black text-white">הקשר למתאמן</h4><p className="mt-2 text-[11px] leading-5 text-zinc-300">מטרה: {profile?.primaryGoal || goal || 'לא הוגדרה'}</p><p className="text-[11px] leading-5 text-amber-200">מגבלות: {profile?.limitations || 'לא תועדו'}</p></section>
         </div>}
       />

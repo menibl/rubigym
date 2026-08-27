@@ -71,6 +71,7 @@ interface GroupWorkoutAiRequest {
   message: string;
   actor: User;
   equipment: GymEquipment[];
+  sourceDocuments: Array<Pick<CoachPdfDocument, 'id' | 'title' | 'category' | 'tags'> & { text: string }>;
   conversation: Array<{ role: 'COACH' | 'ASSISTANT'; content: string }>;
   currentDraft: GroupWorkoutProgram;
   groupParticipants: Array<{
@@ -85,6 +86,7 @@ interface NutritionAiRequest {
   actor: User;
   trainee: User;
   professionalProfile?: TraineeProfessionalProfile;
+  sourceDocuments: Array<Pick<CoachPdfDocument, 'id' | 'title' | 'category' | 'tags'> & { text: string }>;
   conversation: NutritionAssistantMessage[];
   currentDraft: {
     goal: string;
@@ -169,6 +171,7 @@ export const generateGroupWorkoutWithAi = (request: GroupWorkoutAiRequest) => re
   message: request.message,
   actor: publicUserContext(request.actor),
   equipment: publicEquipment(request.equipment),
+  sourceDocuments: request.sourceDocuments,
   conversation: request.conversation.slice(-16),
   currentDraft: request.currentDraft,
   groupParticipants: request.groupParticipants.map(participant => ({
@@ -184,6 +187,7 @@ export const generateNutritionWithAi = (request: NutritionAiRequest) => requestW
   actor: publicUserContext(request.actor),
   trainee: publicUserContext(request.trainee),
   professionalProfile: request.professionalProfile,
+  sourceDocuments: request.sourceDocuments,
   conversation: request.conversation.slice(-16).map(message => ({ role: message.role, content: message.content })),
   currentDraft: request.currentDraft
 });

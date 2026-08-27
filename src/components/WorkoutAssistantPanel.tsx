@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bot,
-  BookOpen,
   Check,
   Dumbbell,
   MessageSquareText,
   Plus,
   Sparkles,
   Trash2,
-  UserRoundCheck,
-  Wrench
+  UserRoundCheck
 } from 'lucide-react';
 import {
   CoachPdfDocument,
@@ -26,6 +24,8 @@ import {
 import { getPdfDocumentContent } from '../data/pdfLibraryStorage';
 import { generatePersonalWorkoutWithAi } from '../data/workoutAi';
 import { AiBuilderChatScreen } from './AiBuilderChatScreen';
+import { AiEquipmentSelector } from './AiEquipmentSelector';
+import { AiPdfSourcePanel } from './AiPdfSourcePanel';
 
 interface WorkoutAssistantPanelProps {
   activeUser: User;
@@ -41,6 +41,8 @@ interface WorkoutAssistantPanelProps {
   onUpdateMessages: (messages: WorkoutAssistantMessage[]) => void;
   onUpdateDraft: (draft: WorkoutAssistantDraft) => void;
   onPublish: (draft: WorkoutAssistantDraft) => void;
+  onUpdateEquipment: (equipment: GymEquipment[]) => void;
+  onUpdatePdfDocuments: (documents: CoachPdfDocument[]) => void;
 }
 
 const muscleGroupLabels: Record<MuscleGroup, string> = {
@@ -311,13 +313,17 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
   canPublish,
   onUpdateMessages,
   onUpdateDraft,
-  onPublish
+  onPublish,
+  onUpdateEquipment,
+  onUpdatePdfDocuments
 }) => {
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<'PREVIEW' | 'SOURCES' | 'EQUIPMENT'>('SOURCES');
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [selectedEquipmentIds, setSelectedEquipmentIds] = useState<string[]>([]);
   const [selectedDraftDay, setSelectedDraftDay] = useState(1);
 
   const traineeMessages = useMemo(
@@ -333,6 +339,10 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
 
   useEffect(() => {
     setSelectedSourceIds(readySources.slice(0, 3).map(source => source.id));
+  }, [trainee.id]);
+
+  useEffect(() => {
+    setSelectedEquipmentIds(availableEquipment.map(item => item.id));
   }, [trainee.id]);
 
   useEffect(() => {
@@ -378,7 +388,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         trainee,
         professionalProfile: profile,
         confirmedMemory,
-        equipment: availableEquipment,
+        equipment: availableEquipment.filter(item => selectedEquipmentIds.includes(item.id)),
         sourceDocuments,
         conversation: [...traineeMessages, coachMessage],
         currentDraft: draft
@@ -414,6 +424,8 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         status: 'DRAFT'
       };
       onUpdateDraft(nextDraft);
+      setDrawerTab('PREVIEW');
+      setDrawerOpen(true);
       setSelectedDraftDay(Math.min(nextDraft.trainingDaysPerWeek || 1, Math.max(1, result.focusDay)));
 
       const assistantMessage: WorkoutAssistantMessage = {
@@ -511,7 +523,8 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
       createdAt: now
     }]);
     setSelectedDraftDay(1);
-    setDrawerOpen(false);
+    setDrawerTab('PREVIEW');
+    setDrawerOpen(true);
   };
 
   return (
@@ -532,25 +545,35 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         onInputChange={setInput}
         onSubmit={() => void handleSend()}
         onClose={() => setChatOpen(false)}
-        onConfirm={() => setChatOpen(false)}
+        onConfirm={() => { setDrawerTab('PREVIEW'); setDrawerOpen(true); }}
+        confirmLabel="צפייה בתוכנית"
         confirmDisabled={!draft?.exercises.length}
         isGenerating={isGenerating}
         suggestions={['בנה תוכנית כוח ל־3 ימים בשבוע', 'ביום השני החלף את הבטן בסקוואט', 'הוסף פלאנק ליום השלישי']}
         onSuggestion={suggestion => void handleSend(undefined, suggestion)}
         drawerOpen={drawerOpen}
         onDrawerToggle={() => setDrawerOpen(value => !value)}
-        drawerTitle="מאגר ומקורות"
-        drawerDescription="טען תוכנית קיימת כטיוטה או בחר מקורות PDF לשיחה."
+        drawerTitle="מרכז בניית התוכנית"
+        drawerDescription="צפה בטיוטה, טען מקור קיים או בחר ציוד לאימון."
+        drawerTabs={[{ id: 'PREVIEW', label: 'התוכנית שנוצרה' }, { id: 'SOURCES', label: 'מאגר ו־PDF' }, { id: 'EQUIPMENT', label: 'ציוד ומכשירים' }]}
+        activeDrawerTab={drawerTab}
+        onDrawerTabChange={tab => setDrawerTab(tab as typeof drawerTab)}
         statusText={draft ? `${draft.trainingDaysPerWeek || 1} ימים · ${draft.exercises.length} תרגילים` : 'ממתין לטיוטה'}
         emptyTitle="איך תרצה לבנות את האימון?"
         emptyDescription="כתוב מטרה, מספר ימים, משך, רמת קושי ומגבלות. העוזר ישאל רק על מידע שחסר ויעדכן את הטיוטה לאורך השיחה."
         onReset={clearConversation}
-        drawerContent={<div className="space-y-4">
-          <section className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="flex items-center gap-2 text-xs font-black"><UserRoundCheck size={15} className="text-amber-300" /> נתוני המתאמן</h4><p className="mt-2 text-[11px] leading-5 text-zinc-300">גיל {trainee.age} · {profile?.experienceLevel === 'BEGINNER' ? 'מתחיל' : profile?.experienceLevel === 'ADVANCED' ? 'מתקדם' : 'בינוני'}</p><p className="text-[11px] leading-5 text-zinc-300">מטרה: {profile?.primaryGoal || 'טרם הוגדרה'}</p><p className="text-[11px] leading-5 text-amber-200">מגבלות: {profile?.limitations || profile?.painAreas || 'לא תועדו'}</p></section>
+        drawerContent={drawerTab === 'PREVIEW' ? <div className="space-y-3">
+          {!draft ? <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-zinc-500">התוכנית תופיע כאן אוטומטית לאחר שהעוזר יסיים לבנות אותה.</p> : <>
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3"><strong className="text-sm text-white">{draft.objective || 'תוכנית אימון אישית'}</strong><p className="mt-1 text-[10px] text-zinc-300">{draft.trainingDaysPerWeek || 1} ימים · {draft.exercises.length} תרגילים</p></div>
+            {Array.from({ length: draft.trainingDaysPerWeek || 1 }, (_, index) => index + 1).map(day => <section key={day} className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="mb-2 text-xs font-black text-amber-200">{draft.dayLabels?.[day - 1] || `יום ${day}`}</h4><div className="space-y-2">{draft.exercises.filter(exercise => (exercise.dayNumber || 1) === day).map((exercise, index) => <article key={exercise.id} className="rounded-lg bg-zinc-950 p-2.5"><div className="flex items-start gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-400 text-[9px] font-black text-zinc-950">{index + 1}</span><div><strong className="block text-xs text-white">{exercise.name}</strong><span className="text-[9px] text-zinc-400">{exercise.sets} סטים · {exercise.reps} · {exercise.weight || 'משקל לפי יכולת'}</span></div></div></article>)}</div></section>)}
+            {!canPublish && <p className="rounded-lg bg-amber-500/10 p-3 text-[10px] text-amber-200">התוכנית תישמר כטיוטה עד להסדרת הזכאות של המתאמן.</p>}
+            <button type="button" disabled={!canPublish || !draft.exercises.length || draft.status === 'PUBLISHED'} onClick={() => { onPublish(draft); setChatOpen(false); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-xs font-black text-white disabled:opacity-40"><Check size={16} /> פרסם למתאמן</button>
+          </>}
+        </div> : drawerTab === 'SOURCES' ? <div className="space-y-4">
+          <section className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="flex items-center gap-2 text-xs font-black"><UserRoundCheck size={15} className="text-amber-300" /> נתוני המתאמן</h4><p className="mt-2 text-[11px] leading-5 text-zinc-300">גיל {trainee.age} · מטרה: {profile?.primaryGoal || 'טרם הוגדרה'}</p><p className="text-[11px] leading-5 text-amber-200">מגבלות: {profile?.limitations || profile?.painAreas || 'לא תועדו'}</p></section>
           <section><h4 className="mb-2 flex items-center gap-2 text-xs font-black"><Dumbbell size={15} className="text-amber-300" /> תוכניות מהמאגר</h4><div className="space-y-2">{libraryPlans.map(plan => <button key={plan.id} type="button" onClick={() => loadLibraryPlan(plan)} className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-right hover:border-amber-400/60"><strong className="block text-xs text-white">{plan.title || `תוכנית של ${plan.coachName}`}</strong><span className="mt-1 block text-[10px] text-zinc-400">{plan.trainingDaysPerWeek || 1} ימים · {plan.exercises.length} תרגילים</span></button>)}{libraryPlans.length === 0 && <p className="rounded-xl border border-dashed border-white/10 p-3 text-center text-[11px] text-zinc-500">אין עדיין תוכניות במאגר.</p>}</div></section>
-          <section><h4 className="mb-2 flex items-center gap-2 text-xs font-black"><BookOpen size={15} className="text-amber-300" /> מקורות PDF</h4><div className="space-y-2">{readySources.map(source => <label key={source.id} className="flex cursor-pointer items-center gap-2 rounded-lg bg-white/5 p-2 text-[11px] text-zinc-300"><input type="checkbox" checked={selectedSourceIds.includes(source.id)} onChange={() => setSelectedSourceIds(ids => ids.includes(source.id) ? ids.filter(id => id !== source.id) : [...ids, source.id])} /><span className="truncate">{source.title}</span></label>)}{readySources.length === 0 && <p className="text-[11px] text-zinc-500">אין מקורות PDF מוכנים.</p>}</div></section>
-          <section className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="flex items-center gap-2 text-xs font-black"><Wrench size={15} className="text-amber-300" /> ציוד וזיכרון</h4><p className="mt-2 text-[10px] leading-5 text-zinc-400">{availableEquipment.length} מכשירים זמינים · {confirmedMemory.length} פריטי זיכרון מאושרים</p></section>
-        </div>}
+          <AiPdfSourcePanel activeUser={activeUser} category="תוכניות אימון" documents={pdfDocuments} selectedIds={selectedSourceIds} onSelectedIdsChange={setSelectedSourceIds} onUpdateDocuments={onUpdatePdfDocuments} />
+        </div> : <AiEquipmentSelector activeUser={activeUser} equipment={equipment} selectedIds={selectedEquipmentIds} onSelectedIdsChange={setSelectedEquipmentIds} onUpdateEquipment={onUpdateEquipment} />}
       />
 
       <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" dir="rtl">

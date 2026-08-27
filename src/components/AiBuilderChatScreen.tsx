@@ -18,6 +18,7 @@ interface AiBuilderChatScreenProps {
   onSubmit: () => void;
   onClose: () => void;
   onConfirm: () => void;
+  confirmLabel?: string;
   confirmDisabled?: boolean;
   isGenerating?: boolean;
   suggestions?: string[];
@@ -27,6 +28,9 @@ interface AiBuilderChatScreenProps {
   drawerTitle: string;
   drawerDescription?: string;
   drawerContent: React.ReactNode;
+  drawerTabs?: Array<{ id: string; label: string }>;
+  activeDrawerTab?: string;
+  onDrawerTabChange?: (tabId: string) => void;
   statusText?: string;
   emptyTitle: string;
   emptyDescription: string;
@@ -43,6 +47,7 @@ export const AiBuilderChatScreen: React.FC<AiBuilderChatScreenProps> = ({
   onSubmit,
   onClose,
   onConfirm,
+  confirmLabel = 'אישור תוכנית',
   confirmDisabled = false,
   isGenerating = false,
   suggestions = [],
@@ -52,6 +57,9 @@ export const AiBuilderChatScreen: React.FC<AiBuilderChatScreenProps> = ({
   drawerTitle,
   drawerDescription,
   drawerContent,
+  drawerTabs = [],
+  activeDrawerTab,
+  onDrawerTabChange,
   statusText,
   emptyTitle,
   emptyDescription,
@@ -89,18 +97,21 @@ export const AiBuilderChatScreen: React.FC<AiBuilderChatScreenProps> = ({
         </div>
         {statusText && <span className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold text-zinc-300 sm:block">{statusText}</span>}
         {onReset && <button type="button" onClick={onReset} className="hidden items-center gap-1 rounded-xl border border-white/10 px-3 py-2 text-[10px] font-bold text-zinc-300 hover:bg-white/10 sm:flex"><RotateCcw size={13} /> איפוס</button>}
-        <button type="button" onClick={onDrawerToggle} className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border ${drawerOpen ? 'border-amber-400 bg-amber-400 text-zinc-950' : 'border-white/10 text-zinc-200 hover:bg-white/10'}`} aria-label="פתיחת מאגר">
+        <button type="button" onClick={onDrawerToggle} className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border ${drawerOpen ? 'border-amber-400 bg-amber-400 text-zinc-950' : 'border-white/10 text-zinc-200 hover:bg-white/10'}`} aria-label="פתיחת תפריט צד">
           {drawerOpen ? <PanelRightClose size={20} /> : <PanelRightOpen size={20} />}
         </button>
       </header>
 
       <div className="relative flex min-h-0 flex-1">
         {drawerOpen && <button type="button" onClick={onDrawerToggle} className="absolute inset-0 z-20 bg-black/60 lg:hidden" aria-label="סגירת המאגר" />}
-        <aside className={`${drawerOpen ? 'translate-x-0' : 'translate-x-full'} absolute inset-y-0 right-0 z-30 flex w-[88vw] max-w-sm flex-col border-l border-white/10 bg-[#151922] shadow-2xl transition-transform lg:static lg:w-80 lg:max-w-none lg:shrink-0 ${drawerOpen ? 'lg:flex' : 'lg:hidden'}`}>
+        <aside className={`${drawerOpen ? 'translate-x-0' : 'translate-x-full'} absolute inset-y-0 right-0 z-30 flex w-[94vw] max-w-md flex-col border-l border-white/10 bg-[#151922] shadow-2xl transition-transform lg:static lg:w-[28rem] lg:max-w-none lg:shrink-0 xl:w-[34rem] ${drawerOpen ? 'lg:flex' : 'lg:hidden'}`}>
           <div className="flex items-start justify-between gap-3 border-b border-white/10 p-4">
             <div><h3 className="flex items-center gap-2 text-sm font-black"><Library size={17} className="text-amber-300" />{drawerTitle}</h3>{drawerDescription && <p className="mt-1 text-[10px] leading-5 text-zinc-400">{drawerDescription}</p>}</div>
             <button type="button" onClick={onDrawerToggle} className="grid h-8 w-8 place-items-center rounded-lg text-zinc-400 hover:bg-white/10 lg:hidden"><X size={17} /></button>
           </div>
+          {drawerTabs.length > 0 && <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/10 p-2" aria-label="אפשרויות עוזר הבנייה">
+            {drawerTabs.map(tab => <button key={tab.id} type="button" onClick={() => onDrawerTabChange?.(tab.id)} className={`min-h-9 min-w-fit rounded-lg px-3 text-[10px] font-black transition ${activeDrawerTab === tab.id ? 'bg-amber-400 text-zinc-950' : 'bg-white/5 text-zinc-300 hover:bg-white/10'}`}>{tab.label}</button>)}
+          </nav>}
           <div className="min-h-0 flex-1 overflow-y-auto p-3">{drawerContent}</div>
         </aside>
 
@@ -144,7 +155,7 @@ export const AiBuilderChatScreen: React.FC<AiBuilderChatScreenProps> = ({
               </form>
               <div className="mt-2 flex items-center justify-between gap-3">
                 <span className="truncate text-[9px] text-zinc-500">הטיוטה נשמרת תוך כדי השיחה ואינה מתפרסמת ללא אישור המאמן.</span>
-                <button type="button" disabled={confirmDisabled || isGenerating} onClick={onConfirm} className="flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-emerald-500 px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-35"><CheckCircle2 size={16} /> אישור תוכנית</button>
+                <button type="button" disabled={confirmDisabled || isGenerating} onClick={onConfirm} className="flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-emerald-500 px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-35"><CheckCircle2 size={16} /> {confirmLabel}</button>
               </div>
             </div>
           </footer>
