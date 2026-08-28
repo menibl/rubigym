@@ -24,7 +24,19 @@ interface NutritionAssistantPanelProps {
   libraryPlans?: NutritionPlan[];
   pdfDocuments: CoachPdfDocument[];
   onUpdatePdfDocuments: (documents: CoachPdfDocument[]) => void;
-  onPublish: () => void;
+  onPublish: (snapshot: {
+    dailyCalories: number;
+    proteinGrams: number;
+    carbsGrams: number;
+    fatGrams: number;
+    hydrationLiters: number;
+    fiberGrams: number;
+    goal: string;
+    coachNotes: string;
+    mealsDescription: string;
+    categories: NutritionMealCategory[];
+    assistantMessages: NutritionAssistantMessage[];
+  }) => void;
   onUpdateMessages: (messages: NutritionAssistantMessage[]) => void;
   onApplyPlan: (plan: NutritionAiResult & { categories: NutritionMealCategory[] }) => void;
 }
@@ -154,7 +166,7 @@ export const NutritionAssistantPanel: React.FC<NutritionAssistantPanelProps> = (
           {categories.length === 0 ? <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-zinc-500">התוכנית תופיע כאן אוטומטית לאחר שהעוזר יסיים לבנות אותה.</p> : <>
             <section className="grid grid-cols-2 gap-2 text-center">{[['קלוריות', dailyCalories], ['חלבון', `${proteinGrams}g`], ['פחמימה', `${carbsGrams}g`], ['שומן', `${fatGrams}g`]].map(([label, value]) => <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-2"><small className="block text-[9px] text-zinc-400">{label}</small><b className="text-xs text-white">{value}</b></div>)}</section>
             <div className="space-y-2">{categories.map((meal, index) => <article key={meal.id} className="rounded-xl border border-white/10 bg-white/5 p-3"><div className="flex items-start gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-400 text-[9px] font-black text-zinc-950">{index + 1}</span><div><strong className="block text-xs text-white">{meal.title}</strong><span className="text-[9px] text-zinc-400">{meal.suggestedTime || 'ללא שעה'} · {meal.calories} קלוריות</span><p className="mt-1 text-[10px] leading-5 text-zinc-300">{meal.foods}</p></div></div></article>)}</div>
-            <button type="button" onClick={() => { onPublish(); setChatOpen(false); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-xs font-black text-white">שמירה ופרסום למתאמן</button>
+            <button type="button" onClick={() => { onPublish({ dailyCalories, proteinGrams, carbsGrams, fatGrams, hydrationLiters, fiberGrams, goal, coachNotes, mealsDescription, categories, assistantMessages: messages }); setChatOpen(false); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-xs font-black text-white">שמירה ופרסום למתאמן</button>
           </>}
         </div> : <div className="space-y-4">
           <section><h4 className="mb-2 flex items-center gap-2 text-xs font-black"><Apple size={15} className="text-amber-300" /> תוכניות זמינות</h4><div className="space-y-2">{libraryPlans.map(plan => <button key={plan.id} type="button" onClick={() => loadLibraryPlan(plan)} className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-right hover:border-amber-400/60"><strong className="block text-xs text-white">{plan.title || plan.goal || `תוכנית של ${plan.coachName}`}</strong><span className="mt-1 block text-[10px] text-zinc-400">{plan.dailyCalories} קלוריות · {plan.categories?.length || 0} ארוחות</span></button>)}{libraryPlans.length === 0 && <p className="rounded-xl border border-dashed border-white/10 p-3 text-center text-[11px] text-zinc-500">אין עדיין תוכניות תזונה במאגר.</p>}</div></section>

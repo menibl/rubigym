@@ -580,9 +580,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     setIsEditingNutrition(true);
   };
 
-  const handleSaveNutrition = (e?: React.FormEvent) => {
+  const handleSaveNutrition = (e?: React.FormEvent, override?: Partial<typeof nutritionForm>) => {
     e?.preventDefault();
     if (!selectedTrainee) return;
+    const resolvedNutrition = { ...nutritionForm, ...override };
     const createdAt = new Date();
     const sourcePlanId = String(nutritionSetupAnswers.templateId || currentNutrition?.sourcePlanId || '');
     let activePlan: NutritionPlan;
@@ -595,17 +596,17 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         libraryEntry: false,
         active: true,
         lastUpdated: createdAt.toISOString().split('T')[0],
-        dailyCalories: Number(nutritionForm.dailyCalories),
-        proteinGrams: Number(nutritionForm.proteinGrams),
-        carbsGrams: Number(nutritionForm.carbsGrams),
-        fatGrams: Number(nutritionForm.fatGrams),
-        mealsDescription: nutritionForm.mealsDescription,
-        goal: nutritionForm.goal,
-        hydrationLiters: Number(nutritionForm.hydrationLiters),
-        fiberGrams: Number(nutritionForm.fiberGrams),
-        coachNotes: nutritionForm.coachNotes,
-        categories: nutritionForm.categories,
-        assistantMessages: nutritionForm.assistantMessages
+        dailyCalories: Number(resolvedNutrition.dailyCalories),
+        proteinGrams: Number(resolvedNutrition.proteinGrams),
+        carbsGrams: Number(resolvedNutrition.carbsGrams),
+        fatGrams: Number(resolvedNutrition.fatGrams),
+        mealsDescription: resolvedNutrition.mealsDescription,
+        goal: resolvedNutrition.goal,
+        hydrationLiters: Number(resolvedNutrition.hydrationLiters),
+        fiberGrams: Number(resolvedNutrition.fiberGrams),
+        coachNotes: resolvedNutrition.coachNotes,
+        categories: resolvedNutrition.categories,
+        assistantMessages: resolvedNutrition.assistantMessages
       };
     } else {
       activePlan = {
@@ -617,17 +618,17 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         sourcePlanId: sourcePlanId || undefined,
         libraryEntry: false,
         lastUpdated: createdAt.toISOString().split('T')[0],
-        dailyCalories: Number(nutritionForm.dailyCalories),
-        proteinGrams: Number(nutritionForm.proteinGrams),
-        carbsGrams: Number(nutritionForm.carbsGrams),
-        fatGrams: Number(nutritionForm.fatGrams),
-        mealsDescription: nutritionForm.mealsDescription,
-        goal: nutritionForm.goal,
-        hydrationLiters: Number(nutritionForm.hydrationLiters),
-        fiberGrams: Number(nutritionForm.fiberGrams),
-        coachNotes: nutritionForm.coachNotes,
-        categories: nutritionForm.categories,
-        assistantMessages: nutritionForm.assistantMessages,
+        dailyCalories: Number(resolvedNutrition.dailyCalories),
+        proteinGrams: Number(resolvedNutrition.proteinGrams),
+        carbsGrams: Number(resolvedNutrition.carbsGrams),
+        fatGrams: Number(resolvedNutrition.fatGrams),
+        mealsDescription: resolvedNutrition.mealsDescription,
+        goal: resolvedNutrition.goal,
+        hydrationLiters: Number(resolvedNutrition.hydrationLiters),
+        fiberGrams: Number(resolvedNutrition.fiberGrams),
+        coachNotes: resolvedNutrition.coachNotes,
+        categories: resolvedNutrition.categories,
+        assistantMessages: resolvedNutrition.assistantMessages,
         active: true
       };
     }
@@ -635,7 +636,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     const libraryEntry = createNutritionLibraryEntry(activePlan, selectedTrainee, sourcePlanId || undefined, createdAt);
     const remaining = nutritionPlans.filter(plan => plan.id !== currentNutrition?.id);
     onUpdateNutritionPlans([activePlan, libraryEntry, ...remaining]);
+    setNutritionForm(resolvedNutrition);
     setIsEditingNutrition(false);
+    onSendMessage(`תוכנית תזונה חדשה הוכנה עבורך על ידי ${activeUser.name} ופורסמה באזור תוכנית התזונה.`, selectedTrainee.id);
+    window.alert('תוכנית התזונה פורסמה למתאמן ונשמרה גם במאגר.');
   };
 
   const handleApproveNutritionPayment = () => {
@@ -1068,6 +1072,27 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     handleUpdateAssistantDraft({ ...personalDraftToPublish, status: 'PUBLISHED', updatedAt: new Date().toISOString() });
     setPersonalDraftToPublish(null);
     window.alert('התוכנית נשמרה במאגר האימונים.');
+  };
+
+  const publishPersonalDraftToTrainee = () => {
+    if (!personalDraftToPublish || !selectedTrainee) return;
+    const createdAt = new Date();
+    const generated = personalPlanFromDraft(personalDraftToPublish);
+    if (!generated) return;
+    const activePlan: WorkoutPlan = {
+      ...generated,
+      id: traineeWorkoutPlan?.id || generated.id,
+      libraryEntry: false,
+      sessionId: undefined,
+      title: personalDraftToPublish.objective.trim() || personalLibraryTitle(selectedTrainee.name, createdAt)
+    };
+    const libraryEntry = createPersonalLibraryEntry(activePlan, selectedTrainee, activePlan.sourcePlanId, createdAt);
+    const remaining = workoutPlans.filter(plan => plan.id !== traineeWorkoutPlan?.id);
+    onUpdateWorkoutPlans([activePlan, libraryEntry, ...remaining]);
+    handleUpdateAssistantDraft({ ...personalDraftToPublish, status: 'PUBLISHED', updatedAt: createdAt.toISOString() });
+    onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ופורסמה באזור תוכנית האימונים.`, selectedTrainee.id);
+    setPersonalDraftToPublish(null);
+    window.alert('התוכנית פורסמה למתאמן ונשמרה גם במאגר.');
   };
 
   const assignPersonalDraftToSession = (sessionId: string) => {
@@ -1900,7 +1925,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   libraryPlans={nutritionTemplatePlans}
                   pdfDocuments={coachPdfDocuments}
                   onUpdatePdfDocuments={onUpdateCoachPdfDocuments}
-                  onPublish={() => handleSaveNutrition()}
+                  onPublish={snapshot => handleSaveNutrition(undefined, snapshot)}
                   onUpdateMessages={assistantMessages => setNutritionForm(current => ({ ...current, assistantMessages }))}
                   onApplyPlan={plan => {
                     setNutritionForm(current => ({
@@ -2617,6 +2642,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         onClose={() => setPersonalDraftToPublish(null)}
         onSaveToLibrary={savePersonalDraftToLibrary}
         onAssignToSession={assignPersonalDraftToSession}
+        onPublishDirect={selectedHasWorkoutPlanAccess ? publishPersonalDraftToTrainee : undefined}
+        directPublishLabel="פרסם למתאמן"
+        directPublishDescription="התוכנית תופיע מיד במסך תוכנית האימונים של המתאמן"
       />
     </div>
   );
