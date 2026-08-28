@@ -554,7 +554,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       publishedAt: createdAt.toISOString(),
       updatedAt: createdAt.toISOString()
     };
-    onUpdatePrograms(programs.map(program => program.id === published.id ? published : program));
+    const nextPrograms = programsRef.current.map(program => program.id === published.id ? published : program);
+    programsRef.current = nextPrograms;
+    onUpdatePrograms(nextPrograms);
     setPublishDialogOpen(false);
     window.alert('התוכנית נשמרה במאגר האימונים.');
   };
@@ -591,7 +593,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       stations: (libraryVersion.stations || []).map((station, stationIndex) => ({ ...station, id: `group-scheduled-station-${Date.now()}-${stationIndex}`, exercises: station.exercises.map((exercise, exerciseIndex) => ({ ...exercise, id: `group-scheduled-station-exercise-${Date.now()}-${stationIndex}-${exerciseIndex}` })) })),
       createdAt: createdAt.toISOString()
     };
-    onUpdatePrograms([scheduled, ...programs.map(program => program.id === libraryVersion.id ? libraryVersion : program)]);
+    const nextPrograms = [scheduled, ...programsRef.current.map(program => program.id === libraryVersion.id ? libraryVersion : program)];
+    programsRef.current = nextPrograms;
+    onUpdatePrograms(nextPrograms);
     setSelectedProgramId(scheduled.id);
     setSelectedSessionId(session.id);
     setPublishDialogOpen(false);
@@ -687,7 +691,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         updatedAt: new Date().toISOString()
       };
       const latestPrograms = programsRef.current;
-      onUpdatePrograms(latestPrograms.map(program => program.id === updatedProgram.id ? updatedProgram : program));
+      const nextPrograms = latestPrograms.map(program => program.id === updatedProgram.id ? updatedProgram : program);
+      programsRef.current = nextPrograms;
+      onUpdatePrograms(nextPrograms);
       setAssistantMessages(messages => [...messages, result.assistantMessage].slice(-100));
       setAssistantDrawerTab('PREVIEW');
       setAssistantDrawerOpen(true);
