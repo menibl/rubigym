@@ -149,6 +149,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   const [setupComplete, setSetupComplete] = useState(false);
   const [setupAnswers, setSetupAnswers] = useState<WizardAnswers>({});
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const programsRef = useRef(programs);
   const handledInitialAudienceRef = useRef('');
   const selectedProgram = programs.find(program => program.id === selectedProgramId);
   const groupSessions = useMemo(() => sessions
@@ -156,6 +157,10 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`)), [sessions]);
   const selectedSession = sessions.find(session => session.id === selectedProgram?.sessionId);
   const availableEquipment = equipment.filter(item => item.status !== 'OUT_OF_SERVICE' && item.quantity > 0);
+
+  useEffect(() => {
+    programsRef.current = programs;
+  }, [programs]);
 
   useEffect(() => {
     setSelectedEquipmentIds(availableEquipment.map(item => item.id));
@@ -681,7 +686,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         status: 'DRAFT',
         updatedAt: new Date().toISOString()
       };
-      onUpdatePrograms(programs.map(program => program.id === updatedProgram.id ? updatedProgram : program));
+      const latestPrograms = programsRef.current;
+      onUpdatePrograms(latestPrograms.map(program => program.id === updatedProgram.id ? updatedProgram : program));
       setAssistantMessages(messages => [...messages, result.assistantMessage].slice(-100));
       setAssistantDrawerTab('PREVIEW');
       setAssistantDrawerOpen(true);
