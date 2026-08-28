@@ -3341,6 +3341,3 @@ option {
   .planning-builder-context { align-items: flex-start; flex-direction: column; }
   .planning-builder-context > div { width: 100%; text-align: right; }
 }
-.group-library-quick-edit .group-builder-secondary {
-  display: none;
-}

@@ -796,10 +796,8 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     setSetupComplete(true);
   };
 
-  const quickLibraryEdit = Boolean(selectedProgram?.libraryEntry && selectedProgram?.sourceProgramId && !selectedProgram?.sessionId);
-
   return (
-    <section className={`space-y-5 ${quickLibraryEdit ? 'group-library-quick-edit' : ''}`} dir="rtl">
+    <section className="space-y-5" dir="rtl">
       <div className="rounded-2xl bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-lg">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -901,7 +899,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         </div> : <AiEquipmentSelector activeUser={activeUser} equipment={equipment} selectedIds={selectedEquipmentIds} onSelectedIdsChange={setSelectedEquipmentIds} onUpdateEquipment={onUpdateEquipment} />}
       />
 
-      <div className="group-builder-secondary rounded-2xl border border-zinc-700 bg-zinc-900 p-4 text-white shadow-sm">
+      <div className="hidden rounded-2xl border border-zinc-700 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="grid gap-3 md:grid-cols-2">
           <label className="min-w-0 flex-1 text-xs font-black text-zinc-200 md:col-span-2">בחרו אימון מהיומן
             <select value={selectedSessionId} onChange={event => setSelectedSessionId(event.target.value)} className="mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm font-bold text-white">
@@ -935,7 +933,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       </div>
 
       <div className="space-y-4">
-        <div className="group-builder-secondary grid gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-2">
+        <div className="hidden gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-2">
           <label className="text-[10px] font-black text-slate-600">
             <span className="mb-1 flex items-center gap-1.5"><CalendarDays size={14} className="text-indigo-600" /> תוכניות ששובצו ביומן</span>
             <select value={selectedProgram?.sessionId ? selectedProgramId : ''} onChange={event => setSelectedProgramId(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-xs font-bold text-slate-800">
@@ -963,7 +961,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
 
         {selectedProgram ? (
           <div className="space-y-4">
-            <div className="group-builder-secondary rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <div><h3 className="text-lg font-black text-slate-900">פרטי הקבוצה והאימון</h3><p className="text-xs text-slate-500">השינויים נשמרים אוטומטית במכשיר</p></div>
                 <div className="flex flex-wrap gap-2">
