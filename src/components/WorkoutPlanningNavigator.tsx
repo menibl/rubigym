@@ -8,9 +8,11 @@ import {
   CopyPlus,
   FileText,
   FolderOpen,
+  Pencil,
   Plus,
   Search,
   Sparkles,
+  Trash2,
   UserRound,
   UsersRound
 } from 'lucide-react';
@@ -40,10 +42,12 @@ interface WorkoutPlanningNavigatorProps {
   groupPrograms: GroupWorkoutProgram[];
   onOpenPersonalTrainee: (traineeId: string) => void;
   onOpenPersonalSession: (session: TrainingSession) => void;
-  onOpenPersonalPlan: (plan: WorkoutPlan) => void;
+  onOpenPersonalPlan: (plan: WorkoutPlan, traineeId?: string) => void;
   onOpenGroupSession: (session: TrainingSession) => void;
   onOpenGroupAudience: (audience: string) => void;
   onOpenGroupProgram: (program: GroupWorkoutProgram) => void;
+  onDeletePersonalPlan: (plan: WorkoutPlan) => void;
+  onDeleteGroupProgram: (program: GroupWorkoutProgram) => void;
   onOpenPdfLibrary: () => void;
   assignmentContent: React.ReactNode;
 }
@@ -66,9 +70,9 @@ const routeMeta: Record<WorkoutPlanningRoute, { title: string; description: stri
   GROUP_SESSION: { title: 'אימון קבוצתי מהיומן', description: 'בחרו אירוע קיים והנרשמים ייטענו אוטומטית', parent: 'GROUP' },
   GROUP_AUDIENCE: { title: 'קבוצה ייעודית', description: 'בחרו אוכלוסיית יעד לתוכנית החדשה', parent: 'GROUP' },
   GROUP_EXISTING: { title: 'תוכניות קבוצתיות קיימות', description: 'פתיחה, עדכון, שכפול ופרסום', parent: 'GROUP' },
-  LIBRARY: { title: 'מאגר תוכניות האימון', description: 'יצירת תבניות ושימוש חוזר בתוכניות', parent: 'HOME' },
+  LIBRARY: { title: 'ניהול מאגר תוכניות האימון', description: 'הוספה, פתיחה לעריכה ומחיקת תוכניות במקום אחד', parent: 'HOME' },
   LIBRARY_NEW: { title: 'יצירת תוכנית חדשה למאגר', description: 'בחרו את סוג התבנית', parent: 'LIBRARY' },
-  LIBRARY_EXISTING: { title: 'עדכון תוכנית קיימת', description: 'בחרו תוכנית אישית או קבוצתית', parent: 'LIBRARY' },
+  LIBRARY_EXISTING: { title: 'ניהול מאגר תוכניות האימון', description: 'הוספה, פתיחה לעריכה ומחיקת תוכניות במקום אחד', parent: 'HOME' },
   ASSIGN: { title: 'שיבוץ תוכנית לאימון ביומן', description: 'בחירת אימון, תוכנית ופרסום', parent: 'HOME' }
 };
 
@@ -109,6 +113,8 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
   onOpenGroupSession,
   onOpenGroupAudience,
   onOpenGroupProgram,
+  onDeletePersonalPlan,
+  onDeleteGroupProgram,
   onOpenPdfLibrary,
   assignmentContent
 }) => {
@@ -117,19 +123,27 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
   const groupSessions = sessions.filter(session => !session.isPersonalTraining)
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
-  const personalTemplates = workoutPlans.filter(plan => !plan.sessionId && (plan.libraryEntry === true || plan.libraryEntry === undefined));
-  const groupTemplates = groupPrograms.filter(program => !program.sessionId);
+  const personalExistingPlans = workoutPlans.filter(plan => !plan.sessionId && (plan.libraryEntry === true || plan.libraryEntry === undefined));
+  const groupExistingPrograms = groupPrograms.filter(program => !program.sessionId);
+  const personalTemplates = workoutPlans.filter(plan => !plan.sessionId && plan.libraryEntry === true);
+  const groupTemplates = groupPrograms.filter(program => !program.sessionId && program.libraryEntry === true);
+  const [libraryKind, setLibraryKind] = React.useState<'ALL' | 'PERSONAL' | 'GROUP'>('ALL');
+  const [libraryQuery, setLibraryQuery] = React.useState('');
+  const [libraryTargetTraineeId, setLibraryTargetTraineeId] = React.useState(trainees[0]?.id || '');
+  const normalizedLibraryQuery = libraryQuery.trim().toLocaleLowerCase('he-IL');
+  const visiblePersonalTemplates = personalTemplates.filter(plan => !normalizedLibraryQuery || `${plan.title || ''} ${trainees.find(item => item.id === plan.traineeId)?.name || ''}`.toLocaleLowerCase('he-IL').includes(normalizedLibraryQuery));
+  const visibleGroupTemplates = groupTemplates.filter(program => !normalizedLibraryQuery || `${program.title} ${program.groupName}`.toLocaleLowerCase('he-IL').includes(normalizedLibraryQuery));
 
   const homeTiles: Tile[] = [
     { title: 'אימון חדש', description: 'בניית תוכנית אישית או קבוצתית חדשה', icon: Plus, tone: 'gold', onClick: () => onRouteChange('LIBRARY_NEW') },
-    { title: 'בחירה ממאגר', description: 'טעינה, צפייה ויצירת גרסה חדשה לעריכה', icon: FolderOpen, tone: 'emerald', onClick: () => onRouteChange('LIBRARY_EXISTING') },
+    { title: 'ניהול מאגר האימונים', description: 'הוספה, עריכה, מחיקה ושימוש חוזר', icon: FolderOpen, tone: 'emerald', onClick: () => onRouteChange('LIBRARY') },
     { title: 'שיבוץ מהמאגר ליומן', description: 'שימוש בתוכנית בדיוק כפי שהיא באימון שנקבע', icon: CalendarCheck, tone: 'indigo', onClick: () => onRouteChange('ASSIGN') }
   ];
 
   const personalTiles: Tile[] = [
     { title: 'תוכנית למתאמן', description: 'בחירה לפי שם ונתוני המתאמן', icon: UserRound, tone: 'gold', onClick: () => onRouteChange('PERSONAL_TRAINEE') },
     { title: 'תוכנית לאימון ביומן', description: 'שיבוץ לאימון אישי שכבר נקבע', icon: CalendarCheck, tone: 'indigo', onClick: () => onRouteChange('PERSONAL_SESSION') },
-    { title: 'תוכניות אישיות קיימות', description: 'עדכון תוכנית או יצירת גרסה חדשה', icon: BookOpen, tone: 'emerald', onClick: () => onRouteChange('PERSONAL_EXISTING') },
+    { title: 'בחירת תוכנית מהמאגר', description: 'טעינת כל ההגדרות ומעבר ישיר לעריכה', icon: BookOpen, tone: 'emerald', onClick: () => onRouteChange('LIBRARY') },
     { title: 'תבנית אישית למאגר', description: 'בחרו מתאמן בסיס והתאימו תבנית', icon: CopyPlus, tone: 'slate', onClick: () => onRouteChange('PERSONAL_TRAINEE') }
   ];
 
@@ -137,7 +151,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
     { title: 'תוכנית לאימון ביומן', description: 'כולל טעינת הנרשמים מהאירוע', icon: CalendarCheck, tone: 'indigo', onClick: () => onRouteChange('GROUP_SESSION') },
     { title: 'תוכנית לקבוצה ייעודית', description: 'נשים, גברים, נערים וקבוצות מטרה', icon: UsersRound, tone: 'gold', onClick: () => onRouteChange('GROUP_AUDIENCE') },
     { title: 'תוכנית קבוצתית למאגר', description: 'יצירת תבנית חדשה לשימוש חוזר', icon: Plus, tone: 'emerald', onClick: () => onOpenGroupAudience('קבוצה חדשה') },
-    { title: 'תוכניות קבוצתיות קיימות', description: 'עדכון, שכפול, מחיקה ופרסום', icon: ClipboardList, tone: 'slate', onClick: () => onRouteChange('GROUP_EXISTING') }
+    { title: 'בחירת תוכנית מהמאגר', description: 'טעינת כל ההגדרות ומעבר ישיר לעריכה', icon: ClipboardList, tone: 'slate', onClick: () => onRouteChange('LIBRARY') }
   ];
 
   return <section className="workout-planning-navigator" dir="rtl">
@@ -149,13 +163,6 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
     {route === 'HOME' && <TileGrid tiles={homeTiles} />}
     {route === 'PERSONAL' && <TileGrid tiles={personalTiles} />}
     {route === 'GROUP' && <TileGrid tiles={groupTiles} />}
-
-    {route === 'LIBRARY' && <TileGrid tiles={[
-      { title: 'יצירת תוכנית חדשה', description: 'אישית, קבוצתית או מתוך PDF', icon: Plus, tone: 'gold', onClick: () => onRouteChange('LIBRARY_NEW') },
-      { title: 'עדכון תוכנית קיימת', description: 'חיפוש ופתיחת תוכנית מהמאגר', icon: ClipboardList, tone: 'indigo', onClick: () => onRouteChange('LIBRARY_EXISTING') },
-      { title: 'ייבוא תוכנית מ־PDF', description: 'שימוש בקובצי המאמן כבסיס לתכנון', icon: FileText, tone: 'emerald', onClick: onOpenPdfLibrary },
-      { title: 'שיבוץ מהמאגר ליומן', description: 'בחירת אירוע ושיבוץ עותק עצמאי', icon: CalendarCheck, tone: 'slate', onClick: () => onRouteChange('ASSIGN') }
-    ]} />}
 
     {route === 'LIBRARY_NEW' && <TileGrid tiles={[
       { title: 'תבנית אישית חדשה', description: 'בחירת מתאמן בסיס ויצירה בעזרת הצ׳אט', icon: UserRound, tone: 'gold', onClick: () => onRouteChange('PERSONAL_TRAINEE') },
@@ -175,8 +182,8 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
       </button>)}
     </SelectionList>}
 
-    {(route === 'PERSONAL_EXISTING') && <SelectionList empty={personalTemplates.length === 0} emptyText="אין תוכניות אישיות במאגר">
-      {personalTemplates.map(plan => <button type="button" key={plan.id} className="planning-selection-card" onClick={() => onOpenPersonalPlan(plan)}>
+    {(route === 'PERSONAL_EXISTING') && <SelectionList empty={personalExistingPlans.length === 0} emptyText="אין תוכניות אישיות קיימות">
+      {personalExistingPlans.map(plan => <button type="button" key={plan.id} className="planning-selection-card" onClick={() => onOpenPersonalPlan(plan)}>
         <span className="planning-list-icon"><BookOpen size={20} /></span><span><strong>{plan.title || 'תוכנית אישית'}</strong><small>{trainees.find(item => item.id === plan.traineeId)?.name || 'תבנית כללית'} · {plan.exercises.length} תרגילים · טעינה כגרסה חדשה</small></span><ChevronLeft size={18} />
       </button>)}
     </SelectionList>}
@@ -195,15 +202,55 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
       onClick: () => onOpenGroupAudience(audience)
     }))} />}
 
-    {route === 'GROUP_EXISTING' && <SelectionList empty={groupTemplates.length === 0} emptyText="אין תוכניות קבוצתיות במאגר">
-      {groupTemplates.map(program => <button type="button" key={program.id} className="planning-selection-card" onClick={() => onOpenGroupProgram(program)}>
+    {route === 'GROUP_EXISTING' && <SelectionList empty={groupExistingPrograms.length === 0} emptyText="אין תוכניות קבוצתיות קיימות">
+      {groupExistingPrograms.map(program => <button type="button" key={program.id} className="planning-selection-card" onClick={() => onOpenGroupProgram(program)}>
         <span className="planning-list-icon"><UsersRound size={20} /></span><span><strong>{program.title}</strong><small>{program.groupName} · {program.mode === 'ROTATING_GROUPS' ? 'תחנות מתחלפות' : 'רצף קבוצתי'} · טעינה כגרסה חדשה</small></span><ChevronLeft size={18} />
       </button>)}
     </SelectionList>}
 
-    {route === 'LIBRARY_EXISTING' && <div className="space-y-5">
-      <section><h3 className="planning-section-title">תוכניות אישיות</h3><SelectionList empty={personalTemplates.length === 0} emptyText="אין תוכניות אישיות במאגר">{personalTemplates.map(plan => <button type="button" key={plan.id} className="planning-selection-card" onClick={() => onOpenPersonalPlan(plan)}><span className="planning-list-icon"><UserRound size={20} /></span><span><strong>{plan.title || 'תוכנית אישית'}</strong><small>{trainees.find(item => item.id === plan.traineeId)?.name || 'תבנית כללית'} · {plan.exercises.length} תרגילים</small></span><ChevronLeft size={18} /></button>)}</SelectionList></section>
-      <section><h3 className="planning-section-title">תוכניות קבוצתיות</h3><SelectionList empty={groupTemplates.length === 0} emptyText="אין תוכניות קבוצתיות במאגר">{groupTemplates.map(program => <button type="button" key={program.id} className="planning-selection-card" onClick={() => onOpenGroupProgram(program)}><span className="planning-list-icon"><UsersRound size={20} /></span><span><strong>{program.title}</strong><small>{program.groupName}</small></span><ChevronLeft size={18} /></button>)}</SelectionList></section>
+    {(route === 'LIBRARY' || route === 'LIBRARY_EXISTING') && <div className="planning-library-manager">
+      <div className="planning-library-actions">
+        <button type="button" onClick={() => onRouteChange('PERSONAL_TRAINEE')}><Plus size={18} /><span><strong>הוסף תוכנית אישית</strong><small>בחירת מתאמן ובנייה חדשה</small></span></button>
+        <button type="button" onClick={() => onRouteChange('GROUP_AUDIENCE')}><Plus size={18} /><span><strong>הוסף תוכנית קבוצתית</strong><small>קבוצה, תחנות וזמנים</small></span></button>
+      </div>
+      <div className="planning-library-shortcuts">
+        <button type="button" onClick={onOpenPdfLibrary}><FileText size={16} /> ייבוא תוכנית מ־PDF</button>
+        <button type="button" onClick={() => onRouteChange('ASSIGN')}><CalendarCheck size={16} /> שיבוץ תוכנית ליומן</button>
+      </div>
+      <div className="planning-library-toolbar">
+        <label><Search size={17} /><input value={libraryQuery} onChange={event => setLibraryQuery(event.target.value)} placeholder="חיפוש לפי שם אימון או מתאמן" /></label>
+        <div>{([
+          ['ALL', `הכול (${personalTemplates.length + groupTemplates.length})`],
+          ['PERSONAL', `אישי (${personalTemplates.length})`],
+          ['GROUP', `קבוצתי (${groupTemplates.length})`]
+        ] as const).map(([kind, label]) => <button key={kind} type="button" className={libraryKind === kind ? 'active' : ''} onClick={() => setLibraryKind(kind)}>{label}</button>)}</div>
+      </div>
+
+      {(libraryKind === 'ALL' || libraryKind === 'PERSONAL') && <section className="planning-library-section">
+        <div className="planning-library-section-title"><h3><UserRound size={18} /> תוכניות אישיות</h3><label>מתאמן יעד<select value={libraryTargetTraineeId} onChange={event => setLibraryTargetTraineeId(event.target.value)}>{trainees.map(trainee => <option key={trainee.id} value={trainee.id}>{trainee.name}</option>)}</select></label></div>
+        <div className="planning-library-grid">
+          {visiblePersonalTemplates.map(plan => <article key={plan.id} className="planning-library-card">
+            <button type="button" className="planning-library-open" disabled={!libraryTargetTraineeId} onClick={() => onOpenPersonalPlan(plan, libraryTargetTraineeId)}>
+              <span className="planning-list-icon"><UserRound size={20} /></span><span><strong>{plan.title || 'תוכנית אישית'}</strong><small>{trainees.find(item => item.id === plan.traineeId)?.name || 'תבנית כללית'} · {plan.trainingDaysPerWeek || 1} ימים · {plan.exercises.length} תרגילים</small></span><Pencil size={17} />
+            </button>
+            <button type="button" className="planning-library-delete" onClick={() => onDeletePersonalPlan(plan)} aria-label={`מחיקת ${plan.title || 'תוכנית אישית'}`}><Trash2 size={16} /> מחיקה</button>
+          </article>)}
+          {visiblePersonalTemplates.length === 0 && <div className="planning-library-empty">לא נמצאו תוכניות אישיות במאגר.</div>}
+        </div>
+      </section>}
+
+      {(libraryKind === 'ALL' || libraryKind === 'GROUP') && <section className="planning-library-section">
+        <h3><UsersRound size={18} /> תוכניות קבוצתיות</h3>
+        <div className="planning-library-grid">
+          {visibleGroupTemplates.map(program => <article key={program.id} className="planning-library-card">
+            <button type="button" className="planning-library-open" onClick={() => onOpenGroupProgram(program)}>
+              <span className="planning-list-icon"><UsersRound size={20} /></span><span><strong>{program.title || 'תוכנית קבוצתית'}</strong><small>{program.groupName} · {program.mode === 'ROTATING_GROUPS' ? `${program.stations?.length || 0} תחנות` : `${program.exercises.length} תרגילים`} · {program.roundsPerStation || 1} סבבים</small></span><Pencil size={17} />
+            </button>
+            <button type="button" className="planning-library-delete" onClick={() => onDeleteGroupProgram(program)} aria-label={`מחיקת ${program.title || 'תוכנית קבוצתית'}`}><Trash2 size={16} /> מחיקה</button>
+          </article>)}
+          {visibleGroupTemplates.length === 0 && <div className="planning-library-empty">לא נמצאו תוכניות קבוצתיות במאגר.</div>}
+        </div>
+      </section>}
     </div>}
 
     {route === 'ASSIGN' && <div className="planning-assignment-shell">{assignmentContent}</div>}

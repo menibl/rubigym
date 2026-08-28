@@ -503,7 +503,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
       traineeId: trainee.id,
       coachId: activeUser.id,
       coachName: activeUser.name,
-      objective: plan.title || draft?.objective || 'תוכנית אישית מהמאגר',
+      objective: `${plan.title || draft?.objective || 'תוכנית אישית מהמאגר'} · עותק · ${new Date().toLocaleDateString('he-IL')}`,
       coachNotes: draft?.coachNotes || `נטענה תוכנית מהמאגר של ${plan.coachName}.`,
       exercises: plan.exercises.map((exercise, index) => ({ ...exercise, id: `assistant-library-${Date.now()}-${index}` })),
       trainingDaysPerWeek: plan.trainingDaysPerWeek || 1,
@@ -567,7 +567,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
             <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3"><strong className="text-sm text-white">{draft.objective || 'תוכנית אימון אישית'}</strong><p className="mt-1 text-[10px] text-zinc-300">{draft.trainingDaysPerWeek || 1} ימים · {draft.exercises.length} תרגילים</p></div>
             {Array.from({ length: draft.trainingDaysPerWeek || 1 }, (_, index) => index + 1).map(day => <section key={day} className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="mb-2 text-xs font-black text-amber-200">{draft.dayLabels?.[day - 1] || `יום ${day}`}</h4><div className="space-y-2">{draft.exercises.filter(exercise => (exercise.dayNumber || 1) === day).map((exercise, index) => <article key={exercise.id} className="rounded-lg bg-zinc-950 p-2.5"><div className="flex items-start gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-400 text-[9px] font-black text-zinc-950">{index + 1}</span><div><strong className="block text-xs text-white">{exercise.name}</strong><span className="text-[9px] text-zinc-400">{exercise.sets} סטים · {exercise.reps} · {exercise.weight || 'משקל לפי יכולת'}</span></div></div></article>)}</div></section>)}
             {!canPublish && <p className="rounded-lg bg-amber-500/10 p-3 text-[10px] text-amber-200">התוכנית תישמר כטיוטה עד להסדרת הזכאות של המתאמן.</p>}
-            <button type="button" disabled={!canPublish || !draft.exercises.length || draft.status === 'PUBLISHED'} onClick={() => { onPublish(draft); setChatOpen(false); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-xs font-black text-white disabled:opacity-40"><Check size={16} /> פרסם למתאמן</button>
+            <button type="button" disabled={!canPublish || !draft.exercises.length || draft.status === 'PUBLISHED'} onClick={() => { onPublish(draft); setChatOpen(false); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-xs font-black text-white disabled:opacity-40"><Check size={16} /> פרסם תוכנית</button>
           </>}
         </div> : drawerTab === 'SOURCES' ? <div className="space-y-4">
           <section className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="flex items-center gap-2 text-xs font-black"><UserRoundCheck size={15} className="text-amber-300" /> נתוני המתאמן</h4><p className="mt-2 text-[11px] leading-5 text-zinc-300">גיל {trainee.age} · מטרה: {profile?.primaryGoal || 'טרם הוגדרה'}</p><p className="text-[11px] leading-5 text-amber-200">מגבלות: {profile?.limitations || profile?.painAreas || 'לא תועדו'}</p></section>
@@ -588,7 +588,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-700">מטרת התוכנית<textarea value={draft.objective} onChange={event => onUpdateDraft({ ...draft, objective: event.target.value, updatedAt: new Date().toISOString(), status: 'DRAFT' })} rows={2} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" /></label>
+              <label className="block text-xs font-bold text-slate-700">שם התוכנית<input value={draft.objective} onChange={event => onUpdateDraft({ ...draft, objective: event.target.value, updatedAt: new Date().toISOString(), status: 'DRAFT' })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" /></label>
               <div className="flex items-end justify-between gap-3 rounded-xl border border-violet-100 bg-violet-50 p-3">
                 <div><span className="block text-[10px] font-bold text-slate-500">מבנה שנוצר מתוך הצ׳אט</span><strong className="text-sm text-slate-900">{draft.trainingDaysPerWeek || 1} ימים בשבוע</strong><small className="mt-0.5 block text-[9px] text-violet-700">לשינוי כתבו בצ׳אט: “שנה ל־4 ימים”</small></div>
                 <button onClick={addBlankExercise} className="flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white"><Plus size={14} /> הוסף תרגיל</button>
@@ -613,7 +613,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
               </div>
               <label className="block text-xs font-bold text-slate-700">הערת מאמן<textarea value={draft.coachNotes} onChange={event => onUpdateDraft({ ...draft, coachNotes: event.target.value, updatedAt: new Date().toISOString(), status: 'DRAFT' })} rows={2} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" /></label>
               {!canPublish && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">לא ניתן לפרסם עד שקיימת זכאות או רכישה של תוכנית אימון.</p>}
-              <button disabled={!canPublish || !draft.exercises.length || draft.status === 'PUBLISHED'} onClick={() => onPublish(draft)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"><Check size={18} /> אשר ופרסם למתאמן</button>
+              <button disabled={!canPublish || !draft.exercises.length || draft.status === 'PUBLISHED'} onClick={() => onPublish(draft)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"><Check size={18} /> פרסם תוכנית</button>
             </div>
           )}
         </div>
