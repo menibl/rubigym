@@ -32,8 +32,9 @@ import { ProgramBriefPanel, ProgramSetupWizard, WizardAnswers, WizardQuestion } 
 import { AiBuilderChatScreen } from './AiBuilderChatScreen';
 import { AiEquipmentSelector } from './AiEquipmentSelector';
 import { AiPdfSourcePanel } from './AiPdfSourcePanel';
+import { PublishDestinationDialog } from './PublishDestinationDialog';
 import { getPdfDocumentContent } from '../data/pdfLibraryStorage';
-import { createGroupLibraryEntry, groupLibraryTitle } from '../data/programLibrary';
+import { groupLibraryTitle } from '../data/programLibrary';
 
 interface GroupWorkoutProgramManagerProps {
   activeUser: User;
@@ -96,6 +97,23 @@ const programExerciseCount = (program: GroupWorkoutProgram) => program.mode === 
   ? (program.stations || []).reduce((sum, station) => sum + station.exercises.length, 0)
   : program.exercises.length;
 
+const setupAnswersFromProgram = (program: GroupWorkoutProgram): WizardAnswers => ({
+  title: program.title,
+  groupName: program.groupName,
+  durationMinutes: 60,
+  trainingType: program.description?.split('·')[0]?.trim() || 'כוח',
+  mode: program.mode || 'LINEAR',
+  subgroupCount: Math.max(2, program.stations?.length || 3),
+  exerciseCount: Math.max(1, programExerciseCount(program)),
+  rounds: program.roundsPerStation || 3,
+  effortMetric: program.effortMetric || 'TIME',
+  workSeconds: program.defaultWorkSeconds || 40,
+  restSeconds: program.defaultRestSeconds || 20,
+  repetitions: program.defaultRepetitions || '12',
+  transitionSeconds: program.transitionSeconds || 30,
+  notes: program.description
+});
+
 export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProps> = ({
   activeUser,
   programs,
@@ -130,6 +148,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   ]);
   const [setupComplete, setSetupComplete] = useState(false);
   const [setupAnswers, setSetupAnswers] = useState<WizardAnswers>({});
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const handledInitialAudienceRef = useRef('');
   const selectedProgram = programs.find(program => program.id === selectedProgramId);
   const groupSessions = useMemo(() => sessions
@@ -282,7 +301,12 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
 
   useEffect(() => {
     if (!initialProgramId) return;
-    if (programs.some(program => program.id === initialProgramId)) setSelectedProgramId(initialProgramId);
+    const initialProgram = programs.find(program => program.id === initialProgramId);
+    if (initialProgram) {
+      setSelectedProgramId(initialProgramId);
+      setSetupAnswers({ ...setupAnswersFromProgram(initialProgram), sourceMode: 'LIBRARY', templateId: initialProgram.sourceProgramId || initialProgram.id });
+      setSetupComplete(true);
+    }
     onInitialProgramHandled?.();
   }, [initialProgramId]);
 
@@ -507,23 +531,66 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       ? (selectedProgram.stations || []).flatMap(station => station.exercises)
       : selectedProgram.exercises;
     if (exercises.length === 0 || exercises.some(exercise => !exercise.name.trim())) return;
+    setPublishDialogOpen(true);
+  };
+
+  const saveGroupProgramToLibrary = () => {
+    if (!selectedProgram) return;
     const createdAt = new Date();
     const published: GroupWorkoutProgram = {
       ...selectedProgram,
-      title: selectedProgram.sessionId
-        ? (selectedProgram.title.trim() || groupLibraryTitle(selectedProgram, createdAt))
-        : groupLibraryTitle(selectedProgram, createdAt),
-      libraryEntry: !selectedProgram.sessionId,
+      sessionId: undefined,
+      sessionDate: undefined,
+      sessionTime: undefined,
+      participants: [],
+      title: selectedProgram.title.trim() || groupLibraryTitle(selectedProgram, createdAt),
+      libraryEntry: true,
       status: 'PUBLISHED',
       publishedAt: createdAt.toISOString(),
       updatedAt: createdAt.toISOString()
     };
-    if (selectedProgram.sessionId) {
-      const libraryEntry = createGroupLibraryEntry(published, createdAt);
-      onUpdatePrograms([libraryEntry, ...programs.map(program => program.id === published.id ? published : program)]);
-    } else {
-      onUpdatePrograms(programs.map(program => program.id === published.id ? published : program));
-    }
+    onUpdatePrograms(programs.map(program => program.id === published.id ? published : program));
+    setPublishDialogOpen(false);
+    window.alert('התוכנית נשמרה במאגר האימונים.');
+  };
+
+  const assignGroupProgramToSession = (sessionId: string) => {
+    if (!selectedProgram) return;
+    const session = groupSessions.find(item => item.id === sessionId);
+    if (!session) return;
+    const createdAt = new Date();
+    const libraryVersion: GroupWorkoutProgram = {
+      ...selectedProgram,
+      sessionId: undefined,
+      sessionDate: undefined,
+      sessionTime: undefined,
+      participants: [],
+      libraryEntry: true,
+      status: 'PUBLISHED',
+      publishedAt: createdAt.toISOString(),
+      updatedAt: createdAt.toISOString()
+    };
+    const participants = participantsFromSession(session, [], (selectedProgram.stations || []).length || 1);
+    const scheduled: GroupWorkoutProgram = {
+      ...libraryVersion,
+      id: `group-program-${Date.now()}-scheduled`,
+      sourceProgramId: libraryVersion.id,
+      libraryEntry: false,
+      sessionId: session.id,
+      sessionDate: session.date,
+      sessionTime: session.time,
+      groupName: session.title,
+      participants,
+      participantCount: participants.length,
+      exercises: libraryVersion.exercises.map((exercise, index) => ({ ...exercise, id: `group-scheduled-exercise-${Date.now()}-${index}` })),
+      stations: (libraryVersion.stations || []).map((station, stationIndex) => ({ ...station, id: `group-scheduled-station-${Date.now()}-${stationIndex}`, exercises: station.exercises.map((exercise, exerciseIndex) => ({ ...exercise, id: `group-scheduled-station-exercise-${Date.now()}-${stationIndex}-${exerciseIndex}` })) })),
+      createdAt: createdAt.toISOString()
+    };
+    onUpdatePrograms([scheduled, ...programs.map(program => program.id === libraryVersion.id ? libraryVersion : program)]);
+    setSelectedProgramId(scheduled.id);
+    setSelectedSessionId(session.id);
+    setPublishDialogOpen(false);
+    window.alert('התוכנית נשמרה במאגר ושובצה לאימון שנבחר.');
   };
 
   const runAssistantCommand = async (request: string) => {
@@ -678,8 +745,6 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     { id: 'restSeconds', label: 'זמן מנוחה בשניות', type: 'number', required: true, min: 0, max: 900, visibleWhen: answers => answers.effortMetric === 'TIME' },
     { id: 'repetitions', label: 'מספר חזרות ברירת מחדל', type: 'text', required: true, placeholder: 'לדוגמה: 12 או 10 לכל צד', visibleWhen: answers => answers.effortMetric === 'REPS' },
     { id: 'transitionSeconds', label: 'זמן מעבר בין תחנות', type: 'number', min: 0, max: 900, visibleWhen: answers => answers.mode === 'ROTATING_GROUPS' },
-    { id: 'sourceMode', label: 'לבנות חדשה או להתחיל מהמאגר?', type: 'choice', required: true, options: [{ value: 'NEW', label: 'חדשה' }, { value: 'LIBRARY', label: 'מהמאגר' }] },
-    { id: 'templateId', label: 'בחירת תוכנית מהמאגר', type: 'select', required: true, visibleWhen: answers => answers.sourceMode === 'LIBRARY', options: templatePrograms.filter(program => program.id !== selectedProgramId).map(program => ({ value: program.id, label: `${program.title} · ${programExerciseCount(program)} תרגילים` })) },
     { id: 'notes', label: 'מטרה ודגשים למאמן', type: 'textarea', placeholder: 'ציוד, רמה, מגבלות או דגש מיוחד' }
   ];
 
@@ -778,6 +843,9 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         { label: 'סבבים', value: setupAnswers.rounds },
         { label: 'מדידה', value: setupAnswers.effortMetric === 'REPS' ? `${setupAnswers.repetitions} חזרות` : `${setupAnswers.workSeconds} שנ׳ עבודה / ${setupAnswers.restSeconds} שנ׳ מנוחה` }
       ]} />}
+      {selectedProgram && setupComplete && <label className="block rounded-2xl border border-amber-400/25 bg-zinc-900 p-4 text-xs font-black text-zinc-200">שם התוכנית
+        <input value={selectedProgram.title} onChange={event => { updateProgram({ title: event.target.value }); setSetupAnswers(current => ({ ...current, title: event.target.value })); }} className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm font-bold text-white" />
+      </label>}
       <section className="rounded-2xl border border-amber-400/25 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2"><span className="rounded-xl bg-amber-400/15 p-2 text-amber-300"><MessageCircle size={19} /></span><div><h3 className="text-sm font-black text-white">עוזר בנייה חכם AI</h3><p className="text-[10px] text-zinc-400">מסך צ׳אט מלא לבניית האימון ועדכון התחנות</p></div></div>
@@ -831,7 +899,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         </div> : <AiEquipmentSelector activeUser={activeUser} equipment={equipment} selectedIds={selectedEquipmentIds} onSelectedIdsChange={setSelectedEquipmentIds} onUpdateEquipment={onUpdateEquipment} />}
       />
 
-      <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-4 text-white shadow-sm">
+      <div className="hidden rounded-2xl border border-zinc-700 bg-zinc-900 p-4 text-white shadow-sm">
         <div className="grid gap-3 md:grid-cols-2">
           <label className="min-w-0 flex-1 text-xs font-black text-zinc-200 md:col-span-2">בחרו אימון מהיומן
             <select value={selectedSessionId} onChange={event => setSelectedSessionId(event.target.value)} className="mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm font-bold text-white">
@@ -865,7 +933,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       </div>
 
       <div className="space-y-4">
-        <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-2">
+        <div className="hidden gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-2">
           <label className="text-[10px] font-black text-slate-600">
             <span className="mb-1 flex items-center gap-1.5"><CalendarDays size={14} className="text-indigo-600" /> תוכניות ששובצו ביומן</span>
             <select value={selectedProgram?.sessionId ? selectedProgramId : ''} onChange={event => setSelectedProgramId(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-xs font-bold text-slate-800">
@@ -893,7 +961,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
 
         {selectedProgram ? (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <div><h3 className="text-lg font-black text-slate-900">פרטי הקבוצה והאימון</h3><p className="text-xs text-slate-500">השינויים נשמרים אוטומטית במכשיר</p></div>
                 <div className="flex flex-wrap gap-2">
@@ -1042,6 +1110,14 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
         )}
       </div>
       </>}
+      <PublishDestinationDialog
+        open={publishDialogOpen}
+        title={selectedProgram?.title || 'תוכנית אימון קבוצתית'}
+        sessions={groupSessions}
+        onClose={() => setPublishDialogOpen(false)}
+        onSaveToLibrary={saveGroupProgramToLibrary}
+        onAssignToSession={assignGroupProgramToSession}
+      />
     </section>
   );
 };

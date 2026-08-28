@@ -3227,6 +3227,56 @@ option {
 .planning-section-title { margin: 0 0 0.65rem; color: #edece4; font-size: 0.85rem; font-weight: 950; }
 .planning-assignment-shell { overflow: hidden; border: 1px solid #2e313d; border-radius: 1.1rem; background: #1c1f27; }
 
+.planning-library-manager { display: grid; gap: 1rem; }
+.planning-library-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
+.planning-library-actions > button {
+  display: flex; min-height: 4.75rem; align-items: center; gap: 0.75rem; border: 1px solid rgba(201,168,103,.38);
+  border-radius: 1rem; background: linear-gradient(135deg, rgba(201,168,103,.18), #1c1f27 68%); padding: 0.8rem;
+  color: #f4f4f5; text-align: right;
+}
+.planning-library-actions > button > svg { flex: 0 0 auto; color: #e4c47e; }
+.planning-library-actions strong, .planning-library-actions small { display: block; }
+.planning-library-actions strong { font-size: .78rem; }
+.planning-library-actions small { margin-top: .2rem; color: #a6a8b1; font-size: .62rem; }
+.planning-library-shortcuts { display: flex; flex-wrap: wrap; gap: .5rem; }
+.planning-library-shortcuts button { display: flex; min-height: 2.65rem; align-items: center; justify-content: center; gap: .4rem; border: 1px solid #3a3d48; border-radius: .8rem; background: #222630; padding: .55rem .8rem; color: #dedfe4; font-size: .68rem; font-weight: 850; }
+.planning-library-shortcuts button:hover { border-color: #c9a867; color: #f6d991; }
+.planning-library-toolbar { display: grid; gap: .65rem; border: 1px solid #2e313d; border-radius: 1rem; background: #1c1f27; padding: .7rem; }
+.planning-library-toolbar > label { display: flex; min-height: 2.8rem; align-items: center; gap: .55rem; border: 1px solid #3f3f46; border-radius: .8rem; background: #111318; padding: 0 .75rem; color: #a6a8b1; }
+.planning-library-toolbar input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: #f4f4f5; font-size: .75rem; }
+.planning-library-toolbar input::placeholder { color: #71717a; }
+.planning-library-toolbar > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+.planning-library-toolbar > div button { min-height: 2.35rem; border-radius: .7rem; background: #262a35; color: #c4c5cc; font-size: .65rem; font-weight: 900; }
+.planning-library-toolbar > div button.active { background: #c9a867; color: #151515; }
+.planning-library-section { display: grid; gap: .6rem; }
+.planning-library-section > h3, .planning-library-section-title h3 { display: flex; align-items: center; gap: .45rem; color: #edece4; font-size: .82rem; font-weight: 950; }
+.planning-library-section > h3 svg, .planning-library-section-title h3 svg { color: #d8b873; }
+.planning-library-section-title { display: flex; align-items: end; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.planning-library-section-title label { display: grid; gap: .3rem; min-width: min(100%, 230px); color: #a6a8b1; font-size: .68rem; font-weight: 850; }
+.planning-library-section-title select { min-height: 42px; border: 1px solid #3f4452; border-radius: 12px; background: #14161c; color: #f7f3e8; padding: 0 .75rem; font-weight: 850; }
+.planning-library-grid { display: grid; gap: .55rem; }
+.planning-library-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; overflow: hidden; border: 1px solid #2e313d; border-radius: 1rem; background: #1c1f27; }
+.planning-library-open { display: grid; min-width: 0; min-height: 4.7rem; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .7rem; padding: .7rem; text-align: right; }
+.planning-library-open > span { min-width: 0; }
+.planning-library-open strong, .planning-library-open small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planning-library-open strong { color: #f4f4f5; font-size: .8rem; }
+.planning-library-open small { margin-top: .25rem; color: #a6a8b1; font-size: .63rem; }
+.planning-library-open > svg { color: #d8b873; }
+.planning-library-delete { display: flex; min-width: 4.6rem; align-items: center; justify-content: center; gap: .3rem; border-right: 1px solid #353843; background: rgba(127,29,29,.18); color: #fda4af; font-size: .65rem; font-weight: 900; }
+.planning-library-delete:hover { background: rgba(159,18,57,.35); color: #fff; }
+.planning-library-empty { grid-column: 1 / -1; border: 1px dashed #3f3f46; border-radius: 1rem; padding: 2rem 1rem; color: #8b8d96; text-align: center; font-size: .72rem; }
+
+@media (min-width: 760px) {
+  .planning-library-toolbar { grid-template-columns: minmax(16rem, 1fr) auto; align-items: center; }
+  .planning-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 520px) {
+  .planning-library-actions { grid-template-columns: 1fr; }
+  .planning-library-card { grid-template-columns: minmax(0, 1fr); }
+  .planning-library-delete { min-height: 2.6rem; border-top: 1px solid #353843; border-right: 0; }
+}
+
 .planning-builder-context {
   display: flex;
   align-items: center;
