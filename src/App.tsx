@@ -122,6 +122,8 @@ export default function App() {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const revisionRef = useRef(0);
   const hydratedRef = useRef(false);
+  const pendingClubStateRef = useRef<Record<string, unknown> | null>(null);
+  const savingClubStateRef = useRef(false);
 
   // Active signed-in user
   const [activeUser, setActiveUser] = useState<User>(INITIAL_USERS[0]);
@@ -165,6 +167,40 @@ export default function App() {
     setIsAuthenticated(true);
   };
 
+  const flushPendingClubState = async () => {
+    if (savingClubStateRef.current || !hydratedRef.current) return;
+    savingClubStateRef.current = true;
+    try {
+      while (pendingClubStateRef.current && hydratedRef.current) {
+        const payload = pendingClubStateRef.current;
+        pendingClubStateRef.current = null;
+        try {
+          const result = await saveClubState(payload, revisionRef.current);
+          revisionRef.current = result.revision;
+          if (result.generatedMessages?.length) {
+            setMessages(current => {
+              const existingIds = new Set(current.map(message => message.id));
+              return [...result.generatedMessages!.filter(message => !existingIds.has(message.id)), ...current];
+            });
+          }
+        } catch (error) {
+          const saveError = error as Error & { status?: number };
+          if (saveError.status === 409) {
+            pendingClubStateRef.current = null;
+            const latest = await getClubState();
+            applyServerPayload(latest.payload, latest.revision);
+          } else {
+            console.error('Unable to save club state', saveError);
+            if (saveError.status === 413) window.alert(saveError.message);
+          }
+        }
+      }
+    } finally {
+      savingClubStateRef.current = false;
+      if (pendingClubStateRef.current && hydratedRef.current) void flushPendingClubState();
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     getPublicLandingConfig()
@@ -189,27 +225,8 @@ export default function App() {
       workoutAssistantDrafts, groupWorkoutPrograms
     };
     const timer = window.setTimeout(() => {
-      saveClubState(payload, revisionRef.current)
-        .then(result => {
-          revisionRef.current = result.revision;
-          if (result.generatedMessages?.length) {
-            setMessages(current => {
-              const existingIds = new Set(current.map(message => message.id));
-              return [...result.generatedMessages!.filter(message => !existingIds.has(message.id)), ...current];
-            });
-          }
-        })
-        .catch(async (error: Error & { status?: number }) => {
-          if (error.status === 409) {
-            const latest = await getClubState();
-            applyServerPayload(latest.payload, latest.revision);
-          } else {
-            console.error('Unable to save club state', error);
-            if (error.status === 413) {
-              window.alert(error.message);
-            }
-          }
-        });
+      pendingClubStateRef.current = payload;
+      void flushPendingClubState();
     }, 700);
     return () => window.clearTimeout(timer);
   }, [settings, users, sessions, openGymSessions, workoutPlans, nutritionPlans, blackPoints, announcements, payments, messages, attendanceLogs, discountCodes, traineeProfiles, traineeMemoryEntries, gymEquipment, coachPdfDocuments, workoutAssistantMessages, workoutAssistantDrafts, groupWorkoutPrograms, isAuthenticated]);
@@ -359,6 +376,7 @@ export default function App() {
     await syncServerPushSubscription(false).catch(() => undefined);
     await logoutServerSession().catch(() => undefined);
     hydratedRef.current = false;
+    pendingClubStateRef.current = null;
     setIsAuthenticated(false);
     setWorkspaceView(null);
     setShowTraineeAccessAlert(true);
