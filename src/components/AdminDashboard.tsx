@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { WeeklyCalendar } from './WeeklyCalendar';
-import { CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
+import { addMinutesToTime, CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
 import { EditSessionModal } from './EditSessionModal';
 import { copyGroupProgramToSessions, copyPersonalPlanToSessions } from '../data/workoutAssignment';
 import { CoachDashboard } from './CoachDashboard';
@@ -550,7 +550,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
 
     if (sessionTypeCategory === 'OPEN_GYM') {
-      const timeSlotStr = `${newSession.time}-${String(parseInt(newSession.time.split(':')[0]) + 2).padStart(2, '0')}:00`;
+      const durationMinutes = Math.max(15, Number(newSession.durationMinutes) || 60);
+      const timeSlotStr = `${newSession.time} - ${addMinutesToTime(newSession.time, durationMinutes)}`;
       const openGym: OpenGymSession = {
         id: `open-${Date.now()}`,
         date: newSession.date,
@@ -1041,7 +1042,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           if (cat.id === 'PERSONAL') {
                             setNewSession(s => ({ ...s, maxParticipants: 1, title: 'אימון אישי' }));
                           } else if (cat.id === 'OPEN_GYM') {
-                            setNewSession(s => ({ ...s, maxParticipants: 15, title: 'Open Gym' }));
+                            setNewSession(s => ({ ...s, maxParticipants: 15, title: 'Open Gym', durationMinutes: 60 }));
                           }
                         }}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex flex-col text-right cursor-pointer border ${
@@ -1117,6 +1118,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input
                       type="time"
                       required
+                      min="06:00"
+                      max="22:00"
+                      step="900"
                       value={newSession.time}
                       onChange={(e) => setNewSession({ ...newSession, time: e.target.value })}
                       className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
@@ -1130,6 +1134,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       required
                       min="15"
                       max="180"
+                      step="15"
                       value={newSession.durationMinutes}
                       onChange={(e) => setNewSession({ ...newSession, durationMinutes: Number(e.target.value) })}
                       className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"

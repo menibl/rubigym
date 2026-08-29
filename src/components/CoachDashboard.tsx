@@ -2258,6 +2258,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                           <input
                             type="time"
                             required
+                            min="06:00"
+                            max="22:00"
+                            step="900"
                             value={newSession.time}
                             onChange={(e) => setNewSession({ ...newSession, time: e.target.value })}
                             className="border border-slate-200 rounded p-1 text-xs w-1/3"
@@ -2463,6 +2466,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       <label className="block text-slate-600 font-medium mb-1">שעת התחלה:</label>
                       <input
                         type="time"
+                        min="06:00"
+                        max="22:00"
+                        step="900"
                         value={ptForm.time}
                         onChange={(e) => setPtForm({ ...ptForm, time: e.target.value })}
                         className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-indigo-500"
@@ -2474,6 +2480,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                       <label className="block text-slate-600 font-medium mb-1">משך אימון (בדקות):</label>
                       <input
                         type="number"
+                        min="15"
+                        max="180"
+                        step="15"
                         value={ptForm.durationMinutes}
                         onChange={(e) => setPtForm({ ...ptForm, durationMinutes: Number(e.target.value) })}
                         className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-indigo-500"
