@@ -436,6 +436,7 @@ export interface Exercise {
   sets: number;
   reps: string; // e.g., "12", "8-10", "1 min"
   weight?: string; // e.g., "15kg", "משקל גוף"
+  equipment?: string; // required equipment or machine, in Hebrew
   workDuration?: string; // e.g., "45 sec"
   restDuration?: string; // e.g., "60 sec"
   mediaUrl?: string; // optional demonstration video link

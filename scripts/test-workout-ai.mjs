@@ -10,6 +10,9 @@ let returnEnglishOnce = false;
 
 assert.match(prompt, /שמות תרגילים חייבים להיות בעברית/);
 assert.match(prompt, /לפחות כשני שלישים מהתרגילים יהיו מבוססי מכשירים/);
+assert.match(prompt, /חלבון מן החי בלבד/);
+assert.match(prompt, /אין לשנות אף אחד מהם/);
+assert.match(prompt, /בכל תרגיל חובה לציין בשדה הציוד/);
 assert.doesNotMatch(prompt, /למעט שמות תרגילים מקובלים באנגלית/);
 
 globalThis.fetch = async (_url, options) => {
@@ -29,7 +32,7 @@ globalThis.fetch = async (_url, options) => {
         dayLabels: ['Day 1'],
         exercises: [{
           name: 'Leg Press', category: 'Strength', muscleGroup: 'LEGS', sets: 3, reps: '8',
-          weight: 'RPE 7', workDuration: '', restDuration: '90 שניות', notes: 'Controlled movement', dayNumber: 1, stationNumber: 1
+          weight: 'RPE 7', equipment: 'Leg press machine', workDuration: '', restDuration: '90 שניות', notes: 'Controlled movement', dayNumber: 1, stationNumber: 1
         }]
       })
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -47,7 +50,7 @@ globalThis.fetch = async (_url, options) => {
       fiberGrams: 30,
       coachNotes: 'נדרש אישור מקצועי.',
       mealsDescription: 'ארבע ארוחות ביום',
-      categories: [{ title: 'ארוחת בוקר', suggestedTime: '08:00', foods: 'יוגורט, שיבולת שועל ופרי', calories: 500, proteinGrams: 35, carbsGrams: 55, fatGrams: 15, notes: 'טיוטה' }]
+      categories: [{ title: 'ארוחת בוקר', suggestedTime: '08:00', foods: 'יוגורט 200 גרם, שיבולת שועל 50 גרם ופרי אחד', calories: 500, proteinGrams: 35, carbsGrams: 55, fatGrams: 15, notes: 'טיוטה' }]
     } : {
       assistantMessage: 'נוצרה טיוטה לבדיקה.',
       focusDay: 2,
@@ -57,7 +60,7 @@ globalThis.fetch = async (_url, options) => {
       dayLabels: ['יום 1', 'יום 2', 'יום 3'],
       exercises: [{
         name: 'סקוואט', category: 'כוח', muscleGroup: 'LEGS', sets: 3, reps: '8',
-        weight: 'דרגת מאמץ נתפסת 7', workDuration: '', restDuration: '90 שניות', notes: 'טכניקה מבוקרת', dayNumber: 2, stationNumber: 1
+        weight: 'דרגת מאמץ נתפסת 7', equipment: 'כלוב סקוואט ומוט אולימפי', workDuration: '', restDuration: '90 שניות', notes: 'טכניקה מבוקרת', dayNumber: 2, stationNumber: 1
       }]
     })
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -97,6 +100,7 @@ try {
   assert.equal(capturedRequest.text.format.strict, true);
   assert.match(capturedRequest.text.format.schema.properties.exercises.items.properties.name.description, /בעברית בלבד/);
   assert.ok(capturedRequest.text.format.schema.properties.exercises.items.properties.stationNumber);
+  assert.ok(capturedRequest.text.format.schema.properties.exercises.items.properties.equipment);
   assert.equal(capturedRequest.store, false);
   assert.ok(!JSON.stringify(capturedRequest).includes('test-key'));
   assert.equal(fetchCount, 1);
@@ -110,7 +114,7 @@ try {
       actor: { id: 'coach-1' },
       trainee: { id: 'trainee-1', age: 32 },
       professionalProfile: { primaryGoal: 'ירידה במשקל' },
-      currentDraft: { dailyCalories: 2000, categories: [] }
+      currentDraft: { dailyCalories: 1800, proteinGrams: 120, carbsGrams: 170, fatGrams: 55, categories: [] }
     })
   }), {
     OPENAI_API_KEY: 'test-key',
@@ -120,6 +124,10 @@ try {
   assert.equal(nutritionResponse.status, 200);
   const nutritionPayload = await nutritionResponse.json();
   assert.equal(nutritionPayload.result.categories.length, 1);
+  assert.equal(nutritionPayload.result.dailyCalories, 1800);
+  assert.equal(nutritionPayload.result.proteinGrams, 120);
+  assert.equal(nutritionPayload.result.carbsGrams, 170);
+  assert.equal(nutritionPayload.result.fatGrams, 55);
   assert.equal(capturedRequest.text.format.name, 'nutrition_plan');
   assert.equal(fetchCount, 2);
 
