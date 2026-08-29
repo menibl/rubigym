@@ -1360,16 +1360,22 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     return [...sessionItems, ...openGymItems]
       .sort((a, b) => `${a.startTime}-${a.kind}`.localeCompare(`${b.startTime}-${b.kind}`, 'he'));
   };
-  const sessionWorkoutProgram = (session: TrainingSession) => groupWorkoutPrograms.find(program =>
-    (program.id === session.assignedGroupWorkoutProgramId || program.sessionId === session.id)
-    && program.status === 'PUBLISHED'
-    && !program.libraryEntry
-  ) || workoutPlans.find(plan =>
-    (plan.id === session.assignedWorkoutPlanId || plan.sessionId === session.id)
-    && plan.traineeId === activeUser.id
-    && !plan.libraryEntry
-    && plan.exercises.length > 0
-  );
+  const sessionWorkoutProgram = (session: TrainingSession) => {
+    const assignedGroupProgram = session.assignedGroupWorkoutProgramId
+      ? groupWorkoutPrograms.find(program => program.id === session.assignedGroupWorkoutProgramId)
+      : undefined;
+    const linkedGroupProgram = groupWorkoutPrograms.find(program =>
+      program.sessionId === session.id && program.status === 'PUBLISHED' && !program.libraryEntry
+    );
+    const assignedPersonalPlan = session.assignedWorkoutPlanId
+      ? workoutPlans.find(plan => plan.id === session.assignedWorkoutPlanId && plan.exercises.length > 0)
+      : undefined;
+    const linkedPersonalPlan = workoutPlans.find(plan =>
+      plan.sessionId === session.id && !plan.libraryEntry && plan.exercises.length > 0
+    );
+
+    return assignedGroupProgram || linkedGroupProgram || assignedPersonalPlan || linkedPersonalPlan;
+  };
   const openSessionWorkoutDisplay = (session: TrainingSession) => {
     if (!session.registeredUsers.includes(activeUser.id) || !sessionWorkoutProgram(session)) return;
     const displayUrl = `${window.location.origin}${window.location.pathname}#trainee-session-workout=${encodeURIComponent(session.id)}`;
