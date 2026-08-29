@@ -186,9 +186,14 @@ export default function App() {
         } catch (error) {
           const saveError = error as Error & { status?: number };
           if (saveError.status === 409) {
-            pendingClubStateRef.current = null;
+            // Another device updated the club while this payload was being saved.
+            // Keep the newest local snapshot (especially newly generated AI drafts),
+            // refresh only the revision, and retry instead of hydrating stale server
+            // data over optimistic UI state.
+            const retryPayload = pendingClubStateRef.current || payload;
             const latest = await getClubState();
-            applyServerPayload(latest.payload, latest.revision);
+            revisionRef.current = latest.revision;
+            pendingClubStateRef.current = retryPayload;
           } else {
             console.error('Unable to save club state', saveError);
             if (saveError.status === 413) window.alert(saveError.message);
@@ -274,7 +279,12 @@ export default function App() {
     const refreshChatState = async () => {
       try {
         const latest = await getClubState();
-        if (!cancelled && latest.revision > revisionRef.current) applyServerPayload(latest.payload, latest.revision);
+        if (
+          !cancelled
+          && !savingClubStateRef.current
+          && !pendingClubStateRef.current
+          && latest.revision > revisionRef.current
+        ) applyServerPayload(latest.payload, latest.revision);
       } catch (error) {
         console.warn('Unable to refresh chat messages', error);
       }
