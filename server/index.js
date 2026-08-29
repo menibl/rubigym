@@ -44,9 +44,48 @@ const israelTimelineMinute = (now = new Date()) => {
   return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute) / 60000;
 };
 
+const parseWorkoutDisplaySeconds = (value, fallback) => {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return /min|דק/i.test(String(value || '')) ? parsed * 60 : parsed;
+};
+
+const personalPlanDisplayProgram = (plan, session) => ({
+  id: `personal-display-${plan.id}`,
+  sessionId: session.id,
+  sessionDate: session.date,
+  sessionTime: session.time,
+  groupName: session.demoTraineeName || session.title || 'אימון אישי',
+  title: plan.title || 'תוכנית אימון אישית',
+  description: `תוכנית אישית בהנחיית ${plan.coachName || session.coachName || ''}`,
+  coachId: plan.coachId || session.coachId,
+  coachName: plan.coachName || session.coachName,
+  exercises: (plan.exercises || []).map(exercise => ({
+    ...exercise,
+    workSeconds: parseWorkoutDisplaySeconds(exercise.workDuration, 45),
+    restSeconds: parseWorkoutDisplaySeconds(exercise.restDuration, 30),
+    rounds: Math.max(1, Number(exercise.sets) || 1)
+  })),
+  defaultWorkSeconds: 45,
+  defaultRestSeconds: 30,
+  preparationSeconds: 10,
+  status: 'PUBLISHED',
+  createdAt: plan.lastUpdated || session.date,
+  updatedAt: plan.lastUpdated || session.date,
+  publishedAt: plan.lastUpdated || session.date
+});
+
 export const findScheduledLiveDisplayCandidate = (payload, now = new Date()) => {
-  const programs = Array.isArray(payload?.groupWorkoutPrograms) ? payload.groupWorkoutPrograms : [];
   const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
+  const groupPrograms = Array.isArray(payload?.groupWorkoutPrograms) ? payload.groupWorkoutPrograms : [];
+  const personalPrograms = (Array.isArray(payload?.workoutPlans) ? payload.workoutPlans : [])
+    .filter(plan => plan?.id && plan.sessionId && Array.isArray(plan.exercises) && plan.exercises.length > 0)
+    .map(plan => {
+      const session = sessions.find(item => item.id === plan.sessionId && item.isPersonalTraining);
+      return session ? personalPlanDisplayProgram(plan, session) : undefined;
+    })
+    .filter(Boolean);
+  const programs = [...groupPrograms, ...personalPrograms];
   const currentMinute = israelTimelineMinute(now);
   return programs
     .filter(program => program?.id && program.status === 'PUBLISHED' && (program.sessionId || (program.sessionDate && program.sessionTime)))

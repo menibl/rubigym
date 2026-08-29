@@ -60,6 +60,7 @@ import { hasNotificationMarker, saveNotificationMarker, showBrowserNotification 
 import { isPagesDemoMode } from './data/appMode';
 import { getPublicLandingConfig, PublicLandingConfig } from './data/publicLanding';
 import { syncClubDisplaySchedule } from './data/clubDisplayRemote';
+import { personalPlanToDisplayProgram } from './data/workoutAssignment';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const isClubWorkoutDisplay = () => window.location.hash === '#club-workout-display';
@@ -239,12 +240,18 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated || !hydratedRef.current || !isPagesDemoMode()) return;
     const timer = window.setTimeout(() => {
-      void syncClubDisplaySchedule(groupWorkoutPrograms).catch(error => {
+      const personalSchedule = workoutPlans.flatMap(plan => {
+        const session = plan.sessionId ? sessions.find(item => item.id === plan.sessionId && item.isPersonalTraining) : undefined;
+        if (!session || plan.exercises.length === 0) return [];
+        const trainee = users.find(user => user.id === session.targetTraineeId);
+        return [personalPlanToDisplayProgram(plan, session.demoTraineeName || trainee?.name || session.title, session)];
+      });
+      void syncClubDisplaySchedule([...groupWorkoutPrograms, ...personalSchedule]).catch(error => {
         console.warn('Unable to synchronize the demo TV schedule', error);
       });
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [groupWorkoutPrograms, isAuthenticated]);
+  }, [groupWorkoutPrograms, workoutPlans, sessions, users, isAuthenticated]);
 
   useEffect(() => {
     const handleHashChange = () => {

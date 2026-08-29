@@ -191,7 +191,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     const { newSessions, newOpenGym } = createSessionsFromData(data, users, activeUser);
     if (newSessions.length > 0) {
       onUpdateSessions([...newSessions, ...sessions]);
-      if (data.category === 'PERSONAL' && data.selectedProgramId && data.targetTraineeId) {
+      if (data.category === 'PERSONAL' && data.selectedProgramId && (data.targetTraineeId || data.isDemoSession)) {
         const source = workoutPlans.find(plan => plan.id === data.selectedProgramId && !plan.sessionId);
         if (source) onUpdateWorkoutPlans([...copyPersonalPlanToSessions(source, newSessions, data.targetTraineeId, activeUser), ...workoutPlans]);
       }
@@ -372,17 +372,74 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   // Trainee Selector for Workout / Nutrition Programmer
   const traineesOnly = users.filter(u => u.role === UserRole.TRAINEE);
   const [selectedTraineeId, setSelectedTraineeId] = useState<string>(traineesOnly[0]?.id || '');
-  const selectedTrainee = traineesOnly.find(t => t.id === selectedTraineeId);
+  const [generalPersonalTarget, setGeneralPersonalTarget] = useState<{ id: string; name: string } | null>(null);
+  const [generalPersonalSessionId, setGeneralPersonalSessionId] = useState('');
+  const registeredTrainee = traineesOnly.find(t => t.id === selectedTraineeId);
+  const isGeneralPersonalProgram = Boolean(generalPersonalTarget && generalPersonalTarget.id === selectedTraineeId);
+  const selectedTrainee: User | undefined = registeredTrainee || (isGeneralPersonalProgram && generalPersonalTarget ? {
+    id: generalPersonalTarget.id,
+    name: generalPersonalTarget.name,
+    email: '',
+    phone: '',
+    role: UserRole.TRAINEE,
+    gender: Gender.ALL,
+    age: 0,
+    priorityScore: 100
+  } : undefined);
 
   const openWorkoutProgramFromCalendar = (session: TrainingSession) => {
     setCoachMode('PLANNING');
     if (session.isPersonalTraining) {
       const traineeId = session.targetTraineeId || session.registeredUsers[0] || session.coTrainees?.[0];
-      if (traineeId) setSelectedTraineeId(traineeId);
+      if (traineeId) {
+        setGeneralPersonalTarget(null);
+        setGeneralPersonalSessionId('');
+        setSelectedTraineeId(traineeId);
+        setPersonalSetupComplete(false);
+        setPersonalSetupAnswers({});
+      } else {
+        const assignedPlan = workoutPlans.find(plan => plan.sessionId === session.id);
+        const target = {
+          id: assignedPlan?.traineeId || `demo-session-${session.id}`,
+          name: session.demoTraineeName || session.title || 'אימון הדגמה'
+        };
+        setGeneralPersonalTarget(target);
+        setGeneralPersonalSessionId(session.id);
+        setSelectedTraineeId(target.id);
+        setPersonalSetupAnswers({
+          programName: assignedPlan?.title || session.title,
+          primaryGoal: assignedPlan?.title || 'אימון הדגמה אישי',
+          weeklySessions: assignedPlan?.trainingDaysPerWeek || 1,
+          preferredWorkoutMinutes: session.durationMinutes || 60
+        });
+        if (assignedPlan) {
+          const now = new Date().toISOString();
+          const draft: WorkoutAssistantDraft = {
+            id: `demo-session-draft-${session.id}`,
+            traineeId: target.id,
+            coachId: activeUser.id,
+            coachName: activeUser.name,
+            objective: assignedPlan.title || session.title,
+            coachNotes: `נטענה תוכנית ההדגמה מהאימון ביומן: ${session.title}`,
+            exercises: assignedPlan.exercises.map(exercise => ({ ...exercise })),
+            trainingDaysPerWeek: assignedPlan.trainingDaysPerWeek || 1,
+            dayLabels: assignedPlan.dayLabels,
+            sourceDocumentIds: [],
+            createdAt: now,
+            updatedAt: now,
+            status: 'DRAFT'
+          };
+          const existingDraft = workoutAssistantDrafts.some(item => item.traineeId === target.id);
+          onUpdateWorkoutAssistantDrafts(existingDraft
+            ? workoutAssistantDrafts.map(item => item.traineeId === target.id ? draft : item)
+            : [draft, ...workoutAssistantDrafts]);
+          setPersonalSetupComplete(true);
+        } else {
+          setPersonalSetupComplete(false);
+        }
+      }
       setActiveTab('programs');
       setPersonalBuilderPanel('WORKOUT');
-      setPersonalSetupComplete(false);
-      setPersonalSetupAnswers({});
       setWorkoutPlanningRoute('PERSONAL_BUILDER');
       return;
     }
@@ -927,7 +984,14 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const personalTemplatePlans = workoutPlans.filter(plan => isPersonalLibraryEntry(plan) || (!plan.sessionId && plan.traineeId !== selectedTraineeId));
   const nutritionTemplatePlans = nutritionPlans.filter(plan => isNutritionLibraryEntry(plan) || plan.traineeId !== selectedTraineeId);
 
-  const personalSetupQuestions: WizardQuestion[] = [
+  const personalSetupQuestions: WizardQuestion[] = isGeneralPersonalProgram ? [
+    { id: 'programName', label: 'שם התוכנית', type: 'text', required: true, placeholder: 'לדוגמה: תוכנית כוח למתחילים – 3 ימים' },
+    { id: 'primaryGoal', label: 'מה המטרה העיקרית?', type: 'text', required: true, placeholder: 'לדוגמה: כוח, ירידה במשקל או שיפור כושר כללי' },
+    { id: 'experienceLevel', label: 'לאיזו רמת ניסיון התוכנית מיועדת?', type: 'choice', required: true, options: [{ value: 'BEGINNER', label: 'מתחילים' }, { value: 'INTERMEDIATE', label: 'בינוניים' }, { value: 'ADVANCED', label: 'מתקדמים' }] },
+    { id: 'weeklySessions', label: 'כמה אימונים בשבוע?', type: 'number', min: 1, max: 7, required: true },
+    { id: 'preferredWorkoutMinutes', label: 'משך אימון מועדף בדקות', type: 'number', min: 15, max: 180, required: true },
+    { id: 'limitations', label: 'מגבלות כלליות או תרגילים שאינם מתאימים', type: 'textarea', placeholder: 'אם אין, כתבו: ללא' },
+  ] : [
     { id: 'updateProfile', label: 'האם לעדכן עכשיו את נתוני המתאמן?', description: 'הנתונים נשמרים בזיכרון המקצועי ומשמשים את הצ׳אט.', type: 'choice', required: true, options: [{ value: true, label: 'כן, לעדכן' }, { value: false, label: 'לא, להשתמש בקיים' }] },
     { id: 'primaryGoal', label: 'מה המטרה העיקרית?', type: 'text', required: true, placeholder: 'לדוגמה: כוח, ירידה במשקל או שיקום', visibleWhen: answers => answers.updateProfile === true },
     { id: 'experienceLevel', label: 'רמת ניסיון', type: 'choice', required: true, visibleWhen: answers => answers.updateProfile === true, options: [{ value: 'BEGINNER', label: 'מתחיל' }, { value: 'INTERMEDIATE', label: 'בינוני' }, { value: 'ADVANCED', label: 'מתקדם' }] },
@@ -939,7 +1003,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const completePersonalSetup = (answers: WizardAnswers) => {
     if (!selectedTrainee) return;
     const now = new Date().toISOString();
-    if (answers.updateProfile === true) {
+    const generalProgramName = String(answers.programName || generalPersonalTarget?.name || '').trim();
+    if (isGeneralPersonalProgram && generalPersonalTarget && generalProgramName && generalProgramName !== generalPersonalTarget.name) {
+      setGeneralPersonalTarget({ ...generalPersonalTarget, name: generalProgramName });
+    }
+    if (!isGeneralPersonalProgram && answers.updateProfile === true) {
       handleSaveTraineeProfile({
         traineeId: selectedTrainee.id,
         primaryGoal: String(answers.primaryGoal || ''),
@@ -976,14 +1044,18 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     };
     handleUpdateAssistantDraft({
       ...baseDraft,
-      objective: String(answers.primaryGoal || selectedTraineeProfile?.primaryGoal || baseDraft.objective || ''),
+      objective: isGeneralPersonalProgram
+        ? generalProgramName || baseDraft.objective
+        : String(answers.primaryGoal || selectedTraineeProfile?.primaryGoal || baseDraft.objective || ''),
       trainingDaysPerWeek: source?.trainingDaysPerWeek || Number(answers.weeklySessions || baseDraft.trainingDaysPerWeek || 1),
       dayLabels: source?.dayLabels || baseDraft.dayLabels,
       exercises: source ? source.exercises.map((exercise, index) => ({ ...exercise, id: `setup-exercise-${Date.now()}-${index}` })) : baseDraft.exercises,
       status: 'DRAFT',
       updatedAt: now
     });
-    const context = `נתוני הפתיחה נקלטו: ${answers.updateProfile === true ? 'נתוני המתאמן עודכנו' : 'שימוש בנתונים הקיימים'}; ${source ? 'נטענה תוכנית מהמאגר כטיוטה' : 'נבנית תוכנית חדשה'}. אם חסר מידע מהותי, אשאל שאלה קצרה אחת בכל פעם. כתוב “בנה תוכנית אימון” כדי להתחיל.`;
+    const context = isGeneralPersonalProgram
+      ? `נתוני התוכנית האישית הכללית „${generalProgramName}” נקלטו. התוכנית אינה משויכת למתאמן ותישמר במאגר לשימוש עתידי. אם חסר מידע מהותי, אשאל שאלה קצרה אחת בכל פעם. כתוב “בנה תוכנית אימון” כדי להתחיל.`
+      : `נתוני הפתיחה נקלטו: ${answers.updateProfile === true ? 'נתוני המתאמן עודכנו' : 'שימוש בנתונים הקיימים'}; ${source ? 'נטענה תוכנית מהמאגר כטיוטה' : 'נבנית תוכנית חדשה'}. אם חסר מידע מהותי, אשאל שאלה קצרה אחת בכל פעם. כתוב “בנה תוכנית אימון” כדי להתחיל.`;
     onUpdateWorkoutAssistantMessages([...workoutAssistantMessages, { id: `workout-setup-${Date.now()}`, traineeId: selectedTrainee.id, coachId: activeUser.id, coachName: activeUser.name, role: 'ASSISTANT', content: context, createdAt: now }]);
     setPersonalSetupAnswers(answers);
     setPersonalSetupComplete(true);
@@ -1048,7 +1120,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     return {
       id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       traineeId: selectedTrainee.id,
-      title: draft.objective.trim() || personalLibraryTitle(selectedTrainee.name, createdAt),
+      title: isGeneralPersonalProgram
+        ? (String(personalSetupAnswers.programName || '').trim() || draft.objective.trim() || generalPersonalTarget?.name || 'תוכנית אישית כללית')
+        : (draft.objective.trim() || personalLibraryTitle(selectedTrainee.name, createdAt)),
       sessionId,
       sourcePlanId: sourcePlanId || undefined,
       libraryEntry: false,
@@ -1075,7 +1149,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   };
 
   const publishPersonalDraftToTrainee = () => {
-    if (!personalDraftToPublish || !selectedTrainee) return;
+    if (!personalDraftToPublish || !selectedTrainee || isGeneralPersonalProgram) return;
     const createdAt = new Date();
     const generated = personalPlanFromDraft(personalDraftToPublish);
     if (!generated) return;
@@ -1096,13 +1170,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   };
 
   const assignPersonalDraftToSession = (sessionId: string) => {
-    if (!personalDraftToPublish || !selectedTrainee) return;
+    if (!personalDraftToPublish || !selectedTrainee || (isGeneralPersonalProgram && sessionId !== generalPersonalSessionId)) return;
     const plan = personalPlanFromDraft(personalDraftToPublish, sessionId);
     if (!plan) return;
     const libraryEntry = createPersonalLibraryEntry(plan, selectedTrainee, plan.sourcePlanId);
-    onUpdateWorkoutPlans([plan, libraryEntry, ...workoutPlans]);
+    onUpdateWorkoutPlans([plan, libraryEntry, ...workoutPlans.filter(existing => existing.sessionId !== sessionId)]);
     handleUpdateAssistantDraft({ ...personalDraftToPublish, status: 'PUBLISHED', updatedAt: new Date().toISOString() });
-    onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ושובצה לאימון ביומן.`, selectedTrainee.id);
+    if (!isGeneralPersonalProgram) onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ושובצה לאימון ביומן.`, selectedTrainee.id);
     setPersonalDraftToPublish(null);
     window.alert('התוכנית נשמרה במאגר ושובצה לאימון שנבחר.');
   };
@@ -1136,12 +1210,14 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   const guidedWorkoutPlanning = initialPlanningTab === 'programs';
   const navigatorRoutes: WorkoutPlanningRoute[] = [
-    'HOME', 'PERSONAL', 'PERSONAL_TRAINEE', 'PERSONAL_SESSION', 'PERSONAL_EXISTING',
+    'HOME', 'PERSONAL', 'PERSONAL_TRAINEE', 'PERSONAL_GENERAL', 'PERSONAL_SESSION', 'PERSONAL_EXISTING',
     'GROUP', 'GROUP_SESSION', 'GROUP_AUDIENCE', 'GROUP_EXISTING',
     'LIBRARY', 'LIBRARY_NEW', 'LIBRARY_EXISTING', 'ASSIGN'
   ];
 
   const openPersonalBuilder = (traineeId: string) => {
+    setGeneralPersonalTarget(null);
+    setGeneralPersonalSessionId('');
     setSelectedTraineeId(traineeId);
     setActiveTab('programs');
     setPersonalBuilderPanel('WORKOUT');
@@ -1150,9 +1226,25 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     setWorkoutPlanningRoute('PERSONAL_BUILDER');
   };
 
+  const openGeneralPersonalBuilder = (programName: string) => {
+    const name = programName.trim();
+    if (!name) return;
+    const target = { id: `general-personal-${Date.now()}`, name };
+    setGeneralPersonalTarget(target);
+    setGeneralPersonalSessionId('');
+    setSelectedTraineeId(target.id);
+    setActiveTab('programs');
+    setPersonalBuilderPanel('WORKOUT');
+    setPersonalSetupComplete(false);
+    setPersonalSetupAnswers({ programName: name });
+    setWorkoutPlanningRoute('PERSONAL_BUILDER');
+  };
+
   const openPersonalLibraryCopy = (plan: WorkoutPlan, targetTraineeId?: string) => {
     const trainee = users.find(user => user.id === targetTraineeId) || users.find(user => user.id === selectedTraineeId) || users.find(user => user.id === plan.traineeId) || traineesOnly[0];
     if (!trainee) return;
+    setGeneralPersonalTarget(null);
+    setGeneralPersonalSessionId('');
     const now = new Date().toISOString();
     const draft: WorkoutAssistantDraft = {
       id: `workout-library-draft-${Date.now()}`,
@@ -1269,6 +1361,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         workoutPlans={workoutPlans}
         groupPrograms={groupWorkoutPrograms}
         onOpenPersonalTrainee={openPersonalBuilder}
+        onOpenGeneralPersonal={openGeneralPersonalBuilder}
         onOpenPersonalSession={openWorkoutProgramFromCalendar}
         onOpenPersonalPlan={openPersonalLibraryCopy}
         onOpenGroupSession={session => openGroupBuilder({ sessionId: session.id })}
@@ -1414,10 +1507,12 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                   <div>
                     <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                      תוכנית אימונים אישית עבור: {selectedTrainee.name}
+                      {isGeneralPersonalProgram ? `תוכנית אישית כללית: ${generalPersonalTarget?.name}` : `תוכנית אימונים אישית עבור: ${selectedTrainee.name}`}
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {traineeWorkoutPlan 
+                      {isGeneralPersonalProgram
+                        ? 'התוכנית אינה משויכת למתאמן ותישמר במאגר לשימוש עתידי.'
+                        : traineeWorkoutPlan
                         ? `עודכן לאחרונה בתאריך: ${traineeWorkoutPlan.lastUpdated}`
                         : 'לא הוגדרה תוכנית אימון למתאמן זה עדיין.'
                       }
@@ -1434,11 +1529,12 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 </div>
 
                 {!personalSetupComplete ? <ProgramSetupWizard
-                  title={`הכנת תוכנית אישית ל${selectedTrainee.name}`}
-                  description="נאסוף רק את נתוני הפתיחה הנדרשים. לאחר מכן הצ׳אט ישאל רק על מידע שחסר ויפתח לידו טיוטה מלאה לעריכה."
+                  title={isGeneralPersonalProgram ? `הכנת ${generalPersonalTarget?.name}` : `הכנת תוכנית אישית ל${selectedTrainee.name}`}
+                  description={isGeneralPersonalProgram ? 'מגדירים קהל יעד ומבנה כללי, בלי לבחור מתאמן. לאחר מכן הצ׳אט יבנה טיוטה שניתן לערוך ולשמור במאגר.' : 'נאסוף רק את נתוני הפתיחה הנדרשים. לאחר מכן הצ׳אט ישאל רק על מידע שחסר ויפתח לידו טיוטה מלאה לעריכה.'}
                   questions={personalSetupQuestions}
                   initialAnswers={{
                     updateProfile: false,
+                    programName: generalPersonalTarget?.name || '',
                     primaryGoal: selectedTraineeProfile?.primaryGoal || '',
                     experienceLevel: selectedTraineeProfile?.experienceLevel || 'BEGINNER',
                     weeklySessions: selectedTraineeProfile?.weeklySessions || selectedAssistantDraft?.trainingDaysPerWeek || 3,
@@ -1450,7 +1546,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   onComplete={completePersonalSetup}
                 /> : <>
                 <ProgramBriefPanel title="תקציר התכנון האישי" onEdit={() => setPersonalSetupComplete(false)} items={[
-                  { label: 'מתאמן', value: selectedTrainee.name },
+                  { label: isGeneralPersonalProgram ? 'שם התוכנית' : 'מתאמן', value: isGeneralPersonalProgram ? generalPersonalTarget?.name : selectedTrainee.name },
                   { label: 'מטרה', value: personalSetupAnswers.primaryGoal || selectedTraineeProfile?.primaryGoal },
                   { label: 'אימונים בשבוע', value: personalSetupAnswers.weeklySessions || selectedTraineeProfile?.weeklySessions },
                   { label: 'משך', value: personalSetupAnswers.preferredWorkoutMinutes ? `${personalSetupAnswers.preferredWorkoutMinutes} דקות` : undefined },
@@ -1459,9 +1555,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 ]} />
                 {personalSetupAnswers.sourceMode !== 'LIBRARY' && <nav className="personal-builder-menu" aria-label="אזורי בניית תוכנית אישית">
                   <button type="button" onClick={() => setPersonalBuilderPanel('WORKOUT')} className={personalBuilderPanel === 'WORKOUT' ? 'active' : ''}><Dumbbell size={18} /><span><strong>התוכנית והצ׳אט</strong><small>צפייה, בנייה ועריכה</small></span></button>
-                  <button type="button" onClick={() => setPersonalBuilderPanel('PROFILE')} className={personalBuilderPanel === 'PROFILE' ? 'active' : ''}><UserCheck size={18} /><span><strong>נתוני המתאמן</strong><small>מטרות, מגבלות וזיכרון</small></span></button>
+                  {!isGeneralPersonalProgram && <button type="button" onClick={() => setPersonalBuilderPanel('PROFILE')} className={personalBuilderPanel === 'PROFILE' ? 'active' : ''}><UserCheck size={18} /><span><strong>נתוני המתאמן</strong><small>מטרות, מגבלות וזיכרון</small></span></button>}
                   <button type="button" onClick={() => setPersonalBuilderPanel('LIBRARY')} className={personalBuilderPanel === 'LIBRARY' ? 'active' : ''}><BookOpen size={18} /><span><strong>מאגר תרגילים</strong><small>הוספה מהירה לתוכנית</small></span></button>
-                  <button type="button" onClick={() => setPersonalBuilderPanel('SETTINGS')} className={personalBuilderPanel === 'SETTINGS' ? 'active' : ''}><Wrench size={18} /><span><strong>הגדרות</strong><small>זכאות וכלי תכנון</small></span></button>
+                  {!isGeneralPersonalProgram && <button type="button" onClick={() => setPersonalBuilderPanel('SETTINGS')} className={personalBuilderPanel === 'SETTINGS' ? 'active' : ''}><Wrench size={18} /><span><strong>הגדרות</strong><small>זכאות וכלי תכנון</small></span></button>}
                 </nav>}
 
                 {personalBuilderPanel === 'WORKOUT' && <WorkoutAssistantPanel
@@ -1517,7 +1613,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   </section>
                 )}
 
-                {personalBuilderPanel === 'PROFILE' && <TraineeMemoryPanel
+                {!isGeneralPersonalProgram && personalBuilderPanel === 'PROFILE' && <TraineeMemoryPanel
                   trainee={selectedTrainee}
                   activeUser={activeUser}
                   profile={selectedTraineeProfile}
@@ -1528,7 +1624,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 />}
 
                 {/* Membership & Request Notice */}
-                {personalBuilderPanel === 'SETTINGS' && (selectedHasWorkoutPlanAccess ? (
+                {!isGeneralPersonalProgram && personalBuilderPanel === 'SETTINGS' && (selectedHasWorkoutPlanAccess ? (
                   <div className="rounded-xl border border-emerald-500/30 bg-zinc-900 p-4 text-xs text-zinc-200">
                     <span className="font-bold">✅ הגישה לתוכנית שולמה או כלולה במנוי:</span>
                     <span className="mr-1">התוכנית שתיבנה כאן תוצג למתאמן מיד לאחר השמירה.</span>
@@ -1544,7 +1640,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   </div>
                 ))}
 
-                {personalBuilderPanel === 'SETTINGS' && <div className="grid grid-cols-2 gap-3">
+                {!isGeneralPersonalProgram && personalBuilderPanel === 'SETTINGS' && <div className="grid grid-cols-2 gap-3">
                   <button type="button" onClick={() => { setActiveTab('pdf-library'); setWorkoutPlanningRoute('PDF_LIBRARY'); }} className="flex min-h-24 flex-col items-start justify-between rounded-xl border border-zinc-700 bg-zinc-900 p-4 text-right text-white hover:border-amber-400"><FileText size={22} className="text-amber-300" /><span><strong className="block text-sm">ספריית PDF</strong><small className="mt-1 block text-[10px] text-zinc-400">מקורות לבניית תוכניות</small></span></button>
                   <button type="button" onClick={() => setActiveTab('equipment')} className="flex min-h-24 flex-col items-start justify-between rounded-xl border border-zinc-700 bg-zinc-900 p-4 text-right text-white hover:border-amber-400"><Wrench size={22} className="text-amber-300" /><span><strong className="block text-sm">ציוד ומכשירים</strong><small className="mt-1 block text-[10px] text-zinc-400">עדכון הציוד הזמין לצ׳אט</small></span></button>
                 </div>}
@@ -2647,11 +2743,14 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       <PublishDestinationDialog
         open={Boolean(personalDraftToPublish)}
         title={personalDraftToPublish?.objective || 'תוכנית אימון אישית'}
-        sessions={sessions.filter(session => session.isPersonalTraining && (!selectedTrainee || session.targetTraineeId === selectedTrainee.id || session.registeredUsers.includes(selectedTrainee.id) || session.coTrainees?.includes(selectedTrainee.id)))}
+        sessions={isGeneralPersonalProgram
+          ? sessions.filter(session => session.id === generalPersonalSessionId)
+          : sessions.filter(session => session.isPersonalTraining && (!selectedTrainee || session.targetTraineeId === selectedTrainee.id || session.registeredUsers.includes(selectedTrainee.id) || session.coTrainees?.includes(selectedTrainee.id)))}
         onClose={() => setPersonalDraftToPublish(null)}
         onSaveToLibrary={savePersonalDraftToLibrary}
         onAssignToSession={assignPersonalDraftToSession}
-        onPublishDirect={selectedHasWorkoutPlanAccess ? publishPersonalDraftToTrainee : undefined}
+        allowAssignToSession={!isGeneralPersonalProgram || Boolean(generalPersonalSessionId)}
+        onPublishDirect={!isGeneralPersonalProgram && selectedHasWorkoutPlanAccess ? publishPersonalDraftToTrainee : undefined}
         directPublishLabel="פרסם למתאמן"
         directPublishDescription="התוכנית תופיע מיד במסך תוכנית האימונים של המתאמן"
       />
