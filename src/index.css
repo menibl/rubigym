@@ -1896,6 +1896,15 @@ option {
   text-decoration: none;
 }
 
+.booking-calendar-links .workout-view-button.unavailable {
+  cursor: not-allowed;
+  border: 1px solid #596170;
+  background: #303641;
+  color: #c8cbd2;
+  text-decoration: none;
+  opacity: 1;
+}
+
 .booking-day-empty {
   grid-column: 1 / -1;
   padding: 22px;
