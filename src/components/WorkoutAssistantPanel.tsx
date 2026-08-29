@@ -63,10 +63,10 @@ const fallbackExercises: Array<{ name: string; group: MuscleGroup; category: str
   { name: 'לחיצת חזה בשיפוע', group: MuscleGroup.UPPER, category: 'כוח בסיסי' },
   { name: 'שכיבות סמיכה', group: MuscleGroup.UPPER, category: 'דחיפה' },
   { name: 'לחיצת כתפיים בישיבה', group: MuscleGroup.SHOULDERS, category: 'כוח בסיסי' },
-  { name: 'Dead Bug', group: MuscleGroup.CORE, category: 'ליבה ויציבות' },
+  { name: 'פשיטת יד ורגל נגדית בשכיבה', group: MuscleGroup.CORE, category: 'ליבה ויציבות' },
   { name: 'פלאנק', group: MuscleGroup.CORE, category: 'בטן וליבה' },
-  { name: 'Pallof Press', group: MuscleGroup.CORE, category: 'ליבה נגד סיבוב' },
-  { name: 'Farmer Walk', group: MuscleGroup.FUNCTIONAL, category: 'כוח פונקציונלי' },
+  { name: 'לחיצה נגד סיבוב בכבל', group: MuscleGroup.CORE, category: 'ליבה נגד סיבוב' },
+  { name: 'הליכת איכר', group: MuscleGroup.FUNCTIONAL, category: 'כוח פונקציונלי' },
   { name: 'הליכה בקצב מתון', group: MuscleGroup.FUNCTIONAL, category: 'סבולת' }
 ];
 
@@ -97,11 +97,34 @@ const parseReferencedDay = (prompt: string) => {
 const inferMuscleGroup = (name: string): MuscleGroup => {
   const normalized = name.toLowerCase();
   if (/סקוואט|מכרע|רגל|אגן|ישבן/.test(normalized)) return MuscleGroup.LEGS;
-  if (/בטן|ליבה|פלאנק|dead bug|pallof/.test(normalized)) return MuscleGroup.CORE;
+  if (/בטן|ליבה|פלאנק|פשיטת יד ורגל|לחיצה נגד סיבוב|dead bug|pallof/.test(normalized)) return MuscleGroup.CORE;
   if (/חתירה|גב|פולי|משיכ/.test(normalized)) return MuscleGroup.BACK;
   if (/כתפ/.test(normalized)) return MuscleGroup.SHOULDERS;
   if (/חזה|שכיבות|דחיפ/.test(normalized)) return MuscleGroup.UPPER;
   return MuscleGroup.FUNCTIONAL;
+};
+
+const localEquipmentExerciseName = (item: GymEquipment) => {
+  const hebrewAlias = [item.name, ...item.aliases].find(value => value.trim() && !/[A-Za-z]/.test(value));
+  if (hebrewAlias) return hebrewAlias;
+  const normalized = `${item.name} ${item.aliases.join(' ')}`.toLowerCase();
+  const translations: Array<[RegExp, string]> = [
+    [/leg press/, 'לחיצת רגליים במכשיר'],
+    [/leg extension/, 'פשיטת ברכיים במכשיר'],
+    [/leg curl/, 'כפיפת ברכיים במכשיר'],
+    [/chest press/, 'לחיצת חזה במכשיר'],
+    [/lat pulldown|pulldown/, 'משיכת פולי עליון'],
+    [/seated row|\brow\b/, 'חתירה במכשיר'],
+    [/shoulder press/, 'לחיצת כתפיים במכשיר'],
+    [/pec deck|chest fly|butterfly/, 'פרפר חזה במכשיר'],
+    [/treadmill/, 'הליכה על מסילה'],
+    [/stationary bike|exercise bike|\bbike\b/, 'רכיבה על אופניים נייחים'],
+    [/elliptical/, 'אימון במכשיר אליפטי'],
+    [/cable/, 'תרגיל במכשיר כבלים'],
+    [/smith/, 'תרגיל במכשיר סמית']
+  ];
+  return translations.find(([pattern]) => pattern.test(normalized))?.[1]
+    || `תרגיל מכשיר — ${muscleGroupLabels[item.muscleGroups[0] || MuscleGroup.FUNCTIONAL]}`;
 };
 
 const exerciseMatches = (exercise: Exercise, query: string) => {
@@ -249,22 +272,29 @@ const buildLocalDraft = (
     return bMentioned - aMentioned;
   });
 
-  const equipmentExercises = equipmentByRelevance.slice(0, 4).map(item => ({
-    name: item.name,
+  const equipmentExercises = equipmentByRelevance.slice(0, 8).map(item => ({
+    name: localEquipmentExerciseName(item),
     group: item.muscleGroups[0] || MuscleGroup.FUNCTIONAL,
-    category: item.category || 'תרגיל מכשיר'
+    category: item.category && !/[A-Za-z]/.test(item.category) ? item.category : 'תרגיל במכשיר'
   }));
-  const candidates = [...equipmentExercises, ...fallbackExercises]
+  const isSafeCandidate = (item: { group: MuscleGroup }) => !hasLowerBodyCaution || item.group !== MuscleGroup.LEGS || /רגל|ברך/.test(normalizedPrompt);
+  const safeEquipmentExercises = equipmentExercises
     .filter((item, index, all) => all.findIndex(candidate => candidate.name === item.name) === index)
-    .filter(item => !hasLowerBodyCaution || item.group !== MuscleGroup.LEGS || /רגל|ברך/.test(normalizedPrompt));
+    .filter(isSafeCandidate);
+  const safeFallbackExercises = fallbackExercises.filter(isSafeCandidate);
 
   const exercisesPerDay = /קצר|30/.test(normalizedPrompt) ? 4 : /ארוך|60/.test(normalizedPrompt) ? 7 : 5;
   const requestedDays = parseRequestedDays(normalizedPrompt);
   const trainingDaysPerWeek = Math.min(7, Math.max(1, requestedDays || profile?.weeklySessions || 2));
   const sets = beginner ? 2 : strength ? 4 : 3;
+  const machineExercisesPerDay = safeEquipmentExercises.length > 0
+    ? Math.min(exercisesPerDay, Math.ceil(exercisesPerDay * 2 / 3), safeEquipmentExercises.length)
+    : 0;
   const exercises: Exercise[] = Array.from({ length: trainingDaysPerWeek }).flatMap((_, dayIndex) =>
     Array.from({ length: exercisesPerDay }, (_, exerciseIndex) => {
-      const item = candidates[(dayIndex * exercisesPerDay + exerciseIndex) % candidates.length];
+      const item = exerciseIndex < machineExercisesPerDay
+        ? safeEquipmentExercises[(dayIndex * machineExercisesPerDay + exerciseIndex) % safeEquipmentExercises.length]
+        : safeFallbackExercises[(dayIndex * exercisesPerDay + exerciseIndex - machineExercisesPerDay) % safeFallbackExercises.length];
       return {
         id: `assistant-ex-${Date.now()}-${dayIndex}-${exerciseIndex}`,
         name: item.name,
@@ -272,7 +302,7 @@ const buildLocalDraft = (
         muscleGroup: item.group,
         sets,
         reps: timed ? '40 שניות' : strength ? '6-10' : beginner ? '10-12' : '10-15',
-        weight: beginner ? 'קל, לפי RPE 5-6' : strength ? 'לפי RPE 7-8' : 'לפי RPE 6-7',
+        weight: beginner ? 'קל, לפי דרגת מאמץ נתפסת 5–6' : strength ? 'לפי דרגת מאמץ נתפסת 7–8' : 'לפי דרגת מאמץ נתפסת 6–7',
         workDuration: timed ? '40 שניות' : '',
         restDuration: timed ? '20 שניות' : strength ? '90 שניות' : '60 שניות',
         notes: `${exerciseIndex === 0 ? 'חימום ספציפי לפני הסט הראשון. ' : ''}לעצור במקרה של כאב ולבצע התאמה מקצועית.`,
