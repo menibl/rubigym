@@ -1360,13 +1360,18 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     return [...sessionItems, ...openGymItems]
       .sort((a, b) => `${a.startTime}-${a.kind}`.localeCompare(`${b.startTime}-${b.kind}`, 'he'));
   };
-  const sessionWorkoutProgram = (sessionId: string) => groupWorkoutPrograms.find(program =>
-    program.sessionId === sessionId
+  const sessionWorkoutProgram = (session: TrainingSession) => groupWorkoutPrograms.find(program =>
+    (program.id === session.assignedGroupWorkoutProgramId || program.sessionId === session.id)
     && program.status === 'PUBLISHED'
     && !program.libraryEntry
+  ) || workoutPlans.find(plan =>
+    (plan.id === session.assignedWorkoutPlanId || plan.sessionId === session.id)
+    && plan.traineeId === activeUser.id
+    && !plan.libraryEntry
+    && plan.exercises.length > 0
   );
   const openSessionWorkoutDisplay = (session: TrainingSession) => {
-    if (!session.registeredUsers.includes(activeUser.id) || !sessionWorkoutProgram(session.id)) return;
+    if (!session.registeredUsers.includes(activeUser.id) || !sessionWorkoutProgram(session)) return;
     const displayUrl = `${window.location.origin}${window.location.pathname}#trainee-session-workout=${encodeURIComponent(session.id)}`;
     window.open(displayUrl, '_blank', 'noopener,noreferrer');
   };
@@ -1724,7 +1729,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               checkBookingEligibility={checkBookingEligibility}
               canViewWorkoutProgram={session => Boolean(
                 session.registeredUsers.includes(activeUser.id)
-                && sessionWorkoutProgram(session.id)
+                && sessionWorkoutProgram(session)
               )}
               onViewWorkoutProgram={openSessionWorkoutDisplay}
             />
@@ -1801,7 +1806,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                             {!booked && !waitlisted && !eligibility.eligible && <span className="booking-reason">{eligibility.reason}</span>}
                             {(booked || waitlisted) && (
                               <div className="booking-calendar-links">
-                                {booked && sessionWorkoutProgram(session.id) && (
+                                {booked && sessionWorkoutProgram(session) && (
                                   <button type="button" className="workout-view-button" onClick={() => openSessionWorkoutDisplay(session)}><MonitorPlay size={14} /> צפה בתוכנית האימון</button>
                                 )}
                                 <a href={getGoogleCalendarLink(session)} target="_blank" rel="noreferrer">Google Calendar</a>

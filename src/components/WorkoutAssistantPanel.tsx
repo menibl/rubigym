@@ -425,6 +425,10 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
       });
       const now = new Date().toISOString();
       const trainingDays = Math.min(7, Math.max(1, Math.round(result.trainingDaysPerWeek || 1)));
+      const effortMetric = draft?.effortMetric || 'TIME';
+      const defaultWorkSeconds = draft?.defaultWorkSeconds ?? 45;
+      const defaultRestSeconds = draft?.defaultRestSeconds ?? 60;
+      const defaultRepetitions = draft?.defaultRepetitions || '12';
       const nextDraft: WorkoutAssistantDraft = {
         id: draft?.id || `assistant-draft-${Date.now()}`,
         traineeId: trainee.id,
@@ -439,6 +443,9 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
             ...exercise,
             name: exercise.name.trim() || `תרגיל ${index + 1}`,
             sets: Math.min(20, Math.max(1, Math.round(exercise.sets || 1))),
+            reps: effortMetric === 'REPS' ? (exercise.reps && exercise.reps !== 'לפי זמן' ? exercise.reps : defaultRepetitions) : 'לפי זמן',
+            workDuration: effortMetric === 'TIME' ? (exercise.workDuration || `${defaultWorkSeconds} שניות`) : '',
+            restDuration: effortMetric === 'TIME' ? (exercise.restDuration || `${defaultRestSeconds} שניות`) : '',
             dayNumber,
             id: existing?.id || `assistant-ai-ex-${Date.now()}-${index}`,
             mediaUrl: existing?.mediaUrl,
@@ -448,6 +455,10 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         }),
         trainingDaysPerWeek: trainingDays,
         dayLabels: Array.from({ length: trainingDays }, (_, index) => result.dayLabels[index]?.trim() || `יום ${index + 1}`),
+        effortMetric,
+        defaultWorkSeconds,
+        defaultRestSeconds,
+        defaultRepetitions,
         sourceDocumentIds: readableSourceIds,
         createdAt: draft?.createdAt || now,
         updatedAt: now,
@@ -512,9 +523,10 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
       category: 'תרגיל מותאם',
       muscleGroup: MuscleGroup.FUNCTIONAL,
       sets: 3,
-      reps: '10-12',
+      reps: draft.effortMetric === 'REPS' ? draft.defaultRepetitions || '12' : 'לפי זמן',
       weight: 'לפי יכולת',
-      restDuration: '60 שניות',
+      workDuration: draft.effortMetric === 'REPS' ? '' : `${draft.defaultWorkSeconds ?? 45} שניות`,
+      restDuration: draft.effortMetric === 'REPS' ? '' : `${draft.defaultRestSeconds ?? 60} שניות`,
       dayNumber: selectedDraftDay,
       notes: ''
     };
@@ -538,6 +550,10 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
       exercises: plan.exercises.map((exercise, index) => ({ ...exercise, id: `assistant-library-${Date.now()}-${index}` })),
       trainingDaysPerWeek: plan.trainingDaysPerWeek || 1,
       dayLabels: plan.dayLabels || ['יום 1'],
+      effortMetric: plan.effortMetric || 'TIME',
+      defaultWorkSeconds: plan.defaultWorkSeconds ?? 45,
+      defaultRestSeconds: plan.defaultRestSeconds ?? 60,
+      defaultRepetitions: plan.defaultRepetitions || '12',
       sourceDocumentIds: draft?.sourceDocumentIds || [],
       createdAt: draft?.createdAt || now,
       updatedAt: now,
@@ -594,7 +610,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         onReset={clearConversation}
         drawerContent={drawerTab === 'PREVIEW' ? <div className="space-y-3">
           {!draft ? <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-zinc-500">התוכנית תופיע כאן אוטומטית לאחר שהעוזר יסיים לבנות אותה.</p> : <>
-            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3"><strong className="text-sm text-white">{draft.objective || 'תוכנית אימון אישית'}</strong><p className="mt-1 text-[10px] text-zinc-300">{draft.trainingDaysPerWeek || 1} ימים · {draft.exercises.length} תרגילים</p></div>
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3"><strong className="text-sm text-white">{draft.objective || 'תוכנית אימון אישית'}</strong><p className="mt-1 text-[10px] text-zinc-300">{draft.trainingDaysPerWeek || 1} ימים · {draft.exercises.length} תרגילים · {draft.effortMetric === 'REPS' ? `${draft.defaultRepetitions || 12} חזרות` : `${draft.defaultWorkSeconds ?? 45}/${draft.defaultRestSeconds ?? 60} שנ׳`}</p></div>
             {Array.from({ length: draft.trainingDaysPerWeek || 1 }, (_, index) => index + 1).map(day => <section key={day} className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="mb-2 text-xs font-black text-amber-200">{draft.dayLabels?.[day - 1] || `יום ${day}`}</h4><div className="space-y-2">{draft.exercises.filter(exercise => (exercise.dayNumber || 1) === day).map((exercise, index) => <article key={exercise.id} className="rounded-lg bg-zinc-950 p-2.5"><div className="flex items-start gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-400 text-[9px] font-black text-zinc-950">{index + 1}</span><div><strong className="block text-xs text-white">{exercise.name}</strong><span className="text-[9px] text-zinc-400">{exercise.sets} סטים · {exercise.reps} · {exercise.weight || 'משקל לפי יכולת'}</span></div></div></article>)}</div></section>)}
             {!canPublish && <p className="rounded-lg bg-amber-500/10 p-3 text-[10px] text-amber-200">התוכנית תישמר כטיוטה עד להסדרת הזכאות של המתאמן.</p>}
             <button type="button" disabled={!canPublish || !draft.exercises.length} onClick={() => { onPublish(draft); setChatOpen(false); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-xs font-black text-white disabled:opacity-40"><Check size={16} /> {draft.status === 'PUBLISHED' ? 'פרסם מחדש' : 'פרסם תוכנית'}</button>
@@ -632,9 +648,11 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
                     <div className="mb-2 flex items-center gap-2"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[10px] font-black text-violet-700">{index + 1}</span><input value={exercise.name} onChange={event => updateExercise(exercise.id, { name: event.target.value })} className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-bold" /><button onClick={() => removeExercise(exercise.id)} className="text-red-500"><Trash2 size={14} /></button></div>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                       <label className="text-[9px] font-bold text-slate-500">סטים<input type="number" min={1} value={exercise.sets} onChange={event => updateExercise(exercise.id, { sets: Number(event.target.value) })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>
-                      <label className="text-[9px] font-bold text-slate-500">חזרות / זמן<input value={exercise.reps} onChange={event => updateExercise(exercise.id, { reps: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>
+                      {draft.effortMetric === 'REPS'
+                        ? <label className="text-[9px] font-bold text-slate-500">חזרות<input value={exercise.reps} onChange={event => updateExercise(exercise.id, { reps: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>
+                        : <label className="text-[9px] font-bold text-slate-500">זמן עבודה<input value={exercise.workDuration || ''} onChange={event => updateExercise(exercise.id, { workDuration: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>}
                       <label className="text-[9px] font-bold text-slate-500">משקל<input value={exercise.weight || ''} onChange={event => updateExercise(exercise.id, { weight: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>
-                      <label className="text-[9px] font-bold text-slate-500">מנוחה<input value={exercise.restDuration || ''} onChange={event => updateExercise(exercise.id, { restDuration: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>
+                      {draft.effortMetric === 'TIME' && <label className="text-[9px] font-bold text-slate-500">מנוחה<input value={exercise.restDuration || ''} onChange={event => updateExercise(exercise.id, { restDuration: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>}
                       <label className="text-[9px] font-bold text-slate-500">יום אימון<select value={exercise.dayNumber || 1} onChange={event => updateExercise(exercise.id, { dayNumber: Number(event.target.value) })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800">{Array.from({ length: draft.trainingDaysPerWeek || 1 }, (_, index) => index + 1).map(day => <option key={day} value={day}>יום {day}</option>)}</select></label>
                     </div>
                     <p className="mt-2 text-[10px] text-slate-500">{muscleGroupLabels[exercise.muscleGroup]} · {exercise.notes}</p>

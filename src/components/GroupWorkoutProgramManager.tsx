@@ -42,6 +42,7 @@ interface GroupWorkoutProgramManagerProps {
   onUpdatePrograms: (programs: GroupWorkoutProgram[]) => void;
   trainees: User[];
   sessions: TrainingSession[];
+  onUpdateSessions: (sessions: TrainingSession[]) => void;
   equipment: GymEquipment[];
   onUpdateEquipment: (equipment: GymEquipment[]) => void;
   pdfDocuments: CoachPdfDocument[];
@@ -120,6 +121,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
   onUpdatePrograms,
   trainees,
   sessions,
+  onUpdateSessions,
   equipment,
   onUpdateEquipment,
   pdfDocuments,
@@ -284,11 +286,13 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       })),
       participants,
       participantCount: participants.length,
+      status: 'PUBLISHED',
       createdAt: now,
       updatedAt: now,
-      publishedAt: template.status === 'PUBLISHED' ? now : undefined
+      publishedAt: now
     };
     onUpdatePrograms([assigned, ...programs]);
+    onUpdateSessions(sessions.map(item => item.id === session.id ? { ...item, assignedGroupWorkoutProgramId: assigned.id } : item));
     setSelectedProgramId(assigned.id);
     setSetupAnswers({ sourceMode: 'LIBRARY', templateId });
     setSetupComplete(false);
@@ -368,6 +372,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
       participantCount: participants.length,
       participants
     });
+    onUpdateSessions(sessions.map(item => item.id === session.id ? { ...item, assignedGroupWorkoutProgramId: selectedProgram.id } : item));
   };
 
   const duplicateProgram = (program: GroupWorkoutProgram) => {
@@ -596,6 +601,7 @@ export const GroupWorkoutProgramManager: React.FC<GroupWorkoutProgramManagerProp
     const nextPrograms = [scheduled, ...programsRef.current.map(program => program.id === libraryVersion.id ? libraryVersion : program)];
     programsRef.current = nextPrograms;
     onUpdatePrograms(nextPrograms);
+    onUpdateSessions(sessions.map(item => item.id === session.id ? { ...item, assignedGroupWorkoutProgramId: scheduled.id } : item));
     setSelectedProgramId(scheduled.id);
     setSelectedSessionId(session.id);
     setPublishDialogOpen(false);
