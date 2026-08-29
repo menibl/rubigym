@@ -235,6 +235,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
                   <span className="rounded-xl bg-white/10 px-4 py-2">תחנה {exerciseIndex + 1}/{program.exercises.length}</span>
                   <span className="rounded-xl bg-white/10 px-4 py-2">סבב {round}/{currentExercise.rounds}</span>
                   {(currentExercise.weight || currentExercise.reps) && <span className="rounded-xl bg-white/10 px-4 py-2">{currentExercise.weight || currentExercise.reps}</span>}
+                  {currentExercise.equipment && <span className="rounded-xl bg-white/10 px-4 py-2">ציוד: {currentExercise.equipment}</span>}
                 </div>
                 {currentExercise.notes && <div className="mt-2 max-w-3xl shrink-0 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-right"><span className="block text-xs font-black text-amber-300">דגשי המאמן</span><p className="mt-1 line-clamp-2 text-base text-white">{currentExercise.notes}</p></div>}
               </>

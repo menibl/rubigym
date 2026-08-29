@@ -550,13 +550,16 @@ export default function App() {
     const session = sessions.find(item => item.id === traineeSessionWorkoutId);
     const isRegistered = Boolean(session?.registeredUsers.includes(activeUser.id));
     const groupProgram = groupWorkoutPrograms.find(program =>
-      (program.id === session?.assignedGroupWorkoutProgramId || program.sessionId === traineeSessionWorkoutId)
+      program.id === session?.assignedGroupWorkoutProgramId
+    ) || groupWorkoutPrograms.find(program =>
+      program.sessionId === traineeSessionWorkoutId
       && program.status === 'PUBLISHED'
       && !program.libraryEntry
     );
     const personalPlan = workoutPlans.find(plan =>
-      (plan.id === session?.assignedWorkoutPlanId || plan.sessionId === traineeSessionWorkoutId)
-      && plan.traineeId === activeUser.id
+      plan.id === session?.assignedWorkoutPlanId && plan.exercises.length > 0
+    ) || workoutPlans.find(plan =>
+      plan.sessionId === traineeSessionWorkoutId
       && !plan.libraryEntry
       && plan.exercises.length > 0
     );
