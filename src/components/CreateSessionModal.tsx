@@ -42,6 +42,21 @@ function formatLocalDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+export function addMinutesToTime(time: string, durationMinutes: number): string {
+  const [hours, minutes] = time.split(':').map(Number);
+  const totalMinutes = (hours * 60) + minutes + durationMinutes;
+  const endHours = Math.floor(totalMinutes / 60) % 24;
+  const endMinutes = totalMinutes % 60;
+  return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+}
+
+function isValidClubStartTime(time: string): boolean {
+  const match = time.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return false;
+  const totalMinutes = Number(match[1]) * 60 + Number(match[2]);
+  return totalMinutes >= 6 * 60 && totalMinutes <= 22 * 60 && Number(match[2]) % 15 === 0;
+}
+
 export function createSessionsFromData(
   data: CreateSessionData,
   users: User[],
@@ -83,8 +98,8 @@ export function createSessionsFromData(
   const isSeries = targetDates.length > 1;
 
   if (data.category === 'OPEN_GYM') {
-    const endHour = String(parseInt(data.time.split(':')[0]) + 2).padStart(2, '0');
-    const timeSlotStr = `${data.time} - ${endHour}:00`;
+    const durationMinutes = Math.max(15, Number(data.durationMinutes) || 60);
+    const timeSlotStr = `${data.time} - ${addMinutesToTime(data.time, durationMinutes)}`;
     
     const newOpenGym = targetDates.map((dStr, idx) => ({
       id: `open-${Date.now()}-${idx}`,
@@ -210,6 +225,11 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
       return;
     }
 
+    if (!isValidClubStartTime(time)) {
+      alert('יש לבחור שעת התחלה בין 06:00 ל־22:00, במרווחים של 15 דקות.');
+      return;
+    }
+
     if (category === 'PERSONAL' && selectedProgramId && !targetTraineeId) {
       alert('כדי לשבץ תוכנית אישית מהמאגר יש לבחור מתאמן.');
       return;
@@ -305,6 +325,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
                       if (!title) setTitle('אימון אישי');
                     } else if (c === 'OPEN_GYM') {
                       setMaxParticipants(15);
+                      setDurationMinutes(60);
                       if (!title) setTitle('Open Gym');
                     }
                   }}
@@ -429,6 +450,9 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
               <input
                 type="time"
                 required
+                min="06:00"
+                max="22:00"
+                step="900"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
                 className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:outline-none focus:border-emerald-500 bg-white font-mono"
@@ -444,6 +468,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
                 required
                 min="15"
                 max="180"
+                step="15"
                 value={durationMinutes}
                 onChange={(e) => setDurationMinutes(Number(e.target.value))}
                 className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:outline-none focus:border-emerald-500 bg-white"

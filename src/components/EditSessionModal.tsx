@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { addMinutesToTime } from './CreateSessionModal';
 import {
   User,
   TrainingSession,
@@ -49,8 +50,18 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
   // Form State
   const [title, setTitle] = useState(session?.title || '');
   const [date, setDate] = useState(session?.date || openGym?.date || '');
-  const [time, setTime] = useState(session?.time || openGym?.timeSlot?.split(' - ')[0] || '18:00');
-  const [durationMinutes, setDurationMinutes] = useState<number>(session?.durationMinutes || 60);
+  const [time, setTime] = useState(session?.time || openGym?.timeSlot?.split('-')[0].trim() || '18:00');
+  const getOpenGymDuration = () => {
+    const [start = '', end = ''] = (openGym?.timeSlot || '').split('-').map(value => value.trim());
+    const toMinutes = (value: string) => {
+      const [hours, minutes] = value.split(':').map(Number);
+      return (hours * 60) + minutes;
+    };
+    if (!start || !end) return 60;
+    const difference = toMinutes(end) - toMinutes(start);
+    return difference > 0 ? difference : difference + (24 * 60);
+  };
+  const [durationMinutes, setDurationMinutes] = useState<number>(session?.durationMinutes || getOpenGymDuration());
   const [coachId, setCoachId] = useState(session?.coachId || activeUser.id);
   const [muscleGroup, setMuscleGroup] = useState<MuscleGroup>(session?.muscleGroup || MuscleGroup.UPPER);
   const [maxParticipants, setMaxParticipants] = useState<number>(session?.maxParticipants || openGym?.maxParticipants || 10);
@@ -79,7 +90,8 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
       setIsPersonalTraining(session.isPersonalTraining || false);
     } else if (openGym) {
       setDate(openGym.date);
-      setTime(openGym.timeSlot ? openGym.timeSlot.split(' - ')[0] : '14:00');
+      setTime(openGym.timeSlot ? openGym.timeSlot.split('-')[0].trim() : '14:00');
+      setDurationMinutes(getOpenGymDuration());
       setMaxParticipants(openGym.maxParticipants);
     }
     setUpdateSeries(false);
@@ -114,8 +126,7 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
       };
       onSaveSession(updated, updateSeries, session.date);
     } else if (openGym && onSaveOpenGym) {
-      const endHour = String(parseInt(time.split(':')[0]) + 2).padStart(2, '0');
-      const timeSlotStr = `${time} - ${endHour}:00`;
+      const timeSlotStr = `${time} - ${addMinutesToTime(time, Math.max(15, durationMinutes || 60))}`;
       const updated: OpenGymSession = {
         ...openGym,
         date,
@@ -232,7 +243,7 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
           )}
 
           {/* DATE & TIME & DURATION */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className={`grid grid-cols-2 gap-3 ${isSession ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">תאריך</label>
               <input
@@ -248,24 +259,27 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
               <input
                 type="time"
                 required
+                min="06:00"
+                max="22:00"
+                step="900"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
                 className="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold focus:outline-none focus:border-emerald-500"
               />
             </div>
-            {isSession ? (
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">משך (דקות)</label>
-                <input
-                  type="number"
-                  min="15"
-                  max="180"
-                  value={durationMinutes}
-                  onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                  className="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            ) : (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">משך (דקות)</label>
+              <input
+                type="number"
+                min="15"
+                max="180"
+                step="15"
+                value={durationMinutes}
+                onChange={(e) => setDurationMinutes(Number(e.target.value))}
+                className="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            {!isSession && (
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">מקסימום משתתפים</label>
                 <input
