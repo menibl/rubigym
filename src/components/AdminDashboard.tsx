@@ -336,7 +336,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const { newSessions, newOpenGym } = createSessionsFromData(data, users, activeUser);
     if (newSessions.length > 0) {
       onUpdateSessions([...newSessions, ...sessions]);
-      if (data.category === 'PERSONAL' && data.selectedProgramId && data.targetTraineeId) {
+      if (data.category === 'PERSONAL' && data.selectedProgramId && (data.targetTraineeId || data.isDemoSession)) {
         const source = workoutPlans.find(plan => plan.id === data.selectedProgramId && !plan.sessionId);
         if (source) onUpdateWorkoutPlans([...copyPersonalPlanToSessions(source, newSessions, data.targetTraineeId, activeUser), ...workoutPlans]);
       }

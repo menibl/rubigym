@@ -3,6 +3,7 @@ import { CalendarDays, Clock3, FastForward, MonitorPlay, Pause, Play, RotateCcw,
 import { GroupWorkoutLiveStatus, getGroupWorkoutStatus, sendGroupWorkoutCommand, subscribeToGroupWorkoutStatus } from '../data/groupWorkoutRemote';
 import { GroupWorkoutProgram, TrainingSession, User, UserRole, WorkoutPlan } from '../types';
 import { activateClubDisplay, clubDisplayUrl } from '../data/clubDisplayRemote';
+import { personalPlanToDisplayProgram } from '../data/workoutAssignment';
 
 interface CoachTrainingModeProps {
   activeUser: User;
@@ -70,19 +71,33 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
     }
   };
 
+  const openPersonalClubDisplay = async (session: TrainingSession, plan: WorkoutPlan) => {
+    try {
+      const trainee = users.find(user => user.id === session.targetTraineeId);
+      await activateClubDisplay(personalPlanToDisplayProgram(
+        plan,
+        session.demoTraineeName || trainee?.name || 'אימון הדגמה אישי',
+        session
+      ));
+      window.alert('האימון האישי נשלח למסך המועדון הקבוע.');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'לא ניתן להפעיל את מסך המועדון.');
+    }
+  };
+
   const personalLibrary = useMemo(() => workoutPlans.filter(plan => !plan.sessionId && plan.exercises.length > 0), [workoutPlans]);
   const groupLibrary = useMemo(() => groupWorkoutPrograms.filter(program => !program.sessionId), [groupWorkoutPrograms]);
 
-  const assignPersonalPlan = (session: TrainingSession, traineeId: string) => {
+  const assignPersonalPlan = (session: TrainingSession) => {
     const sourceId = selectedLibraryItems[session.id] || personalLibrary[0]?.id;
     const source = personalLibrary.find(plan => plan.id === sourceId);
-    if (!source || !traineeId) return;
+    if (!source) return;
     const stamp = Date.now();
     const assigned: WorkoutPlan = {
       ...source,
       id: `session-plan-${stamp}`,
       title: source.title || `תוכנית של ${users.find(user => user.id === source.traineeId)?.name || 'מתאמן'}`,
-      traineeId,
+      traineeId: session.targetTraineeId || `demo-session-${session.id}`,
       sessionId: session.id,
       sourcePlanId: source.id,
       libraryEntry: false,
@@ -156,18 +171,25 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
       const personalPlan = workoutPlans.find(plan => plan.sessionId === session.id)
         || workoutPlans.find(plan => plan.traineeId === traineeId && !plan.sessionId);
       return <article key={session.id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2 text-[10px] font-black"><span className={`rounded-full px-2 py-1 ${session.isPersonalTraining ? 'bg-sky-100 text-sky-800' : 'bg-indigo-100 text-indigo-800'}`}>{session.isPersonalTraining ? 'אישי' : 'קבוצתי'}</span><span className="flex items-center gap-1 text-slate-500"><Clock3 size={12} /> {session.date} · {session.time}</span></div><h3 className="mt-2 truncate text-lg font-black text-slate-900">{session.title}</h3><p className="mt-1 text-xs text-slate-500">{session.isPersonalTraining ? trainee?.name || 'מתאמן טרם שובץ' : `${session.registeredUsers.length}/${session.maxParticipants} נרשמים`}</p></div><button onClick={() => onOpenProgram(session)} className="shrink-0 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">תכנון / עריכה</button></div>
+        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2 text-[10px] font-black"><span className={`rounded-full px-2 py-1 ${session.isPersonalTraining ? 'bg-sky-100 text-sky-800' : 'bg-indigo-100 text-indigo-800'}`}>{session.isPersonalTraining ? session.isDemoSession ? 'אישי · הדגמה' : 'אישי' : 'קבוצתי'}</span><span className="flex items-center gap-1 text-slate-500"><Clock3 size={12} /> {session.date} · {session.time}</span></div><h3 className="mt-2 truncate text-lg font-black text-slate-900">{session.title}</h3><p className="mt-1 text-xs text-slate-500">{session.isPersonalTraining ? session.demoTraineeName || trainee?.name || 'מתאמן טרם שובץ' : `${session.registeredUsers.length}/${session.maxParticipants} נרשמים`}</p></div><button onClick={() => onOpenProgram(session)} className="shrink-0 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">תכנון / עריכה</button></div>
 
         {session.isPersonalTraining ? <div className="mt-3 space-y-3 rounded-xl border border-sky-100 bg-sky-50 p-3">
           <p className="text-xs font-black text-sky-900">{personalPlan ? `${personalPlan.exercises.length} תרגילים בתוכנית המשובצת` : 'עדיין לא שובצה תוכנית לאימון הזה'}</p>
           <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <select value={selectedLibraryItems[session.id] || personalLibrary[0]?.id || ''} onChange={event => setSelectedLibraryItems(current => ({ ...current, [session.id]: event.target.value }))} disabled={!traineeId || personalLibrary.length === 0} className="min-h-11 rounded-xl border border-sky-200 bg-white px-3 text-xs font-bold text-slate-800 disabled:opacity-50">
+            <select value={selectedLibraryItems[session.id] || personalLibrary[0]?.id || ''} onChange={event => setSelectedLibraryItems(current => ({ ...current, [session.id]: event.target.value }))} disabled={personalLibrary.length === 0} className="min-h-11 rounded-xl border border-sky-200 bg-white px-3 text-xs font-bold text-slate-800 disabled:opacity-50">
               {personalLibrary.length === 0 && <option value="">אין עדיין תוכניות אישיות במאגר</option>}
               {personalLibrary.map(plan => <option key={plan.id} value={plan.id}>{plan.title || `תוכנית של ${users.find(user => user.id === plan.traineeId)?.name || 'מתאמן'}`} · {plan.exercises.length} תרגילים</option>)}
             </select>
-            <button onClick={() => traineeId && assignPersonalPlan(session, traineeId)} disabled={!traineeId || personalLibrary.length === 0} className="min-h-11 rounded-xl bg-sky-700 px-4 py-2 text-xs font-black text-white disabled:opacity-40">{workoutPlans.some(plan => plan.sessionId === session.id) ? 'החלף תוכנית' : 'שבץ מהמאגר'}</button>
+            <button onClick={() => assignPersonalPlan(session)} disabled={personalLibrary.length === 0} className="min-h-11 rounded-xl bg-sky-700 px-4 py-2 text-xs font-black text-white disabled:opacity-40">{workoutPlans.some(plan => plan.sessionId === session.id) ? 'החלף תוכנית' : 'שבץ מהמאגר'}</button>
           </div>
-          {personalPlan && <button onClick={() => window.open(`${window.location.origin}${window.location.pathname}#personal-workout-display=${encodeURIComponent(personalPlan.id)}`, '_blank', 'noopener,noreferrer')} className="flex w-full min-h-11 items-center justify-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-black text-white"><MonitorPlay size={16} /> פתח תצוגת אימון</button>}
+          {personalPlan && <div className="grid gap-2 sm:grid-cols-2">
+            <button onClick={() => window.open(`${window.location.origin}${window.location.pathname}#personal-workout-display=${encodeURIComponent(personalPlan.id)}`, '_blank', 'noopener,noreferrer')} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-black text-white"><MonitorPlay size={16} /> פתח תצוגת אימון</button>
+            <button onClick={() => void openPersonalClubDisplay(session, personalPlan)} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white"><MonitorPlay size={16} /> הצג במסך המועדון</button>
+          </div>}
+          {personalPlan && <>
+            <a href={clubDisplayUrl()} target="_blank" rel="noreferrer" className="block text-left text-[10px] font-bold text-sky-800 underline">פתח את כתובת המסך הקבועה במחשב זה</a>
+            <LiveControls program={personalPlanToDisplayProgram(personalPlan, session.demoTraineeName || trainee?.name || 'אימון אישי', session)} />
+          </>}
         </div> : <>
           {program ? <div className="mt-3 space-y-3">
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-black text-indigo-900">{program.title}</p><p className="mt-1 text-[10px] text-indigo-700">{program.mode === 'ROTATING_GROUPS' ? `${(program.stations || []).length} קבוצות · ${(program.stations || []).reduce((sum, station) => sum + station.exercises.length, 0)} תרגילים` : `${program.exercises.length} תרגילים`}</p></div><button onClick={() => void openGroupDisplay(program)} disabled={program.status !== 'PUBLISHED'} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40"><MonitorPlay size={15} /> הצג במסך המועדון</button></div><a href={clubDisplayUrl()} target="_blank" rel="noreferrer" className="mt-2 block text-left text-[10px] font-bold text-indigo-700 underline">פתח את כתובת המסך הקבועה במחשב זה</a></div>

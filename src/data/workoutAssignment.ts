@@ -3,14 +3,14 @@ import { GroupWorkoutProgram, TrainingSession, User, WorkoutPlan } from '../type
 export const copyPersonalPlanToSessions = (
   source: WorkoutPlan,
   sessions: TrainingSession[],
-  traineeId: string,
+  traineeId: string | undefined,
   activeUser: User
 ): WorkoutPlan[] => sessions.map((session, sessionIndex) => {
   const stamp = `${Date.now()}-${sessionIndex}`;
   return {
     ...source,
     id: `session-plan-${stamp}`,
-    traineeId,
+    traineeId: traineeId || `demo-session-${session.id}`,
     sessionId: session.id,
     sourcePlanId: source.id,
     libraryEntry: false,
@@ -22,6 +22,41 @@ export const copyPersonalPlanToSessions = (
       id: `session-exercise-${stamp}-${exerciseIndex}`
     }))
   };
+});
+
+const parseDisplaySeconds = (value: string | undefined, fallback: number) => {
+  const parsed = Number.parseInt(value || '', 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return /min|דק/i.test(value || '') ? parsed * 60 : parsed;
+};
+
+export const personalPlanToDisplayProgram = (
+  plan: WorkoutPlan,
+  displayName = 'אימון אישי',
+  session?: Pick<TrainingSession, 'id' | 'date' | 'time'>
+): GroupWorkoutProgram => ({
+  id: `personal-display-${plan.id}`,
+  sessionId: session?.id,
+  sessionDate: session?.date,
+  sessionTime: session?.time,
+  groupName: displayName,
+  title: plan.title || 'תוכנית אימון אישית',
+  description: `תוכנית אישית בהנחיית ${plan.coachName}`,
+  coachId: plan.coachId,
+  coachName: plan.coachName,
+  exercises: plan.exercises.map(exercise => ({
+    ...exercise,
+    workSeconds: parseDisplaySeconds(exercise.workDuration, 45),
+    restSeconds: parseDisplaySeconds(exercise.restDuration, 30),
+    rounds: Math.max(1, exercise.sets)
+  })),
+  defaultWorkSeconds: 45,
+  defaultRestSeconds: 30,
+  preparationSeconds: 10,
+  status: 'PUBLISHED',
+  createdAt: plan.lastUpdated,
+  updatedAt: new Date().toISOString(),
+  publishedAt: plan.lastUpdated
 });
 
 export const copyGroupProgramToSessions = (

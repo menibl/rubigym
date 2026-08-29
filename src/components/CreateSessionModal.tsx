@@ -32,6 +32,8 @@ export interface CreateSessionData {
   recurringType: 'NONE' | 'WEEKLY_UNLIMITED' | 'WEEKLY_UNTIL_DATE';
   recurringUntilDate?: string;
   targetTraineeId?: string;
+  isDemoSession?: boolean;
+  demoTraineeName?: string;
   selectedProgramId?: string;
 }
 
@@ -133,6 +135,8 @@ export function createSessionsFromData(
       allowedMemberships: data.allowedMemberships,
       isPersonalTraining: data.category === 'PERSONAL',
       targetTraineeId: data.category === 'PERSONAL' ? data.targetTraineeId : undefined,
+      isDemoSession: data.category === 'PERSONAL' ? data.isDemoSession : undefined,
+      demoTraineeName: data.category === 'PERSONAL' && data.isDemoSession ? data.demoTraineeName?.trim() : undefined,
       coTrainees: data.category === 'PERSONAL' && data.targetTraineeId ? [data.targetTraineeId] : undefined,
       registeredUsers: [],
       waitlistUsers: [],
@@ -181,6 +185,8 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   const [genderRestriction, setGenderRestriction] = useState<Gender>(Gender.ALL);
   const [allowedMemberships, setAllowedMemberships] = useState<MembershipType[]>([]);
   const [targetTraineeId, setTargetTraineeId] = useState('');
+  const [isDemoSession, setIsDemoSession] = useState(false);
+  const [demoTraineeName, setDemoTraineeName] = useState('');
   const [selectedProgramId, setSelectedProgramId] = useState('');
 
   // Recurrence state
@@ -206,6 +212,8 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
       setAllowedMemberships([]);
       setRecurringType('NONE');
       setTargetTraineeId('');
+      setIsDemoSession(false);
+      setDemoTraineeName('');
       setSelectedProgramId('');
 
       // Default end date for until date (e.g., 1 month ahead)
@@ -220,7 +228,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (category !== 'OPEN_GYM' && allowedMemberships.length === 0) {
+    if (category !== 'OPEN_GYM' && !(category === 'PERSONAL' && isDemoSession) && allowedMemberships.length === 0) {
       alert('יש לבחור לפחות סוג מנוי אחד המורשה להירשם לאימון!');
       return;
     }
@@ -230,8 +238,13 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
       return;
     }
 
-    if (category === 'PERSONAL' && selectedProgramId && !targetTraineeId) {
+    if (category === 'PERSONAL' && selectedProgramId && !targetTraineeId && !isDemoSession) {
       alert('כדי לשבץ תוכנית אישית מהמאגר יש לבחור מתאמן.');
+      return;
+    }
+
+    if (category === 'PERSONAL' && isDemoSession && !demoTraineeName.trim()) {
+      alert('יש להזין את שם המתאמן באימון ההדגמה.');
       return;
     }
 
@@ -241,6 +254,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
     }
 
     const finalTitle = title.trim() || (
+      category === 'PERSONAL' && isDemoSession ? `אימון הדגמה – ${demoTraineeName.trim()}` :
       category === 'PERSONAL' ? 'אימון אישי 1-על-1' :
       category === 'OPEN_GYM' ? 'Open Gym (שעות פתוחות)' :
       'אימון כושר קבוצתי'
@@ -262,6 +276,8 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
       recurringType,
       recurringUntilDate: recurringType === 'WEEKLY_UNTIL_DATE' ? recurringUntilDate : undefined,
       targetTraineeId: category === 'PERSONAL' ? targetTraineeId || undefined : undefined,
+      isDemoSession: category === 'PERSONAL' ? isDemoSession : undefined,
+      demoTraineeName: category === 'PERSONAL' && isDemoSession ? demoTraineeName.trim() : undefined,
       selectedProgramId: category !== 'OPEN_GYM' ? selectedProgramId || undefined : undefined
     });
 
@@ -324,6 +340,8 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
                       setMaxParticipants(1);
                       if (!title) setTitle('אימון אישי');
                     } else if (c === 'OPEN_GYM') {
+                      setIsDemoSession(false);
+                      setDemoTraineeName('');
                       setMaxParticipants(15);
                       setDurationMinutes(60);
                       if (!title) setTitle('Open Gym');
@@ -352,12 +370,23 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
               </div>
               <div className={`grid gap-3 ${category === 'PERSONAL' ? 'sm:grid-cols-2' : ''}`}>
                 {category === 'PERSONAL' && (
-                  <label className="text-xs font-bold text-slate-700">מתאמן לאימון האישי
-                    <select value={targetTraineeId} onChange={event => setTargetTraineeId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs">
-                      <option value="">בחירת מתאמן...</option>
-                      {trainees.map(trainee => <option key={trainee.id} value={trainee.id}>{trainee.name}</option>)}
-                    </select>
-                  </label>
+                  <div className="space-y-2">
+                    <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-black text-amber-950">
+                      <input type="checkbox" checked={isDemoSession} onChange={event => {
+                        setIsDemoSession(event.target.checked);
+                        if (event.target.checked) setTargetTraineeId('');
+                      }} className="accent-amber-500" />
+                      אימון הדגמה למתאמן שטרם נרשם
+                    </label>
+                    {isDemoSession ? <label className="block text-xs font-bold text-slate-700">שם המתאמן להדגמה
+                      <input required value={demoTraineeName} onChange={event => setDemoTraineeName(event.target.value)} placeholder="שם פרטי ומשפחה" className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs" />
+                    </label> : <label className="block text-xs font-bold text-slate-700">מתאמן לאימון האישי
+                      <select value={targetTraineeId} onChange={event => setTargetTraineeId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs">
+                        <option value="">בחירת מתאמן...</option>
+                        {trainees.map(trainee => <option key={trainee.id} value={trainee.id}>{trainee.name}</option>)}
+                      </select>
+                    </label>}
+                  </div>
                 )}
                 <label className="text-xs font-bold text-slate-700">תוכנית מהמאגר
                   <select value={selectedProgramId} onChange={event => setSelectedProgramId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs">
@@ -372,7 +401,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
                   </select>
                 </label>
               </div>
-              <p className="mt-2 text-[10px] leading-4 text-indigo-700">אם תיבחר תוכנית, ייווצר עותק נפרד ויישובץ אוטומטית לכל אירוע שייווצר ביומן.</p>
+              <p className="mt-2 text-[10px] leading-4 text-indigo-700">אם תיבחר תוכנית, ייווצר עותק נפרד ויישובץ אוטומטית לכל אירוע שייווצר ביומן. באימון הדגמה אין צורך בחשבון מתאמן.</p>
             </div>
           )}
 

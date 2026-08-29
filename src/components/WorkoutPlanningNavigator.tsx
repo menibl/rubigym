@@ -201,7 +201,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
 
     {route === 'PERSONAL_SESSION' && <SelectionList empty={personalSessions.length === 0} emptyText="אין אימונים אישיים ביומן">
       {personalSessions.map(session => <button type="button" key={session.id} className="planning-selection-card" onClick={() => onOpenPersonalSession(session)}>
-        <span className="planning-date-badge"><strong>{session.time}</strong><small>{session.date}</small></span><span><strong>{session.title}</strong><small>{trainees.find(item => item.id === (session.targetTraineeId || session.registeredUsers[0]))?.name || 'טרם נבחר מתאמן'}</small></span><ChevronLeft size={18} />
+        <span className="planning-date-badge"><strong>{session.time}</strong><small>{session.date}</small></span><span><strong>{session.title}</strong><small>{session.demoTraineeName || trainees.find(item => item.id === (session.targetTraineeId || session.registeredUsers[0]))?.name || 'טרם נבחר מתאמן'}</small></span><ChevronLeft size={18} />
       </button>)}
     </SelectionList>}
 
