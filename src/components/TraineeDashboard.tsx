@@ -1802,7 +1802,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                             {(booked || waitlisted) && (
                               <div className="booking-calendar-links">
                                 {booked && sessionWorkoutProgram(session.id) && (
-                                  <button type="button" className="workout-view-button" onClick={() => openSessionWorkoutDisplay(session)}><MonitorPlay size={14} /> הצג אימון</button>
+                                  <button type="button" className="workout-view-button" onClick={() => openSessionWorkoutDisplay(session)}><MonitorPlay size={14} /> צפה בתוכנית האימון</button>
                                 )}
                                 <a href={getGoogleCalendarLink(session)} target="_blank" rel="noreferrer">Google Calendar</a>
                                 <button type="button" onClick={() => downloadIcsFile(session)}>Apple Calendar</button>
