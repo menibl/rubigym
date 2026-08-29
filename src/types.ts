@@ -392,6 +392,10 @@ export interface TrainingSession {
   allowedMemberships: MembershipType[];
   registeredUsers: string[]; // List of user IDs
   waitlistUsers: string[]; // List of user IDs (automatic queue)
+  /** Persisted link to the exact personal program assigned to this calendar event. */
+  assignedWorkoutPlanId?: string;
+  /** Persisted link to the exact group program assigned to this calendar event. */
+  assignedGroupWorkoutProgramId?: string;
 
   // Personal Training specifics
   isPersonalTraining?: boolean;
@@ -453,6 +457,10 @@ export interface WorkoutPlan {
   exercises: Exercise[];
   trainingDaysPerWeek?: number;
   dayLabels?: string[];
+  effortMetric?: 'TIME' | 'REPS';
+  defaultWorkSeconds?: number;
+  defaultRestSeconds?: number;
+  defaultRepetitions?: string;
   status?: 'REQUIRED_OPEN_GYM' | 'REQUESTED_BY_TRAINEE' | 'APPROVED_ASSIGNED';
   isRequested?: boolean;
   /** Saved immutable-ish version for reuse. Active trainee plans keep this false/undefined. */
@@ -558,6 +566,10 @@ export interface WorkoutAssistantDraft {
   exercises: Exercise[];
   trainingDaysPerWeek?: number;
   dayLabels?: string[];
+  effortMetric?: 'TIME' | 'REPS';
+  defaultWorkSeconds?: number;
+  defaultRestSeconds?: number;
+  defaultRepetitions?: string;
   sourceDocumentIds: string[];
   createdAt: string;
   updatedAt: string;

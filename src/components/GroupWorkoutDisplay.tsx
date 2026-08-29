@@ -28,6 +28,7 @@ const formatTime = (seconds: number) => {
 };
 
 const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program }) => {
+  const isRepetitionBased = program?.effortMetric === 'REPS';
   const [exerciseIndex, setExerciseIndex] = useState(0);
   const [round, setRound] = useState(1);
   const [phase, setPhase] = useState<TimerPhase>('PREPARE');
@@ -73,7 +74,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
     setExerciseIndex(index);
     setRound(targetRound);
     setPhase('WORK');
-    setSecondsLeft(exercise.workSeconds);
+    setSecondsLeft(isRepetitionBased ? 0 : exercise.workSeconds);
     beep(1100, 0.35);
   };
 
@@ -115,7 +116,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
   };
 
   useEffect(() => {
-    if (!isRunning || phase === 'COMPLETE') return;
+    if (isRepetitionBased || !isRunning || phase === 'COMPLETE') return;
     const timer = window.setInterval(() => {
       setSecondsLeft(current => {
         if (current <= 1) {
@@ -128,7 +129,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [exerciseIndex, isRunning, phase, round]);
+  }, [exerciseIndex, isRepetitionBased, isRunning, phase, round]);
 
   const resetWorkout = () => {
     setExerciseIndex(0);
@@ -157,7 +158,8 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Space') {
         event.preventDefault();
-        setIsRunning(value => !value);
+        if (isRepetitionBased) advanceAfterRest();
+        else setIsRunning(value => !value);
       } else if (event.code === 'ArrowRight') {
         nextStation();
       } else if (event.code === 'ArrowLeft') {
@@ -168,7 +170,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [exerciseIndex, program?.id]);
+  }, [exerciseIndex, isRepetitionBased, program?.id, round]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) void document.documentElement.requestFullscreen();
@@ -205,7 +207,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
       : phase === 'COMPLETE'
         ? 'from-indigo-500 to-violet-600 text-white'
         : 'from-sky-500 to-blue-600 text-white';
-  const phaseLabel = phase === 'WORK' ? 'עבודה' : phase === 'REST' ? 'מנוחה' : phase === 'COMPLETE' ? 'האימון הושלם!' : 'מתכוננים';
+  const phaseLabel = phase === 'WORK' ? isRepetitionBased ? 'לפי חזרות' : 'עבודה' : phase === 'REST' ? 'מנוחה' : phase === 'COMPLETE' ? 'האימון הושלם!' : 'מתכוננים';
 
   return (
     <main className="h-screen overflow-hidden bg-slate-950 text-white" dir="rtl">
@@ -226,7 +228,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
             <div className={`mb-2 shrink-0 rounded-full bg-gradient-to-l px-8 py-1.5 text-lg font-black shadow-lg ${phaseStyle}`}>{phaseLabel}</div>
             {phase !== 'COMPLETE' ? (
               <>
-                <div className={`shrink-0 font-mono text-[clamp(5rem,16vh,10rem)] font-black leading-none tracking-tighter tabular-nums ${secondsLeft <= 3 ? 'animate-pulse text-red-400' : 'text-white'}`}>{formatTime(secondsLeft)}</div>
+                <div className={`shrink-0 font-mono text-[clamp(4rem,13vh,9rem)] font-black leading-none tracking-tighter tabular-nums ${!isRepetitionBased && secondsLeft <= 3 ? 'animate-pulse text-red-400' : 'text-white'}`}>{isRepetitionBased ? `${currentExercise.reps || program.defaultRepetitions || 'לפי התרגיל'} חזרות` : formatTime(secondsLeft)}</div>
                 <p className="mt-2 shrink-0 text-[clamp(2rem,5vh,4rem)] font-black leading-tight">{currentExercise.name}</p>
                 {(currentExercise.mediaUrl || currentExercise.mediaStorageId) && <ExerciseMedia exercise={currentExercise} className="mt-2 min-h-0 max-h-[24vh] w-full max-w-xl flex-1" />}
                 <div className="mt-2 flex shrink-0 flex-wrap items-center justify-center gap-2 text-base font-bold text-slate-300">
@@ -242,7 +244,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
 
             <div className="mt-2 flex shrink-0 items-center justify-center gap-2">
               <button onClick={previousStation} className="rounded-xl bg-white/10 p-2.5 hover:bg-white/20"><ChevronRight size={25} /></button>
-              <button onClick={() => { beep(880, 0.1); setIsRunning(value => !value); }} disabled={phase === 'COMPLETE'} className={`flex h-14 w-14 items-center justify-center rounded-full shadow-2xl transition hover:scale-105 disabled:opacity-40 ${isRunning ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-white'}`}>{isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}</button>
+              <button onClick={() => { beep(880, 0.1); if (isRepetitionBased) advanceAfterRest(); else setIsRunning(value => !value); }} disabled={phase === 'COMPLETE'} className={`flex h-14 w-14 items-center justify-center rounded-full shadow-2xl transition hover:scale-105 disabled:opacity-40 ${isRunning && !isRepetitionBased ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-white'}`}>{isRepetitionBased ? <ChevronLeft size={28} /> : isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}</button>
               <button onClick={nextStation} className="rounded-xl bg-white/10 p-2.5 hover:bg-white/20"><ChevronLeft size={25} /></button>
               <button onClick={resetWorkout} className="mr-2 rounded-xl bg-white/10 p-2.5 hover:bg-white/20"><RotateCcw size={22} /></button>
               <button onClick={() => beep(880, 0.15)} className="rounded-xl bg-white/10 p-2.5 hover:bg-white/20" title="בדיקת צליל"><Volume2 size={22} /></button>
@@ -255,7 +257,7 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
               {program.exercises.map((exercise, index) => (
                 <button key={exercise.id} onClick={() => setWorkPhase(index, 1)} className={`flex min-h-0 w-full items-center gap-2 overflow-hidden rounded-xl border px-2 py-1.5 text-right transition ${index === exerciseIndex && phase !== 'COMPLETE' ? 'border-indigo-400 bg-indigo-500/20' : index < exerciseIndex || phase === 'COMPLETE' ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
                   <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black ${index < exerciseIndex || phase === 'COMPLETE' ? 'bg-emerald-500 text-white' : index === exerciseIndex ? 'bg-indigo-500 text-white' : 'bg-white/10 text-slate-300'}`}>{index < exerciseIndex || phase === 'COMPLETE' ? '✓' : index + 1}</span>
-                  <span className="min-w-0 flex-1"><strong className="block truncate text-base">{exercise.name}</strong><small className="block truncate text-xs text-slate-400">{exercise.workSeconds} שנ׳ עבודה · {exercise.restSeconds} שנ׳ מנוחה · {exercise.rounds} סבבים</small></span>
+                  <span className="min-w-0 flex-1"><strong className="block truncate text-base">{exercise.name}</strong><small className="block truncate text-xs text-slate-400">{isRepetitionBased ? `${exercise.reps || program.defaultRepetitions || 'לפי התרגיל'} חזרות` : `${exercise.workSeconds} שנ׳ עבודה · ${exercise.restSeconds} שנ׳ מנוחה`} · {exercise.rounds} סבבים</small></span>
                 </button>
               ))}
             </div>

@@ -80,12 +80,6 @@ const getTraineeSessionWorkoutId = () => {
   return match ? decodeURIComponent(match[1]) : '';
 };
 
-const parseDisplaySeconds = (value: string | undefined, fallback: number) => {
-  const parsed = Number.parseInt(value || '', 10);
-  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
-  return /min|דק/i.test(value || '') ? parsed * 60 : parsed;
-};
-
 export default function App() {
   // --- Global Application State ---
   const [settings, setSettings] = useState<SystemSettings>(INITIAL_SETTINGS);
@@ -525,27 +519,7 @@ export default function App() {
       || workoutPlans.find(plan => plan.traineeId === personalWorkoutDisplayId && !plan.sessionId)
       || workoutPlans.find(plan => plan.traineeId === personalWorkoutDisplayId);
     const trainee = users.find(user => user.id === workoutPlan?.traineeId || user.id === personalWorkoutDisplayId);
-    const displayProgram: GroupWorkoutProgram | undefined = workoutPlan ? {
-      id: `personal-display-${workoutPlan.id}`,
-      groupName: trainee?.name || 'אימון אישי',
-      title: 'תוכנית אימון אישית',
-      description: `תוכנית אישית בהנחיית ${workoutPlan.coachName}`,
-      coachId: workoutPlan.coachId,
-      coachName: workoutPlan.coachName,
-      exercises: workoutPlan.exercises.map(exercise => ({
-        ...exercise,
-        workSeconds: parseDisplaySeconds(exercise.workDuration, 45),
-        restSeconds: parseDisplaySeconds(exercise.restDuration, 30),
-        rounds: Math.max(1, exercise.sets)
-      })),
-      defaultWorkSeconds: 45,
-      defaultRestSeconds: 30,
-      preparationSeconds: 10,
-      status: 'PUBLISHED',
-      createdAt: workoutPlan.lastUpdated,
-      updatedAt: workoutPlan.lastUpdated,
-      publishedAt: workoutPlan.lastUpdated
-    } : undefined;
+    const displayProgram = workoutPlan ? personalPlanToDisplayProgram(workoutPlan, trainee?.name || 'אימון אישי') : undefined;
     return <GroupWorkoutDisplay program={displayProgram} />;
   }
 
@@ -576,12 +550,21 @@ export default function App() {
     const session = sessions.find(item => item.id === traineeSessionWorkoutId);
     const isRegistered = Boolean(session?.registeredUsers.includes(activeUser.id));
     const groupProgram = groupWorkoutPrograms.find(program =>
-      program.sessionId === traineeSessionWorkoutId
+      (program.id === session?.assignedGroupWorkoutProgramId || program.sessionId === traineeSessionWorkoutId)
       && program.status === 'PUBLISHED'
       && !program.libraryEntry
     );
-    if (session && isRegistered && groupProgram) {
-      return <TraineeSessionWorkoutView session={session} program={groupProgram} />;
+    const personalPlan = workoutPlans.find(plan =>
+      (plan.id === session?.assignedWorkoutPlanId || plan.sessionId === traineeSessionWorkoutId)
+      && plan.traineeId === activeUser.id
+      && !plan.libraryEntry
+      && plan.exercises.length > 0
+    );
+    const displayProgram = groupProgram || (session && personalPlan
+      ? personalPlanToDisplayProgram(personalPlan, activeUser.name, session)
+      : undefined);
+    if (session && isRegistered && displayProgram) {
+      return <TraineeSessionWorkoutView session={session} program={displayProgram} />;
     }
     return (
       <main className="grid min-h-dvh place-items-center bg-zinc-950 p-5 text-center text-zinc-100" dir="rtl">

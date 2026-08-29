@@ -31,6 +31,7 @@ const valueOrDash = (value?: string | number) => value === undefined || value ==
 export const TraineeSessionWorkoutView: React.FC<TraineeSessionWorkoutViewProps> = ({ program, session }) => {
   const sections = buildSections(program);
   const exerciseCount = sections.reduce((total, section) => total + section.exercises.length, 0);
+  const isRepetitionBased = program.effortMetric === 'REPS';
   const closeView = () => {
     window.close();
     window.setTimeout(() => window.history.back(), 100);
@@ -86,11 +87,11 @@ export const TraineeSessionWorkoutView: React.FC<TraineeSessionWorkoutViewProps>
                   <ExerciseMedia exercise={exercise} compact controls className="mx-4 mb-4" />
                 )}
 
-                <div className="grid grid-cols-2 gap-px border-y border-zinc-700 bg-zinc-700 sm:grid-cols-4">
+                <div className={`grid grid-cols-2 gap-px border-y border-zinc-700 bg-zinc-700 ${isRepetitionBased ? '' : 'sm:grid-cols-4'}`}>
                   <div className="bg-zinc-900 p-3"><span className="block text-[10px] text-zinc-400">חזרות</span><strong className="text-sm text-white">{valueOrDash(exercise.reps || program.defaultRepetitions)}</strong></div>
                   <div className="bg-zinc-900 p-3"><span className="block text-[10px] text-zinc-400">סטים / סבבים</span><strong className="text-sm text-white">{exercise.rounds || exercise.sets || 1}</strong></div>
-                  <div className="bg-zinc-900 p-3"><span className="block text-[10px] text-zinc-400">זמן עבודה</span><strong className="text-sm text-white">{exercise.workSeconds || program.defaultWorkSeconds} שנ׳</strong></div>
-                  <div className="bg-zinc-900 p-3"><span className="block text-[10px] text-zinc-400">מנוחה</span><strong className="text-sm text-white">{exercise.restSeconds || program.defaultRestSeconds} שנ׳</strong></div>
+                  {!isRepetitionBased && <div className="bg-zinc-900 p-3"><span className="block text-[10px] text-zinc-400">זמן עבודה</span><strong className="text-sm text-white">{exercise.workSeconds || program.defaultWorkSeconds} שנ׳</strong></div>}
+                  {!isRepetitionBased && <div className="bg-zinc-900 p-3"><span className="block text-[10px] text-zinc-400">מנוחה</span><strong className="text-sm text-white">{exercise.restSeconds || program.defaultRestSeconds} שנ׳</strong></div>}
                 </div>
 
                 <div className="space-y-2 p-4 text-sm">
@@ -107,9 +108,10 @@ export const TraineeSessionWorkoutView: React.FC<TraineeSessionWorkoutViewProps>
         )}
 
         <section className="grid grid-cols-2 gap-2 rounded-2xl border border-zinc-700 bg-zinc-900 p-3 text-xs text-zinc-300">
-          <span className="flex items-center gap-2"><Clock3 size={15} className="text-amber-400" /> עבודה: {program.defaultWorkSeconds} שנ׳</span>
-          <span className="flex items-center gap-2"><TimerReset size={15} className="text-amber-400" /> מנוחה: {program.defaultRestSeconds} שנ׳</span>
-          <span className="flex items-center gap-2"><RotateCcw size={15} className="text-amber-400" /> מעבר: {program.transitionSeconds || 0} שנ׳</span>
+          {isRepetitionBased
+            ? <span className="col-span-2 flex items-center gap-2"><RotateCcw size={15} className="text-amber-400" /> מדידה לפי חזרות: {program.defaultRepetitions || 'לפי התרגיל'}</span>
+            : <><span className="flex items-center gap-2"><Clock3 size={15} className="text-amber-400" /> עבודה: {program.defaultWorkSeconds} שנ׳</span><span className="flex items-center gap-2"><TimerReset size={15} className="text-amber-400" /> מנוחה: {program.defaultRestSeconds} שנ׳</span></>}
+          {!isRepetitionBased && <span className="flex items-center gap-2"><RotateCcw size={15} className="text-amber-400" /> מעבר: {program.transitionSeconds || 0} שנ׳</span>}
         </section>
 
         <button type="button" onClick={closeView} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 text-sm font-black text-white">

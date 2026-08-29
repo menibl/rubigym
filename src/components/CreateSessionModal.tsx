@@ -138,7 +138,7 @@ export function createSessionsFromData(
       isDemoSession: data.category === 'PERSONAL' ? data.isDemoSession : undefined,
       demoTraineeName: data.category === 'PERSONAL' && data.isDemoSession ? data.demoTraineeName?.trim() : undefined,
       coTrainees: data.category === 'PERSONAL' && data.targetTraineeId ? [data.targetTraineeId] : undefined,
-      registeredUsers: [],
+      registeredUsers: data.category === 'PERSONAL' && data.targetTraineeId ? [data.targetTraineeId] : [],
       waitlistUsers: [],
       recurringType: isSeries ? data.recurringType : ('NONE' as const),
       recurringUntilDate: isSeries ? data.recurringUntilDate : undefined,
