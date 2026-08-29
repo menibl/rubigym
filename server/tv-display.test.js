@@ -98,6 +98,24 @@ test('keeps a repetition-based personal plan out of the automatic 45-second time
   assert.equal(program?.exercises[0].workSeconds, 0);
 });
 
+test('converts a structured personal plan into balanced rotating stations', () => {
+  const payload = {
+    sessions: [{ id: 'structured-session', title: 'אימון אישי מובנה', date: '2026-08-25', time: '19:00', durationMinutes: 60, isPersonalTraining: true }],
+    workoutPlans: [{
+      id: 'structured-plan', sessionId: 'structured-session', coachId: 'coach-1', coachName: 'רובי', lastUpdated: '2026-08-25',
+      mode: 'ROTATING_GROUPS', subgroupCount: 2, roundsPerStation: 3, transitionSeconds: 25,
+      effortMetric: 'TIME', defaultWorkSeconds: 40, defaultRestSeconds: 20,
+      exercises: Array.from({ length: 4 }, (_, index) => ({ id: `exercise-${index}`, name: `תרגיל ${index + 1}`, sets: 3, reps: 'לפי זמן' }))
+    }]
+  };
+  const program = findScheduledLiveDisplayProgram(payload, new Date('2026-08-25T16:00:00.000Z'));
+  assert.equal(program?.mode, 'ROTATING_GROUPS');
+  assert.equal(program?.stations.length, 2);
+  assert.deepEqual(program?.stations.map(station => station.exercises.length), [2, 2]);
+  assert.equal(program?.roundsPerStation, 3);
+  assert.equal(program?.transitionSeconds, 25);
+});
+
 test('keeps the Pages display channel isolated and available without a production login', async () => {
   const program = { id: `pages-${Date.now()}`, title: 'אימון דמו', status: 'PUBLISHED' };
   const origin = 'https://menibl.github.io';
@@ -190,4 +208,11 @@ test('rotating TV stations use a legacy-compatible table instead of overlapping 
   assert.match(script, /<td class="tv-station-cell" colspan="2">/);
   assert.doesNotMatch(script, /<div class="tv-station-slot" style=/);
   assert.doesNotMatch(script, /rotatingSidebarHtml/);
+});
+
+test('TV display advances repetition-based workouts manually', async () => {
+  const script = await readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8');
+  assert.match(script, /function isRepetitionBased\(\)/);
+  assert.match(script, /isRepetitionBased\(\) \? 'הבא'/);
+  assert.match(script, /isRepetitionBased\(\)\) advancePhase\(\)/);
 });

@@ -429,6 +429,10 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
       const defaultWorkSeconds = draft?.defaultWorkSeconds ?? 45;
       const defaultRestSeconds = draft?.defaultRestSeconds ?? 60;
       const defaultRepetitions = draft?.defaultRepetitions || '12';
+      const mode = draft?.mode || 'LINEAR';
+      const subgroupCount = mode === 'ROTATING_GROUPS' ? Math.max(2, draft?.subgroupCount || 3) : 1;
+      const requestedExerciseCount = Math.max(1, draft?.exerciseCount || result.exercises.length || 1);
+      const stationOffsets = new Map<number, number>();
       const nextDraft: WorkoutAssistantDraft = {
         id: draft?.id || `assistant-draft-${Date.now()}`,
         traineeId: trainee.id,
@@ -436,17 +440,22 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         coachName: activeUser.name,
         objective: result.objective,
         coachNotes: result.coachNotes,
-        exercises: result.exercises.slice(0, 60).map((exercise, index) => {
+        exercises: result.exercises.slice(0, Math.min(60, requestedExerciseCount * trainingDays)).map((exercise, index) => {
           const dayNumber = Math.min(trainingDays, Math.max(1, Math.round(exercise.dayNumber || 1)));
           const existing = draft?.exercises.find(item => item.dayNumber === dayNumber && item.name === exercise.name);
+          const stationOffset = stationOffsets.get(dayNumber) || 0;
+          stationOffsets.set(dayNumber, stationOffset + 1);
           return {
             ...exercise,
             name: exercise.name.trim() || `תרגיל ${index + 1}`,
-            sets: Math.min(20, Math.max(1, Math.round(exercise.sets || 1))),
+            sets: Math.min(20, Math.max(1, Math.round(draft?.roundsPerStation || exercise.sets || 1))),
             reps: effortMetric === 'REPS' ? (exercise.reps && exercise.reps !== 'לפי זמן' ? exercise.reps : defaultRepetitions) : 'לפי זמן',
             workDuration: effortMetric === 'TIME' ? (exercise.workDuration || `${defaultWorkSeconds} שניות`) : '',
             restDuration: effortMetric === 'TIME' ? (exercise.restDuration || `${defaultRestSeconds} שניות`) : '',
             dayNumber,
+            stationNumber: mode === 'ROTATING_GROUPS'
+              ? Math.min(subgroupCount, Math.max(1, existing?.stationNumber || exercise.stationNumber || (stationOffset % subgroupCount) + 1))
+              : undefined,
             id: existing?.id || `assistant-ai-ex-${Date.now()}-${index}`,
             mediaUrl: existing?.mediaUrl,
             mediaType: existing?.mediaType,
@@ -459,6 +468,13 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         defaultWorkSeconds,
         defaultRestSeconds,
         defaultRepetitions,
+        mode,
+        subgroupCount,
+        exerciseCount: requestedExerciseCount,
+        roundsPerStation: draft?.roundsPerStation || 3,
+        transitionSeconds: draft?.transitionSeconds || 0,
+        trainingType: draft?.trainingType,
+        plannedDurationMinutes: draft?.plannedDurationMinutes,
         sourceDocumentIds: readableSourceIds,
         createdAt: draft?.createdAt || now,
         updatedAt: now,
@@ -527,6 +543,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
       weight: 'לפי יכולת',
       workDuration: draft.effortMetric === 'REPS' ? '' : `${draft.defaultWorkSeconds ?? 45} שניות`,
       restDuration: draft.effortMetric === 'REPS' ? '' : `${draft.defaultRestSeconds ?? 60} שניות`,
+      stationNumber: draft.mode === 'ROTATING_GROUPS' ? 1 : undefined,
       dayNumber: selectedDraftDay,
       notes: ''
     };
@@ -554,6 +571,13 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
       defaultWorkSeconds: plan.defaultWorkSeconds ?? 45,
       defaultRestSeconds: plan.defaultRestSeconds ?? 60,
       defaultRepetitions: plan.defaultRepetitions || '12',
+      mode: plan.mode || 'LINEAR',
+      subgroupCount: plan.subgroupCount || 1,
+      exerciseCount: plan.exerciseCount || plan.exercises.length,
+      roundsPerStation: plan.roundsPerStation || 3,
+      transitionSeconds: plan.transitionSeconds || 0,
+      trainingType: plan.trainingType,
+      plannedDurationMinutes: plan.plannedDurationMinutes,
       sourceDocumentIds: draft?.sourceDocumentIds || [],
       createdAt: draft?.createdAt || now,
       updatedAt: now,
@@ -610,8 +634,8 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
         onReset={clearConversation}
         drawerContent={drawerTab === 'PREVIEW' ? <div className="space-y-3">
           {!draft ? <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-zinc-500">התוכנית תופיע כאן אוטומטית לאחר שהעוזר יסיים לבנות אותה.</p> : <>
-            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3"><strong className="text-sm text-white">{draft.objective || 'תוכנית אימון אישית'}</strong><p className="mt-1 text-[10px] text-zinc-300">{draft.trainingDaysPerWeek || 1} ימים · {draft.exercises.length} תרגילים · {draft.effortMetric === 'REPS' ? `${draft.defaultRepetitions || 12} חזרות` : `${draft.defaultWorkSeconds ?? 45}/${draft.defaultRestSeconds ?? 60} שנ׳`}</p></div>
-            {Array.from({ length: draft.trainingDaysPerWeek || 1 }, (_, index) => index + 1).map(day => <section key={day} className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="mb-2 text-xs font-black text-amber-200">{draft.dayLabels?.[day - 1] || `יום ${day}`}</h4><div className="space-y-2">{draft.exercises.filter(exercise => (exercise.dayNumber || 1) === day).map((exercise, index) => <article key={exercise.id} className="rounded-lg bg-zinc-950 p-2.5"><div className="flex items-start gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-400 text-[9px] font-black text-zinc-950">{index + 1}</span><div><strong className="block text-xs text-white">{exercise.name}</strong><span className="text-[9px] text-zinc-400">{exercise.sets} סטים · {exercise.reps} · {exercise.weight || 'משקל לפי יכולת'}</span></div></div></article>)}</div></section>)}
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3"><strong className="text-sm text-white">{draft.objective || 'תוכנית אימון אישית'}</strong><p className="mt-1 text-[10px] text-zinc-300">{draft.trainingDaysPerWeek || 1} ימים · {draft.exercises.length} תרגילים · {draft.mode === 'ROTATING_GROUPS' ? `${draft.subgroupCount || 3} תתי־קבוצות` : 'רצף'} · {draft.roundsPerStation || 3} מחזורים · {draft.effortMetric === 'REPS' ? `${draft.defaultRepetitions || 12} חזרות` : `${draft.defaultWorkSeconds ?? 45}/${draft.defaultRestSeconds ?? 60} שנ׳`}</p></div>
+            {Array.from({ length: draft.trainingDaysPerWeek || 1 }, (_, index) => index + 1).map(day => <section key={day} className="rounded-xl border border-white/10 bg-white/5 p-3"><h4 className="mb-2 text-xs font-black text-amber-200">{draft.dayLabels?.[day - 1] || `יום ${day}`}</h4><div className="space-y-2">{draft.exercises.filter(exercise => (exercise.dayNumber || 1) === day).map((exercise, index) => <article key={exercise.id} className="rounded-lg bg-zinc-950 p-2.5"><div className="flex items-start gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-400 text-[9px] font-black text-zinc-950">{index + 1}</span><div><strong className="block text-xs text-white">{exercise.name}</strong><span className="text-[9px] text-zinc-400">{draft.mode === 'ROTATING_GROUPS' ? `תחנה ${exercise.stationNumber || 1} · ` : ''}{exercise.sets} סטים · {exercise.reps} · {exercise.weight || 'משקל לפי יכולת'}</span></div></div></article>)}</div></section>)}
             {!canPublish && <p className="rounded-lg bg-amber-500/10 p-3 text-[10px] text-amber-200">התוכנית תישמר כטיוטה עד להסדרת הזכאות של המתאמן.</p>}
             <button type="button" disabled={!canPublish || !draft.exercises.length} onClick={() => { onPublish(draft); setChatOpen(false); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-xs font-black text-white disabled:opacity-40"><Check size={16} /> {draft.status === 'PUBLISHED' ? 'פרסם מחדש' : 'פרסם תוכנית'}</button>
           </>}
@@ -654,6 +678,7 @@ export const WorkoutAssistantPanel: React.FC<WorkoutAssistantPanelProps> = ({
                       <label className="text-[9px] font-bold text-slate-500">משקל<input value={exercise.weight || ''} onChange={event => updateExercise(exercise.id, { weight: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>
                       {draft.effortMetric === 'TIME' && <label className="text-[9px] font-bold text-slate-500">מנוחה<input value={exercise.restDuration || ''} onChange={event => updateExercise(exercise.id, { restDuration: event.target.value })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800" /></label>}
                       <label className="text-[9px] font-bold text-slate-500">יום אימון<select value={exercise.dayNumber || 1} onChange={event => updateExercise(exercise.id, { dayNumber: Number(event.target.value) })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800">{Array.from({ length: draft.trainingDaysPerWeek || 1 }, (_, index) => index + 1).map(day => <option key={day} value={day}>יום {day}</option>)}</select></label>
+                      {draft.mode === 'ROTATING_GROUPS' && <label className="text-[9px] font-bold text-slate-500">תת־קבוצה / תחנה<select value={exercise.stationNumber || 1} onChange={event => updateExercise(exercise.id, { stationNumber: Number(event.target.value) })} className="mt-0.5 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800">{Array.from({ length: draft.subgroupCount || 3 }, (_, index) => index + 1).map(station => <option key={station} value={station}>תחנה {station}</option>)}</select></label>}
                     </div>
                     <p className="mt-2 text-[10px] text-slate-500">{muscleGroupLabels[exercise.muscleGroup]} · {exercise.notes}</p>
                   </article>

@@ -1010,6 +1010,16 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     { id: 'repetitions', label: 'מספר חזרות ברירת מחדל', type: 'text', required: true, placeholder: 'לדוגמה: 12 או 10 לכל צד', visibleWhen: answers => answers.effortMetric === 'REPS' }
   ];
 
+  const personalStructureQuestions: WizardQuestion[] = [
+    { id: 'trainingType', label: 'סוג האימון', type: 'select', required: true, options: ['כוח', 'פונקציונלי', 'סבולת', 'טאבטה', 'תחנות', 'משולב'].map(value => ({ value, label: value })) },
+    { id: 'mode', label: 'מבנה האימון', type: 'choice', required: true, options: [{ value: 'LINEAR', label: 'רצף', description: 'התרגילים מבוצעים ברצף אחד' }, { value: 'ROTATING_GROUPS', label: 'תתי־קבוצות', description: 'התרגילים מחולקים לתחנות מתחלפות' }] },
+    { id: 'subgroupCount', label: 'כמה תתי־קבוצות / תחנות?', type: 'number', required: true, min: 2, max: 12, visibleWhen: answers => answers.mode === 'ROTATING_GROUPS' },
+    { id: 'exerciseCount', label: 'כמה תרגילים בסך הכול בכל אימון?', type: 'number', required: true, min: 1, max: 60 },
+    { id: 'rounds', label: 'כמה מחזורים / סבבים?', type: 'number', required: true, min: 1, max: 20 },
+    ...personalEffortQuestions,
+    { id: 'transitionSeconds', label: 'זמן מעבר בין תחנות בשניות', type: 'number', min: 0, max: 900, visibleWhen: answers => answers.mode === 'ROTATING_GROUPS' }
+  ];
+
   const personalSetupQuestions: WizardQuestion[] = isGeneralPersonalProgram ? [
     { id: 'programName', label: 'שם התוכנית', type: 'text', required: true, placeholder: 'לדוגמה: תוכנית כוח למתחילים – 3 ימים' },
     { id: 'primaryGoal', label: 'מה המטרה העיקרית?', type: 'text', required: true, placeholder: 'לדוגמה: כוח, ירידה במשקל או שיפור כושר כללי' },
@@ -1017,7 +1027,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     { id: 'weeklySessions', label: 'כמה אימונים בשבוע?', type: 'number', min: 1, max: 7, required: true },
     { id: 'preferredWorkoutMinutes', label: 'משך אימון מועדף בדקות', type: 'number', min: 15, max: 180, required: true },
     { id: 'limitations', label: 'מגבלות כלליות או תרגילים שאינם מתאימים', type: 'textarea', placeholder: 'אם אין, כתבו: ללא' },
-    ...personalEffortQuestions,
+    ...personalStructureQuestions,
   ] : [
     { id: 'updateProfile', label: 'האם לעדכן עכשיו את נתוני המתאמן?', description: 'הנתונים נשמרים בזיכרון המקצועי ומשמשים את הצ׳אט.', type: 'choice', required: true, options: [{ value: true, label: 'כן, לעדכן' }, { value: false, label: 'לא, להשתמש בקיים' }] },
     { id: 'primaryGoal', label: 'מה המטרה העיקרית?', type: 'text', required: true, placeholder: 'לדוגמה: כוח, ירידה במשקל או שיקום', visibleWhen: answers => answers.updateProfile === true },
@@ -1025,7 +1035,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     { id: 'weeklySessions', label: 'כמה אימונים בשבוע?', type: 'number', min: 1, max: 7, required: true, visibleWhen: answers => answers.updateProfile === true },
     { id: 'preferredWorkoutMinutes', label: 'משך אימון מועדף בדקות', type: 'number', min: 15, max: 180, required: true, visibleWhen: answers => answers.updateProfile === true },
     { id: 'limitations', label: 'מגבלות, כאבים או תרגילים אסורים', type: 'textarea', placeholder: 'אם אין, כתבו: ללא', visibleWhen: answers => answers.updateProfile === true },
-    ...personalEffortQuestions,
+    ...personalStructureQuestions,
   ];
 
   const completePersonalSetup = (answers: WizardAnswers) => {
@@ -1059,6 +1069,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     const defaultWorkSeconds = effortMetric === 'TIME' ? Number(answers.workSeconds ?? source?.defaultWorkSeconds ?? 45) : 0;
     const defaultRestSeconds = effortMetric === 'TIME' ? Number(answers.restSeconds ?? source?.defaultRestSeconds ?? 60) : 0;
     const defaultRepetitions = String(answers.repetitions || source?.defaultRepetitions || '12');
+    const mode = source?.mode || (answers.mode === 'ROTATING_GROUPS' ? 'ROTATING_GROUPS' : 'LINEAR');
+    const subgroupCount = mode === 'ROTATING_GROUPS' ? Math.min(12, Math.max(2, Number(answers.subgroupCount ?? source?.subgroupCount ?? 3))) : 1;
+    const exerciseCount = Math.min(60, Math.max(1, Number(answers.exerciseCount ?? source?.exerciseCount ?? 6)));
+    const roundsPerStation = Math.min(20, Math.max(1, Number(answers.rounds ?? source?.roundsPerStation ?? 3)));
+    const transitionSeconds = mode === 'ROTATING_GROUPS' ? Math.min(900, Math.max(0, Number(answers.transitionSeconds ?? source?.transitionSeconds ?? 30))) : 0;
     const baseDraft: WorkoutAssistantDraft = selectedAssistantDraft || {
       id: `workout-draft-${Date.now()}`,
       traineeId: selectedTrainee.id,
@@ -1073,6 +1088,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       defaultWorkSeconds,
       defaultRestSeconds,
       defaultRepetitions,
+      mode,
+      subgroupCount,
+      exerciseCount,
+      roundsPerStation,
+      transitionSeconds,
+      trainingType: String(answers.trainingType || source?.trainingType || 'כוח'),
+      plannedDurationMinutes: Number(answers.preferredWorkoutMinutes || source?.plannedDurationMinutes || 60),
       sourceDocumentIds: [],
       createdAt: now,
       updatedAt: now,
@@ -1083,7 +1105,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       id: source ? `setup-exercise-${Date.now()}-${index}` : exercise.id,
       reps: effortMetric === 'REPS' ? (exercise.reps && exercise.reps !== 'לפי זמן' ? exercise.reps : defaultRepetitions) : 'לפי זמן',
       workDuration: effortMetric === 'TIME' ? `${defaultWorkSeconds} שניות` : '',
-      restDuration: effortMetric === 'TIME' ? `${defaultRestSeconds} שניות` : ''
+      restDuration: effortMetric === 'TIME' ? `${defaultRestSeconds} שניות` : '',
+      sets: roundsPerStation,
+      stationNumber: mode === 'ROTATING_GROUPS' ? exercise.stationNumber || (index % subgroupCount) + 1 : undefined
     }));
     handleUpdateAssistantDraft({
       ...baseDraft,
@@ -1097,6 +1121,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       defaultWorkSeconds,
       defaultRestSeconds,
       defaultRepetitions,
+      mode,
+      subgroupCount,
+      exerciseCount,
+      roundsPerStation,
+      transitionSeconds,
+      trainingType: String(answers.trainingType || source?.trainingType || 'כוח'),
+      plannedDurationMinutes: Number(answers.preferredWorkoutMinutes || source?.plannedDurationMinutes || 60),
       status: 'DRAFT',
       updatedAt: now
     });
@@ -1183,6 +1214,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       defaultWorkSeconds: draft.defaultWorkSeconds ?? 45,
       defaultRestSeconds: draft.defaultRestSeconds ?? 60,
       defaultRepetitions: draft.defaultRepetitions || '12',
+      mode: draft.mode || 'LINEAR',
+      subgroupCount: draft.mode === 'ROTATING_GROUPS' ? draft.subgroupCount || 3 : 1,
+      exerciseCount: draft.exerciseCount || draft.exercises.length,
+      roundsPerStation: draft.roundsPerStation || 3,
+      transitionSeconds: draft.transitionSeconds || 0,
+      trainingType: draft.trainingType,
+      plannedDurationMinutes: draft.plannedDurationMinutes,
       status: 'APPROVED_ASSIGNED',
       isRequested: false
     };
@@ -1313,6 +1351,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       defaultWorkSeconds: plan.defaultWorkSeconds ?? 45,
       defaultRestSeconds: plan.defaultRestSeconds ?? 60,
       defaultRepetitions: plan.defaultRepetitions || '12',
+      mode: plan.mode || 'LINEAR',
+      subgroupCount: plan.subgroupCount || 1,
+      exerciseCount: plan.exerciseCount || plan.exercises.length,
+      roundsPerStation: plan.roundsPerStation || 3,
+      transitionSeconds: plan.transitionSeconds || 0,
+      trainingType: plan.trainingType,
+      plannedDurationMinutes: plan.plannedDurationMinutes,
       sourceDocumentIds: [],
       createdAt: now,
       updatedAt: now,
@@ -1339,7 +1384,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       effortMetric: plan.effortMetric || 'TIME',
       workSeconds: plan.defaultWorkSeconds ?? 45,
       restSeconds: plan.defaultRestSeconds ?? 60,
-      repetitions: plan.defaultRepetitions || '12'
+      repetitions: plan.defaultRepetitions || '12',
+      mode: plan.mode || 'LINEAR',
+      subgroupCount: plan.subgroupCount || 3,
+      exerciseCount: plan.exerciseCount || plan.exercises.length,
+      rounds: plan.roundsPerStation || 3,
+      transitionSeconds: plan.transitionSeconds || 30,
+      trainingType: plan.trainingType || 'כוח'
     });
     setPersonalSetupComplete(true);
     setPersonalBuilderPanel('WORKOUT');
@@ -1602,10 +1653,16 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     weeklySessions: selectedTraineeProfile?.weeklySessions || selectedAssistantDraft?.trainingDaysPerWeek || 3,
                     preferredWorkoutMinutes: selectedTraineeProfile?.preferredWorkoutMinutes || 60,
                     limitations: selectedTraineeProfile?.limitations || '',
+                    trainingType: selectedAssistantDraft?.trainingType || traineeWorkoutPlan?.trainingType || 'כוח',
+                    mode: selectedAssistantDraft?.mode || traineeWorkoutPlan?.mode || 'LINEAR',
+                    subgroupCount: selectedAssistantDraft?.subgroupCount || traineeWorkoutPlan?.subgroupCount || 3,
+                    exerciseCount: selectedAssistantDraft?.exerciseCount || traineeWorkoutPlan?.exerciseCount || 6,
+                    rounds: selectedAssistantDraft?.roundsPerStation || traineeWorkoutPlan?.roundsPerStation || 3,
                     effortMetric: selectedAssistantDraft?.effortMetric || traineeWorkoutPlan?.effortMetric || 'TIME',
                     workSeconds: selectedAssistantDraft?.defaultWorkSeconds ?? traineeWorkoutPlan?.defaultWorkSeconds ?? 45,
                     restSeconds: selectedAssistantDraft?.defaultRestSeconds ?? traineeWorkoutPlan?.defaultRestSeconds ?? 60,
                     repetitions: selectedAssistantDraft?.defaultRepetitions || traineeWorkoutPlan?.defaultRepetitions || '12',
+                    transitionSeconds: selectedAssistantDraft?.transitionSeconds ?? traineeWorkoutPlan?.transitionSeconds ?? 30,
                     sourceMode: 'NEW',
                     ...personalSetupAnswers
                   }}
@@ -1616,6 +1673,9 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   { label: 'מטרה', value: personalSetupAnswers.primaryGoal || selectedTraineeProfile?.primaryGoal },
                   { label: 'אימונים בשבוע', value: personalSetupAnswers.weeklySessions || selectedTraineeProfile?.weeklySessions },
                   { label: 'משך', value: personalSetupAnswers.preferredWorkoutMinutes ? `${personalSetupAnswers.preferredWorkoutMinutes} דקות` : undefined },
+                  { label: 'סוג אימון', value: personalSetupAnswers.trainingType },
+                  { label: 'מבנה', value: personalSetupAnswers.mode === 'ROTATING_GROUPS' ? `${personalSetupAnswers.subgroupCount || 3} תתי־קבוצות` : 'רצף' },
+                  { label: 'תרגילים ומחזורים', value: `${personalSetupAnswers.exerciseCount || 6} תרגילים · ${personalSetupAnswers.rounds || 3} מחזורים` },
                   { label: 'מדידה', value: personalSetupAnswers.effortMetric === 'REPS' ? `${personalSetupAnswers.repetitions || 12} חזרות` : `${personalSetupAnswers.workSeconds || 45} שנ׳ עבודה / ${personalSetupAnswers.restSeconds ?? 60} שנ׳ מנוחה` },
                   { label: 'מקור', value: personalSetupAnswers.sourceMode === 'LIBRARY' ? 'תוכנית מהמאגר' : 'תוכנית חדשה' },
                   { label: 'שמירה במאגר', value: 'אוטומטית בפרסום' }

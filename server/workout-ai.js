@@ -20,6 +20,11 @@ const exerciseProperties = {
   dayNumber: { type: 'integer' }
 };
 
+const personalExerciseProperties = {
+  ...exerciseProperties,
+  stationNumber: { type: 'integer', description: 'מספר התחנה או תת־הקבוצה, החל מ־1. ברצף יש להחזיר 1.' }
+};
+
 const personalSchema = {
   type: 'object',
   additionalProperties: false,
@@ -36,8 +41,8 @@ const personalSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: Object.keys(exerciseProperties),
-        properties: exerciseProperties
+        required: Object.keys(personalExerciseProperties),
+        properties: personalExerciseProperties
       }
     }
   }

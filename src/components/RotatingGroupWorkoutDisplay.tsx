@@ -16,6 +16,7 @@ const formatTime = (seconds: number) => `${String(Math.floor(Math.max(0, seconds
 
 export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayProps> = ({ program }) => {
   const stations = program.stations || [];
+  const isRepetitionBased = program.effortMetric === 'REPS';
   const roundsPerStation = program.roundsPerStation || 1;
   const maxExercises = Math.max(1, ...stations.map(station => station.exercises.length));
   const [rotationIndex, setRotationIndex] = useState(0);
@@ -79,7 +80,7 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
 
   const startWork = () => {
     setPhase('WORK');
-    setSecondsLeft(program.defaultWorkSeconds);
+    setSecondsLeft(isRepetitionBased ? 0 : program.defaultWorkSeconds);
     beep(1100, 0.35);
   };
 
@@ -132,7 +133,8 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
   };
 
   useEffect(() => {
-    if (!isRunning || phase === 'COMPLETE') return;
+    const shouldTick = (!isRepetitionBased && isRunning) || (isRepetitionBased && phase === 'TRANSITION');
+    if (!shouldTick || phase === 'COMPLETE') return;
     const timer = window.setInterval(() => {
       setSecondsLeft(current => {
         if (current <= 1) {
@@ -145,7 +147,7 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [chainRound, exerciseSlot, isRunning, phase, rotationIndex]);
+  }, [chainRound, exerciseSlot, isRepetitionBased, isRunning, phase, rotationIndex]);
 
   const resetWorkout = () => {
     setRotationIndex(0);
@@ -198,14 +200,15 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Space') {
         event.preventDefault();
-        setIsRunning(value => !value);
+        if (isRepetitionBased) advancePhase();
+        else setIsRunning(value => !value);
       } else if (event.code === 'ArrowRight') previousStep();
       else if (event.code === 'ArrowLeft') advanceStep();
       else if (event.key.toLowerCase() === 'r') resetWorkout();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [chainRound, exerciseSlot, rotationIndex]);
+  }, [chainRound, exerciseSlot, isRepetitionBased, rotationIndex]);
 
   const exitDisplay = () => {
     window.close();
@@ -216,7 +219,7 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
     return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-center text-white" dir="rtl"><div><RubisLogo size={190} className="mx-auto mb-6" /><h1 className="text-3xl font-black">לא הוגדרו תחנות ותרגילים</h1><button onClick={exitDisplay} className="mt-6 rounded-xl bg-white px-5 py-3 font-black text-slate-900">חזרה למערכת</button></div></main>;
   }
 
-  const phaseLabel = phase === 'WORK' ? 'עבודה' : phase === 'REST' ? 'מנוחה' : phase === 'TRANSITION' ? 'החלפת תחנות' : phase === 'COMPLETE' ? 'האימון הושלם!' : 'מתכוננים';
+  const phaseLabel = phase === 'WORK' ? isRepetitionBased ? 'לפי חזרות' : 'עבודה' : phase === 'REST' ? 'מנוחה' : phase === 'TRANSITION' ? 'החלפת תחנות' : phase === 'COMPLETE' ? 'האימון הושלם!' : 'מתכוננים';
   const phaseColors = phase === 'WORK' ? 'from-emerald-500 to-green-600' : phase === 'REST' ? 'from-amber-400 to-orange-500 text-slate-950' : phase === 'TRANSITION' ? 'from-fuchsia-500 to-violet-600' : phase === 'COMPLETE' ? 'from-indigo-500 to-violet-600' : 'from-sky-500 to-blue-600';
   const groupIndexes: number[] = Array.from(new Set<number>(assignments.map(assignment => Number(assignment.groupIndex))));
 
@@ -233,7 +236,7 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
           <div className="flex min-h-0 flex-col overflow-hidden p-3">
             <div className="mb-2 flex shrink-0 items-center justify-center gap-4 text-center">
               <span className={`rounded-full bg-gradient-to-l px-6 py-1.5 text-lg font-black ${phaseColors}`}>{phaseLabel}</span>
-              <div className={`font-mono text-[clamp(3.25rem,8vh,5.5rem)] font-black leading-none tabular-nums ${secondsLeft <= 3 && phase !== 'COMPLETE' ? 'animate-pulse text-red-400' : ''}`}>{formatTime(secondsLeft)}</div>
+              <div className={`font-mono text-[clamp(3.25rem,8vh,5.5rem)] font-black leading-none tabular-nums ${!isRepetitionBased && secondsLeft <= 3 && phase !== 'COMPLETE' ? 'animate-pulse text-red-400' : ''}`}>{isRepetitionBased ? `${program.defaultRepetitions || 'לפי התרגיל'} חזרות` : formatTime(secondsLeft)}</div>
               {phase === 'TRANSITION' && <p className="text-xl font-black text-fuchsia-300">עוברים לתחנה הבאה ←</p>}
             </div>
 
@@ -266,7 +269,7 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
 
             <div className="mt-2 flex shrink-0 items-center justify-center gap-2">
               <button onClick={previousStep} className="rounded-xl bg-white/10 p-2.5"><ChevronRight size={24} /></button>
-              <button onClick={() => { beep(); setIsRunning(value => !value); }} disabled={phase === 'COMPLETE'} className={`flex h-14 w-14 items-center justify-center rounded-full shadow-2xl disabled:opacity-40 ${isRunning ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500'}`}>{isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}</button>
+              <button onClick={() => { beep(); if (isRepetitionBased) advancePhase(); else setIsRunning(value => !value); }} disabled={phase === 'COMPLETE'} className={`flex h-14 w-14 items-center justify-center rounded-full shadow-2xl disabled:opacity-40 ${isRunning && !isRepetitionBased ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500'}`}>{isRepetitionBased ? <ChevronLeft size={28} /> : isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}</button>
               <button onClick={advanceStep} className="rounded-xl bg-white/10 p-2.5"><ChevronLeft size={24} /></button>
               <button onClick={resetWorkout} className="mr-1 rounded-xl bg-white/10 p-2.5"><RotateCcw size={21} /></button>
               <button onClick={() => beep()} className="rounded-xl bg-white/10 p-2.5"><Volume2 size={21} /></button>

@@ -29,7 +29,7 @@ globalThis.fetch = async (_url, options) => {
         dayLabels: ['Day 1'],
         exercises: [{
           name: 'Leg Press', category: 'Strength', muscleGroup: 'LEGS', sets: 3, reps: '8',
-          weight: 'RPE 7', workDuration: '', restDuration: '90 שניות', notes: 'Controlled movement', dayNumber: 1
+          weight: 'RPE 7', workDuration: '', restDuration: '90 שניות', notes: 'Controlled movement', dayNumber: 1, stationNumber: 1
         }]
       })
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -57,7 +57,7 @@ globalThis.fetch = async (_url, options) => {
       dayLabels: ['יום 1', 'יום 2', 'יום 3'],
       exercises: [{
         name: 'סקוואט', category: 'כוח', muscleGroup: 'LEGS', sets: 3, reps: '8',
-        weight: 'דרגת מאמץ נתפסת 7', workDuration: '', restDuration: '90 שניות', notes: 'טכניקה מבוקרת', dayNumber: 2
+        weight: 'דרגת מאמץ נתפסת 7', workDuration: '', restDuration: '90 שניות', notes: 'טכניקה מבוקרת', dayNumber: 2, stationNumber: 1
       }]
     })
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -96,6 +96,7 @@ try {
   assert.equal(capturedRequest.text.format.type, 'json_schema');
   assert.equal(capturedRequest.text.format.strict, true);
   assert.match(capturedRequest.text.format.schema.properties.exercises.items.properties.name.description, /בעברית בלבד/);
+  assert.ok(capturedRequest.text.format.schema.properties.exercises.items.properties.stationNumber);
   assert.equal(capturedRequest.store, false);
   assert.ok(!JSON.stringify(capturedRequest).includes('test-key'));
   assert.equal(fetchCount, 1);
