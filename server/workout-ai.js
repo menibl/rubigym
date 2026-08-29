@@ -3,16 +3,20 @@ import { workoutCoachPrompt } from './generated/workout-coach-prompt.js';
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const requestWindows = new Map();
 
+const hebrewText = description => ({ type: 'string', description });
+const visibleHebrewText = hebrewText('טקסט גלוי בעברית בלבד, ללא אותיות לטיניות.');
+const hebrewExerciseName = hebrewText('שם תרגיל מקצועי בעברית בלבד. יש לתרגם כל שם באנגלית ואין להשתמש באותיות לטיניות.');
+
 const exerciseProperties = {
-  name: { type: 'string' },
-  category: { type: 'string' },
+  name: hebrewExerciseName,
+  category: visibleHebrewText,
   muscleGroup: { type: 'string', enum: ['UPPER', 'LEGS', 'BACK', 'SHOULDERS', 'CORE', 'FUNCTIONAL'] },
   sets: { type: 'integer' },
-  reps: { type: 'string' },
-  weight: { type: 'string' },
-  workDuration: { type: 'string' },
-  restDuration: { type: 'string' },
-  notes: { type: 'string' },
+  reps: hebrewText('מספר חזרות או משך בעברית; מספרים מותרים.'),
+  weight: hebrewText('עומס מומלץ בעברית בלבד. יש לכתוב "דרגת מאמץ נתפסת" ולא קיצור באנגלית.'),
+  workDuration: hebrewText('זמן עבודה בעברית; מספרים מותרים.'),
+  restDuration: hebrewText('זמן מנוחה בעברית; מספרים מותרים.'),
+  notes: visibleHebrewText,
   dayNumber: { type: 'integer' }
 };
 
@@ -21,12 +25,12 @@ const personalSchema = {
   additionalProperties: false,
   required: ['assistantMessage', 'focusDay', 'objective', 'coachNotes', 'trainingDaysPerWeek', 'dayLabels', 'exercises'],
   properties: {
-    assistantMessage: { type: 'string' },
+    assistantMessage: visibleHebrewText,
     focusDay: { type: 'integer' },
-    objective: { type: 'string' },
-    coachNotes: { type: 'string' },
+    objective: visibleHebrewText,
+    coachNotes: visibleHebrewText,
     trainingDaysPerWeek: { type: 'integer' },
-    dayLabels: { type: 'array', items: { type: 'string' } },
+    dayLabels: { type: 'array', items: visibleHebrewText },
     exercises: {
       type: 'array',
       items: {
@@ -62,9 +66,9 @@ const groupSchema = {
     'roundsPerStation', 'transitionSeconds', 'exercises', 'stations'
   ],
   properties: {
-    assistantMessage: { type: 'string' },
-    title: { type: 'string' },
-    description: { type: 'string' },
+    assistantMessage: visibleHebrewText,
+    title: visibleHebrewText,
+    description: visibleHebrewText,
     mode: { type: 'string', enum: ['LINEAR', 'ROTATING_GROUPS'] },
     participantCount: { type: 'integer' },
     defaultWorkSeconds: { type: 'integer' },
@@ -80,7 +84,7 @@ const groupSchema = {
         additionalProperties: false,
         required: ['name', 'exercises'],
         properties: {
-          name: { type: 'string' },
+          name: visibleHebrewText,
           exercises: { type: 'array', items: groupExerciseSchema }
         }
       }
@@ -89,14 +93,14 @@ const groupSchema = {
 };
 
 const nutritionMealProperties = {
-  title: { type: 'string' },
+  title: visibleHebrewText,
   suggestedTime: { type: 'string' },
-  foods: { type: 'string' },
+  foods: visibleHebrewText,
   calories: { type: 'integer' },
   proteinGrams: { type: 'integer' },
   carbsGrams: { type: 'integer' },
   fatGrams: { type: 'integer' },
-  notes: { type: 'string' }
+  notes: visibleHebrewText
 };
 
 const nutritionSchema = {
@@ -104,16 +108,16 @@ const nutritionSchema = {
   additionalProperties: false,
   required: ['assistantMessage', 'goal', 'dailyCalories', 'proteinGrams', 'carbsGrams', 'fatGrams', 'hydrationLiters', 'fiberGrams', 'coachNotes', 'mealsDescription', 'categories'],
   properties: {
-    assistantMessage: { type: 'string' },
-    goal: { type: 'string' },
+    assistantMessage: visibleHebrewText,
+    goal: visibleHebrewText,
     dailyCalories: { type: 'integer' },
     proteinGrams: { type: 'integer' },
     carbsGrams: { type: 'integer' },
     fatGrams: { type: 'integer' },
     hydrationLiters: { type: 'number' },
     fiberGrams: { type: 'integer' },
-    coachNotes: { type: 'string' },
-    mealsDescription: { type: 'string' },
+    coachNotes: visibleHebrewText,
+    mealsDescription: visibleHebrewText,
     categories: {
       type: 'array',
       items: {
@@ -178,6 +182,17 @@ const cleanContext = body => ({
   groupParticipants: Array.isArray(body.groupParticipants) ? body.groupParticipants.slice(0, 100) : []
 });
 
+const internalEnglishFields = new Set(['mode', 'muscleGroup']);
+
+const containsVisibleLatinText = (value, key = '') => {
+  if (typeof value === 'string') return !internalEnglishFields.has(key) && /[A-Za-z]/.test(value);
+  if (Array.isArray(value)) return value.some(item => containsVisibleLatinText(item, key));
+  if (value && typeof value === 'object') {
+    return Object.entries(value).some(([childKey, childValue]) => containsVisibleLatinText(childValue, childKey));
+  }
+  return false;
+};
+
 export const resolveOpenAiApiKey = env => String(env?.OPENAI_API_KEY || '').trim();
 
 export const handleWorkoutAi = async (request, env, headers, json) => {
@@ -193,20 +208,18 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
     const context = cleanContext(body);
     const schema = body.scope === 'PERSONAL' ? personalSchema : body.scope === 'GROUP' ? groupSchema : nutritionSchema;
     const schemaName = body.scope === 'PERSONAL' ? 'personal_workout_plan' : body.scope === 'GROUP' ? 'group_workout_plan' : 'nutrition_plan';
-    const openAiResponse = await fetch(OPENAI_RESPONSES_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+    const requestModel = async input => {
+      const response = await fetch(OPENAI_RESPONSES_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
         model: env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini',
         store: false,
         safety_identifier: await privacySafeIdentifier(body.actor?.id || body.trainee?.id),
-        input: [
-          { role: 'system', content: workoutCoachPrompt },
-          { role: 'user', content: `עדכן את הטיוטה בהתאם לבקשה ולהקשר הבא. אם זהו שאלון תזונה, החזר הצעה שמרנית לבדיקת איש מקצוע ואישור המאמן בלבד:\n${JSON.stringify(context)}` }
-        ],
+        input,
         text: {
           format: {
             type: 'json_schema',
@@ -217,8 +230,14 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
         },
         max_output_tokens: Number(env.OPENAI_WORKOUT_MAX_OUTPUT_TOKENS || 12_000)
       })
-    });
-    const result = await openAiResponse.json().catch(() => null);
+      });
+      return { response, result: await response.json().catch(() => null) };
+    };
+    const baseInput = [
+      { role: 'system', content: workoutCoachPrompt },
+      { role: 'user', content: `עדכן את הטיוטה בהתאם לבקשה ולהקשר הבא. אם זהו שאלון תזונה, החזר הצעה שמרנית לבדיקת איש מקצוע ואישור המאמן בלבד:\n${JSON.stringify(context)}` }
+    ];
+    let { response: openAiResponse, result } = await requestModel(baseInput);
     if (!openAiResponse.ok || !result) {
       console.error('OpenAI workout request failed', openAiResponse.status, result?.error?.code || result?.error?.message || 'unknown');
       const status = openAiResponse.status === 429 ? 429 : 502;
@@ -231,7 +250,19 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
             : 'שירות ה־AI לא הצליח ליצור תוכנית.';
       return json({ message }, status, headers);
     }
-    return json({ result: JSON.parse(readOutputText(result)), model: result.model || env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini' }, 200, headers);
+    let parsedResult = JSON.parse(readOutputText(result));
+    if (containsVisibleLatinText(parsedResult)) {
+      const correctionInput = [
+        ...baseInput,
+        { role: 'assistant', content: JSON.stringify(parsedResult) },
+        { role: 'user', content: 'תקן את הטיוטה והחזר אותה במלואה: כל הטקסט הגלוי וכל שמות התרגילים חייבים להיות בעברית בלבד, ללא אותיות לטיניות. תרגם לעברית כל שם או מונח באנגלית. ערכי הסכמה הפנימיים יישארו ללא שינוי.' }
+      ];
+      ({ response: openAiResponse, result } = await requestModel(correctionInput));
+      if (!openAiResponse.ok || !result) throw new Error('OPENAI_HEBREW_CORRECTION_FAILED');
+      parsedResult = JSON.parse(readOutputText(result));
+      if (containsVisibleLatinText(parsedResult)) throw new Error('OPENAI_NON_HEBREW_RESPONSE');
+    }
+    return json({ result: parsedResult, model: result.model || env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini' }, 200, headers);
   } catch (error) {
     const code = error instanceof Error ? error.message : 'UNKNOWN';
     if (code === 'AI_RATE_LIMIT') return json({ message: 'הגעתם למגבלת בקשות ה־AI לשעה. נסו שוב מאוחר יותר.' }, 429, headers);
