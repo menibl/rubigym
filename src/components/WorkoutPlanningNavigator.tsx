@@ -22,6 +22,7 @@ export type WorkoutPlanningRoute =
   | 'HOME'
   | 'PERSONAL'
   | 'PERSONAL_TRAINEE'
+  | 'PERSONAL_GENERAL'
   | 'PERSONAL_SESSION'
   | 'PERSONAL_EXISTING'
   | 'GROUP'
@@ -41,6 +42,7 @@ interface WorkoutPlanningNavigatorProps {
   workoutPlans: WorkoutPlan[];
   groupPrograms: GroupWorkoutProgram[];
   onOpenPersonalTrainee: (traineeId: string) => void;
+  onOpenGeneralPersonal: (programName: string) => void;
   onOpenPersonalSession: (session: TrainingSession) => void;
   onOpenPersonalPlan: (plan: WorkoutPlan, traineeId?: string) => void;
   onOpenGroupSession: (session: TrainingSession) => void;
@@ -64,6 +66,7 @@ const routeMeta: Record<WorkoutPlanningRoute, { title: string; description: stri
   HOME: { title: 'בניית תוכניות אימון', description: 'בחרו את סוג התכנון הרצוי' },
   PERSONAL: { title: 'תוכנית אימון אישית', description: 'בנייה למתאמן, לאימון אישי או למאגר', parent: 'HOME' },
   PERSONAL_TRAINEE: { title: 'בחירת מתאמן', description: 'בחרו למי לבנות או לעדכן תוכנית', parent: 'PERSONAL' },
+  PERSONAL_GENERAL: { title: 'תוכנית אישית כללית', description: 'תוכנית בשם לבחירת המאמן, ללא שיוך למתאמן', parent: 'PERSONAL' },
   PERSONAL_SESSION: { title: 'אימון אישי מהיומן', description: 'בחרו אימון 1:1 שאליו תשובץ התוכנית', parent: 'PERSONAL' },
   PERSONAL_EXISTING: { title: 'תוכניות אישיות קיימות', description: 'פתיחה, עדכון ושימוש חוזר', parent: 'PERSONAL' },
   GROUP: { title: 'תוכנית אימון קבוצתית', description: 'בנייה לאימון ביומן, לקבוצה ייעודית או למאגר', parent: 'HOME' },
@@ -108,6 +111,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
   workoutPlans,
   groupPrograms,
   onOpenPersonalTrainee,
+  onOpenGeneralPersonal,
   onOpenPersonalSession,
   onOpenPersonalPlan,
   onOpenGroupSession,
@@ -130,6 +134,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
   const [libraryKind, setLibraryKind] = React.useState<'ALL' | 'PERSONAL' | 'GROUP'>('ALL');
   const [libraryQuery, setLibraryQuery] = React.useState('');
   const [libraryTargetTraineeId, setLibraryTargetTraineeId] = React.useState(trainees[0]?.id || '');
+  const [generalPersonalName, setGeneralPersonalName] = React.useState('');
   const normalizedLibraryQuery = libraryQuery.trim().toLocaleLowerCase('he-IL');
   const visiblePersonalTemplates = personalTemplates.filter(plan => !normalizedLibraryQuery || `${plan.title || ''} ${trainees.find(item => item.id === plan.traineeId)?.name || ''}`.toLocaleLowerCase('he-IL').includes(normalizedLibraryQuery));
   const visibleGroupTemplates = groupTemplates.filter(program => !normalizedLibraryQuery || `${program.title} ${program.groupName}`.toLocaleLowerCase('he-IL').includes(normalizedLibraryQuery));
@@ -142,9 +147,10 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
 
   const personalTiles: Tile[] = [
     { title: 'תוכנית למתאמן', description: 'בחירה לפי שם ונתוני המתאמן', icon: UserRound, tone: 'gold', onClick: () => onRouteChange('PERSONAL_TRAINEE') },
+    { title: 'תוכנית אישית כללית', description: 'בנייה לפי שם, גם ללא מתאמן רשום', icon: CopyPlus, tone: 'emerald', onClick: () => onRouteChange('PERSONAL_GENERAL') },
     { title: 'תוכנית לאימון ביומן', description: 'שיבוץ לאימון אישי שכבר נקבע', icon: CalendarCheck, tone: 'indigo', onClick: () => onRouteChange('PERSONAL_SESSION') },
     { title: 'בחירת תוכנית מהמאגר', description: 'טעינת כל ההגדרות ומעבר ישיר לעריכה', icon: BookOpen, tone: 'emerald', onClick: () => onRouteChange('LIBRARY') },
-    { title: 'תבנית אישית למאגר', description: 'בחרו מתאמן בסיס והתאימו תבנית', icon: CopyPlus, tone: 'slate', onClick: () => onRouteChange('PERSONAL_TRAINEE') }
+    { title: 'תבנית אישית למאגר', description: 'יצירת תוכנית כללית חדשה בשם', icon: CopyPlus, tone: 'slate', onClick: () => onRouteChange('PERSONAL_GENERAL') }
   ];
 
   const groupTiles: Tile[] = [
@@ -165,7 +171,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
     {route === 'GROUP' && <TileGrid tiles={groupTiles} />}
 
     {route === 'LIBRARY_NEW' && <TileGrid tiles={[
-      { title: 'תבנית אישית חדשה', description: 'בחירת מתאמן בסיס ויצירה בעזרת הצ׳אט', icon: UserRound, tone: 'gold', onClick: () => onRouteChange('PERSONAL_TRAINEE') },
+      { title: 'תבנית אישית חדשה', description: 'יצירה כללית בשם בעזרת הצ׳אט, ללא מתאמן', icon: UserRound, tone: 'gold', onClick: () => onRouteChange('PERSONAL_GENERAL') },
       { title: 'תבנית קבוצתית חדשה', description: 'אימון רציף או תחנות מתחלפות', icon: UsersRound, tone: 'indigo', onClick: () => onOpenGroupAudience('קבוצה חדשה') },
       { title: 'יצירה מתוך PDF', description: 'העלאת מסמך והכנת טיוטה לעריכה', icon: FileText, tone: 'emerald', onClick: onOpenPdfLibrary }
     ]} />}
@@ -175,6 +181,23 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
         <img src={trainee.imageUrl} alt="" /><span><strong>{trainee.name}</strong><small>{trainee.membershipType || 'ללא מסלול'} · גיל {trainee.age}</small></span><ChevronLeft size={18} />
       </button>)}
     </SelectionList>}
+
+    {route === 'PERSONAL_GENERAL' && <form className="planning-general-personal-form" onSubmit={event => {
+      event.preventDefault();
+      const name = generalPersonalName.trim();
+      if (!name) return;
+      onOpenGeneralPersonal(name);
+    }}>
+      <div>
+        <CopyPlus size={24} />
+        <span><strong>שם התוכנית האישית הכללית</strong><small>התוכנית תיבנה בעזרת הצ׳אט ותישמר במאגר ללא שיוך למתאמן.</small></span>
+      </div>
+      <label>
+        <span>שם התוכנית</span>
+        <input autoFocus required maxLength={80} value={generalPersonalName} onChange={event => setGeneralPersonalName(event.target.value)} placeholder="לדוגמה: תוכנית כוח למתחילים – 3 ימים" />
+      </label>
+      <button type="submit" disabled={!generalPersonalName.trim()}>המשך לבניית התוכנית <ChevronLeft size={18} /></button>
+    </form>}
 
     {route === 'PERSONAL_SESSION' && <SelectionList empty={personalSessions.length === 0} emptyText="אין אימונים אישיים ביומן">
       {personalSessions.map(session => <button type="button" key={session.id} className="planning-selection-card" onClick={() => onOpenPersonalSession(session)}>
@@ -210,7 +233,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
 
     {(route === 'LIBRARY' || route === 'LIBRARY_EXISTING') && <div className="planning-library-manager">
       <div className="planning-library-actions">
-        <button type="button" onClick={() => onRouteChange('PERSONAL_TRAINEE')}><Plus size={18} /><span><strong>הוסף תוכנית אישית</strong><small>בחירת מתאמן ובנייה חדשה</small></span></button>
+        <button type="button" onClick={() => onRouteChange('PERSONAL_GENERAL')}><Plus size={18} /><span><strong>הוסף תוכנית אישית כללית</strong><small>שם, צ׳אט ובנייה חדשה ללא מתאמן</small></span></button>
         <button type="button" onClick={() => onRouteChange('GROUP_AUDIENCE')}><Plus size={18} /><span><strong>הוסף תוכנית קבוצתית</strong><small>קבוצה, תחנות וזמנים</small></span></button>
       </div>
       <div className="planning-library-shortcuts">
