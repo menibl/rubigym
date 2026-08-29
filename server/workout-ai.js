@@ -14,6 +14,7 @@ const exerciseProperties = {
   sets: { type: 'integer' },
   reps: hebrewText('מספר חזרות או משך בעברית; מספרים מותרים.'),
   weight: hebrewText('עומס מומלץ בעברית בלבד. יש לכתוב "דרגת מאמץ נתפסת" ולא קיצור באנגלית.'),
+  equipment: hebrewText('הציוד המדויק הנדרש לתרגיל בעברית בלבד: מכשיר, מכונה, משקל חופשי, מוצר עזר, ארגז או מדרגה. אם לא נדרש ציוד יש לכתוב "ללא ציוד".'),
   workDuration: hebrewText('זמן עבודה בעברית; מספרים מותרים.'),
   restDuration: hebrewText('זמן מנוחה בעברית; מספרים מותרים.'),
   notes: visibleHebrewText,
@@ -200,6 +201,31 @@ const containsVisibleLatinText = (value, key = '') => {
 
 export const resolveOpenAiApiKey = env => String(env?.OPENAI_API_KEY || '').trim();
 
+const nutritionTargetRules = [
+  { key: 'dailyCalories', target: /קלורי|קלוריות/ },
+  { key: 'proteinGrams', target: /חלבון/ },
+  { key: 'carbsGrams', target: /פחמימ/ },
+  { key: 'fatGrams', target: /שומן/ }
+];
+
+const explicitTargetChange = (message, target) => {
+  const text = String(message || '');
+  const changeRequest = /שנ(?:ה|י|ו)|עדכ(?:ן|ני|נו)|החל(?:ף|יפי|יפו)|קב(?:ע|עי|עו)|הגד(?:ר|ירי|ירו)|העל(?:ה|י|ו)|הור(?:ד|ידי|ידו)/;
+  return changeRequest.test(text) && target.test(text);
+};
+
+export const preserveApprovedNutritionTargets = (result, currentDraft, message) => {
+  if (!result || !currentDraft) return result;
+  const preserved = { ...result };
+  nutritionTargetRules.forEach(({ key, target }) => {
+    const approvedValue = Number(currentDraft[key]);
+    if (Number.isFinite(approvedValue) && approvedValue > 0 && !explicitTargetChange(message, target)) {
+      preserved[key] = approvedValue;
+    }
+  });
+  return preserved;
+};
+
 export const handleWorkoutAi = async (request, env, headers, json) => {
   const apiKey = resolveOpenAiApiKey(env);
   if (!apiKey) return json({ message: 'מפתח OpenAI עדיין לא הוגדר בשרת.' }, 503, headers);
@@ -266,6 +292,9 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
       if (!openAiResponse.ok || !result) throw new Error('OPENAI_HEBREW_CORRECTION_FAILED');
       parsedResult = JSON.parse(readOutputText(result));
       if (containsVisibleLatinText(parsedResult)) throw new Error('OPENAI_NON_HEBREW_RESPONSE');
+    }
+    if (body.scope === 'NUTRITION') {
+      parsedResult = preserveApprovedNutritionTargets(parsedResult, body.currentDraft, body.message);
     }
     return json({ result: parsedResult, model: result.model || env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini' }, 200, headers);
   } catch (error) {

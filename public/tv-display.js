@@ -179,6 +179,7 @@
         details = [];
         if (item.reps && item.reps !== 'לפי זמן') details.push(escapeHtml(item.reps) + ' חזרות');
         if (item.weight) details.push(escapeHtml(item.weight));
+        if (item.equipment) details.push('ציוד: ' + escapeHtml(item.equipment));
         if (!isRepetitionBased()) details.push((Number(item.workSeconds) || 0) + ' שנ׳ עבודה');
         if (!isRepetitionBased() && Number(item.restSeconds)) details.push((Number(item.restSeconds) || 0) + ' שנ׳ מנוחה');
         details.push((Number(item.rounds) || 1) + ' סבבים');
@@ -246,7 +247,7 @@
           for (var k = 0; k < assignments.length; k += 1) if (assignments[k].station && assignments[k].station.id === station.id && assignments[k].activeIndex === j) active.push(assignments[k].participant.name);
           stationsHtml += '<div class="tv-station-exercise" style="height:' + (100 / stationRows) + '%"><div class="tv-exercise-card' + (active.length ? ' active' : '') + '">' +
             '<div class="tv-exercise-card-head"><span class="tv-exercise-number">' + (j + 1) + '</span><div class="tv-exercise-copy"><h3 dir="auto">' + escapeHtml(exercise.name) +
-            '</h3>' + (exercise.weight || exercise.reps ? '<p dir="auto">' + escapeHtml(exercise.weight || exercise.reps) + '</p>' : '') + '</div></div>' +
+            '</h3>' + (exercise.weight || exercise.reps || exercise.equipment ? '<p dir="auto">' + escapeHtml(exercise.weight || exercise.reps || '') + (exercise.equipment ? ' · ציוד: ' + escapeHtml(exercise.equipment) : '') + '</p>' : '') + '</div></div>' +
             (exercise.notes ? '<div class="tv-exercise-note">דגש: ' + escapeHtml(exercise.notes) + '</div>' : '') + '<div class="tv-participant-tags">';
           for (k = 0; k < active.length; k += 1) stationsHtml += '<span class="tv-person-tag">' + escapeHtml(active[k]) + '</span>';
           stationsHtml += '</div></div></div>';

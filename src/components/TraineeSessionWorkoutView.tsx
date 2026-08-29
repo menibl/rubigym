@@ -96,6 +96,7 @@ export const TraineeSessionWorkoutView: React.FC<TraineeSessionWorkoutViewProps>
 
                 <div className="space-y-2 p-4 text-sm">
                   {exercise.weight && <p className="flex items-center gap-2 text-zinc-200"><Dumbbell size={15} className="text-amber-400" /><strong>משקל מומלץ:</strong> {exercise.weight}</p>}
+                  {exercise.equipment && <p className="flex items-center gap-2 text-zinc-200"><Dumbbell size={15} className="text-amber-400" /><strong>ציוד נדרש:</strong> {exercise.equipment}</p>}
                   {exercise.notes && <p className="rounded-xl bg-amber-400/10 p-3 leading-6 text-amber-100"><strong>דגשי המאמן:</strong> {exercise.notes}</p>}
                 </div>
               </article>
