@@ -31,6 +31,7 @@
     return pad(Math.floor(safe / 60)) + ':' + pad(safe % 60);
   }
   function nowTime() { var date = new Date(); return pad(date.getHours()) + ':' + pad(date.getMinutes()); }
+  function isRepetitionBased() { return program && program.effortMetric === 'REPS'; }
 
   function request(method, path, body, callback) {
     var xhr = new XMLHttpRequest();
@@ -72,7 +73,7 @@
   }
 
   function phaseLabel() {
-    if (phase === 'WORK') return 'עבודה';
+    if (phase === 'WORK') return isRepetitionBased() ? 'לפי חזרות' : 'עבודה';
     if (phase === 'REST') return 'מנוחה';
     if (phase === 'TRANSITION') return 'החלפת תחנות';
     if (phase === 'COMPLETE') return 'האימון הושלם!';
@@ -140,7 +141,7 @@
 
   function controlsHtml() {
     return '<div class="tv-controls"><button id="tv-prev" class="tv-button">‹</button>' +
-      '<button id="tv-toggle" class="tv-button primary ' + (running ? 'pause' : '') + '">' + (running ? 'עצירה' : 'הפעלה') + '</button>' +
+      '<button id="tv-toggle" class="tv-button primary ' + (running ? 'pause' : '') + '">' + (isRepetitionBased() ? 'הבא' : running ? 'עצירה' : 'הפעלה') + '</button>' +
       '<button id="tv-next" class="tv-button">›</button><button id="tv-reset" class="tv-button">איפוס</button>' +
       '<button id="tv-fullscreen" class="tv-button">מסך מלא</button></div>';
   }
@@ -178,8 +179,8 @@
         details = [];
         if (item.reps && item.reps !== 'לפי זמן') details.push(escapeHtml(item.reps) + ' חזרות');
         if (item.weight) details.push(escapeHtml(item.weight));
-        details.push((Number(item.workSeconds) || 0) + ' שנ׳ עבודה');
-        if (Number(item.restSeconds)) details.push((Number(item.restSeconds) || 0) + ' שנ׳ מנוחה');
+        if (!isRepetitionBased()) details.push((Number(item.workSeconds) || 0) + ' שנ׳ עבודה');
+        if (!isRepetitionBased() && Number(item.restSeconds)) details.push((Number(item.restSeconds) || 0) + ' שנ׳ מנוחה');
         details.push((Number(item.rounds) || 1) + ' סבבים');
         gridHtml += '<div class="tv-linear-exercise-slot" style="width:' + (100 / columns) + '%;height:' + (100 / rows) + '%">' +
           '<article class="tv-linear-card' + state + '"><div class="tv-linear-card-head"><span class="tv-linear-number">' + badge + '</span>' +
@@ -193,7 +194,7 @@
     app.className = '';
     app.innerHTML = headerHtml(progress) + '<div class="tv-content"><main class="tv-main"><div class="tv-phase-line"><span class="tv-phase ' +
       phaseClass() + '">' + phaseLabel() + '</span><span class="tv-timer ' + (secondsLeft <= 3 && phase !== 'COMPLETE' ? 'urgent' : '') + '">' +
-      formatTime(secondsLeft) + '</span><span class="tv-meta">תחנה ' + (exerciseIndex + 1) + '/' + exercises.length + '</span></div>' +
+      (isRepetitionBased() ? escapeHtml(exercises[exerciseIndex].reps || program.defaultRepetitions || 'לפי התרגיל') + ' חזרות' : formatTime(secondsLeft)) + '</span><span class="tv-meta">תחנה ' + (exerciseIndex + 1) + '/' + exercises.length + '</span></div>' +
       stage + controlsHtml() + '</main></div></div>';
     bindControls();
   }
@@ -259,7 +260,7 @@
     var stage = phase === 'COMPLETE' ? '<div class="tv-finished"><div class="tv-finished-icon">🏆</div><h2>כל הכבוד לכולם!</h2></div>' : '<div class="tv-stations">' + stationsHtml + '</div>';
     app.className = '';
     app.innerHTML = headerHtml(progress) + '<div class="tv-content"><main class="tv-main"><div class="tv-phase-line"><span class="tv-phase ' + phaseClass() + '">' +
-      phaseLabel() + '</span><span class="tv-timer ' + (secondsLeft <= 3 && phase !== 'COMPLETE' ? 'urgent' : '') + '">' + formatTime(secondsLeft) +
+      phaseLabel() + '</span><span class="tv-timer ' + (!isRepetitionBased() && secondsLeft <= 3 && phase !== 'COMPLETE' ? 'urgent' : '') + '">' + (isRepetitionBased() ? escapeHtml(program.defaultRepetitions || 'לפי התרגיל') + ' חזרות' : formatTime(secondsLeft)) +
       '</span><span class="tv-meta">סבב ' + chainRound + '/' + (program.roundsPerStation || 1) + ' · החלפה ' + (rotationIndex + 1) + '/' + stations.length +
       '</span></div>' + stage + controlsHtml() + '</main></div></div>';
     bindControls();
@@ -284,7 +285,8 @@
 
   function startWork() {
     phase = 'WORK';
-    if (program.mode === 'ROTATING_GROUPS') secondsLeft = Number(program.defaultWorkSeconds) || 0;
+    if (isRepetitionBased()) secondsLeft = 0;
+    else if (program.mode === 'ROTATING_GROUPS') secondsLeft = Number(program.defaultWorkSeconds) || 0;
     else secondsLeft = Number(program.exercises[exerciseIndex].workSeconds) || 0;
     beep(1100, .3); render();
   }
@@ -344,7 +346,7 @@
     publishStatus();
   }
 
-  function toggleRunning() { if (phase !== 'COMPLETE') { running = !running; if (running) beep(880, .1); render(); publishStatus(); } }
+  function toggleRunning() { if (phase !== 'COMPLETE') { if (isRepetitionBased()) advancePhase(); else { running = !running; if (running) beep(880, .1); render(); publishStatus(); } } }
 
   function fullscreen() {
     var element = document.documentElement;
@@ -401,7 +403,7 @@
   }
 
   window.setInterval(function () {
-    if (!running || phase === 'COMPLETE') return;
+    if ((!running && !(isRepetitionBased() && phase === 'TRANSITION')) || phase === 'COMPLETE' || (isRepetitionBased() && phase !== 'TRANSITION')) return;
     if (secondsLeft <= 1) { secondsLeft = 0; advancePhase(); }
     else { secondsLeft -= 1; if (secondsLeft <= 3) beep(secondsLeft === 1 ? 1050 : 850, .1); render(); publishStatus(); }
   }, 1000);

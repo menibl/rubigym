@@ -50,32 +50,47 @@ const parseWorkoutDisplaySeconds = (value, fallback) => {
   return /min|דק/i.test(String(value || '')) ? parsed * 60 : parsed;
 };
 
-const personalPlanDisplayProgram = (plan, session) => ({
-  id: `personal-display-${plan.id}`,
-  sessionId: session.id,
-  sessionDate: session.date,
-  sessionTime: session.time,
-  groupName: session.demoTraineeName || session.title || 'אימון אישי',
-  title: plan.title || 'תוכנית אימון אישית',
-  description: `תוכנית אישית בהנחיית ${plan.coachName || session.coachName || ''}`,
-  coachId: plan.coachId || session.coachId,
-  coachName: plan.coachName || session.coachName,
-  exercises: (plan.exercises || []).map(exercise => ({
+const personalPlanDisplayProgram = (plan, session) => {
+  const mode = plan.mode || 'LINEAR';
+  const subgroupCount = mode === 'ROTATING_GROUPS' ? Math.max(2, Number(plan.subgroupCount) || 3) : 1;
+  const exercises = (plan.exercises || []).map((exercise, index) => ({
     ...exercise,
+    stationNumber: mode === 'ROTATING_GROUPS' ? Number(exercise.stationNumber) || (index % subgroupCount) + 1 : undefined,
     workSeconds: plan.effortMetric === 'REPS' ? 0 : parseWorkoutDisplaySeconds(exercise.workDuration, plan.defaultWorkSeconds ?? 45),
     restSeconds: plan.effortMetric === 'REPS' ? 0 : parseWorkoutDisplaySeconds(exercise.restDuration, plan.defaultRestSeconds ?? 60),
-    rounds: Math.max(1, Number(exercise.sets) || 1)
-  })),
-  defaultWorkSeconds: plan.effortMetric === 'REPS' ? 0 : plan.defaultWorkSeconds ?? 45,
-  defaultRestSeconds: plan.effortMetric === 'REPS' ? 0 : plan.defaultRestSeconds ?? 60,
-  effortMetric: plan.effortMetric || 'TIME',
-  defaultRepetitions: plan.defaultRepetitions,
-  preparationSeconds: 10,
-  status: 'PUBLISHED',
-  createdAt: plan.lastUpdated || session.date,
-  updatedAt: plan.lastUpdated || session.date,
-  publishedAt: plan.lastUpdated || session.date
-});
+    rounds: Math.max(1, Number(plan.roundsPerStation) || Number(exercise.sets) || 1)
+  }));
+  return {
+    id: `personal-display-${plan.id}`,
+    sessionId: session.id,
+    sessionDate: session.date,
+    sessionTime: session.time,
+    groupName: session.demoTraineeName || session.title || 'אימון אישי',
+    title: plan.title || 'תוכנית אימון אישית',
+    description: `תוכנית אישית בהנחיית ${plan.coachName || session.coachName || ''}`,
+    coachId: plan.coachId || session.coachId,
+    coachName: plan.coachName || session.coachName,
+    mode,
+    exercises: mode === 'LINEAR' ? exercises : [],
+    stations: mode === 'ROTATING_GROUPS' ? Array.from({ length: subgroupCount }, (_, index) => ({
+      id: `personal-station-${plan.id}-${index + 1}`,
+      name: `תחנה ${index + 1}`,
+      exercises: exercises.filter(exercise => exercise.stationNumber === index + 1)
+    })) : [],
+    participantGroupNames: mode === 'ROTATING_GROUPS' ? Array.from({ length: subgroupCount }, (_, index) => `קבוצה ${index + 1}`) : undefined,
+    roundsPerStation: Math.max(1, Number(plan.roundsPerStation) || 3),
+    transitionSeconds: Math.max(0, Number(plan.transitionSeconds) || 0),
+    defaultWorkSeconds: plan.effortMetric === 'REPS' ? 0 : plan.defaultWorkSeconds ?? 45,
+    defaultRestSeconds: plan.effortMetric === 'REPS' ? 0 : plan.defaultRestSeconds ?? 60,
+    effortMetric: plan.effortMetric || 'TIME',
+    defaultRepetitions: plan.defaultRepetitions,
+    preparationSeconds: 10,
+    status: 'PUBLISHED',
+    createdAt: plan.lastUpdated || session.date,
+    updatedAt: plan.lastUpdated || session.date,
+    publishedAt: plan.lastUpdated || session.date
+  };
+};
 
 export const findScheduledLiveDisplayCandidate = (payload, now = new Date()) => {
   const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
