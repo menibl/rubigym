@@ -3227,6 +3227,29 @@ option {
 .planning-section-title { margin: 0 0 0.65rem; color: #edece4; font-size: 0.85rem; font-weight: 950; }
 .planning-assignment-shell { overflow: hidden; border: 1px solid #2e313d; border-radius: 1.1rem; background: #1c1f27; }
 
+.planning-general-personal-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 44rem;
+  margin: 0 auto;
+  border: 1px solid #2e313d;
+  border-radius: 1.2rem;
+  background: #1c1f27;
+  padding: 1rem;
+  box-shadow: 0 7px 24px rgba(0, 0, 0, 0.2);
+}
+.planning-general-personal-form > div { display: flex; align-items: center; gap: 0.75rem; color: #d8b873; }
+.planning-general-personal-form > div span { min-width: 0; }
+.planning-general-personal-form > div strong,
+.planning-general-personal-form > div small { display: block; }
+.planning-general-personal-form > div strong { color: #f4f4f5; font-size: 0.9rem; }
+.planning-general-personal-form > div small { margin-top: 0.25rem; color: #a6a8b1; font-size: 0.68rem; line-height: 1.45; }
+.planning-general-personal-form label { display: grid; gap: 0.4rem; color: #d4d4d8; font-size: 0.72rem; font-weight: 900; }
+.planning-general-personal-form input { min-height: 3rem; border: 1px solid #3f4452; border-radius: 0.85rem; outline: none; background: #111318; padding: 0 0.85rem; color: #f7f3e8; font-size: 0.82rem; }
+.planning-general-personal-form input:focus { border-color: #c9a867; box-shadow: 0 0 0 3px rgba(201, 168, 103, 0.12); }
+.planning-general-personal-form > button { display: flex; min-height: 3rem; align-items: center; justify-content: center; gap: 0.45rem; border-radius: 0.85rem; background: #c9a867; color: #151515; font-size: 0.78rem; font-weight: 950; }
+.planning-general-personal-form > button:disabled { cursor: not-allowed; opacity: 0.45; }
+
 .planning-library-manager { display: grid; gap: 1rem; }
 .planning-library-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
 .planning-library-actions > button {
