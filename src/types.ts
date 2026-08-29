@@ -443,6 +443,7 @@ export interface Exercise {
   mediaStorageId?: string; // identifier of uploaded exercise media
   notes?: string;
   dayNumber?: number; // 1-based training day within a weekly personal plan
+  stationNumber?: number; // 1-based subgroup/station within a structured personal workout
 }
 
 export interface WorkoutPlan {
@@ -461,6 +462,13 @@ export interface WorkoutPlan {
   defaultWorkSeconds?: number;
   defaultRestSeconds?: number;
   defaultRepetitions?: string;
+  mode?: 'LINEAR' | 'ROTATING_GROUPS';
+  subgroupCount?: number;
+  exerciseCount?: number;
+  roundsPerStation?: number;
+  transitionSeconds?: number;
+  trainingType?: string;
+  plannedDurationMinutes?: number;
   status?: 'REQUIRED_OPEN_GYM' | 'REQUESTED_BY_TRAINEE' | 'APPROVED_ASSIGNED';
   isRequested?: boolean;
   /** Saved immutable-ish version for reuse. Active trainee plans keep this false/undefined. */
@@ -570,6 +578,13 @@ export interface WorkoutAssistantDraft {
   defaultWorkSeconds?: number;
   defaultRestSeconds?: number;
   defaultRepetitions?: string;
+  mode?: 'LINEAR' | 'ROTATING_GROUPS';
+  subgroupCount?: number;
+  exerciseCount?: number;
+  roundsPerStation?: number;
+  transitionSeconds?: number;
+  trainingType?: string;
+  plannedDurationMinutes?: number;
   sourceDocumentIds: string[];
   createdAt: string;
   updatedAt: string;
