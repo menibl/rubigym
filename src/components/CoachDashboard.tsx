@@ -190,15 +190,34 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const handleModalCreateSession = (data: CreateSessionData) => {
     const { newSessions, newOpenGym } = createSessionsFromData(data, users, activeUser);
     if (newSessions.length > 0) {
-      onUpdateSessions([...newSessions, ...sessions]);
+      let linkedSessions = newSessions;
       if (data.category === 'PERSONAL' && data.selectedProgramId && (data.targetTraineeId || data.isDemoSession)) {
         const source = workoutPlans.find(plan => plan.id === data.selectedProgramId && !plan.sessionId);
-        if (source) onUpdateWorkoutPlans([...copyPersonalPlanToSessions(source, newSessions, data.targetTraineeId, activeUser), ...workoutPlans]);
+        if (source) {
+          const assignedPlans = copyPersonalPlanToSessions(source, newSessions, data.targetTraineeId, activeUser);
+          onUpdateWorkoutPlans([...assignedPlans, ...workoutPlans]);
+          linkedSessions = linkedSessions.map(session => ({
+            ...session,
+            assignedWorkoutPlanId: assignedPlans.find(plan => plan.sessionId === session.id)?.id
+          }));
+        }
       }
       if (data.category === 'GROUP' && data.selectedProgramId) {
         const source = groupWorkoutPrograms.find(program => program.id === data.selectedProgramId && !program.sessionId);
-        if (source) onUpdateGroupWorkoutPrograms([...copyGroupProgramToSessions(source, newSessions, activeUser, users), ...groupWorkoutPrograms]);
+        if (source) {
+          const assignedPrograms = copyGroupProgramToSessions(source, newSessions, activeUser, users).map(program => ({
+            ...program,
+            status: 'PUBLISHED' as const,
+            publishedAt: new Date().toISOString()
+          }));
+          onUpdateGroupWorkoutPrograms([...assignedPrograms, ...groupWorkoutPrograms]);
+          linkedSessions = linkedSessions.map(session => ({
+            ...session,
+            assignedGroupWorkoutProgramId: assignedPrograms.find(program => program.sessionId === session.id)?.id
+          }));
+        }
       }
+      onUpdateSessions([...linkedSessions, ...sessions]);
     }
     if (newOpenGym.length > 0 && onUpdateOpenGym) {
       onUpdateOpenGym([...newOpenGym, ...openGymSessions]);
@@ -984,6 +1003,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const personalTemplatePlans = workoutPlans.filter(plan => isPersonalLibraryEntry(plan) || (!plan.sessionId && plan.traineeId !== selectedTraineeId));
   const nutritionTemplatePlans = nutritionPlans.filter(plan => isNutritionLibraryEntry(plan) || plan.traineeId !== selectedTraineeId);
 
+  const personalEffortQuestions: WizardQuestion[] = [
+    { id: 'effortMetric', label: 'איך מודדים כל תרגיל?', type: 'choice', required: true, options: [{ value: 'TIME', label: 'לפי זמן', description: 'זמן עבודה ומנוחה לכל תרגיל' }, { value: 'REPS', label: 'לפי חזרות', description: 'מספר חזרות לכל תרגיל' }] },
+    { id: 'workSeconds', label: 'זמן עבודה ברירת מחדל בשניות', type: 'number', required: true, min: 5, max: 900, visibleWhen: answers => answers.effortMetric === 'TIME' },
+    { id: 'restSeconds', label: 'זמן מנוחה ברירת מחדל בשניות', type: 'number', required: true, min: 0, max: 900, visibleWhen: answers => answers.effortMetric === 'TIME' },
+    { id: 'repetitions', label: 'מספר חזרות ברירת מחדל', type: 'text', required: true, placeholder: 'לדוגמה: 12 או 10 לכל צד', visibleWhen: answers => answers.effortMetric === 'REPS' }
+  ];
+
   const personalSetupQuestions: WizardQuestion[] = isGeneralPersonalProgram ? [
     { id: 'programName', label: 'שם התוכנית', type: 'text', required: true, placeholder: 'לדוגמה: תוכנית כוח למתחילים – 3 ימים' },
     { id: 'primaryGoal', label: 'מה המטרה העיקרית?', type: 'text', required: true, placeholder: 'לדוגמה: כוח, ירידה במשקל או שיפור כושר כללי' },
@@ -991,6 +1017,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     { id: 'weeklySessions', label: 'כמה אימונים בשבוע?', type: 'number', min: 1, max: 7, required: true },
     { id: 'preferredWorkoutMinutes', label: 'משך אימון מועדף בדקות', type: 'number', min: 15, max: 180, required: true },
     { id: 'limitations', label: 'מגבלות כלליות או תרגילים שאינם מתאימים', type: 'textarea', placeholder: 'אם אין, כתבו: ללא' },
+    ...personalEffortQuestions,
   ] : [
     { id: 'updateProfile', label: 'האם לעדכן עכשיו את נתוני המתאמן?', description: 'הנתונים נשמרים בזיכרון המקצועי ומשמשים את הצ׳אט.', type: 'choice', required: true, options: [{ value: true, label: 'כן, לעדכן' }, { value: false, label: 'לא, להשתמש בקיים' }] },
     { id: 'primaryGoal', label: 'מה המטרה העיקרית?', type: 'text', required: true, placeholder: 'לדוגמה: כוח, ירידה במשקל או שיקום', visibleWhen: answers => answers.updateProfile === true },
@@ -998,6 +1025,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     { id: 'weeklySessions', label: 'כמה אימונים בשבוע?', type: 'number', min: 1, max: 7, required: true, visibleWhen: answers => answers.updateProfile === true },
     { id: 'preferredWorkoutMinutes', label: 'משך אימון מועדף בדקות', type: 'number', min: 15, max: 180, required: true, visibleWhen: answers => answers.updateProfile === true },
     { id: 'limitations', label: 'מגבלות, כאבים או תרגילים אסורים', type: 'textarea', placeholder: 'אם אין, כתבו: ללא', visibleWhen: answers => answers.updateProfile === true },
+    ...personalEffortQuestions,
   ];
 
   const completePersonalSetup = (answers: WizardAnswers) => {
@@ -1027,6 +1055,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       });
     }
     const source = answers.sourceMode === 'LIBRARY' ? workoutPlans.find(plan => plan.id === answers.templateId) : undefined;
+    const effortMetric = source?.effortMetric || (answers.effortMetric === 'REPS' ? 'REPS' : 'TIME');
+    const defaultWorkSeconds = effortMetric === 'TIME' ? Number(answers.workSeconds ?? source?.defaultWorkSeconds ?? 45) : 0;
+    const defaultRestSeconds = effortMetric === 'TIME' ? Number(answers.restSeconds ?? source?.defaultRestSeconds ?? 60) : 0;
+    const defaultRepetitions = String(answers.repetitions || source?.defaultRepetitions || '12');
     const baseDraft: WorkoutAssistantDraft = selectedAssistantDraft || {
       id: `workout-draft-${Date.now()}`,
       traineeId: selectedTrainee.id,
@@ -1037,11 +1069,22 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       exercises: [],
       trainingDaysPerWeek: 1,
       dayLabels: ['יום 1'],
+      effortMetric,
+      defaultWorkSeconds,
+      defaultRestSeconds,
+      defaultRepetitions,
       sourceDocumentIds: [],
       createdAt: now,
       updatedAt: now,
       status: 'DRAFT'
     };
+    const setupExercises = (source ? source.exercises : baseDraft.exercises).map((exercise, index) => ({
+      ...exercise,
+      id: source ? `setup-exercise-${Date.now()}-${index}` : exercise.id,
+      reps: effortMetric === 'REPS' ? (exercise.reps && exercise.reps !== 'לפי זמן' ? exercise.reps : defaultRepetitions) : 'לפי זמן',
+      workDuration: effortMetric === 'TIME' ? `${defaultWorkSeconds} שניות` : '',
+      restDuration: effortMetric === 'TIME' ? `${defaultRestSeconds} שניות` : ''
+    }));
     handleUpdateAssistantDraft({
       ...baseDraft,
       objective: isGeneralPersonalProgram
@@ -1049,7 +1092,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         : String(answers.primaryGoal || selectedTraineeProfile?.primaryGoal || baseDraft.objective || ''),
       trainingDaysPerWeek: source?.trainingDaysPerWeek || Number(answers.weeklySessions || baseDraft.trainingDaysPerWeek || 1),
       dayLabels: source?.dayLabels || baseDraft.dayLabels,
-      exercises: source ? source.exercises.map((exercise, index) => ({ ...exercise, id: `setup-exercise-${Date.now()}-${index}` })) : baseDraft.exercises,
+      exercises: setupExercises,
+      effortMetric,
+      defaultWorkSeconds,
+      defaultRestSeconds,
+      defaultRepetitions,
       status: 'DRAFT',
       updatedAt: now
     });
@@ -1132,6 +1179,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       exercises: draft.exercises.map(exercise => ({ ...exercise })),
       trainingDaysPerWeek: draft.trainingDaysPerWeek || 1,
       dayLabels: draft.dayLabels,
+      effortMetric: draft.effortMetric || 'TIME',
+      defaultWorkSeconds: draft.defaultWorkSeconds ?? 45,
+      defaultRestSeconds: draft.defaultRestSeconds ?? 60,
+      defaultRepetitions: draft.defaultRepetitions || '12',
       status: 'APPROVED_ASSIGNED',
       isRequested: false
     };
@@ -1175,6 +1226,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     if (!plan) return;
     const libraryEntry = createPersonalLibraryEntry(plan, selectedTrainee, plan.sourcePlanId);
     onUpdateWorkoutPlans([plan, libraryEntry, ...workoutPlans.filter(existing => existing.sessionId !== sessionId)]);
+    onUpdateSessions(sessions.map(session => session.id === sessionId ? { ...session, assignedWorkoutPlanId: plan.id } : session));
     handleUpdateAssistantDraft({ ...personalDraftToPublish, status: 'PUBLISHED', updatedAt: new Date().toISOString() });
     if (!isGeneralPersonalProgram) onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ושובצה לאימון ביומן.`, selectedTrainee.id);
     setPersonalDraftToPublish(null);
@@ -1199,6 +1251,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
         activeUser={activeUser}
         users={users}
         sessions={sessions}
+        onUpdateSessions={onUpdateSessions}
         workoutPlans={workoutPlans}
         onUpdateWorkoutPlans={onUpdateWorkoutPlans}
         groupWorkoutPrograms={groupWorkoutPrograms}
@@ -1256,6 +1309,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       exercises: plan.exercises.map((exercise, index) => ({ ...exercise, id: `workout-library-copy-${Date.now()}-${index}` })),
       trainingDaysPerWeek: plan.trainingDaysPerWeek || 1,
       dayLabels: plan.dayLabels,
+      effortMetric: plan.effortMetric || 'TIME',
+      defaultWorkSeconds: plan.defaultWorkSeconds ?? 45,
+      defaultRestSeconds: plan.defaultRestSeconds ?? 60,
+      defaultRepetitions: plan.defaultRepetitions || '12',
       sourceDocumentIds: [],
       createdAt: now,
       updatedAt: now,
@@ -1278,7 +1335,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       templateId: plan.id,
       primaryGoal: traineeProfiles.find(profile => profile.traineeId === trainee.id)?.primaryGoal || '',
       weeklySessions: plan.trainingDaysPerWeek || 1,
-      preferredWorkoutMinutes: traineeProfiles.find(profile => profile.traineeId === trainee.id)?.preferredWorkoutMinutes || 60
+      preferredWorkoutMinutes: traineeProfiles.find(profile => profile.traineeId === trainee.id)?.preferredWorkoutMinutes || 60,
+      effortMetric: plan.effortMetric || 'TIME',
+      workSeconds: plan.defaultWorkSeconds ?? 45,
+      restSeconds: plan.defaultRestSeconds ?? 60,
+      repetitions: plan.defaultRepetitions || '12'
     });
     setPersonalSetupComplete(true);
     setPersonalBuilderPanel('WORKOUT');
@@ -1374,6 +1435,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
           activeUser={activeUser}
           users={users}
           sessions={sessions}
+          onUpdateSessions={onUpdateSessions}
           workoutPlans={workoutPlans}
           onUpdateWorkoutPlans={onUpdateWorkoutPlans}
           groupWorkoutPrograms={groupWorkoutPrograms}
@@ -1540,6 +1602,10 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                     weeklySessions: selectedTraineeProfile?.weeklySessions || selectedAssistantDraft?.trainingDaysPerWeek || 3,
                     preferredWorkoutMinutes: selectedTraineeProfile?.preferredWorkoutMinutes || 60,
                     limitations: selectedTraineeProfile?.limitations || '',
+                    effortMetric: selectedAssistantDraft?.effortMetric || traineeWorkoutPlan?.effortMetric || 'TIME',
+                    workSeconds: selectedAssistantDraft?.defaultWorkSeconds ?? traineeWorkoutPlan?.defaultWorkSeconds ?? 45,
+                    restSeconds: selectedAssistantDraft?.defaultRestSeconds ?? traineeWorkoutPlan?.defaultRestSeconds ?? 60,
+                    repetitions: selectedAssistantDraft?.defaultRepetitions || traineeWorkoutPlan?.defaultRepetitions || '12',
                     sourceMode: 'NEW',
                     ...personalSetupAnswers
                   }}
@@ -1550,6 +1616,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   { label: 'מטרה', value: personalSetupAnswers.primaryGoal || selectedTraineeProfile?.primaryGoal },
                   { label: 'אימונים בשבוע', value: personalSetupAnswers.weeklySessions || selectedTraineeProfile?.weeklySessions },
                   { label: 'משך', value: personalSetupAnswers.preferredWorkoutMinutes ? `${personalSetupAnswers.preferredWorkoutMinutes} דקות` : undefined },
+                  { label: 'מדידה', value: personalSetupAnswers.effortMetric === 'REPS' ? `${personalSetupAnswers.repetitions || 12} חזרות` : `${personalSetupAnswers.workSeconds || 45} שנ׳ עבודה / ${personalSetupAnswers.restSeconds ?? 60} שנ׳ מנוחה` },
                   { label: 'מקור', value: personalSetupAnswers.sourceMode === 'LIBRARY' ? 'תוכנית מהמאגר' : 'תוכנית חדשה' },
                   { label: 'שמירה במאגר', value: 'אוטומטית בפרסום' }
                 ]} />
@@ -1938,6 +2005,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                 onUpdatePrograms={onUpdateGroupWorkoutPrograms}
                 trainees={users.filter(user => user.role === UserRole.TRAINEE)}
                 sessions={sessions}
+                onUpdateSessions={onUpdateSessions}
                 equipment={gymEquipment}
                 onUpdateEquipment={onUpdateGymEquipment}
                 pdfDocuments={coachPdfDocuments}

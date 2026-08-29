@@ -46,12 +46,14 @@ export const personalPlanToDisplayProgram = (
   coachName: plan.coachName,
   exercises: plan.exercises.map(exercise => ({
     ...exercise,
-    workSeconds: parseDisplaySeconds(exercise.workDuration, 45),
-    restSeconds: parseDisplaySeconds(exercise.restDuration, 30),
+    workSeconds: plan.effortMetric === 'REPS' ? 0 : parseDisplaySeconds(exercise.workDuration, plan.defaultWorkSeconds ?? 45),
+    restSeconds: plan.effortMetric === 'REPS' ? 0 : parseDisplaySeconds(exercise.restDuration, plan.defaultRestSeconds ?? 60),
     rounds: Math.max(1, exercise.sets)
   })),
-  defaultWorkSeconds: 45,
-  defaultRestSeconds: 30,
+  defaultWorkSeconds: plan.effortMetric === 'REPS' ? 0 : plan.defaultWorkSeconds ?? 45,
+  defaultRestSeconds: plan.effortMetric === 'REPS' ? 0 : plan.defaultRestSeconds ?? 60,
+  effortMetric: plan.effortMetric || 'TIME',
+  defaultRepetitions: plan.defaultRepetitions,
   preparationSeconds: 10,
   status: 'PUBLISHED',
   createdAt: plan.lastUpdated,
