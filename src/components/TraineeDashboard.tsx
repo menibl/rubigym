@@ -1812,9 +1812,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                             {!booked && !waitlisted && !eligibility.eligible && <span className="booking-reason">{eligibility.reason}</span>}
                             {(booked || waitlisted) && (
                               <div className="booking-calendar-links">
-                                {booked && sessionWorkoutProgram(session) && (
+                                {booked && (sessionWorkoutProgram(session) ? (
                                   <button type="button" className="workout-view-button" onClick={() => openSessionWorkoutDisplay(session)}><MonitorPlay size={14} /> צפה בתוכנית האימון</button>
-                                )}
+                                ) : (
+                                  <button type="button" className="workout-view-button unavailable" disabled title="המאמן עדיין לא שיבץ תוכנית לאימון זה"><MonitorPlay size={14} /> טרם שובצה תוכנית</button>
+                                ))}
                                 <a href={getGoogleCalendarLink(session)} target="_blank" rel="noreferrer">Google Calendar</a>
                                 <button type="button" onClick={() => downloadIcsFile(session)}>Apple Calendar</button>
                               </div>

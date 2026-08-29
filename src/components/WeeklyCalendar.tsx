@@ -909,13 +909,24 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                   {/* TRAINEE BOOK / CANCEL ACTIONS */}
                   {role === UserRole.TRAINEE && (
                     <div className="grid w-full gap-2">
-                      {selectedItem.session.registeredUsers.includes(activeUser.id) && canViewWorkoutProgram?.(selectedItem.session) && onViewWorkoutProgram && (
-                        <button
-                          onClick={() => onViewWorkoutProgram(selectedItem.session!)}
-                          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-400 text-xs font-black text-zinc-950 shadow-xs transition hover:bg-amber-300"
-                        >
-                          <Dumbbell className="h-4 w-4" /> הצג את תוכנית האימון
-                        </button>
+                      {selectedItem.session.registeredUsers.includes(activeUser.id) && (
+                        canViewWorkoutProgram?.(selectedItem.session) && onViewWorkoutProgram ? (
+                          <button
+                            onClick={() => onViewWorkoutProgram(selectedItem.session!)}
+                            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-400 text-xs font-black text-zinc-950 shadow-xs transition hover:bg-amber-300"
+                          >
+                            <Dumbbell className="h-4 w-4" /> הצג את תוכנית האימון
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            title="המאמן עדיין לא שיבץ תוכנית לאימון זה"
+                            className="flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-slate-300 bg-slate-100 text-xs font-black text-slate-500"
+                          >
+                            <Dumbbell className="h-4 w-4" /> טרם שובצה תוכנית
+                          </button>
+                        )
                       )}
                       {selectedItem.session.registeredUsers.includes(activeUser.id) ? (
                         <button
