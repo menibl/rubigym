@@ -60,6 +60,24 @@ test('selects a published scheduled workout exactly from its start time', () => 
   assert.equal(findScheduledLiveDisplayProgram(payload, new Date('2026-08-25T17:00:00.000Z')), undefined);
 });
 
+test('converts a scheduled personal demo plan for the fixed club display', () => {
+  const payload = {
+    sessions: [{
+      id: 'demo-session-1', title: 'אימון הדגמה', demoTraineeName: 'מתאמן אורח',
+      date: '2026-08-25', time: '19:00', durationMinutes: 45, isPersonalTraining: true
+    }],
+    workoutPlans: [{
+      id: 'demo-plan-1', sessionId: 'demo-session-1', title: 'הדגמת כוח', coachId: 'coach-1', coachName: 'רובי',
+      lastUpdated: '2026-08-25', exercises: [{ id: 'exercise-1', name: 'סקוואט', sets: 3, workDuration: '40', restDuration: '20' }]
+    }]
+  };
+  const program = findScheduledLiveDisplayProgram(payload, new Date('2026-08-25T16:00:00.000Z'));
+  assert.equal(program?.id, 'personal-display-demo-plan-1');
+  assert.equal(program?.groupName, 'מתאמן אורח');
+  assert.equal(program?.exercises[0].workSeconds, 40);
+  assert.equal(program?.exercises[0].rounds, 3);
+});
+
 test('keeps the Pages display channel isolated and available without a production login', async () => {
   const program = { id: `pages-${Date.now()}`, title: 'אימון דמו', status: 'PUBLISHED' };
   const origin = 'https://menibl.github.io';

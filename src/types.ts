@@ -396,6 +396,8 @@ export interface TrainingSession {
   // Personal Training specifics
   isPersonalTraining?: boolean;
   targetTraineeId?: string; // Main trainee for PT
+  isDemoSession?: boolean; // Personal demo for a prospect who is not registered yet
+  demoTraineeName?: string;
   coTrainees?: string[]; // Additional trainees approved by coach
   pricePerSession?: number;
   coachApprovalStatus?: 'PENDING' | 'APPROVED' | 'DECLINED';

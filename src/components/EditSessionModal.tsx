@@ -103,7 +103,7 @@ export const EditSessionModal: React.FC<EditSessionModalProps> = ({
     e.preventDefault();
 
     if (session) {
-      if (allowedMemberships.length === 0) {
+      if (!session.isDemoSession && allowedMemberships.length === 0) {
         alert('יש לבחור לפחות סוג מנוי אחד המורשה להירשם לאימון.');
         return;
       }

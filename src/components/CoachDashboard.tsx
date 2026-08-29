@@ -191,7 +191,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     const { newSessions, newOpenGym } = createSessionsFromData(data, users, activeUser);
     if (newSessions.length > 0) {
       onUpdateSessions([...newSessions, ...sessions]);
-      if (data.category === 'PERSONAL' && data.selectedProgramId && data.targetTraineeId) {
+      if (data.category === 'PERSONAL' && data.selectedProgramId && (data.targetTraineeId || data.isDemoSession)) {
         const source = workoutPlans.find(plan => plan.id === data.selectedProgramId && !plan.sessionId);
         if (source) onUpdateWorkoutPlans([...copyPersonalPlanToSessions(source, newSessions, data.targetTraineeId, activeUser), ...workoutPlans]);
       }
@@ -373,6 +373,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   const traineesOnly = users.filter(u => u.role === UserRole.TRAINEE);
   const [selectedTraineeId, setSelectedTraineeId] = useState<string>(traineesOnly[0]?.id || '');
   const [generalPersonalTarget, setGeneralPersonalTarget] = useState<{ id: string; name: string } | null>(null);
+  const [generalPersonalSessionId, setGeneralPersonalSessionId] = useState('');
   const registeredTrainee = traineesOnly.find(t => t.id === selectedTraineeId);
   const isGeneralPersonalProgram = Boolean(generalPersonalTarget && generalPersonalTarget.id === selectedTraineeId);
   const selectedTrainee: User | undefined = registeredTrainee || (isGeneralPersonalProgram && generalPersonalTarget ? {
@@ -392,12 +393,53 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       const traineeId = session.targetTraineeId || session.registeredUsers[0] || session.coTrainees?.[0];
       if (traineeId) {
         setGeneralPersonalTarget(null);
+        setGeneralPersonalSessionId('');
         setSelectedTraineeId(traineeId);
+        setPersonalSetupComplete(false);
+        setPersonalSetupAnswers({});
+      } else {
+        const assignedPlan = workoutPlans.find(plan => plan.sessionId === session.id);
+        const target = {
+          id: assignedPlan?.traineeId || `demo-session-${session.id}`,
+          name: session.demoTraineeName || session.title || 'אימון הדגמה'
+        };
+        setGeneralPersonalTarget(target);
+        setGeneralPersonalSessionId(session.id);
+        setSelectedTraineeId(target.id);
+        setPersonalSetupAnswers({
+          programName: assignedPlan?.title || session.title,
+          primaryGoal: assignedPlan?.title || 'אימון הדגמה אישי',
+          weeklySessions: assignedPlan?.trainingDaysPerWeek || 1,
+          preferredWorkoutMinutes: session.durationMinutes || 60
+        });
+        if (assignedPlan) {
+          const now = new Date().toISOString();
+          const draft: WorkoutAssistantDraft = {
+            id: `demo-session-draft-${session.id}`,
+            traineeId: target.id,
+            coachId: activeUser.id,
+            coachName: activeUser.name,
+            objective: assignedPlan.title || session.title,
+            coachNotes: `נטענה תוכנית ההדגמה מהאימון ביומן: ${session.title}`,
+            exercises: assignedPlan.exercises.map(exercise => ({ ...exercise })),
+            trainingDaysPerWeek: assignedPlan.trainingDaysPerWeek || 1,
+            dayLabels: assignedPlan.dayLabels,
+            sourceDocumentIds: [],
+            createdAt: now,
+            updatedAt: now,
+            status: 'DRAFT'
+          };
+          const existingDraft = workoutAssistantDrafts.some(item => item.traineeId === target.id);
+          onUpdateWorkoutAssistantDrafts(existingDraft
+            ? workoutAssistantDrafts.map(item => item.traineeId === target.id ? draft : item)
+            : [draft, ...workoutAssistantDrafts]);
+          setPersonalSetupComplete(true);
+        } else {
+          setPersonalSetupComplete(false);
+        }
       }
       setActiveTab('programs');
       setPersonalBuilderPanel('WORKOUT');
-      setPersonalSetupComplete(false);
-      setPersonalSetupAnswers({});
       setWorkoutPlanningRoute('PERSONAL_BUILDER');
       return;
     }
@@ -1079,7 +1121,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       traineeId: selectedTrainee.id,
       title: isGeneralPersonalProgram
-        ? (generalPersonalTarget?.name || draft.objective.trim() || 'תוכנית אישית כללית')
+        ? (String(personalSetupAnswers.programName || '').trim() || draft.objective.trim() || generalPersonalTarget?.name || 'תוכנית אישית כללית')
         : (draft.objective.trim() || personalLibraryTitle(selectedTrainee.name, createdAt)),
       sessionId,
       sourcePlanId: sourcePlanId || undefined,
@@ -1128,13 +1170,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   };
 
   const assignPersonalDraftToSession = (sessionId: string) => {
-    if (!personalDraftToPublish || !selectedTrainee || isGeneralPersonalProgram) return;
+    if (!personalDraftToPublish || !selectedTrainee || (isGeneralPersonalProgram && sessionId !== generalPersonalSessionId)) return;
     const plan = personalPlanFromDraft(personalDraftToPublish, sessionId);
     if (!plan) return;
     const libraryEntry = createPersonalLibraryEntry(plan, selectedTrainee, plan.sourcePlanId);
-    onUpdateWorkoutPlans([plan, libraryEntry, ...workoutPlans]);
+    onUpdateWorkoutPlans([plan, libraryEntry, ...workoutPlans.filter(existing => existing.sessionId !== sessionId)]);
     handleUpdateAssistantDraft({ ...personalDraftToPublish, status: 'PUBLISHED', updatedAt: new Date().toISOString() });
-    onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ושובצה לאימון ביומן.`, selectedTrainee.id);
+    if (!isGeneralPersonalProgram) onSendMessage(`תוכנית אימון חדשה הוכנה עבורך על ידי ${activeUser.name} ושובצה לאימון ביומן.`, selectedTrainee.id);
     setPersonalDraftToPublish(null);
     window.alert('התוכנית נשמרה במאגר ושובצה לאימון שנבחר.');
   };
@@ -1175,6 +1217,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
 
   const openPersonalBuilder = (traineeId: string) => {
     setGeneralPersonalTarget(null);
+    setGeneralPersonalSessionId('');
     setSelectedTraineeId(traineeId);
     setActiveTab('programs');
     setPersonalBuilderPanel('WORKOUT');
@@ -1188,6 +1231,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     if (!name) return;
     const target = { id: `general-personal-${Date.now()}`, name };
     setGeneralPersonalTarget(target);
+    setGeneralPersonalSessionId('');
     setSelectedTraineeId(target.id);
     setActiveTab('programs');
     setPersonalBuilderPanel('WORKOUT');
@@ -1200,6 +1244,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     const trainee = users.find(user => user.id === targetTraineeId) || users.find(user => user.id === selectedTraineeId) || users.find(user => user.id === plan.traineeId) || traineesOnly[0];
     if (!trainee) return;
     setGeneralPersonalTarget(null);
+    setGeneralPersonalSessionId('');
     const now = new Date().toISOString();
     const draft: WorkoutAssistantDraft = {
       id: `workout-library-draft-${Date.now()}`,
@@ -2698,11 +2743,13 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       <PublishDestinationDialog
         open={Boolean(personalDraftToPublish)}
         title={personalDraftToPublish?.objective || 'תוכנית אימון אישית'}
-        sessions={isGeneralPersonalProgram ? [] : sessions.filter(session => session.isPersonalTraining && (!selectedTrainee || session.targetTraineeId === selectedTrainee.id || session.registeredUsers.includes(selectedTrainee.id) || session.coTrainees?.includes(selectedTrainee.id)))}
+        sessions={isGeneralPersonalProgram
+          ? sessions.filter(session => session.id === generalPersonalSessionId)
+          : sessions.filter(session => session.isPersonalTraining && (!selectedTrainee || session.targetTraineeId === selectedTrainee.id || session.registeredUsers.includes(selectedTrainee.id) || session.coTrainees?.includes(selectedTrainee.id)))}
         onClose={() => setPersonalDraftToPublish(null)}
         onSaveToLibrary={savePersonalDraftToLibrary}
         onAssignToSession={assignPersonalDraftToSession}
-        allowAssignToSession={!isGeneralPersonalProgram}
+        allowAssignToSession={!isGeneralPersonalProgram || Boolean(generalPersonalSessionId)}
         onPublishDirect={!isGeneralPersonalProgram && selectedHasWorkoutPlanAccess ? publishPersonalDraftToTrainee : undefined}
         directPublishLabel="פרסם למתאמן"
         directPublishDescription="התוכנית תופיע מיד במסך תוכנית האימונים של המתאמן"
