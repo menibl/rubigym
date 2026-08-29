@@ -61,10 +61,12 @@ const HEBREW_DAYS = [
   'יום שלישי',
   'יום רביעי',
   'יום חמישי',
-  'יום שישי'
+  'יום שישי',
+  'יום שבת'
 ];
 
 const HOURS = [
+  '06:00',
   '07:00',
   '08:00',
   '09:00',
@@ -79,7 +81,8 @@ const HOURS = [
   '18:00',
   '19:00',
   '20:00',
-  '21:00'
+  '21:00',
+  '22:00'
 ];
 
 export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
@@ -115,7 +118,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   // Calendar view mode: 'HOURLY' (Hourly Timeline) vs 'CARDS' (Compact List)
   const [calendarViewMode, setCalendarViewMode] = useState<'HOURLY' | 'CARDS'>('HOURLY');
 
-  // Mobile selected day filter: 'ALL' or dayIndex 0..5 (Sunday..Friday)
+  // Mobile selected day filter: 'ALL' or dayIndex 0..6 (Sunday..Saturday)
   const [mobileSelectedDay, setMobileSelectedDay] = useState<number | 'ALL'>('ALL');
 
   // Coach-specific toggle: My Sessions vs All Gym Sessions
@@ -163,14 +166,14 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
     return `${year}-${month}-${day}`;
   };
 
-  // Compute 6 days of current week (Sunday to Friday - NO Saturday)
-  const weekDays = Array.from({ length: 6 }, (_, i) => {
+  // Compute the full week (Sunday to Saturday).
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(currentWeekStart);
     d.setDate(currentWeekStart.getDate() + i);
     return {
       dayIndex: i,
       dayName: HEBREW_DAYS[i],
-      shortName: ['א\'', 'ב\'', 'ג\'', 'ד\'', 'ה\'', 'ו\''][i],
+      shortName: ['א\'', 'ב\'', 'ג\'', 'ד\'', 'ה\'', 'ו\'', 'ש\''][i],
       date: d,
       dateKey: formatDateKey(d),
       isToday: formatDateKey(d) === formatDateKey(new Date())
@@ -179,7 +182,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
 
   // Format week range header
   const weekEnd = new Date(currentWeekStart);
-  weekEnd.setDate(currentWeekStart.getDate() + 5);
+  weekEnd.setDate(currentWeekStart.getDate() + 6);
   const weekRangeText = `${currentWeekStart.getDate()}/${currentWeekStart.getMonth() + 1}/${currentWeekStart.getFullYear()} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}/${weekEnd.getFullYear()}`;
 
   // Helper: check if Trainee has registered/waitlisted for Open Gym
@@ -452,7 +455,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
           </div>
         )}
 
-        {/* DATE STRIP BUTTONS (Sunday to Friday) */}
+        {/* DATE STRIP BUTTONS (Sunday to Saturday) */}
         <div className="pt-2 border-t border-slate-200/60">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin dir-rtl">
             <button
@@ -463,7 +466,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              <span>✨ כל השבוע (א'-ו')</span>
+              <span>✨ כל השבוע (א'-ש')</span>
             </button>
 
             {weekDays.map(day => {
@@ -517,7 +520,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
         <div className="overflow-x-auto">
           <div className="min-w-[800px] border-collapse bg-slate-100/40">
             {/* STICKY DAY HEADERS ROW */}
-            <div className={`grid ${mobileSelectedDay === 'ALL' ? 'grid-cols-[70px_repeat(6,minmax(110px,1fr))]' : 'grid-cols-[70px_1fr]'} bg-slate-100 border-b border-slate-200 sticky top-0 z-20 shadow-2xs`}>
+            <div className={`grid ${mobileSelectedDay === 'ALL' ? 'grid-cols-[70px_repeat(7,minmax(110px,1fr))]' : 'grid-cols-[70px_1fr]'} bg-slate-100 border-b border-slate-200 sticky top-0 z-20 shadow-2xs`}>
               {/* TIME COLUMN HEADER */}
               <div className="p-2 text-center font-extrabold text-xs text-slate-800 bg-slate-200/90 border-l border-slate-300 flex items-center justify-center gap-1 select-none">
                 <Clock className="w-3.5 h-3.5 text-slate-700" />
@@ -553,7 +556,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
               {HOURS.map(hour => (
                 <div
                   key={hour}
-                  className={`grid ${mobileSelectedDay === 'ALL' ? 'grid-cols-[70px_repeat(6,minmax(110px,1fr))]' : 'grid-cols-[70px_1fr]'} min-h-[52px] bg-white`}
+                  className={`grid ${mobileSelectedDay === 'ALL' ? 'grid-cols-[70px_repeat(7,minmax(110px,1fr))]' : 'grid-cols-[70px_1fr]'} min-h-[52px] bg-white`}
                 >
                   {/* TIME SLOT LABEL CELL - HIGH CONTRAST DARK BADGE */}
                   <div className="p-1 border-l border-slate-300 bg-slate-900 text-center font-mono font-extrabold text-xs text-white flex flex-col justify-center items-center shadow-2xs select-none">
