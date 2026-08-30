@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Clock3, FastForward, MonitorPlay, Pause, Play, RotateCcw, UsersRound } from 'lucide-react';
+import { CalendarDays, Clock3, FastForward, Library, MonitorPlay, Pause, Play, RotateCcw, UsersRound } from 'lucide-react';
 import { GroupWorkoutLiveStatus, getGroupWorkoutStatus, sendGroupWorkoutCommand, subscribeToGroupWorkoutStatus } from '../data/groupWorkoutRemote';
 import { GroupWorkoutProgram, TrainingSession, User, UserRole, WorkoutPlan } from '../types';
 import { activateClubDisplay, clubDisplayUrl } from '../data/clubDisplayRemote';
 import { personalPlanToDisplayProgram } from '../data/workoutAssignment';
+import { WorkoutLibraryPickerDialog } from './WorkoutLibraryPickerDialog';
 
 interface CoachTrainingModeProps {
   activeUser: User;
@@ -46,7 +47,7 @@ const LiveControls: React.FC<{ program: GroupWorkoutProgram }> = ({ program }) =
 };
 
 export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser, users, sessions, onUpdateSessions, workoutPlans, onUpdateWorkoutPlans, groupWorkoutPrograms, onUpdateGroupWorkoutPrograms, onOpenProgram }) => {
-  const [selectedLibraryItems, setSelectedLibraryItems] = useState<Record<string, string>>({});
+  const [libraryPickerSession, setLibraryPickerSession] = useState<TrainingSession | null>(null);
   const [scheduleView, setScheduleView] = useState<'DAY' | 'WEEK'>('DAY');
   const [selectedScheduleDate, setSelectedScheduleDate] = useState(() => new Date().toISOString().split('T')[0]);
   const relevantSessions = useMemo(() => {
@@ -86,11 +87,10 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
     }
   };
 
-  const personalLibrary = useMemo(() => workoutPlans.filter(plan => !plan.sessionId && plan.exercises.length > 0), [workoutPlans]);
-  const groupLibrary = useMemo(() => groupWorkoutPrograms.filter(program => !program.sessionId), [groupWorkoutPrograms]);
+  const personalLibrary = useMemo(() => workoutPlans.filter(plan => !plan.sessionId && plan.exercises.length > 0 && plan.libraryEntry !== false), [workoutPlans]);
+  const groupLibrary = useMemo(() => groupWorkoutPrograms.filter(program => !program.sessionId && program.libraryEntry !== false && program.status === 'PUBLISHED'), [groupWorkoutPrograms]);
 
-  const assignPersonalPlan = (session: TrainingSession) => {
-    const sourceId = selectedLibraryItems[session.id] || personalLibrary[0]?.id;
+  const assignPersonalPlan = (session: TrainingSession, sourceId: string) => {
     const source = personalLibrary.find(plan => plan.id === sourceId);
     if (!source) return;
     const stamp = Date.now();
@@ -98,7 +98,7 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
       ...source,
       id: `session-plan-${stamp}`,
       title: source.title || `תוכנית של ${users.find(user => user.id === source.traineeId)?.name || 'מתאמן'}`,
-      traineeId: session.targetTraineeId || `demo-session-${session.id}`,
+      traineeId: session.targetTraineeId || session.registeredUsers[0] || source.traineeId || `demo-session-${session.id}`,
       sessionId: session.id,
       sourcePlanId: source.id,
       libraryEntry: false,
@@ -109,10 +109,11 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
     };
     onUpdateWorkoutPlans([assigned, ...workoutPlans.filter(plan => plan.sessionId !== session.id)]);
     onUpdateSessions(sessions.map(item => item.id === session.id ? { ...item, assignedWorkoutPlanId: assigned.id } : item));
+    setLibraryPickerSession(null);
+    window.alert('התוכנית האישית שובצה לאימון ונפתחה לצפייה למתאמן הרשום.');
   };
 
-  const assignGroupPlan = (session: TrainingSession) => {
-    const sourceId = selectedLibraryItems[session.id] || groupLibrary[0]?.id;
+  const assignGroupPlan = (session: TrainingSession, sourceId: string) => {
     const source = groupLibrary.find(program => program.id === sourceId);
     if (!source) return;
     const stamp = Date.now();
@@ -148,6 +149,8 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
     };
     onUpdateGroupWorkoutPrograms([assigned, ...groupWorkoutPrograms.filter(program => program.sessionId !== session.id)]);
     onUpdateSessions(sessions.map(item => item.id === session.id ? { ...item, assignedGroupWorkoutProgramId: assigned.id } : item));
+    setLibraryPickerSession(null);
+    window.alert('התוכנית הקבוצתית שובצה לאימון ונפתחה לצפייה למתאמנים הרשומים.');
   };
 
   const updateParticipantGroup = (program: GroupWorkoutProgram, participantId: string, groupIndex: number) => {
@@ -175,20 +178,13 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
       const trainee = users.find(user => user.id === traineeId);
       const assignedPersonalPlan = workoutPlans.find(plan => plan.id === session.assignedWorkoutPlanId)
         || workoutPlans.find(plan => plan.sessionId === session.id);
-      const personalPlan = assignedPersonalPlan
-        || workoutPlans.find(plan => plan.traineeId === traineeId && !plan.sessionId);
+      const personalPlan = assignedPersonalPlan;
       return <article key={session.id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2 text-[10px] font-black"><span className={`rounded-full px-2 py-1 ${session.isPersonalTraining ? 'bg-sky-100 text-sky-800' : 'bg-indigo-100 text-indigo-800'}`}>{session.isPersonalTraining ? session.isDemoSession ? 'אישי · הדגמה' : 'אישי' : 'קבוצתי'}</span><span className="flex items-center gap-1 text-slate-500"><Clock3 size={12} /> {session.date} · {session.time}</span></div><h3 className="mt-2 truncate text-lg font-black text-slate-900">{session.title}</h3><p className="mt-1 text-xs text-slate-500">{session.isPersonalTraining ? session.demoTraineeName || trainee?.name || 'מתאמן טרם שובץ' : `${session.registeredUsers.length}/${session.maxParticipants} נרשמים`}</p></div><button onClick={() => onOpenProgram(session)} className="shrink-0 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">תכנון / עריכה</button></div>
 
         {session.isPersonalTraining ? <div className="mt-3 space-y-3 rounded-xl border border-sky-100 bg-sky-50 p-3">
           <p className="text-xs font-black text-sky-900">{personalPlan ? `${personalPlan.exercises.length} תרגילים בתוכנית המשובצת` : 'עדיין לא שובצה תוכנית לאימון הזה'}</p>
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <select value={selectedLibraryItems[session.id] || assignedPersonalPlan?.sourcePlanId || personalLibrary[0]?.id || ''} onChange={event => setSelectedLibraryItems(current => ({ ...current, [session.id]: event.target.value }))} disabled={personalLibrary.length === 0} className="min-h-11 rounded-xl border border-sky-200 bg-white px-3 text-xs font-bold text-slate-800 disabled:opacity-50">
-              {personalLibrary.length === 0 && <option value="">אין עדיין תוכניות אישיות במאגר</option>}
-              {personalLibrary.map(plan => <option key={plan.id} value={plan.id}>{plan.title || `תוכנית של ${users.find(user => user.id === plan.traineeId)?.name || 'מתאמן'}`} · {plan.exercises.length} תרגילים</option>)}
-            </select>
-            <button onClick={() => assignPersonalPlan(session)} disabled={personalLibrary.length === 0} className="min-h-11 rounded-xl bg-sky-700 px-4 py-2 text-xs font-black text-white disabled:opacity-40">{workoutPlans.some(plan => plan.sessionId === session.id) ? 'החלף תוכנית' : 'שבץ מהמאגר'}</button>
-          </div>
+          <button onClick={() => setLibraryPickerSession(session)} disabled={personalLibrary.length === 0} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-2 text-xs font-black text-white disabled:opacity-40"><Library size={16} /> {assignedPersonalPlan ? 'החלף תוכנית מהמאגר' : 'בחר ושבץ מהמאגר'}</button>
           {personalPlan && <div className="grid gap-2 sm:grid-cols-2">
             <button onClick={() => window.open(`${window.location.origin}${window.location.pathname}#personal-workout-display=${encodeURIComponent(personalPlan.id)}`, '_blank', 'noopener,noreferrer')} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-black text-white"><MonitorPlay size={16} /> פתח תצוגת אימון</button>
             <button onClick={() => void openPersonalClubDisplay(session, personalPlan)} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white"><MonitorPlay size={16} /> הצג במסך המועדון</button>
@@ -201,25 +197,30 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
           {program ? <div className="mt-3 space-y-3">
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-black text-indigo-900">{program.title}</p><p className="mt-1 text-[10px] text-indigo-700">{program.mode === 'ROTATING_GROUPS' ? `${(program.stations || []).length} קבוצות · ${(program.stations || []).reduce((sum, station) => sum + station.exercises.length, 0)} תרגילים` : `${program.exercises.length} תרגילים`}</p></div><button onClick={() => void openGroupDisplay(program)} disabled={program.status !== 'PUBLISHED'} className="flex min-h-11 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40"><MonitorPlay size={15} /> הצג במסך המועדון</button></div><a href={clubDisplayUrl()} target="_blank" rel="noreferrer" className="mt-2 block text-left text-[10px] font-bold text-indigo-700 underline">פתח את כתובת המסך הקבועה במחשב זה</a></div>
             {program.mode === 'ROTATING_GROUPS' && (program.participants || []).length > 0 && <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><div className="mb-2 flex items-center gap-2"><UsersRound size={15} className="text-emerald-700" /><p className="text-xs font-black text-emerald-900">שיבוץ מהיר לקבוצות</p></div><div className="space-y-2">{(program.participants || []).map(participant => <div key={participant.id} className="rounded-xl bg-white p-2"><strong className="block truncate text-xs text-slate-800">{participant.name}</strong><div className="mt-2 grid grid-cols-2 gap-1.5">{(program.stations || []).map((station, index) => <button key={station.id} onClick={() => updateParticipantGroup(program, participant.id, index)} className={`rounded-lg px-2 py-2 text-[10px] font-black ${participant.groupIndex === index ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{(program.participantGroupNames || [])[index] || `קבוצה ${index + 1}`}</button>)}</div></div>)}</div></div>}
-            <div className="grid gap-2 rounded-xl border border-indigo-100 bg-white p-3 sm:grid-cols-[1fr_auto]">
-              <select value={selectedLibraryItems[session.id] || program.sourceProgramId || groupLibrary[0]?.id || ''} onChange={event => setSelectedLibraryItems(current => ({ ...current, [session.id]: event.target.value }))} disabled={groupLibrary.length === 0} className="min-h-11 rounded-xl border border-indigo-200 bg-white px-3 text-xs font-bold text-slate-800 disabled:opacity-50">
-                {groupLibrary.length === 0 && <option value="">אין עדיין תוכניות קבוצתיות במאגר</option>}
-                {groupLibrary.map(item => <option key={item.id} value={item.id}>{item.title} · {item.mode === 'ROTATING_GROUPS' ? (item.stations || []).reduce((sum, station) => sum + station.exercises.length, 0) : item.exercises.length} תרגילים</option>)}
-              </select>
-              <button onClick={() => assignGroupPlan(session)} disabled={groupLibrary.length === 0} className="min-h-11 rounded-xl bg-indigo-700 px-4 py-2 text-xs font-black text-white disabled:opacity-40">החלף מהמאגר</button>
-            </div>
+            <button onClick={() => setLibraryPickerSession(session)} disabled={groupLibrary.length === 0} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 py-2 text-xs font-black text-white disabled:opacity-40"><Library size={16} /> החלף תוכנית מהמאגר</button>
             <LiveControls program={program} />
           </div> : <button onClick={() => onOpenProgram(session)} className="mt-3 w-full min-h-12 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white">צור או שבץ תוכנית לאימון</button>}
-          {!program && <div className="mt-2 grid gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3 sm:grid-cols-[1fr_auto]">
-            <select value={selectedLibraryItems[session.id] || groupLibrary[0]?.id || ''} onChange={event => setSelectedLibraryItems(current => ({ ...current, [session.id]: event.target.value }))} disabled={groupLibrary.length === 0} className="min-h-11 rounded-xl border border-indigo-200 bg-white px-3 text-xs font-bold text-slate-800 disabled:opacity-50">
-              {groupLibrary.length === 0 && <option value="">אין תוכניות במאגר — יש ליצור במצב תכנון</option>}
-              {groupLibrary.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
-            </select>
-            <button onClick={() => assignGroupPlan(session)} disabled={groupLibrary.length === 0} className="min-h-11 rounded-xl bg-indigo-700 px-4 py-2 text-xs font-black text-white disabled:opacity-40">שבץ מהמאגר</button>
-          </div>}
+          {!program && <button onClick={() => setLibraryPickerSession(session)} disabled={groupLibrary.length === 0} className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 py-3 text-sm font-black text-white disabled:opacity-40"><Library size={17} /> {groupLibrary.length ? 'בחר ושבץ תוכנית מהמאגר' : 'אין תוכניות קבוצתיות במאגר'}</button>}
         </>}
       </article>;
     })}
     {displayedSessions.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><CalendarDays className="mx-auto text-slate-300" size={34} /><p className="mt-3 text-sm font-black text-slate-600">אין אימונים במועד שנבחר</p></div>}
+    <WorkoutLibraryPickerDialog
+      open={Boolean(libraryPickerSession)}
+      fixedKind={libraryPickerSession?.isPersonalTraining ? 'PERSONAL' : 'GROUP'}
+      personalPlans={workoutPlans}
+      groupPrograms={groupWorkoutPrograms}
+      users={users}
+      selectedId={libraryPickerSession?.isPersonalTraining
+        ? workoutPlans.find(plan => plan.id === libraryPickerSession.assignedWorkoutPlanId)?.sourcePlanId
+        : groupWorkoutPrograms.find(program => program.id === libraryPickerSession?.assignedGroupWorkoutProgramId)?.sourceProgramId}
+      title={libraryPickerSession ? `שיבוץ תוכנית · ${libraryPickerSession.title}` : 'שיבוץ תוכנית מהמאגר'}
+      onClose={() => setLibraryPickerSession(null)}
+      onSelect={(kind, id) => {
+        if (!libraryPickerSession) return;
+        if (kind === 'PERSONAL') assignPersonalPlan(libraryPickerSession, id);
+        else assignGroupPlan(libraryPickerSession, id);
+      }}
+    />
   </section>;
 };
