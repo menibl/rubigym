@@ -175,6 +175,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [showAllBookingOptions, setShowAllBookingOptions] = useState(false);
   // Notification banner for feedback
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [pendingLatePersonalCancellation, setPendingLatePersonalCancellation] = useState<TrainingSession | null>(null);
 
   // Chat input
   const [chatInput, setChatInput] = useState('');
@@ -809,10 +810,27 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   // CANCEL BOOKING / EXIT WAITLIST (Section 5.3)
-  const handleCancelBooking = (session: TrainingSession) => {
+  const handleCancelBooking = (session: TrainingSession, latePersonalCancellationAcknowledged = false) => {
     let updatedSessions: TrainingSession[];
     
     const wasInWaitlist = session.waitlistUsers.includes(activeUser.id);
+
+    if (!wasInWaitlist && session.isPersonalTraining) {
+      const now = new Date();
+      const [year, month, day] = session.date.split('-').map(Number);
+      const [hours, minutes] = session.time.split(':').map(Number);
+      const sessionStart = new Date(year, month - 1, day, hours, minutes, 0);
+      const diffHours = (sessionStart.getTime() - now.getTime()) / (1000 * 60 * 60);
+      const cancellationWindowHours = Number.isFinite(settings.cancellationWindowHours)
+        ? settings.cancellationWindowHours
+        : 2;
+      const isLatePersonalCancellation = diffHours >= 0 && diffHours < cancellationWindowHours;
+
+      if (isLatePersonalCancellation && !latePersonalCancellationAcknowledged) {
+        setPendingLatePersonalCancellation(session);
+        return;
+      }
+    }
 
     if (wasInWaitlist) {
       // Just remove from waitlist
@@ -835,7 +853,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
       let penaltyApplied = false;
       const isPersonal = !!session.isPersonalTraining;
-      const windowHours = settings.cancellationWindowHours || 2;
+      const windowHours = Number.isFinite(settings.cancellationWindowHours)
+        ? settings.cancellationWindowHours
+        : 2;
 
       // Unified cancellation window for every workout type.
       if (diffHours >= 0 && diffHours < windowHours) {
@@ -919,7 +939,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
       if (penaltyApplied) {
         if (isPersonal) {
-          showFeedback('שימו לב: ביטול אימון אישי תקף רק מ-12 שעות מראש! הביטול נקלט אך האימון יחויב בתשלום מלא / ללא החזר ניקוב על פי סעיף 5.3 🚨', 'error');
+          showFeedback(`הביטול נקלט. מאחר שהאימון בוטל פחות מ-${windowHours} שעות מראש, הוא חויב במלואו ולא הוחזר ניקוב.`, 'error');
         } else {
           showFeedback(`שימו לב: הביטול בוצע פחות מ-${windowHours} שעות לפני האימון הקבוצתי! נרשמה לחובתך נקודה שחורה 🚨 (ניקוב/תשלום לא יוחזרו)`, 'error');
         }
@@ -1409,6 +1429,34 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         }`}>
           {feedbackMsg.type === 'success' ? <CheckCircle size={18} /> : <XCircle size={18} />}
           <span className="text-xs font-semibold">{feedbackMsg.text}</span>
+        </div>
+      )}
+
+      {pendingLatePersonalCancellation && (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/80 p-4" role="alertdialog" aria-modal="true" aria-labelledby="late-personal-cancellation-title" aria-describedby="late-personal-cancellation-description">
+          <div className="w-full max-w-md rounded-3xl border border-rose-200 bg-white p-6 text-right shadow-2xl" dir="rtl">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-rose-100 text-rose-700"><XCircle size={30} /></div>
+            <h2 id="late-personal-cancellation-title" className="mt-4 text-center text-xl font-black text-slate-950">ביטול מאוחר של אימון אישי</h2>
+            <p id="late-personal-cancellation-description" className="mt-3 text-center text-sm font-bold leading-7 text-slate-700">
+              האימון “{pendingLatePersonalCancellation.title}” מבוטל בתוך חלון הביטול של המועדון — פחות מ־{Number.isFinite(settings.cancellationWindowHours) ? settings.cancellationWindowHours : 2} שעות לפני תחילתו.
+            </p>
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-center text-sm font-black leading-6 text-rose-900">
+              אם תמשיך/י בביטול, האימון יחויב במלואו ולא יוחזר ניקוב לכרטיסייה.
+            </div>
+            <p className="mt-3 text-center text-xs leading-5 text-slate-500">החלון ייסגר רק לאחר אישור מפורש שהחיוב הובן.</p>
+            <button
+              type="button"
+              autoFocus
+              onClick={() => {
+                const session = pendingLatePersonalCancellation;
+                setPendingLatePersonalCancellation(null);
+                handleCancelBooking(session, true);
+              }}
+              className="mt-5 min-h-14 w-full rounded-2xl bg-rose-700 px-4 py-3 text-sm font-black text-white shadow-lg transition hover:bg-rose-800 focus:outline-none focus:ring-4 focus:ring-rose-300"
+            >
+              אני מאשר/ת שהבנתי שהאימון יחויב — המשך ביטול
+            </button>
+          </div>
         </div>
       )}
 
