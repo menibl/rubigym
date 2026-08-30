@@ -52,6 +52,48 @@ test('trainee can only change their own booking membership', () => {
   assert.deepEqual(merged.sessions[0].registeredUsers.sort(), ['t1', 't2']);
 });
 
+test('trainee can register for at most two Open Gym slots per day', () => {
+  const current = {
+    users: [{ id: 't1', role: 'TRAINEE', name: 'One' }], sessions: [], messages: [], attendanceLogs: [], traineeProfiles: [],
+    openGymSessions: [
+      { id: 'og1', date: '2026-08-31', registeredUsers: ['t1'], waitlistUsers: [] },
+      { id: 'og2', date: '2026-08-31', registeredUsers: [], waitlistUsers: ['t1'] },
+      { id: 'og3', date: '2026-08-31', registeredUsers: [], waitlistUsers: [] },
+      { id: 'og4', date: '2026-09-01', registeredUsers: [], waitlistUsers: [] }
+    ]
+  };
+  const incoming = {
+    ...current,
+    openGymSessions: current.openGymSessions.map(session =>
+      ['og3', 'og4'].includes(session.id) ? { ...session, registeredUsers: ['t1'] } : session)
+  };
+  const merged = mergePayloadForUser(current, incoming, 't1', 'TRAINEE');
+  assert.equal(merged.openGymSessions.find(session => session.id === 'og3').registeredUsers.includes('t1'), false);
+  assert.equal(merged.openGymSessions.find(session => session.id === 'og4').registeredUsers.includes('t1'), true);
+});
+
+test('trainee can replace an existing Open Gym slot on the same day', () => {
+  const current = {
+    users: [{ id: 't1', role: 'TRAINEE', name: 'One' }], sessions: [], messages: [], attendanceLogs: [], traineeProfiles: [],
+    openGymSessions: [
+      { id: 'og1', date: '2026-08-31', registeredUsers: ['t1'], waitlistUsers: [] },
+      { id: 'og2', date: '2026-08-31', registeredUsers: ['t1'], waitlistUsers: [] },
+      { id: 'og3', date: '2026-08-31', registeredUsers: [], waitlistUsers: [] }
+    ]
+  };
+  const incoming = {
+    ...current,
+    openGymSessions: current.openGymSessions.map(session => {
+      if (session.id === 'og1') return { ...session, registeredUsers: [] };
+      if (session.id === 'og3') return { ...session, registeredUsers: ['t1'] };
+      return session;
+    })
+  };
+  const merged = mergePayloadForUser(current, incoming, 't1', 'TRAINEE');
+  assert.equal(merged.openGymSessions.find(session => session.id === 'og1').registeredUsers.includes('t1'), false);
+  assert.equal(merged.openGymSessions.find(session => session.id === 'og3').registeredUsers.includes('t1'), true);
+});
+
 test('trainee receives personal and group programs assigned to a registered calendar session', () => {
   const payload = {
     users: [{ id: 't1', role: 'TRAINEE', name: 'One' }],
