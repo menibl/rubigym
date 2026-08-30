@@ -539,6 +539,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   const checkOpenGymBookingEligibility = (og: OpenGymSession): { eligible: boolean; reason?: string } => {
     if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) return { eligible: false, reason: 'כבר נרשמת למשבצת זו.' };
+    const dailyOpenGymBookings = openGymSessions.filter(session =>
+      session.date === og.date
+      && (session.registeredUsers.includes(activeUser.id) || session.waitlistUsers.includes(activeUser.id))
+    ).length;
+    if (dailyOpenGymBookings >= 2) return { eligible: false, reason: 'ניתן להירשם לעד שתי משבצות Open Gym ביום.' };
     if (!isHealthDeclarationValid()) return { eligible: false, reason: 'נדרשת הצהרת בריאות בתוקף.' };
     if (freezeActive) return { eligible: false, reason: `המנוי מוקפא עד ${activeUser.membershipFrozenUntil || 'תום ההקפאה'}.` };
 
@@ -932,6 +937,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const handleBookOpenGym = (og: OpenGymSession) => {
     if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) {
       showFeedback('כבר נרשמת למשבצת Open Gym זו או לרשימת ההמתנה שלה.', 'error');
+      return;
+    }
+
+    const dailyOpenGymBookings = openGymSessions.filter(session =>
+      session.date === og.date
+      && (session.registeredUsers.includes(activeUser.id) || session.waitlistUsers.includes(activeUser.id))
+    ).length;
+    if (dailyOpenGymBookings >= 2) {
+      showFeedback('ניתן להירשם לעד שתי משבצות Open Gym ביום. ניתן לבטל משבצת קיימת ולבחור אחרת.', 'error');
       return;
     }
 

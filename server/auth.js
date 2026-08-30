@@ -185,6 +185,37 @@ const mergeOwnBooking = (currentItems = [], incomingItems = [], userId) => curre
   return { ...current, registeredUsers: mergeList('registeredUsers'), waitlistUsers: mergeList('waitlistUsers') };
 });
 
+const mergeOwnOpenGymBooking = (currentItems = [], incomingItems = [], userId) => {
+  const merged = mergeOwnBooking(currentItems, incomingItems, userId);
+  const currentParticipationIds = new Set(currentItems
+    .filter(item => (item.registeredUsers || []).includes(userId) || (item.waitlistUsers || []).includes(userId))
+    .map(item => item.id));
+  const dailyCounts = new Map();
+
+  // Existing bookings that were not cancelled are kept first, so a save never removes
+  // a reservation that the server had already accepted.
+  for (const item of merged) {
+    const participates = (item.registeredUsers || []).includes(userId) || (item.waitlistUsers || []).includes(userId);
+    if (!participates || !currentParticipationIds.has(item.id)) continue;
+    dailyCounts.set(item.date, (dailyCounts.get(item.date) || 0) + 1);
+  }
+
+  return merged.map(item => {
+    const participates = (item.registeredUsers || []).includes(userId) || (item.waitlistUsers || []).includes(userId);
+    if (!participates || currentParticipationIds.has(item.id)) return item;
+    const countForDate = dailyCounts.get(item.date) || 0;
+    if (countForDate < 2) {
+      dailyCounts.set(item.date, countForDate + 1);
+      return item;
+    }
+    return {
+      ...item,
+      registeredUsers: (item.registeredUsers || []).filter(id => id !== userId),
+      waitlistUsers: (item.waitlistUsers || []).filter(id => id !== userId)
+    };
+  });
+};
+
 export const mergePayloadForUser = (currentPayload, incomingPayload, userId, role) => {
   const current = sanitizePayload(currentPayload);
   const incoming = sanitizePayload(incomingPayload);
@@ -250,7 +281,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     ...current,
     users: [...nextUsers, ...newFamilyMembers],
     sessions: mergeOwnBooking(current.sessions, incoming.sessions, userId),
-    openGymSessions: mergeOwnBooking(current.openGymSessions, incoming.openGymSessions, userId),
+    openGymSessions: mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId),
     messages: [...messagesWithReadReceipts, ...ownNewMessages.filter(message => !existingMessageIds.has(message.id))],
     attendanceLogs: [...(current.attendanceLogs || []), ...ownNewAttendance.filter(log => !existingAttendanceIds.has(log.id))],
     traineeProfiles: [
