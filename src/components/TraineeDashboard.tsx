@@ -1374,7 +1374,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       plan.sessionId === session.id && !plan.libraryEntry && plan.exercises.length > 0
     );
 
-    return assignedGroupProgram || linkedGroupProgram || assignedPersonalPlan || linkedPersonalPlan;
+    return session.isPersonalTraining
+      ? assignedPersonalPlan || linkedPersonalPlan
+      : assignedGroupProgram || linkedGroupProgram;
   };
   const openSessionWorkoutDisplay = (session: TrainingSession) => {
     if (!session.registeredUsers.includes(activeUser.id) || !sessionWorkoutProgram(session)) return;

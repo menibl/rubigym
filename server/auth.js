@@ -126,12 +126,23 @@ export const payloadForUser = (payload, userId, role) => {
   if (role === 'MANAGER' || role === 'COACH') return safe;
   const currentUser = safe.users.find(user => user.id === userId);
   const familyId = currentUser?.familyId;
+  const registeredSessions = (safe.sessions || []).filter(session =>
+    Array.isArray(session.registeredUsers) && session.registeredUsers.includes(userId)
+  );
+  const registeredSessionIds = new Set(registeredSessions.map(session => session.id));
+  const assignedPersonalPlanIds = new Set(registeredSessions.map(session => session.assignedWorkoutPlanId).filter(Boolean));
+  const assignedGroupProgramIds = new Set(registeredSessions.map(session => session.assignedGroupWorkoutProgramId).filter(Boolean));
   return {
     ...safe,
     users: safe.users
       .filter(user => user.id === userId || user.role === 'MANAGER' || user.role === 'COACH' || (familyId && user.familyId === familyId))
       .map(user => user.id === userId || (familyId && user.familyId === familyId) ? user : publicStaff(user)),
-    workoutPlans: (safe.workoutPlans || []).filter(plan => plan.traineeId === userId),
+    workoutPlans: (safe.workoutPlans || []).filter(plan =>
+      plan.traineeId === userId || assignedPersonalPlanIds.has(plan.id) || registeredSessionIds.has(plan.sessionId)
+    ),
+    groupWorkoutPrograms: (safe.groupWorkoutPrograms || []).filter(program =>
+      assignedGroupProgramIds.has(program.id) || registeredSessionIds.has(program.sessionId)
+    ),
     nutritionPlans: (safe.nutritionPlans || []).filter(plan => plan.traineeId === userId),
     blackPoints: (safe.blackPoints || []).filter(point => point.traineeId === userId),
     payments: (safe.payments || []).filter(payment => payment.traineeId === userId),

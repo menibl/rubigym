@@ -15,6 +15,7 @@ import {
 } from '../types';
 import { X, Calendar, Clock, Users, Plus, Dumbbell, Sparkles, Repeat, ShieldCheck } from 'lucide-react';
 import { SessionMembershipSelector } from './SessionMembershipSelector';
+import { WorkoutLibraryPickerDialog } from './WorkoutLibraryPickerDialog';
 
 export interface CreateSessionData {
   title: string;
@@ -188,6 +189,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   const [isDemoSession, setIsDemoSession] = useState(false);
   const [demoTraineeName, setDemoTraineeName] = useState('');
   const [selectedProgramId, setSelectedProgramId] = useState('');
+  const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
 
   // Recurrence state
   const [recurringType, setRecurringType] = useState<'NONE' | 'WEEKLY_UNLIMITED' | 'WEEKLY_UNTIL_DATE'>('NONE');
@@ -215,6 +217,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
       setIsDemoSession(false);
       setDemoTraineeName('');
       setSelectedProgramId('');
+      setLibraryPickerOpen(false);
 
       // Default end date for until date (e.g., 1 month ahead)
       const oneMonthLater = new Date(defaultDate + 'T00:00:00');
@@ -287,8 +290,9 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   const coaches = users.filter(u => u.role === UserRole.COACH || u.role === UserRole.MANAGER);
   const trainees = users.filter(u => u.role === UserRole.TRAINEE);
   const availablePrograms = category === 'PERSONAL'
-    ? workoutPlans.filter(plan => !plan.sessionId && plan.exercises.length > 0)
-    : groupWorkoutPrograms.filter(program => !program.sessionId);
+    ? workoutPlans.filter(plan => !plan.sessionId && plan.exercises.length > 0 && plan.libraryEntry !== false)
+    : groupWorkoutPrograms.filter(program => !program.sessionId && program.libraryEntry !== false && program.status === 'PUBLISHED');
+  const selectedProgram = availablePrograms.find(program => program.id === selectedProgramId);
 
   return (
     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fade-in dir-rtl overflow-y-auto">
@@ -388,18 +392,13 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
                     </label>}
                   </div>
                 )}
-                <label className="text-xs font-bold text-slate-700">תוכנית מהמאגר
-                  <select value={selectedProgramId} onChange={event => setSelectedProgramId(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs">
-                    <option value="">ללא תוכנית — שיבוץ מאוחר יותר</option>
-                    {availablePrograms.map(program => (
-                      <option key={program.id} value={program.id}>
-                        {'traineeId' in program
-                          ? `${program.title || `תוכנית של ${users.find(user => user.id === program.traineeId)?.name || 'מתאמן'}`} · ${program.exercises.length} תרגילים`
-                          : `${program.title} · ${program.mode === 'ROTATING_GROUPS' ? (program.stations || []).reduce((sum, station) => sum + station.exercises.length, 0) : program.exercises.length} תרגילים`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="space-y-1 text-xs font-bold text-slate-700">
+                  <span>תוכנית מהמאגר</span>
+                  <button type="button" onClick={() => setLibraryPickerOpen(true)} className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-right text-xs">
+                    <span className="min-w-0 flex-1"><strong className="block truncate text-slate-800">{selectedProgram?.title || 'בחירת תוכנית מהמאגר'}</strong><small className="mt-0.5 block truncate font-normal text-slate-500">{selectedProgram ? `${'traineeId' in selectedProgram ? selectedProgram.exercises.length : selectedProgram.mode === 'ROTATING_GROUPS' ? (selectedProgram.stations || []).reduce((sum, station) => sum + station.exercises.length, 0) : selectedProgram.exercises.length} תרגילים · לחצו להחלפה` : 'נפתח חלון חיפוש וסינון'}</small></span><Dumbbell size={17} className="shrink-0 text-indigo-600" />
+                  </button>
+                  {selectedProgramId && <button type="button" onClick={() => setSelectedProgramId('')} className="text-[10px] font-black text-rose-600">הסר שיבוץ תוכנית</button>}
+                </div>
               </div>
               <p className="mt-2 text-[10px] leading-4 text-indigo-700">אם תיבחר תוכנית, ייווצר עותק נפרד ויישובץ אוטומטית לכל אירוע שייווצר ביומן. באימון הדגמה אין צורך בחשבון מתאמן.</p>
             </div>
@@ -657,6 +656,17 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
           </div>
         </form>
       </div>
+      <WorkoutLibraryPickerDialog
+        open={libraryPickerOpen}
+        fixedKind={category === 'PERSONAL' ? 'PERSONAL' : 'GROUP'}
+        personalPlans={workoutPlans}
+        groupPrograms={groupWorkoutPrograms}
+        users={users}
+        selectedId={selectedProgramId}
+        title={category === 'PERSONAL' ? 'בחירת תוכנית אישית מהמאגר' : 'בחירת תוכנית קבוצתית מהמאגר'}
+        onClose={() => setLibraryPickerOpen(false)}
+        onSelect={(_kind, id) => { setSelectedProgramId(id); setLibraryPickerOpen(false); }}
+      />
     </div>
   );
 };

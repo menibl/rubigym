@@ -133,11 +133,18 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
   const groupTemplates = groupPrograms.filter(program => !program.sessionId && program.libraryEntry === true);
   const [libraryKind, setLibraryKind] = React.useState<'ALL' | 'PERSONAL' | 'GROUP'>('ALL');
   const [libraryQuery, setLibraryQuery] = React.useState('');
+  const [libraryCreatedDate, setLibraryCreatedDate] = React.useState('');
   const [libraryTargetTraineeId, setLibraryTargetTraineeId] = React.useState(trainees[0]?.id || '');
   const [generalPersonalName, setGeneralPersonalName] = React.useState('');
   const normalizedLibraryQuery = libraryQuery.trim().toLocaleLowerCase('he-IL');
-  const visiblePersonalTemplates = personalTemplates.filter(plan => !normalizedLibraryQuery || `${plan.title || ''} ${trainees.find(item => item.id === plan.traineeId)?.name || ''}`.toLocaleLowerCase('he-IL').includes(normalizedLibraryQuery));
-  const visibleGroupTemplates = groupTemplates.filter(program => !normalizedLibraryQuery || `${program.title} ${program.groupName}`.toLocaleLowerCase('he-IL').includes(normalizedLibraryQuery));
+  const visiblePersonalTemplates = personalTemplates
+    .filter(plan => !libraryCreatedDate || (plan.libraryCreatedAt || plan.lastUpdated).slice(0, 10) === libraryCreatedDate)
+    .filter(plan => !normalizedLibraryQuery || `${plan.title || ''} ${trainees.find(item => item.id === plan.traineeId)?.name || ''}`.toLocaleLowerCase('he-IL').includes(normalizedLibraryQuery))
+    .sort((a, b) => (b.libraryCreatedAt || b.lastUpdated).localeCompare(a.libraryCreatedAt || a.lastUpdated));
+  const visibleGroupTemplates = groupTemplates
+    .filter(program => !libraryCreatedDate || (program.createdAt || program.updatedAt).slice(0, 10) === libraryCreatedDate)
+    .filter(program => !normalizedLibraryQuery || `${program.title} ${program.groupName}`.toLocaleLowerCase('he-IL').includes(normalizedLibraryQuery))
+    .sort((a, b) => (b.createdAt || b.updatedAt).localeCompare(a.createdAt || a.updatedAt));
 
   const homeTiles: Tile[] = [
     { title: 'אימון חדש', description: 'בניית תוכנית אישית או קבוצתית חדשה', icon: Plus, tone: 'gold', onClick: () => onRouteChange('LIBRARY_NEW') },
@@ -242,6 +249,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
       </div>
       <div className="planning-library-toolbar">
         <label><Search size={17} /><input value={libraryQuery} onChange={event => setLibraryQuery(event.target.value)} placeholder="חיפוש לפי שם אימון או מתאמן" /></label>
+        <label className="planning-library-date-filter"><CalendarCheck size={17} /><input type="date" value={libraryCreatedDate} onChange={event => setLibraryCreatedDate(event.target.value)} aria-label="סינון לפי תאריך יצירה" /></label>
         <div>{([
           ['ALL', `הכול (${personalTemplates.length + groupTemplates.length})`],
           ['PERSONAL', `אישי (${personalTemplates.length})`],
