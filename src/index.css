@@ -3299,7 +3299,7 @@ option {
 .planning-library-empty { grid-column: 1 / -1; border: 1px dashed #3f3f46; border-radius: 1rem; padding: 2rem 1rem; color: #8b8d96; text-align: center; font-size: .72rem; }
 
 @media (min-width: 760px) {
-  .planning-library-toolbar { grid-template-columns: minmax(16rem, 1fr) auto; align-items: center; }
+  .planning-library-toolbar { grid-template-columns: minmax(16rem, 1fr) 11rem auto; align-items: center; }
   .planning-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

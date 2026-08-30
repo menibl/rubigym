@@ -563,9 +563,9 @@ export default function App() {
       && !plan.libraryEntry
       && plan.exercises.length > 0
     );
-    const displayProgram = groupProgram || (session && personalPlan
-      ? personalPlanToDisplayProgram(personalPlan, activeUser.name, session)
-      : undefined);
+    const displayProgram = session?.isPersonalTraining
+      ? (session && personalPlan ? personalPlanToDisplayProgram(personalPlan, activeUser.name, session) : undefined)
+      : groupProgram;
     if (session && isRegistered && displayProgram) {
       return <TraineeSessionWorkoutView session={session} program={displayProgram} />;
     }

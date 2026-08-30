@@ -52,6 +52,30 @@ test('trainee can only change their own booking membership', () => {
   assert.deepEqual(merged.sessions[0].registeredUsers.sort(), ['t1', 't2']);
 });
 
+test('trainee receives personal and group programs assigned to a registered calendar session', () => {
+  const payload = {
+    users: [{ id: 't1', role: 'TRAINEE', name: 'One' }],
+    sessions: [{
+      id: 's1', registeredUsers: ['t1'], waitlistUsers: [],
+      assignedWorkoutPlanId: 'assigned-personal', assignedGroupWorkoutProgramId: 'assigned-group'
+    }],
+    workoutPlans: [
+      { id: 'assigned-personal', traineeId: 'demo-before-registration', sessionId: 's1' },
+      { id: 'private-other', traineeId: 't2' }
+    ],
+    groupWorkoutPrograms: [
+      { id: 'assigned-group', sessionId: 's1' },
+      { id: 'unrelated-group', sessionId: 's2' }
+    ],
+    nutritionPlans: [], blackPoints: [], payments: [], messages: [], attendanceLogs: [],
+    traineeProfiles: [], traineeMemoryEntries: [], discountCodes: []
+  };
+
+  const visible = payloadForUser(payload, 't1', 'TRAINEE');
+  assert.deepEqual(visible.workoutPlans.map(plan => plan.id), ['assigned-personal']);
+  assert.deepEqual(visible.groupWorkoutPrograms.map(program => program.id), ['assigned-group']);
+});
+
 test('trainee can mark only received chat messages as read', () => {
   const current = {
     users: [{ id: 't1', role: 'TRAINEE', name: 'One' }, { id: 'm1', role: 'MANAGER', name: 'Manager' }],

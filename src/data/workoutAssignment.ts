@@ -10,7 +10,7 @@ export const copyPersonalPlanToSessions = (
   return {
     ...source,
     id: `session-plan-${stamp}`,
-    traineeId: traineeId || `demo-session-${session.id}`,
+    traineeId: traineeId || session.targetTraineeId || session.registeredUsers[0] || `demo-session-${session.id}`,
     sessionId: session.id,
     sourcePlanId: source.id,
     libraryEntry: false,
