@@ -16,6 +16,7 @@ import {
 import { X, Calendar, Clock, Users, Plus, Dumbbell, Sparkles, Repeat, ShieldCheck } from 'lucide-react';
 import { SessionMembershipSelector } from './SessionMembershipSelector';
 import { WorkoutLibraryPickerDialog } from './WorkoutLibraryPickerDialog';
+import { isGroupLibraryEntry } from '../data/programLibrary';
 
 export interface CreateSessionData {
   title: string;
@@ -291,7 +292,7 @@ export const CreateSessionModal: React.FC<CreateSessionModalProps> = ({
   const trainees = users.filter(u => u.role === UserRole.TRAINEE);
   const availablePrograms = category === 'PERSONAL'
     ? workoutPlans.filter(plan => !plan.sessionId && plan.exercises.length > 0 && plan.libraryEntry !== false)
-    : groupWorkoutPrograms.filter(program => !program.sessionId && program.libraryEntry !== false && program.status === 'PUBLISHED');
+    : groupWorkoutPrograms.filter(isGroupLibraryEntry);
   const selectedProgram = availablePrograms.find(program => program.id === selectedProgramId);
 
   return (
