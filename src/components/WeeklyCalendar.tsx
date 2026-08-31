@@ -677,7 +677,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     </span>
                                   </div>
 
-                                  <div className="text-xs font-extrabold text-slate-900 leading-tight">
+                                  <div className="schedule-session-title text-xs font-extrabold leading-tight">
                                     {session.title}
                                   </div>
 
@@ -782,7 +782,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                         }`}
                       >
                         <div className="flex justify-between items-center">
-                          <span className="text-xs font-extrabold text-slate-900">{session.title}</span>
+                          <span className="schedule-session-title text-xs font-extrabold">{session.title}</span>
                           <span className="text-[10px] font-mono bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
                             {session.registeredUsers.length}/{session.maxParticipants}
                           </span>

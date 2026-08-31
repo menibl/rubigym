@@ -2585,7 +2585,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                         <div key={s.id} className="border border-slate-150 rounded-xl p-4 bg-slate-50 flex flex-col justify-between" id={`coach-class-${s.id}`}>
                           <div>
                             <div className="flex justify-between items-start">
-                              <h4 className="font-bold text-slate-800 text-sm">{s.title}</h4>
+                              <h4 className="schedule-session-title text-sm font-bold">{s.title}</h4>
                               <span className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded font-bold">
                                 {s.muscleGroup}
                               </span>
