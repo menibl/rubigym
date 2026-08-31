@@ -4,6 +4,7 @@ import { GroupWorkoutLiveStatus, getGroupWorkoutStatus, sendGroupWorkoutCommand,
 import { GroupWorkoutProgram, TrainingSession, User, UserRole, WorkoutPlan } from '../types';
 import { activateClubDisplay, clubDisplayUrl } from '../data/clubDisplayRemote';
 import { personalPlanToDisplayProgram } from '../data/workoutAssignment';
+import { isGroupLibraryEntry } from '../data/programLibrary';
 import { WorkoutLibraryPickerDialog } from './WorkoutLibraryPickerDialog';
 
 interface CoachTrainingModeProps {
@@ -88,7 +89,7 @@ export const CoachTrainingMode: React.FC<CoachTrainingModeProps> = ({ activeUser
   };
 
   const personalLibrary = useMemo(() => workoutPlans.filter(plan => !plan.sessionId && plan.exercises.length > 0 && plan.libraryEntry !== false), [workoutPlans]);
-  const groupLibrary = useMemo(() => groupWorkoutPrograms.filter(program => !program.sessionId && program.libraryEntry !== false && program.status === 'PUBLISHED'), [groupWorkoutPrograms]);
+  const groupLibrary = useMemo(() => groupWorkoutPrograms.filter(isGroupLibraryEntry), [groupWorkoutPrograms]);
 
   const assignPersonalPlan = (session: TrainingSession, sourceId: string) => {
     const source = personalLibrary.find(plan => plan.id === sourceId);
