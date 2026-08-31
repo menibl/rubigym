@@ -100,3 +100,8 @@ export const isPersonalLibraryEntry = (plan: WorkoutPlan) => plan.libraryEntry =
 export const isActivePersonalPlan = (plan: WorkoutPlan) => !plan.sessionId && plan.libraryEntry !== true;
 export const isNutritionLibraryEntry = (plan: NutritionPlan) => plan.libraryEntry === true;
 export const isActiveNutritionPlan = (plan: NutritionPlan) => plan.libraryEntry !== true && plan.active !== false;
+export const groupProgramExerciseCount = (program: GroupWorkoutProgram) => program.mode === 'ROTATING_GROUPS'
+  ? (program.stations || []).reduce((sum, station) => sum + station.exercises.length, 0)
+  : program.exercises.length;
+export const isGroupLibraryEntry = (program: GroupWorkoutProgram) =>
+  !program.sessionId && program.libraryEntry !== false && groupProgramExerciseCount(program) > 0;

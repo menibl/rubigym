@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Check, Search, UserRound, UsersRound, X } from 'lucide-react';
 import { GroupWorkoutProgram, User, WorkoutPlan } from '../types';
+import { groupProgramExerciseCount, isGroupLibraryEntry } from '../data/programLibrary';
 
 export type WorkoutLibraryKind = 'PERSONAL' | 'GROUP';
 
@@ -63,12 +64,12 @@ export const WorkoutLibraryPickerDialog: React.FC<WorkoutLibraryPickerDialogProp
         createdAt: personalCreatedAt(plan)
       }));
     const group = groupPrograms
-      .filter(program => !program.sessionId && program.libraryEntry !== false && program.status === 'PUBLISHED')
+      .filter(isGroupLibraryEntry)
       .map(program => ({
         kind: 'GROUP' as const,
         id: program.id,
         title: program.title || 'תוכנית קבוצתית',
-        subtitle: `${program.groupName} · ${program.mode === 'ROTATING_GROUPS' ? (program.stations || []).reduce((sum, station) => sum + station.exercises.length, 0) : program.exercises.length} תרגילים`,
+        subtitle: `${program.groupName} · ${groupProgramExerciseCount(program)} תרגילים${program.status === 'DRAFT' ? ' · טיוטה שמורה' : ''}`,
         createdAt: groupCreatedAt(program)
       }));
 
