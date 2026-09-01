@@ -12,6 +12,12 @@ SEND=/usr/local/lib/gymflow-monitor/telegram-send.sh
 # shellcheck disable=SC1090
 source "${ENV_FILE}"
 
+: "${DOCKER_COMMAND_TIMEOUT_SECONDS:=10}"
+[[ ${DOCKER_COMMAND_TIMEOUT_SECONDS} =~ ^[1-9][0-9]*$ ]] || {
+  echo "DOCKER_COMMAND_TIMEOUT_SECONDS must be a positive integer." >&2
+  exit 1
+}
+
 mkdir -p "${STATE_DIR}"
 issues=()
 
@@ -26,11 +32,14 @@ fi
 if ! systemctl is-active --quiet docker.service; then
   issues+=("Docker service is not active")
 else
-  app_container=$(docker ps \
-    --filter label=com.docker.compose.project=gymflow \
-    --filter label=com.docker.compose.service=app \
-    --format '{{.ID}}' | head -n 1)
-  if [[ -z ${app_container} ]] || ! docker inspect --format '{{.State.Health.Status}}' "${app_container}" 2>/dev/null | grep -qx healthy; then
+  app_container=''
+  if ! app_container=$(timeout --foreground "${DOCKER_COMMAND_TIMEOUT_SECONDS}" docker ps \
+      --filter label=com.docker.compose.project=gymflow \
+      --filter label=com.docker.compose.service=app \
+      --format '{{.ID}}' | head -n 1); then
+    issues+=("Docker did not answer the container lookup within ${DOCKER_COMMAND_TIMEOUT_SECONDS} seconds")
+  elif [[ -z ${app_container} ]] || ! timeout --foreground "${DOCKER_COMMAND_TIMEOUT_SECONDS}" \
+      docker inspect --format '{{.State.Health.Status}}' "${app_container}" 2>/dev/null | grep -qx healthy; then
     issues+=("GymFlow application container is not healthy")
   fi
 fi
@@ -43,7 +52,7 @@ load_limit=$(awk -v cpus="${cpu_count}" -v factor="${LOAD_WARN_PER_CPU:-2}" 'BEG
 
 if (( disk_percent >= DISK_WARN_PERCENT )); then issues+=("Root disk usage is ${disk_percent}%"); fi
 if (( memory_percent >= MEMORY_WARN_PERCENT )); then issues+=("Memory usage is ${memory_percent}%"); fi
-if awk -v load="${load_1m}" -v limit="${load_limit}" 'BEGIN {exit !(load >= limit)}'; then
+if awk -v current_load="${load_1m}" -v limit="${load_limit}" 'BEGIN {exit !(current_load >= limit)}'; then
   issues+=("1-minute load ${load_1m} exceeds threshold ${load_limit}")
 fi
 

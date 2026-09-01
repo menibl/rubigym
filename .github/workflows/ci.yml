@@ -47,6 +47,9 @@ jobs:
       - name: Test production deployment strict mode
         run: bash deploy/tests/production-deploy.test.sh
 
+      - name: Test server monitor hardening
+        run: bash deploy/tests/server-monitor.test.sh
+
       - name: Validate Docker Compose configuration
         env:
           GYMFLOW_ENV_FILE: ${{ github.workspace }}/deploy/.env.example
