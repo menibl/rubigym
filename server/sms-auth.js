@@ -50,6 +50,45 @@ const pulseemRecipient = (phone, env) => String(env.PULSEEM_PHONE_FORMAT || 'loc
   ? `972${phone.slice(1)}`
   : phone;
 
+const providerField = (result, names) => {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return undefined;
+  const entry = Object.entries(result).find(([key]) => names.includes(key.toLowerCase()));
+  return entry?.[1];
+};
+
+const safeProviderText = value => String(value ?? '')
+  .replace(/[\r\n\t]+/g, ' ')
+  .replace(/\b\d{7,}\b/g, '[redacted-number]')
+  .trim()
+  .slice(0, 180);
+
+const pulseemResponseSummary = (response, responseBody, result) => ({
+  httpStatus: response.status,
+  responseType: Array.isArray(result) ? 'array' : result === null ? (responseBody ? 'text' : 'empty') : typeof result,
+  status: safeProviderText(providerField(result, ['status', 'state'])),
+  code: safeProviderText(providerField(result, ['code', 'errorcode', 'resultcode'])),
+  message: safeProviderText(providerField(result, ['message', 'errormessage', 'description']))
+});
+
+const pulseemExplicitlyFailed = (responseBody, result) => {
+  const successFlag = providerField(result, ['success', 'issuccess', 'succeeded', 'ok']);
+  if (successFlag === false || String(successFlag).toLowerCase() === 'false') return true;
+
+  const errorValue = providerField(result, ['error', 'errors', 'errormessage']);
+  if (errorValue && errorValue !== 0 && errorValue !== '0') return true;
+
+  const errorCode = providerField(result, ['errorcode']);
+  if (errorCode !== undefined && errorCode !== null && String(errorCode).trim() !== '' && String(errorCode) !== '0') return true;
+
+  const status = safeProviderText(providerField(result, ['status', 'state'])).toLowerCase();
+  if (['failed', 'failure', 'error', 'invalid', 'rejected', 'unauthorized', 'forbidden'].includes(status)) return true;
+
+  const textResult = typeof result === 'string' ? result : (!result && responseBody ? responseBody : '');
+  const normalizedText = safeProviderText(textResult).toLowerCase();
+  if (!normalizedText || /\b(no error|without error)\b/.test(normalizedText)) return false;
+  return /\b(error|failed|failure|invalid|unauthorized|forbidden|rejected)\b|שגיאה|נכשל|נדחה/.test(normalizedText);
+};
+
 export const sendPulseemSms = async ({ env, phone, text, reference, fetchImpl = fetch }) => {
   const apiKey = String(env.PULSEEM_API_KEY || '').trim();
   const fromNumber = String(env.PULSEEM_FROM_NUMBER || '').trim();
@@ -81,11 +120,10 @@ export const sendPulseemSms = async ({ env, phone, text, reference, fetchImpl = 
   const responseBody = await response.text();
   let result = null;
   try { result = responseBody ? JSON.parse(responseBody) : null; } catch { /* Pulseem does not publish a response schema. */ }
-  const explicitlyFailed = result && (
-    result.success === false || result.isSuccess === false || result.succeeded === false
-  );
-  if (!response.ok || explicitlyFailed) throw new Error('SMS_PROVIDER_UNAVAILABLE');
-  return { ok: true };
+  const summary = pulseemResponseSummary(response, responseBody, result);
+  const explicitlyFailed = pulseemExplicitlyFailed(responseBody, result);
+  if (!response.ok || explicitlyFailed) throw Object.assign(new Error('SMS_PROVIDER_UNAVAILABLE'), { provider: summary });
+  return { ok: true, provider: summary };
 };
 
 const otpSettings = env => ({
@@ -110,7 +148,7 @@ const requireSigningSecret = env => {
 
 const otpHash = (id, clubId, phone, purpose, otp, secret) => hmac(`${id}:${clubId}:${phone}:${purpose}:${otp}`, secret);
 
-export const requestPhoneCode = async ({ store, env, clubId, phone, purpose, fetchImpl = fetch }) => {
+export const requestPhoneCode = async ({ store, env, clubId, phone, purpose, fetchImpl = fetch, logger = console }) => {
   const normalizedPhone = normalizeIsraeliMobile(phone);
   const normalizedPurpose = requirePurpose(purpose);
   if (!normalizedPhone) throw new Error('INVALID_PHONE');
@@ -136,15 +174,26 @@ export const requestPhoneCode = async ({ store, env, clubId, phone, purpose, fet
 
   if (!testMode) {
     try {
-      await sendPulseemSms({
+      const sent = await sendPulseemSms({
         env,
         phone: normalizedPhone,
         reference: id,
         text: `קוד האימות שלך ל-BALY wellness הוא ${code}. הקוד תקף ל-${Math.ceil(settings.ttlSeconds / 60)} דקות.`,
         fetchImpl
       });
+      logger.info?.('SMS OTP accepted by provider', {
+        purpose: normalizedPurpose,
+        phoneSuffix: normalizedPhone.slice(-4),
+        provider: sent.provider
+      });
     } catch (error) {
       await store.invalidateOtpChallenge(id);
+      logger.warn?.('SMS OTP provider rejected request', {
+        purpose: normalizedPurpose,
+        phoneSuffix: normalizedPhone.slice(-4),
+        reason: error instanceof Error ? error.message : 'SMS_PROVIDER_UNAVAILABLE',
+        provider: error?.provider
+      });
       throw error;
     }
   }
