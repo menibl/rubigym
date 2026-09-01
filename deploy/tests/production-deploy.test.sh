@@ -11,6 +11,15 @@ grep -Fq 'install -d -m 0700 "${DOCKER_CONFIG}"' "${SOURCE}"
 grep -Fq 'your-production-domain' "${SOURCE}"
 grep -Fq 'YOUR_DOMAIN' "${SOURCE}"
 
+already_current_block=$(awk '
+  /^if \[\[ \$\{target\} == "\$\{current\}" \]\]; then/ { capture=1 }
+  capture { print }
+  capture && /^fi$/ { exit }
+' "${SOURCE}")
+
+grep -Fq 'prepare_release "${target}"' <<<"${already_current_block}"
+grep -Fq 'install_release_operations "${target}"' <<<"${already_current_block}"
+
 function_source=$(awk '
   /^backup_database\(\)/ { capture=1 }
   capture { print }
