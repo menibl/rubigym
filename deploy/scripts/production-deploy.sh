@@ -209,6 +209,11 @@ ensure_mirror
 target=$(git --git-dir="${PRODUCTION_MIRROR}" rev-parse "refs/remotes/origin/${PRODUCTION_BRANCH}")
 current=$(read_state "${CURRENT_FILE}")
 if [[ ${target} == "${current}" ]]; then
+  # The running release can be current while the installed operations scripts
+  # are stale (for example, after an interrupted post-deploy installation).
+  # Reinstall them so deploy-main can repair its own control surface safely.
+  prepare_release "${target}"
+  install_release_operations "${target}"
   echo "Production is already at ${target}."
   exit 0
 fi
