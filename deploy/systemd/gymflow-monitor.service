@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/lib/gymflow-monitor/server-monitor.sh
+TimeoutStartSec=45s
 User=root
 Group=root
 NoNewPrivileges=true
