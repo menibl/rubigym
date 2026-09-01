@@ -57,6 +57,20 @@ case "${command}" in
     sleep 5
     curl --fail --silent --show-error --max-time 15 "${PRODUCTION_HEALTH_URL}" >/dev/null
     ;;
+  refresh-monitor)
+    sha=$(current_sha)
+    release="${PRODUCTION_RELEASES:-/opt/gymflow/releases}/${sha}"
+    [[ -f ${release}/deploy/scripts/server-monitor.sh && -f ${release}/deploy/systemd/gymflow-monitor.service ]] || {
+      echo "Current release ${sha} is missing monitor files." >&2
+      exit 1
+    }
+    install -m 0755 "${release}/deploy/scripts/server-monitor.sh" /usr/local/lib/gymflow-monitor/server-monitor.sh
+    install -m 0644 "${release}/deploy/systemd/gymflow-monitor.service" /etc/systemd/system/gymflow-monitor.service
+    systemctl daemon-reload
+    systemctl restart gymflow-monitor.timer
+    systemctl start gymflow-monitor.service || true
+    systemctl status gymflow-monitor.timer gymflow-monitor.service --no-pager
+    ;;
   security-audit)
     "${AUDIT}"
     ;;
@@ -64,7 +78,7 @@ case "${command}" in
     "${DAILY}"
     ;;
   *)
-    echo "Allowed commands: status, logs, deploy-main, rollback, restart-app, security-audit, daily" >&2
+    echo "Allowed commands: status, logs, deploy-main, rollback, restart-app, refresh-monitor, security-audit, daily" >&2
     exit 2
     ;;
 esac
