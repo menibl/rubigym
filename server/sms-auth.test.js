@@ -59,6 +59,39 @@ test('Pulseem request uses the APIKey header and documented SendSms shape', asyn
   assert.equal(body.isAsync, false);
 });
 
+test('Pulseem rejects explicit provider failures even when HTTP status is 200', async () => {
+  await assert.rejects(() => sendPulseemSms({
+    env: { PULSEEM_API_KEY: 'not-a-real-key', PULSEEM_FROM_NUMBER: 'BALY' },
+    phone: '0546995885',
+    text: 'test message',
+    reference: 'reference-failed',
+    fetchImpl: async () => new Response(JSON.stringify({ isSuccess: false, errorCode: 17, message: 'Sender rejected' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }), /SMS_PROVIDER_UNAVAILABLE/);
+});
+
+test('OTP provider diagnostics never log the code or complete phone number', async () => {
+  const store = createStore();
+  const entries = [];
+  const logger = { info: (...args) => entries.push(args), warn: (...args) => entries.push(args) };
+  await requestPhoneCode({
+    store,
+    env: { PULSEEM_API_KEY: 'not-a-real-key', PULSEEM_FROM_NUMBER: 'BALY', SMS_OTP_SIGNING_SECRET: secret },
+    clubId: 'club',
+    phone: '0546995885',
+    purpose: 'REGISTER',
+    logger,
+    fetchImpl: async () => new Response(JSON.stringify({ success: true, status: 'accepted', message: 'Queued successfully' }), { status: 200 })
+  });
+  const serialized = JSON.stringify(entries);
+  assert.match(serialized, /5885/);
+  assert.doesNotMatch(serialized, /0546995885/);
+  assert.doesNotMatch(serialized, /קוד האימות/);
+  assert.doesNotMatch(serialized, /\b\d{6}\b/);
+});
+
 test('test-mode OTP is hashed, expires, and can only be consumed once', async () => {
   const store = createStore();
   const env = { SMS_TEST_MODE: 'true', SMS_OTP_SIGNING_SECRET: secret };
