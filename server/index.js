@@ -24,7 +24,8 @@ import {
   verifyPassword
 } from './auth.js';
 
-const CARDCOM_BASE_URL = 'https://secure.cardcom.solutions/api/v11';
+const RIVHIT_TEST_BASE_URL = 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc';
+const RIVHIT_PRODUCTION_BASE_URL = 'https://icredit.rivhit.co.il/API/PaymentPageRequest.svc';
 const liveDisplayState = { program: null, demoProgram: null, demoSchedule: [], commands: new Map(), statuses: new Map() };
 const DEMO_DISPLAY_CLUB_ID = 'baly-wellness-pages-demo';
 const DEMO_DISPLAY_SCHEDULE_ID = `${DEMO_DISPLAY_CLUB_ID}:schedule`;
@@ -244,7 +245,7 @@ const normalizeFamilyPlans = plans => {
   });
 };
 
-const resolvePurchase = (body, allowDemoOverride = false) => {
+const resolvePurchase = body => {
   if (body.familyMembersCount || body.membershipType === 'FAMILY_MEMBERSHIP') {
     const count = Number(body.familyMembersCount);
     const mode = body.familyBillingMode || 'ANNUAL_BY_SIZE';
@@ -265,12 +266,6 @@ const resolvePurchase = (body, allowDemoOverride = false) => {
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
     return { amount: applyDiscount(baseAmount, body.discountCode), label, familyBillingMode: mode, familyMemberPlans };
-  }
-  if (allowDemoOverride && body.planAmount !== undefined) {
-    const amount = Number(body.planAmount);
-    const label = String(body.planLabel || membershipLabels[body.membershipType] || 'מסלול BALY').slice(0, 120);
-    if (!Number.isFinite(amount) || amount <= 0 || amount > 100000) throw new Error('INVALID_DEMO_AMOUNT');
-    return { amount: applyDiscount(Math.round(amount), body.discountCode), label };
   }
   if (body.purchaseVariant) {
     const variant = trainingCardVariants[body.purchaseVariant];
@@ -352,8 +347,7 @@ const sign = async (value, secret) => {
 };
 
 const createSignedOrder = async (body, env) => {
-  const demoMode = String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true';
-  const purchase = resolvePurchase(body, demoMode);
+  const purchase = resolvePurchase(body);
   const { amount } = purchase;
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(body.mode)) throw new Error('INVALID_MODE');
   const payload = encodePayload({
@@ -366,8 +360,6 @@ const createSignedOrder = async (body, env) => {
     fm: purchase.familyBillingMode || undefined,
     fp: purchase.familyMemberPlans || undefined,
     c: body.discountCode ? String(body.discountCode).toUpperCase() : undefined,
-    pa: demoMode && body.planAmount !== undefined ? Number(body.planAmount) : undefined,
-    pl: demoMode && body.planLabel ? String(body.planLabel).slice(0, 120) : undefined,
     a: amount,
     t: Date.now()
   });
@@ -380,21 +372,38 @@ const verifySignedOrder = async (value, env) => {
   if (!payload || !signature || await sign(payload, env.PAYMENT_SIGNING_SECRET) !== signature) throw new Error('INVALID_SIGNATURE');
   const order = decodePayload(payload);
   if (Date.now() - Number(order.t) > 24 * 60 * 60 * 1000) throw new Error('ORDER_EXPIRED');
-  const demoMode = String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true';
-  if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v, familyMembersCount: order.f, familyBillingMode: order.fm, familyMemberPlans: order.fp, discountCode: order.c, planAmount: order.pa, planLabel: order.pl }, demoMode).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
+  if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v, familyMembersCount: order.f, familyBillingMode: order.fm, familyMemberPlans: order.fp, discountCode: order.c }).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(order.d)) throw new Error('INVALID_MODE');
   return order;
 };
 
-const cardcomPost = async (path, body) => {
-  const response = await fetch(`${CARDCOM_BASE_URL}${path}`, {
+const rivhitEnvironment = env => String(env.RIVHIT_ENVIRONMENT || 'test').trim().toLowerCase();
+const rivhitBaseUrl = env => rivhitEnvironment(env) === 'production' ? RIVHIT_PRODUCTION_BASE_URL : RIVHIT_TEST_BASE_URL;
+
+const rivhitPost = async (path, body, env) => {
+  const providerFetch = typeof env.RIVHIT_FETCH === 'function' ? env.RIVHIT_FETCH : fetch;
+  const response = await providerFetch(`${rivhitBaseUrl(env)}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
   const result = await response.json().catch(() => null);
-  if (!response.ok || !result) throw new Error('CARDCOM_UNAVAILABLE');
+  if (!response.ok || !result) throw new Error('RIVHIT_UNAVAILABLE');
   return result;
+};
+
+const createPaymentReference = async (order, privateSaleToken, publicSaleToken, env) => {
+  const payload = encodePayload({ o: order, p: privateSaleToken, q: publicSaleToken, t: Date.now() });
+  return `${payload}.${await sign(payload, env.PAYMENT_SIGNING_SECRET)}`;
+};
+
+const verifyPaymentReference = async (value, env) => {
+  if (!value || typeof value !== 'string') throw new Error('INVALID_PAYMENT_REFERENCE');
+  const [payload, signature] = value.split('.');
+  if (!payload || !signature || await sign(payload, env.PAYMENT_SIGNING_SECRET) !== signature) throw new Error('INVALID_PAYMENT_REFERENCE');
+  const reference = decodePayload(payload);
+  if (!reference.o || !reference.p || Date.now() - Number(reference.t) > 24 * 60 * 60 * 1000) throw new Error('PAYMENT_REFERENCE_EXPIRED');
+  return reference;
 };
 
 const corsHeaders = (request, env) => {
@@ -410,27 +419,94 @@ const corsHeaders = (request, env) => {
 };
 
 const requirePaymentEnv = env => {
-  if (String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
-    if (!env.PAYMENT_SIGNING_SECRET || !env.PUBLIC_APP_URL) throw new Error('DEMO_PAYMENT_NOT_CONFIGURED');
-    return;
-  }
-  if (!env.CARDCOM_TERMINAL_NUMBER || !env.CARDCOM_API_NAME || !env.PAYMENT_SIGNING_SECRET || !env.PUBLIC_APP_URL) {
+  if (!['test', 'production'].includes(rivhitEnvironment(env))) throw new Error('INVALID_RIVHIT_ENVIRONMENT');
+  if (!env.RIVHIT_GROUP_PRIVATE_TOKEN || !env.PAYMENT_SIGNING_SECRET || !env.PUBLIC_APP_URL) {
     throw new Error('PAYMENT_NOT_CONFIGURED');
   }
 };
 
-const getLowProfileResult = async (lowProfileId, env) => {
-  const result = await cardcomPost('/LowProfile/GetLpResult', {
-    TerminalNumber: Number(env.CARDCOM_TERMINAL_NUMBER),
-    ApiName: env.CARDCOM_API_NAME,
-    LowProfileId: lowProfileId
-  });
-  if (Number(result.ResponseCode) !== 0 || Number(result.TranzactionInfo?.ResponseCode) !== 0) {
-    throw new Error(result.Description || result.TranzactionInfo?.Description || 'PAYMENT_FAILED');
-  }
-  const order = await verifySignedOrder(result.ReturnValue, env);
-  if (Number(result.Amount) !== Number(order.a) && Number(result.TranzactionInfo?.Amount) !== Number(order.a)) throw new Error('AMOUNT_MISMATCH');
-  return { result, order };
+const rivhitValue = (object, ...keys) => {
+  for (const key of keys) if (object?.[key] !== undefined && object?.[key] !== null && object?.[key] !== '') return object[key];
+  return undefined;
+};
+
+const getRivhitSale = async (privateSaleToken, env) => {
+  const detailsResult = await rivhitPost('/SaleDetails', { SalePrivateToken: privateSaleToken }, env);
+  const sale = Array.isArray(detailsResult.data) ? detailsResult.data[0] : (detailsResult.Data?.[0] || detailsResult.data || detailsResult);
+  const saleId = rivhitValue(sale, 'SaleId', 'saleId');
+  const amount = Number(rivhitValue(sale, 'Amount', 'TotalAmount', 'amount', 'totalAmount'));
+  if (Number(detailsResult.Status) !== 0 || !sale || !saleId || !Number.isFinite(amount)) throw new Error('RIVHIT_PAYMENT_FAILED');
+  return { sale, saleId: String(saleId), amount };
+};
+
+const verifyRivhitSale = async (saleId, amount, env) => {
+  const result = await rivhitPost('/Verify', {
+    GroupPrivateToken: env.RIVHIT_GROUP_PRIVATE_TOKEN,
+    SaleId: saleId,
+    TotalAmount: amount
+  }, env);
+  if (String(result.Status || '').toUpperCase() !== 'VERIFIED') throw new Error('RIVHIT_PAYMENT_NOT_VERIFIED');
+};
+
+const verifiedRivhitPayment = async (paymentReference, env) => {
+  const reference = await verifyPaymentReference(paymentReference, env);
+  const order = await verifySignedOrder(reference.o, env);
+  const { sale, saleId, amount } = await getRivhitSale(reference.p, env);
+  if (amount !== Number(order.a)) throw new Error('AMOUNT_MISMATCH');
+  await verifyRivhitSale(saleId, Number(order.a), env);
+  const cardNumber = String(rivhitValue(sale, 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
+  return {
+    order,
+    payment: {
+      paymentReference,
+      saleId,
+      transactionId: String(rivhitValue(sale, 'TransactionId', 'transactionId', 'SaleId', 'saleId') || saleId),
+      last4Digits: (cardNumber.match(/(\d{4})\D*$/) || [])[1]
+    }
+  };
+};
+
+const recurringFieldsFor = (body, env) => {
+  if (String(env.RIVHIT_ENABLE_RECURRING).toLowerCase() !== 'true') return {};
+  const isAnnual = body.membershipType === 'GROUP_ANNUAL'
+    || (body.membershipType === 'FAMILY_MEMBERSHIP' && body.familyBillingMode === 'ANNUAL_BY_SIZE');
+  return isAnnual ? {
+    CreateRecurringSale: true,
+    RecurringSaleCycle: 3,
+    RecurringSaleStep: 1,
+    RecurringSaleCount: 12,
+    RecurringSaleAutoCharge: true
+  } : {};
+};
+
+const splitCustomerName = value => {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
+  return { firstName: (parts.shift() || 'לקוח').slice(0, 20), lastName: (parts.join(' ') || 'BALY').slice(0, 30) };
+};
+
+const paymentReturnUrl = (request, env) => {
+  const stagingUrl = env.PAYMENT_STAGING_APP_URL ? new URL(env.PAYMENT_STAGING_APP_URL) : null;
+  return stagingUrl && request.headers.get('Origin') === stagingUrl.origin ? stagingUrl.toString() : env.PUBLIC_APP_URL;
+};
+
+const getOrderFromWebhook = async (payload, env) => {
+  const rawOrder = rivhitValue(payload, 'Custom1', 'custom1');
+  if (!rawOrder) throw new Error('RIVHIT_WEBHOOK_ORDER_MISSING');
+  return verifySignedOrder(String(rawOrder), env);
+};
+
+const verifyWebhookSale = async (payload, order, env) => {
+  const saleId = String(rivhitValue(payload, 'SaleId', 'saleId') || '');
+  const amount = Number(rivhitValue(payload, 'TotalAmount', 'Amount', 'totalAmount', 'amount'));
+  if (!saleId || !Number.isFinite(amount) || amount !== Number(order.a)) throw new Error('INVALID_RIVHIT_WEBHOOK');
+  await verifyRivhitSale(saleId, Number(order.a), env);
+  const cardNumber = String(rivhitValue(payload, 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
+  return {
+    paymentReference: saleId,
+    saleId,
+    transactionId: String(rivhitValue(payload, 'TransactionId', 'transactionId') || saleId),
+    last4Digits: (cardNumber.match(/(\d{4})\D*$/) || [])[1]
+  };
 };
 
 const isoDate = date => date.toISOString().slice(0, 10);
@@ -524,7 +600,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
   if (!env.STATE_STORE || order.d === 'REGISTRATION') return;
   const userId = order.u || fallbackUserId;
   if (!userId) return;
-  const paymentId = `payment-cardcom-${payment.transactionId || payment.lowProfileId}`;
+  const paymentId = `payment-rivhit-${payment.transactionId || payment.saleId || payment.paymentReference}`;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
@@ -554,8 +630,8 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         timestamp: new Date().toISOString(),
         status: 'PAID',
         membershipTypePurchased: order.m,
-        paymentMethod: `Cardcom${payment.last4Digits ? ` •••• ${payment.last4Digits}` : ''}`,
-        isMock: String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true'
+        paymentMethod: `RIVHIT iCredit${payment.last4Digits ? ` •••• ${payment.last4Digits}` : ''}`,
+        isMock: rivhitEnvironment(env) !== 'production'
       }, ...(state.payload.payments || [])]
     });
     const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', payload, state.revision);
@@ -581,83 +657,61 @@ const handleCreatePayment = async (request, env) => {
     }
   }
   let purchase;
-  try { purchase = resolvePurchase(body, String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true'); }
+  try { purchase = resolvePurchase(body); }
   catch { return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env)); }
   const { amount } = purchase;
-  const returnValue = await createSignedOrder(body, env);
-  if (String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
-    const checkoutUrl = new URL('/demo-checkout', request.url);
-    checkoutUrl.searchParams.set('token', returnValue);
-    checkoutUrl.searchParams.set('amount', String(amount));
-    checkoutUrl.searchParams.set('label', purchase.label);
-    return json({ url: checkoutUrl.toString(), lowProfileId: returnValue }, 200, corsHeaders(request, env));
+  const signedOrder = await createSignedOrder(body, env);
+  const appUrl = new URL(paymentReturnUrl(request, env));
+  appUrl.searchParams.set('rivhit', 'success');
+  const failedUrl = new URL(paymentReturnUrl(request, env));
+  failedUrl.searchParams.set('rivhit', 'failed');
+  const webhookUrl = new URL('/api/payments/rivhit/webhook', request.url).toString();
+  const customer = splitCustomerName(body.userName);
+  const createResult = await rivhitPost('/GetUrl', {
+    GroupPrivateToken: env.RIVHIT_GROUP_PRIVATE_TOKEN,
+    Items: [{ UnitPrice: amount, Quantity: 1, Description: purchase.label }],
+    CustomerFirstName: customer.firstName,
+    CustomerLastName: customer.lastName,
+    EmailAddress: body.email ? String(body.email).slice(0, 50) : undefined,
+    PhoneNumber: body.phone ? String(body.phone).slice(0, 15) : undefined,
+    RedirectURL: appUrl.toString(),
+    FailRedirectURL: failedUrl.toString(),
+    IPNURL: webhookUrl,
+    IPNFailureURL: webhookUrl,
+    IPNMethod: 1,
+    Currency: 1,
+    SaleType: 1,
+    NumberOfPayments: 1,
+    DocumentLanguage: 'he',
+    Custom1: signedOrder,
+    UniqueNum: crypto.randomUUID().replace(/-/g, '').slice(0, 20),
+    Use3DS: String(env.RIVHIT_USE_3DS).toLowerCase() === 'true',
+    ...recurringFieldsFor(body, env)
+  }, env);
+  const status = Number(rivhitValue(createResult, 'Status', 'status'));
+  const url = rivhitValue(createResult, 'URL', 'Url', 'url');
+  const privateSaleToken = rivhitValue(createResult, 'PrivateSaleToken', 'privateSaleToken');
+  const publicSaleToken = rivhitValue(createResult, 'PublicSaleToken', 'publicSaleToken');
+  let paymentUrlIsTrusted = false;
+  try { paymentUrlIsTrusted = new URL(String(url)).origin === new URL(rivhitBaseUrl(env)).origin; } catch { /* invalid provider URL */ }
+  if (status !== 0 || !url || !privateSaleToken || !paymentUrlIsTrusted) {
+    return json({ message: rivhitValue(createResult, 'ErrorMessage', 'Message', 'message') || 'RIVHIT לא הצליחה ליצור דף תשלום.' }, 502, corsHeaders(request, env));
   }
-  const appUrl = new URL(env.PUBLIC_APP_URL);
-  appUrl.searchParams.set('cardcom', 'success');
-  const failedUrl = new URL(env.PUBLIC_APP_URL);
-  failedUrl.searchParams.set('cardcom', 'failed');
-  const webhookUrl = new URL('/api/payments/cardcom/webhook', request.url).toString();
-  const result = await cardcomPost('/LowProfile/Create', {
-    TerminalNumber: Number(env.CARDCOM_TERMINAL_NUMBER),
-    ApiName: env.CARDCOM_API_NAME,
-    Operation: 'ChargeOnly',
-    ReturnValue: returnValue,
-    Amount: amount,
-    SuccessRedirectUrl: appUrl.toString(),
-    FailedRedirectUrl: failedUrl.toString(),
-    WebHookUrl: webhookUrl,
-    ProductName: purchase.label,
-    Language: 'he',
-    ISOCoinId: 1,
-    UIDefinition: {
-      CardOwnerNameValue: String(body.userName || '').slice(0, 80),
-      CardOwnerPhoneValue: String(body.phone || '').slice(0, 20),
-      CardOwnerEmailValue: String(body.email || '').slice(0, 120),
-      IsCardOwnerPhoneRequired: true,
-      IsCardOwnerEmailRequired: false
-    }
-  });
-  if (Number(result.ResponseCode) !== 0 || !result.Url || !result.LowProfileId) {
-    return json({ message: result.Description || 'Cardcom לא הצליחה ליצור דף תשלום.' }, 502, corsHeaders(request, env));
-  }
-  return json({ url: result.Url, lowProfileId: result.LowProfileId }, 200, corsHeaders(request, env));
+  const paymentReference = await createPaymentReference(signedOrder, String(privateSaleToken), String(publicSaleToken || ''), env);
+  return json({ url: String(url), paymentReference }, 200, corsHeaders(request, env));
 };
 
 const handleVerifyPayment = async (request, env) => {
   requirePaymentEnv(env);
-  const { lowProfileId } = await request.json();
-  if (!lowProfileId) return json({ message: 'חסר מזהה עסקה.' }, 400, corsHeaders(request, env));
-  if (String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
-    const order = await verifySignedOrder(lowProfileId, env);
-    const identity = order.d === 'REGISTRATION' ? null : await getAuthenticatedSession(request, env.STATE_STORE);
-    if (order.d !== 'REGISTRATION' && (!identity || (order.u && identity.user_id !== order.u))) {
-      return json({ message: 'לא ניתן לשייך את התשלום למשתמש המחובר.' }, 403, corsHeaders(request, env));
-    }
-    const payment = {
-      success: true,
-      lowProfileId,
-      userId: order.u || identity?.user_id,
-      membershipType: order.m,
-      mode: order.d,
-      purchaseVariant: order.v,
-      familyMembersCount: order.f,
-      familyBillingMode: order.fm,
-      familyMemberPlans: order.fp,
-      amount: order.a,
-      transactionId: `demo-${order.o}`,
-      last4Digits: '1111'
-    };
-    await persistVerifiedPurchase(env, order, payment, identity?.user_id);
-    return json(payment, 200, corsHeaders(request, env));
-  }
-  const { result, order } = await getLowProfileResult(lowProfileId, env);
+  const { paymentReference } = await request.json();
+  if (!paymentReference) return json({ message: 'חסר מזהה עסקה.' }, 400, corsHeaders(request, env));
+  const { order, payment: providerPayment } = await verifiedRivhitPayment(paymentReference, env);
   const identity = order.d === 'REGISTRATION' ? null : await getAuthenticatedSession(request, env.STATE_STORE);
   if (order.d !== 'REGISTRATION' && (!identity || (order.u && identity.user_id !== order.u))) {
     return json({ message: 'לא ניתן לשייך את התשלום למשתמש המחובר.' }, 403, corsHeaders(request, env));
   }
   const payment = {
     success: true,
-    lowProfileId,
     userId: order.u || identity?.user_id,
     membershipType: order.m,
     mode: order.d,
@@ -666,8 +720,7 @@ const handleVerifyPayment = async (request, env) => {
     familyBillingMode: order.fm,
     familyMemberPlans: order.fp,
     amount: order.a,
-    transactionId: String(result.TranzactionId || result.TranzactionInfo?.TranzactionId || ''),
-    last4Digits: result.TranzactionInfo?.Last4CardDigitsString || result.TranzactionInfo?.Last4CardDigits
+    ...providerPayment
   };
   await persistVerifiedPurchase(env, order, payment, identity?.user_id);
   return json(payment, 200, corsHeaders(request, env));
@@ -677,16 +730,13 @@ const handleWebhook = async (request, env) => {
   requirePaymentEnv(env);
   const contentType = request.headers.get('Content-Type') || '';
   let payload;
-  if (contentType.includes('application/json')) payload = await request.json();
+  if (request.method === 'GET') payload = Object.fromEntries(new URL(request.url).searchParams);
+  else if (contentType.includes('application/json')) payload = await request.json();
   else payload = Object.fromEntries(await request.formData());
-  const lowProfileId = payload.LowProfileId || payload.lowProfileId || payload.LowProfileCode || payload.lowprofilecode;
-  if (!lowProfileId) return new Response('missing LowProfileId', { status: 400 });
-  const { result, order } = await getLowProfileResult(String(lowProfileId), env);
-  await persistVerifiedPurchase(env, order, {
-    lowProfileId: String(lowProfileId),
-    transactionId: String(result.TranzactionId || result.TranzactionInfo?.TranzactionId || ''),
-    last4Digits: result.TranzactionInfo?.Last4CardDigitsString || result.TranzactionInfo?.Last4CardDigits
-  });
+  if (Array.isArray(payload)) payload = payload[0] || {};
+  const order = await getOrderFromWebhook(payload, env);
+  const payment = await verifyWebhookSale(payload, order, env);
+  await persistVerifiedPurchase(env, order, payment);
   return new Response('OK', { status: 200 });
 };
 
@@ -1184,9 +1234,9 @@ const handleApi = async (request, env, url) => {
       if (!identity || !['MANAGER', 'COACH'].includes(identity.account.role)) return json({ message: 'שירות ה-AI זמין למאמנים ולמנהלים בלבד.' }, 403, headers);
       return await handleWorkoutAi(request, env, headers, json);
     }
-    if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/create') return await handleCreatePayment(request, env);
-    if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/verify') return await handleVerifyPayment(request, env);
-    if (request.method === 'POST' && url.pathname === '/api/payments/cardcom/webhook') return await handleWebhook(request, env);
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/create') return await handleCreatePayment(request, env);
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/verify') return await handleVerifyPayment(request, env);
+    if (['GET', 'POST'].includes(request.method) && url.pathname === '/api/payments/rivhit/webhook') return await handleWebhook(request, env);
     return json({ message: 'Not found' }, 404, headers);
   } catch (error) {
     console.error('API request error', error instanceof Error ? error.message : error);
@@ -1209,22 +1259,6 @@ export default {
       return new Response(response.body, { status: response.status, statusText: response.statusText, headers: responseHeaders });
     }
     if (url.pathname === '/tv/') return Response.redirect(new URL('/tv', url), 302);
-    if (url.pathname === '/demo-checkout' && String(env.DEMO_PAYMENT_MODE).toLowerCase() === 'true') {
-      try {
-        const token = url.searchParams.get('token');
-        const order = await verifySignedOrder(token, env);
-        const amount = Number(url.searchParams.get('amount') || order.a);
-        const label = url.searchParams.get('label') || 'רכישה ב־BALY WELLNESS';
-        const successUrl = new URL(env.PUBLIC_APP_URL);
-        successUrl.searchParams.set('cardcom', 'success');
-        const cancelUrl = new URL(env.PUBLIC_APP_URL);
-        cancelUrl.searchParams.set('cardcom', 'failed');
-        const html = `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>תשלום דמו</title><style>body{margin:0;background:#0b0d12;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh}.card{width:min(92vw,440px);background:#171a22;border:1px solid #333846;border-radius:24px;padding:28px;box-shadow:0 24px 70px #0008}h1{margin:0 0 8px;color:#d7b765}.demo{background:#442b05;color:#ffd78a;padding:10px;border-radius:12px;font-weight:700}.sum{font-size:42px;font-weight:900;margin:24px 0}a{display:block;width:100%;box-sizing:border-box;text-align:center;border:0;border-radius:14px;padding:15px;margin-top:10px;font-size:16px;font-weight:900;text-decoration:none}.pay{background:#d7b765;color:#111}.cancel{background:#272b35;color:#ddd}</style><main class="card"><h1>BALY WELLNESS</h1><p>${label.replace(/[<>&"']/g, '')}</p><div class="demo">סביבת דמו בלבד — לא מתבצע חיוב אמיתי</div><div class="sum">₪${amount}</div><a class="pay" href="${successUrl.toString()}">אישור תשלום דמו</a><a class="cancel" href="${cancelUrl.toString()}">ביטול</a></main></html>`;
-        return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
-      } catch {
-        return new Response('Invalid demo payment', { status: 400 });
-      }
-    }
     const assetRequest = url.pathname === '/'
       ? new Request(new URL('/index.html', url), request)
       : request;

@@ -3,6 +3,26 @@ import test from 'node:test';
 import { createAuthenticatedSession } from './auth.js';
 import worker from './index.js';
 
+const rivhitFetch = async (url, init) => {
+  const body = JSON.parse(init.body);
+  if (url.endsWith('/GetUrl')) return Response.json({
+    Status: 0,
+    URL: 'https://testicredit.rivhit.co.il/payment/test',
+    PrivateSaleToken: 'private-sale-token',
+    PublicSaleToken: 'public-sale-token'
+  });
+  if (url.endsWith('/SaleDetails')) return Response.json({
+    Status: 0,
+    data: [{ SaleId: 'sale-1', TransactionId: 'transaction-1', Amount: 350, CardNum: '4580********1111' }]
+  });
+  if (url.endsWith('/Verify')) {
+    assert.equal(body.GroupPrivateToken, 'test-group-token');
+    assert.equal(body.TotalAmount, 350);
+    return Response.json({ Status: 'VERIFIED' });
+  }
+  return Response.json({}, { status: 404 });
+};
+
 test('verified nutrition payment unlocks the purchased service and is idempotent', async () => {
   let state = {
     payload: {
@@ -27,23 +47,25 @@ test('verified nutrition payment unlocks the purchased service and is idempotent
   const env = {
     STATE_STORE: store,
     CLUB_ID: 'test-club',
-    DEMO_PAYMENT_MODE: 'true',
+    RIVHIT_ENVIRONMENT: 'test',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'test-group-token',
+    RIVHIT_FETCH: rivhitFetch,
     PAYMENT_SIGNING_SECRET: 'nutrition-payment-test-secret',
     PUBLIC_APP_URL: 'https://balywellness.test/',
     PAYMENT_ALLOWED_ORIGIN: 'https://balywellness.test'
   };
   const auth = await createAuthenticatedSession(store, 'test-club', 'trainee-1');
-  const createResponse = await worker.fetch(new Request('https://balywellness.test/api/payments/cardcom/create', {
+  const createResponse = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: auth.cookie, Origin: 'https://balywellness.test' },
     body: JSON.stringify({ userId: 'trainee-1', userName: 'Trainee', membershipType: 'NUTRITION_COACHING', mode: 'ADDON' })
   }), env);
   assert.equal(createResponse.status, 200);
   const checkout = await createResponse.json();
-  const verifyRequest = () => new Request('https://balywellness.test/api/payments/cardcom/verify', {
+  const verifyRequest = () => new Request('https://balywellness.test/api/payments/rivhit/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: auth.cookie, Origin: 'https://balywellness.test' },
-    body: JSON.stringify({ lowProfileId: checkout.lowProfileId })
+    body: JSON.stringify({ paymentReference: checkout.paymentReference })
   });
 
   const verifyResponse = await worker.fetch(verifyRequest(), env);
@@ -85,23 +107,25 @@ test('verified non-nutrition purchase is persisted for staff alerts', async () =
   const env = {
     STATE_STORE: store,
     CLUB_ID: 'test-club',
-    DEMO_PAYMENT_MODE: 'true',
+    RIVHIT_ENVIRONMENT: 'test',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'test-group-token',
+    RIVHIT_FETCH: rivhitFetch,
     PAYMENT_SIGNING_SECRET: 'workout-payment-test-secret',
     PUBLIC_APP_URL: 'https://balywellness.test/',
     PAYMENT_ALLOWED_ORIGIN: 'https://balywellness.test'
   };
   const auth = await createAuthenticatedSession(store, 'test-club', 'trainee-2');
-  const createResponse = await worker.fetch(new Request('https://balywellness.test/api/payments/cardcom/create', {
+  const createResponse = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: auth.cookie, Origin: 'https://balywellness.test' },
     body: JSON.stringify({ userId: 'trainee-2', userName: 'Meni', membershipType: 'WORKOUT_COACHING', mode: 'ADDON' })
   }), env);
   assert.equal(createResponse.status, 200);
   const checkout = await createResponse.json();
-  const verifyResponse = await worker.fetch(new Request('https://balywellness.test/api/payments/cardcom/verify', {
+  const verifyResponse = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: auth.cookie, Origin: 'https://balywellness.test' },
-    body: JSON.stringify({ lowProfileId: checkout.lowProfileId })
+    body: JSON.stringify({ paymentReference: checkout.paymentReference })
   }), env);
 
   assert.equal(verifyResponse.status, 200);

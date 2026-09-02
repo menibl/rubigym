@@ -29,15 +29,15 @@ import {
   SystemSettings
 } from '../types';
 import {
-  clearCardcomReturnParams,
-  clearPendingCardcomPayment,
-  getPendingCardcomPayment,
-  isCardcomConfigured,
+  clearRivhitReturnParams,
+  clearPendingRivhitPayment,
+  getPendingRivhitPayment,
+  isRivhitConfigured,
   markTransactionProcessed,
-  startCardcomPayment,
-  verifyPendingCardcomPayment,
+  startRivhitPayment,
+  verifyPendingRivhitPayment,
   wasTransactionProcessed
-} from '../data/cardcomPayments';
+} from '../data/rivhitPayments';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { createMembershipTerm } from '../data/membershipPolicy';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
@@ -156,26 +156,26 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   };
 
   useEffect(() => {
-    const returnStatus = new URLSearchParams(window.location.search).get('cardcom');
+    const returnStatus = new URLSearchParams(window.location.search).get('rivhit');
     if (!returnStatus) return;
-    const pending = getPendingCardcomPayment();
+    const pending = getPendingRivhitPayment();
     if (!pending || pending.mode !== 'REGISTRATION') return;
     setScreen('register');
     setRegisterStep(4);
 
     if (returnStatus === 'failed') {
-      clearCardcomReturnParams();
+      clearRivhitReturnParams();
       setError('התשלום לא הושלם. החשבון לא נפתח ולא בוצע חיוב.');
       return;
     }
 
     setPaymentStarting(true);
-    verifyPendingCardcomPayment(pending)
+    verifyPendingRivhitPayment(pending)
       .then(verified => {
-        const transactionKey = verified.transactionId || verified.lowProfileId;
+        const transactionKey = verified.transactionId || verified.paymentReference;
         if (wasTransactionProcessed(transactionKey)) {
-          clearPendingCardcomPayment();
-          clearCardcomReturnParams();
+          clearPendingRivhitPayment();
+          clearRivhitReturnParams();
           setNotice('התשלום כבר נקלט בהצלחה. ניתן להיכנס לחשבון.');
           setScreen('login');
           return;
@@ -183,7 +183,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         const draft = pending.registrationDraft as { user?: User; familyUsers?: User[]; phoneVerificationToken?: string } | undefined;
         if (!draft?.user || draft.user.id !== pending.userId) throw new Error('פרטי ההרשמה לא נמצאו במכשיר זה. יש לפנות למועדון עם אישור העסקה.');
         const payment: Payment = {
-          id: `payment-cardcom-${transactionKey}`,
+          id: `payment-rivhit-${transactionKey}`,
           traineeId: draft.user.id,
           traineeName: draft.user.name,
           amount: verified.amount,
@@ -191,17 +191,17 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
           timestamp: new Date().toISOString(),
           status: 'PAID',
           membershipTypePurchased: verified.membershipType,
-          paymentMethod: `Cardcom${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
+          paymentMethod: `RIVHIT iCredit${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
           isMock: false
         };
         return onRegister(draft.user, payment, draft.familyUsers || [], draft.phoneVerificationToken || '').then(() => {
           markTransactionProcessed(transactionKey);
-          clearPendingCardcomPayment();
-          clearCardcomReturnParams();
+          clearPendingRivhitPayment();
+          clearRivhitReturnParams();
         });
       })
       .catch(paymentError => {
-        setError(paymentError instanceof Error ? paymentError.message : 'לא ניתן לאמת את התשלום מול Cardcom.');
+        setError(paymentError instanceof Error ? paymentError.message : 'לא ניתן לאמת את התשלום מול RIVHIT.');
       })
       .finally(() => setPaymentStarting(false));
     // Process the hosted-payment return once when the unauthenticated gateway mounts.
@@ -369,7 +369,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const handleRegistrationPayment = async (event: React.FormEvent) => {
     event.preventDefault();
     resetMessages();
-    if (!isCardcomConfigured()) {
+    if (!isRivhitConfigured()) {
       setError('שרת התשלומים טרם הוגדר. לא ניתן לבצע חיוב בשלב זה.');
       return;
     }
@@ -494,7 +494,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     });
     setPaymentStarting(true);
     try {
-      await startCardcomPayment({
+      await startRivhitPayment({
         userId: newUser.id,
         userName: newUser.name,
         email: newUser.email,
@@ -700,9 +700,9 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   })()}</strong>
                 </div>
                 {!isFamilyPlan && selectedPlan === MembershipType.GROUP_ANNUAL && <small className="auth-mock-note">₪500 בחודש בהוראת קבע למשך 12 חודשים. בקשת ביטול נכנסת לתוקף חודש קדימה.</small>}
-                <small className="auth-mock-note">פרטי האשראי יוזנו רק בעמוד המאובטח של Cardcom ולא יישמרו ב־BALY.</small>
-                {!isCardcomConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}
-                <button className="auth-primary" type="submit" disabled={paymentStarting || !isCardcomConfigured()}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>
+                <small className="auth-mock-note">פרטי האשראי יוזנו רק בעמוד המאובטח של RIVHIT iCredit ולא יישמרו ב־BALY.</small>
+                {!isRivhitConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}
+                <button className="auth-primary" type="submit" disabled={paymentStarting || !isRivhitConfigured()}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>
                 <button className="auth-text-link" type="button" onClick={() => setRegisterStep(3)}>חזרה לפרטים האישיים</button>
               </form>
             )}
