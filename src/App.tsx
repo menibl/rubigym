@@ -119,6 +119,7 @@ export default function App() {
   const hydratedRef = useRef(false);
   const pendingClubStateRef = useRef<Record<string, unknown> | null>(null);
   const savingClubStateRef = useRef(false);
+  const skipNextAutosaveRef = useRef(false);
 
   // Active signed-in user
   const [activeUser, setActiveUser] = useState<User>(INITIAL_USERS[0]);
@@ -132,6 +133,10 @@ export default function App() {
   }, [users]);
 
   const applyServerPayload = (payload: Record<string, unknown>, revision: number) => {
+    // Server refreshes update many React state slices at once. Do not immediately
+    // write the exact same snapshot back, otherwise a device left open can keep
+    // creating revisions and race with a new member registration.
+    skipNextAutosaveRef.current = true;
     setSettings({ ...INITIAL_SETTINGS, ...((payload.settings as SystemSettings) || {}) });
     setUsers((payload.users as User[]) || []);
     setSessions((payload.sessions as TrainingSession[]) || []);
@@ -182,13 +187,27 @@ export default function App() {
           const saveError = error as Error & { status?: number };
           if (saveError.status === 409) {
             // Another device updated the club while this payload was being saved.
-            // Keep the newest local snapshot (especially newly generated AI drafts),
-            // refresh only the revision, and retry instead of hydrating stale server
-            // data over optimistic UI state.
+            // Preserve entities that were added remotely (most importantly new
+            // trainees, their payments and system messages) before retrying the
+            // local optimistic snapshot against the newest revision.
             const retryPayload = pendingClubStateRef.current || payload;
             const latest = await getClubState();
+            const preserveRemoteAdditions = (localValue: unknown, remoteValue: unknown) => {
+              const local = Array.isArray(localValue) ? localValue : [];
+              const remote = Array.isArray(remoteValue) ? remoteValue : [];
+              const localIds = new Set(local.map(item => String((item as { id?: unknown })?.id || '')));
+              return [...local, ...remote.filter(item => {
+                const id = String((item as { id?: unknown })?.id || '');
+                return id && !localIds.has(id);
+              })];
+            };
             revisionRef.current = latest.revision;
-            pendingClubStateRef.current = retryPayload;
+            pendingClubStateRef.current = {
+              ...retryPayload,
+              users: preserveRemoteAdditions(retryPayload.users, latest.payload.users),
+              payments: preserveRemoteAdditions(retryPayload.payments, latest.payload.payments),
+              messages: preserveRemoteAdditions(retryPayload.messages, latest.payload.messages)
+            };
           } else {
             console.error('Unable to save club state', saveError);
             if (saveError.status === 413) window.alert(saveError.message);
@@ -218,6 +237,10 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated || !hydratedRef.current) return;
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      return;
+    }
     const payload = {
       settings, users, sessions, openGymSessions, workoutPlans, nutritionPlans, blackPoints,
       announcements, payments, messages, attendanceLogs, discountCodes, traineeProfiles,
@@ -275,9 +298,9 @@ export default function App() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated || workspaceView !== 'CHAT') return;
+    if (!isAuthenticated) return;
     let cancelled = false;
-    const refreshChatState = async () => {
+    const refreshClubState = async () => {
       try {
         const latest = await getClubState();
         if (
@@ -287,11 +310,12 @@ export default function App() {
           && latest.revision > revisionRef.current
         ) applyServerPayload(latest.payload, latest.revision);
       } catch (error) {
-        console.warn('Unable to refresh chat messages', error);
+        console.warn('Unable to refresh club data', error);
       }
     };
-    const firstRefresh = window.setTimeout(() => void refreshChatState(), 2500);
-    const interval = window.setInterval(() => void refreshChatState(), 4000);
+    const refreshInterval = workspaceView === 'CHAT' ? 4000 : 10000;
+    const firstRefresh = window.setTimeout(() => void refreshClubState(), 2500);
+    const interval = window.setInterval(() => void refreshClubState(), refreshInterval);
     return () => {
       cancelled = true;
       window.clearTimeout(firstRefresh);

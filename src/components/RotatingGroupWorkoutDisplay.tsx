@@ -31,6 +31,18 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
   const totalSteps = Math.max(1, stations.length * roundsPerStation * maxExercises);
   const completedSteps = rotationIndex * roundsPerStation * maxExercises + (chainRound - 1) * maxExercises + exerciseSlot;
   const progress = phase === 'COMPLETE' ? 100 : Math.min(100, (completedSteps / totalSteps) * 100);
+  const stationSecondsRemaining = useMemo(() => {
+    if (isRepetitionBased) return undefined;
+    if (phase === 'COMPLETE') return 0;
+    if (phase === 'TRANSITION') return secondsLeft;
+    const work = Number(program.defaultWorkSeconds) || 0;
+    const rest = Number(program.defaultRestSeconds) || 0;
+    const stationSteps = roundsPerStation * maxExercises;
+    const currentStep = (chainRound - 1) * maxExercises + exerciseSlot;
+    if (phase === 'PREPARE') return stationSteps * (work + rest);
+    const futureSteps = Math.max(0, stationSteps - currentStep - 1) * (work + rest);
+    return phase === 'REST' ? secondsLeft + futureSteps : secondsLeft + rest + futureSteps;
+  }, [chainRound, exerciseSlot, isRepetitionBased, maxExercises, phase, program.defaultRestSeconds, program.defaultWorkSeconds, roundsPerStation, secondsLeft]);
   const assignments = useMemo(() => {
     const configuredParticipants = program.participants || [];
     const participants = configuredParticipants.length > 0
@@ -224,10 +236,10 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
   const groupIndexes: number[] = Array.from(new Set<number>(assignments.map(assignment => Number(assignment.groupIndex))));
 
   return (
-    <main className="h-screen overflow-hidden bg-slate-950 text-white" dir="rtl">
+    <main className="h-screen overflow-hidden bg-zinc-950 text-white [background:radial-gradient(circle_at_50%_0%,#2b271e_0%,#1c1d22_38%,#15161b_100%)]" dir="rtl">
       <div className="flex h-screen min-h-0 flex-col overflow-hidden">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-2 lg:px-6">
-          <div className="flex items-center gap-4"><RubisLogo size={105} /><div><p className="text-sm font-black text-indigo-300">{program.groupName} · {(program.participants || []).length || program.participantCount || 0} משתתפים</p><h1 className="text-xl font-black lg:text-2xl">{program.title}</h1></div></div>
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-300/20 bg-zinc-950/95 px-4 py-2 lg:px-6">
+          <div className="flex items-center gap-4"><RubisLogo size={105} /><div><p className="text-sm font-black text-amber-300">{program.groupName} · {(program.participants || []).length || program.participantCount || 0} משתתפים</p><h1 className="text-xl font-black lg:text-2xl">{program.title}</h1></div></div>
           <div className="flex items-center gap-2"><span className="hidden rounded-lg bg-white/5 px-3 py-2 text-xs text-slate-400 sm:block">סבב {chainRound}/{roundsPerStation} · החלפה {rotationIndex + 1}/{stations.length}</span><button onClick={() => void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen())} className="rounded-lg bg-white/10 p-2.5"><Maximize size={20} /></button><button onClick={exitDisplay} className="rounded-lg bg-white/10 p-2.5"><X size={20} /></button></div>
         </header>
         <div className="h-1.5 shrink-0 bg-slate-800"><div className="h-full bg-gradient-to-l from-indigo-400 to-emerald-400 transition-all" style={{ width: `${progress}%` }} /></div>
@@ -237,6 +249,8 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
             <div className="mb-2 flex shrink-0 items-center justify-center gap-4 text-center">
               <span className={`rounded-full bg-gradient-to-l px-6 py-1.5 text-lg font-black ${phaseColors}`}>{phaseLabel}</span>
               <div className={`font-mono text-[clamp(3.25rem,8vh,5.5rem)] font-black leading-none tabular-nums ${!isRepetitionBased && secondsLeft <= 3 && phase !== 'COMPLETE' ? 'animate-pulse text-red-400' : ''}`}>{isRepetitionBased ? `${program.defaultRepetitions || 'לפי התרגיל'} חזרות` : formatTime(secondsLeft)}</div>
+              <div className="rounded-xl border border-amber-300/30 bg-zinc-900/90 px-4 py-1.5"><span className="block text-xs font-black text-amber-300">זמן כולל לתחנה</span><strong className="font-mono text-3xl tabular-nums">{stationSecondsRemaining === undefined ? 'לפי חזרות' : formatTime(stationSecondsRemaining)}</strong></div>
+              <span className="rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-[clamp(1.8rem,5.5vh,4rem)] font-black leading-none text-amber-50">סבב {chainRound}/{roundsPerStation}</span>
               {phase === 'TRANSITION' && <p className="text-xl font-black text-fuchsia-300">עוברים לתחנה הבאה ←</p>}
             </div>
 
@@ -246,15 +260,15 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
                 const stationAssignments = assignments.filter(assignment => assignment.station?.id === station.id);
                 const assignedGroupNames = Array.from(new Set(stationAssignments.map(assignment => assignment.groupName)));
                 return (
-                  <article key={station.id} className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 p-2.5 shadow-xl">
-                    <div className="mb-2 flex shrink-0 items-center justify-between gap-2"><div><h2 className="text-lg font-black text-white">{station.name}</h2><p className="text-xs font-bold text-indigo-300">{assignedGroupNames.join(', ') || 'ללא קבוצה'}</p></div><span className="rounded-lg bg-indigo-500/20 px-2 py-1 text-xs font-black text-indigo-200">בלוק {stationIndex + 1}</span></div>
+                  <article key={station.id} className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-amber-100/20 bg-zinc-900/90 p-2.5 shadow-xl">
+                    <div className="mb-2 flex shrink-0 items-center justify-between gap-2"><div><h2 className="text-xl font-black text-white">{station.name}</h2><p className="text-sm font-bold text-amber-200">{assignedGroupNames.join(', ') || 'ללא קבוצה'}</p></div><span className="rounded-lg bg-amber-300/15 px-2 py-1 text-sm font-black text-amber-100">בלוק {stationIndex + 1}</span></div>
                     <div className="grid min-h-0 flex-1 grid-cols-2 gap-2" style={{ gridTemplateRows: `repeat(${Math.ceil(Math.max(1, station.exercises.length) / 2)}, minmax(0, 1fr))` }}>
                       {station.exercises.map((exercise, exerciseIndex) => {
                         const activeParticipants = stationAssignments.filter(assignment => assignment.activeExerciseIndex === exerciseIndex);
                         const isActive = activeParticipants.length > 0;
                         return (
                           <div key={exercise.id} className={`flex min-h-0 flex-col overflow-hidden rounded-xl border p-2 transition ${isActive ? 'border-emerald-400 bg-emerald-500/15 shadow-[0_0_20px_rgba(52,211,153,0.12)]' : 'border-white/10 bg-white/5'}`}>
-                            <div className="flex shrink-0 items-start gap-2"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black ${isActive ? 'bg-emerald-500 text-slate-950' : 'bg-white/10 text-slate-300'}`}>{exerciseIndex + 1}</span><div className="min-w-0 flex-1"><h3 className="truncate text-base font-black text-white 2xl:text-lg">{exercise.name}</h3><p className="truncate text-xs text-slate-300">{exercise.weight || exercise.reps}{exercise.equipment ? ` · ציוד: ${exercise.equipment}` : ''}</p></div></div>
+                            <div className="flex shrink-0 items-start gap-2"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black ${isActive ? 'bg-emerald-500 text-slate-950' : 'bg-white/10 text-slate-200'}`}>{exerciseIndex + 1}</span><div className="min-w-0 flex-1"><h3 className="truncate text-xl font-black text-white 2xl:text-2xl">{exercise.name}</h3><p className="truncate text-sm text-slate-100">{exercise.weight || exercise.reps}{exercise.equipment ? ` · ציוד: ${exercise.equipment}` : ''}</p></div></div>
                             {(exercise.mediaUrl || exercise.mediaStorageId) && <ExerciseMedia exercise={exercise} compact className="mt-1 min-h-0 max-h-[7vh] w-full flex-1" />}
                             {exercise.notes && <p className="mt-1 line-clamp-1 shrink-0 text-xs text-amber-200">דגש: {exercise.notes}</p>}
                             <div className="mt-1 flex min-h-6 shrink-0 flex-wrap gap-1">{activeParticipants.map(assignment => <span key={assignment.participant.id} className="rounded-full bg-emerald-400 px-2 py-1 text-xs font-black text-slate-950">{assignment.participant.name}</span>)}{!isActive && <span className="text-xs text-slate-600">פנוי כרגע</span>}</div>

@@ -335,15 +335,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleModalCreateSession = (data: CreateSessionData) => {
     const { newSessions, newOpenGym } = createSessionsFromData(data, users, activeUser);
     if (newSessions.length > 0) {
-      onUpdateSessions([...newSessions, ...sessions]);
+      let linkedSessions = newSessions;
       if (data.category === 'PERSONAL' && data.selectedProgramId && (data.targetTraineeId || data.isDemoSession)) {
         const source = workoutPlans.find(plan => plan.id === data.selectedProgramId && !plan.sessionId);
-        if (source) onUpdateWorkoutPlans([...copyPersonalPlanToSessions(source, newSessions, data.targetTraineeId, activeUser), ...workoutPlans]);
+        if (source) {
+          const assignedPlans = copyPersonalPlanToSessions(source, newSessions, data.targetTraineeId, activeUser);
+          onUpdateWorkoutPlans([...assignedPlans, ...workoutPlans]);
+          linkedSessions = linkedSessions.map(session => ({
+            ...session,
+            assignedWorkoutPlanId: assignedPlans.find(plan => plan.sessionId === session.id)?.id
+          }));
+        }
       }
       if (data.category === 'GROUP' && data.selectedProgramId) {
         const source = groupWorkoutPrograms.find(program => program.id === data.selectedProgramId && !program.sessionId);
-        if (source) onUpdateGroupWorkoutPrograms([...copyGroupProgramToSessions(source, newSessions, activeUser, users), ...groupWorkoutPrograms]);
+        if (source) {
+          const now = new Date().toISOString();
+          const assignedPrograms = copyGroupProgramToSessions(source, newSessions, activeUser, users).map(program => ({
+            ...program,
+            status: 'PUBLISHED' as const,
+            publishedAt: now
+          }));
+          onUpdateGroupWorkoutPrograms([...assignedPrograms, ...groupWorkoutPrograms]);
+          linkedSessions = linkedSessions.map(session => ({
+            ...session,
+            assignedGroupWorkoutProgramId: assignedPrograms.find(program => program.sessionId === session.id)?.id
+          }));
+        }
       }
+      onUpdateSessions([...linkedSessions, ...sessions]);
     }
     if (newOpenGym.length > 0) {
       onUpdateOpenGym([...newOpenGym, ...openGymSessions]);
