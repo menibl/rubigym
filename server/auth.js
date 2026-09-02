@@ -63,7 +63,8 @@ export const accountFromUser = async (clubId, user, password) => ({
   email: normalizeLogin(user.email),
   phone: normalizePhone(user.phone),
   passwordHash: await hashPassword(password),
-  role: user.role
+  role: user.role,
+  profile: stripCredentials(user)
 });
 
 export const ensureInitialManager = async (store, env) => {

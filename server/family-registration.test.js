@@ -39,4 +39,6 @@ test('family registration creates separate login accounts without storing plaint
   assert.equal(accounts.length, 2);
   assert.equal(state.payload.users.some(user => 'password' in user), false);
   assert.equal(accounts.every(account => account.passwordHash && !account.passwordHash.includes('password')), true);
+  assert.equal(accounts.every(account => account.profile && !('password' in account.profile)), true);
+  assert.deepEqual(accounts.map(account => account.profile.name), ['Parent', 'Child']);
 });
