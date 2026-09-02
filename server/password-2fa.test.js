@@ -71,3 +71,21 @@ test('invalid passwords do not send an SMS challenge', async () => {
   assert.equal(store.challenges.length, 0);
   assert.equal(store.sessions.length, 0);
 });
+
+test('phone login for an unknown number redirects the client to registration without sending SMS', async () => {
+  const store = await createStore();
+  const response = await worker.fetch(new Request('https://balywellness.test/api/auth/request-phone-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: '0501234567', purpose: 'LOGIN' })
+  }), {
+    CLUB_ID: 'test-club',
+    STATE_STORE: store,
+    SMS_TEST_MODE: 'true',
+    SMS_OTP_SIGNING_SECRET: signingSecret
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(payload, { ok: false, registrationRequired: true });
+  assert.equal(store.challenges.length, 0);
+});

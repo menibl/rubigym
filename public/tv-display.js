@@ -118,6 +118,37 @@
     return phase === 'COMPLETE' ? 100 : Math.min(100, Math.round(done * 100 / total));
   }
 
+  function stationSecondsRemaining() {
+    if (!program || isRepetitionBased()) return null;
+    if (phase === 'COMPLETE') return 0;
+    if (program.mode === 'ROTATING_GROUPS') {
+      if (phase === 'TRANSITION') return secondsLeft;
+      var rotatingWork = Number(program.defaultWorkSeconds) || 0;
+      var rotatingRest = Number(program.defaultRestSeconds) || 0;
+      var rotatingSteps = (Number(program.roundsPerStation) || 1) * maxStationExercises();
+      var currentStep = (chainRound - 1) * maxStationExercises() + exerciseSlot;
+      if (phase === 'PREPARE') return rotatingSteps * (rotatingWork + rotatingRest);
+      var rotatingFuture = Math.max(0, rotatingSteps - currentStep - 1) * (rotatingWork + rotatingRest);
+      return phase === 'REST'
+        ? secondsLeft + rotatingFuture
+        : secondsLeft + rotatingRest + rotatingFuture;
+    }
+    var current = program.exercises && program.exercises[exerciseIndex];
+    if (!current) return 0;
+    var work = Number(current.workSeconds) || 0;
+    var rest = Number(current.restSeconds) || 0;
+    var rounds = Number(current.rounds) || 1;
+    if (phase === 'PREPARE') return rounds * (work + rest);
+    var futureRounds = Math.max(0, rounds - round) * (work + rest);
+    return phase === 'REST' ? secondsLeft + futureRounds : secondsLeft + rest + futureRounds;
+  }
+
+  function stationTimerHtml() {
+    var remaining = stationSecondsRemaining();
+    return '<span class="tv-station-timer"><small>זמן כולל לתחנה</small><strong>' +
+      (remaining == null ? 'לפי חזרות' : formatTime(remaining)) + '</strong></span>';
+  }
+
   function mediaHtml(exercise) {
     var url = exercise && (exercise.mediaUrl || exercise.mediaStorageId);
     if (!url) return '';
@@ -195,7 +226,7 @@
     app.className = '';
     app.innerHTML = headerHtml(progress) + '<div class="tv-content"><main class="tv-main"><div class="tv-phase-line"><span class="tv-phase ' +
       phaseClass() + '">' + phaseLabel() + '</span><span class="tv-timer ' + (secondsLeft <= 3 && phase !== 'COMPLETE' ? 'urgent' : '') + '">' +
-      (isRepetitionBased() ? escapeHtml(exercises[exerciseIndex].reps || program.defaultRepetitions || 'לפי התרגיל') + ' חזרות' : formatTime(secondsLeft)) + '</span><span class="tv-meta">תחנה ' + (exerciseIndex + 1) + '/' + exercises.length + '</span></div>' +
+      (isRepetitionBased() ? escapeHtml(exercises[exerciseIndex].reps || program.defaultRepetitions || 'לפי התרגיל') + ' חזרות' : formatTime(secondsLeft)) + '</span>' + stationTimerHtml() + '<span class="tv-meta tv-cycle-meta">תחנה ' + (exerciseIndex + 1) + '/' + exercises.length + ' · סבב ' + round + '/' + (Number(exercises[exerciseIndex].rounds) || 1) + '</span></div>' +
       stage + controlsHtml() + '</main></div></div>';
     bindControls();
   }
@@ -262,7 +293,7 @@
     app.className = '';
     app.innerHTML = headerHtml(progress) + '<div class="tv-content"><main class="tv-main"><div class="tv-phase-line"><span class="tv-phase ' + phaseClass() + '">' +
       phaseLabel() + '</span><span class="tv-timer ' + (!isRepetitionBased() && secondsLeft <= 3 && phase !== 'COMPLETE' ? 'urgent' : '') + '">' + (isRepetitionBased() ? escapeHtml(program.defaultRepetitions || 'לפי התרגיל') + ' חזרות' : formatTime(secondsLeft)) +
-      '</span><span class="tv-meta">סבב ' + chainRound + '/' + (program.roundsPerStation || 1) + ' · החלפה ' + (rotationIndex + 1) + '/' + stations.length +
+      '</span>' + stationTimerHtml() + '<span class="tv-meta tv-cycle-meta">סבב ' + chainRound + '/' + (program.roundsPerStation || 1) + ' · החלפה ' + (rotationIndex + 1) + '/' + stations.length +
       '</span></div>' + stage + controlsHtml() + '</main></div></div>';
     bindControls();
   }

@@ -107,9 +107,16 @@ export const loginWithPhone = async (phone: string, otp: string) => {
   return request<{ user: User }>('/api/auth/phone-login', { method: 'POST', body: JSON.stringify({ phone, otp }) });
 };
 
-export const requestPhoneCode = async (phone: string, purpose: 'LOGIN' | 'REGISTER') => {
-  if (isPagesDemoMode()) return { ok: true as const, expiresInSeconds: 300, testMode: true };
-  return request<{ ok: true; expiresInSeconds: number; testMode?: boolean }>('/api/auth/request-phone-code', {
+export type PhoneCodeRequestResult =
+  | { ok: true; expiresInSeconds: number; testMode?: boolean }
+  | { ok: false; registrationRequired: true };
+
+export const requestPhoneCode = async (phone: string, purpose: 'LOGIN' | 'REGISTER'): Promise<PhoneCodeRequestResult> => {
+  if (isPagesDemoMode()) {
+    if (purpose === 'LOGIN' && !findDemoUser(phone)) return { ok: false, registrationRequired: true };
+    return { ok: true, expiresInSeconds: 300, testMode: true };
+  }
+  return request<PhoneCodeRequestResult>('/api/auth/request-phone-code', {
     method: 'POST',
     body: JSON.stringify({ phone, purpose })
   });

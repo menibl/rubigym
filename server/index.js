@@ -817,7 +817,7 @@ const handleApi = async (request, env, url) => {
       }
       const existingAccount = await env.STATE_STORE.getAccountByLogin(clubId, phone);
       if (purpose === 'LOGIN' && !existingAccount) {
-        return json({ ok: true, expiresInSeconds: 300 }, 202, headers);
+        return json({ ok: false, registrationRequired: true }, 200, headers);
       }
       if (purpose === 'REGISTER' && existingAccount) {
         return json({ message: 'מספר הטלפון כבר רשום. ניתן לעבור למסך הכניסה.' }, 409, headers);
