@@ -37,10 +37,12 @@ CREATE TABLE IF NOT EXISTS auth_accounts (
   phone_normalized text,
   password_hash text NOT NULL,
   role text NOT NULL,
+  profile jsonb,
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (club_id, user_id),
   UNIQUE (club_id, username_normalized)
 );
+ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS profile jsonb;
 CREATE TABLE IF NOT EXISTS auth_sessions (
   token_hash text PRIMARY KEY,
   club_id text NOT NULL,

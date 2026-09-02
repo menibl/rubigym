@@ -61,6 +61,7 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       phone_normalized text,
       password_hash text NOT NULL,
       role text NOT NULL,
+      profile jsonb,
       updated_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (club_id, user_id),
       UNIQUE (club_id, username_normalized)
@@ -113,6 +114,7 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       updated_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (club_id, slot)
     );
+    ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS profile jsonb;
   `);
   return {
     async getClubState(clubId) {
@@ -196,22 +198,28 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       const result = await pool.query('SELECT * FROM auth_accounts WHERE club_id=$1 AND user_id=$2', [clubId, userId]);
       return result.rows[0] || null;
     },
+    async listAccounts(clubId) {
+      const result = await pool.query(`SELECT club_id,user_id,username_normalized,email_normalized,
+        phone_normalized,role,profile,updated_at FROM auth_accounts WHERE club_id=$1 ORDER BY updated_at ASC`, [clubId]);
+      return result.rows;
+    },
     async upsertAccount(account) {
       await pool.query(`INSERT INTO auth_accounts
-        (club_id,user_id,username_normalized,email_normalized,phone_normalized,password_hash,role)
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        (club_id,user_id,username_normalized,email_normalized,phone_normalized,password_hash,role,profile)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         ON CONFLICT (club_id,user_id) DO UPDATE SET
           username_normalized=EXCLUDED.username_normalized,
           email_normalized=EXCLUDED.email_normalized,
           phone_normalized=EXCLUDED.phone_normalized,
           password_hash=EXCLUDED.password_hash,
           role=EXCLUDED.role,
-          updated_at=now()`, [account.clubId, account.userId, account.username, account.email || null, account.phone || null, account.passwordHash, account.role]);
+          profile=EXCLUDED.profile,
+          updated_at=now()`, [account.clubId, account.userId, account.username, account.email || null, account.phone || null, account.passwordHash, account.role, account.profile || null]);
     },
     async updateAccountIdentity(clubId, user) {
       await pool.query(`UPDATE auth_accounts SET
-        username_normalized=$3,email_normalized=$4,phone_normalized=$5,role=$6,updated_at=now()
-        WHERE club_id=$1 AND user_id=$2`, [clubId, user.id, String(user.username || user.email || user.phone || '').trim().toLowerCase(), String(user.email || '').trim().toLowerCase() || null, String(user.phone || '').replace(/\D/g, '') || null, user.role]);
+        username_normalized=$3,email_normalized=$4,phone_normalized=$5,role=$6,profile=$7,updated_at=now()
+        WHERE club_id=$1 AND user_id=$2`, [clubId, user.id, String(user.username || user.email || user.phone || '').trim().toLowerCase(), String(user.email || '').trim().toLowerCase() || null, String(user.phone || '').replace(/\D/g, '') || null, user.role, user]);
     },
     async updatePassword(clubId, userId, passwordHash) {
       await pool.query('UPDATE auth_accounts SET password_hash=$3,updated_at=now() WHERE club_id=$1 AND user_id=$2', [clubId, userId, passwordHash]);

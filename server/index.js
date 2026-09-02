@@ -1,6 +1,7 @@
 import { handleWorkoutAi, resolveOpenAiApiKey } from './workout-ai.js';
 import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validatePushSubscription } from './push.js';
 import { appendUserChangeMessages } from './user-change-messages.js';
+import { recoverUsersFromAccounts } from './user-recovery.js';
 import {
   createPhoneVerificationToken,
   normalizeIsraeliMobile,
@@ -724,6 +725,33 @@ const handleApi = async (request, env, url) => {
       }
     };
 
+    const loadClubState = async targetClubId => {
+      let state = await env.STATE_STORE.getClubState(targetClubId);
+      if (!state || !env.STATE_STORE.listAccounts) return state;
+
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const accounts = await env.STATE_STORE.listAccounts(targetClubId);
+        if (env.STATE_STORE.updateAccountIdentity) {
+          const usersById = new Map((state.payload?.users || []).map(user => [user.id, user]));
+          await Promise.all(accounts
+            .filter(account => !account.profile && usersById.has(account.user_id))
+            .map(account => env.STATE_STORE.updateAccountIdentity(targetClubId, stripCredentials(usersById.get(account.user_id)))));
+        }
+        const recovered = recoverUsersFromAccounts(state.payload, accounts);
+        if (!recovered.recoveredUsers.length) return state;
+        const nextPayload = appendUserChangeMessages(state.payload, recovered.payload);
+        const result = await env.STATE_STORE.putClubState(targetClubId, nextPayload, state.revision);
+        if (!result.conflict) {
+          console.warn('Recovered trainee profiles from durable login accounts', { count: recovered.recoveredUsers.length });
+          await notifyStateChange(state.payload, nextPayload, targetClubId);
+          return { payload: nextPayload, revision: result.revision };
+        }
+        state = await env.STATE_STORE.getClubState(targetClubId);
+        if (!state) return state;
+      }
+      return state;
+    };
+
     if (url.pathname === '/api/public/landing' && request.method === 'GET') {
       return json(await publicLandingPayload(request, env, url, clubId), 200, {
         ...headers,
@@ -781,7 +809,7 @@ const handleApi = async (request, env, url) => {
       if (!account || !await verifyPassword(body.password, account.password_hash)) {
         return json({ message: 'שם המשתמש או הסיסמה אינם נכונים.' }, 401, headers);
       }
-      const state = await env.STATE_STORE.getClubState(clubId);
+      const state = await loadClubState(clubId);
       const user = state?.payload?.users?.find(candidate => candidate.id === account.user_id);
       if (!user) return json({ message: 'חשבון המשתמש אינו קיים בנתוני המועדון.' }, 409, headers);
       const phone = normalizeIsraeliMobile(account.phone_normalized || user.phone);
@@ -848,7 +876,7 @@ const handleApi = async (request, env, url) => {
       const account = phone ? await env.STATE_STORE.getAccountByLogin(clubId, phone) : null;
       const verified = account && await verifyPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose: 'LOGIN', code: body.otp });
       if (!verified) return json({ message: 'מספר הטלפון או קוד האימות אינם תקינים.' }, 401, headers);
-      const state = await env.STATE_STORE.getClubState(clubId);
+      const state = await loadClubState(clubId);
       const user = state?.payload?.users?.find(candidate => candidate.id === account.user_id);
       if (!user) return json({ message: 'חשבון המשתמש אינו קיים בנתוני המועדון.' }, 409, headers);
       const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, user.id);
@@ -858,7 +886,7 @@ const handleApi = async (request, env, url) => {
     if (url.pathname === '/api/auth/session' && request.method === 'GET') {
       const identity = await getIdentity();
       if (!identity) return json({ authenticated: false }, 401, headers);
-      const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+      const state = await loadClubState(identity.session.club_id);
       const user = state?.payload?.users?.find(candidate => candidate.id === identity.account.user_id);
       return user ? json({ authenticated: true, user: stripCredentials(user) }, 200, headers) : json({ authenticated: false }, 401, headers);
     }
@@ -915,7 +943,7 @@ const handleApi = async (request, env, url) => {
           return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
         }
       }
-      const state = await env.STATE_STORE.getClubState(clubId);
+      const state = await loadClubState(clubId);
       if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
       const safeUser = stripCredentials(user);
       const safeFamilyUsers = familyUsers.map(stripCredentials);
@@ -940,7 +968,7 @@ const handleApi = async (request, env, url) => {
       if (!identity || identity.account.role !== 'TRAINEE') return json({ message: 'Unauthorized' }, 401, headers);
       const body = await request.json();
       const candidate = body.user;
-      const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+      const state = await loadClubState(identity.session.club_id);
       const payer = state?.payload?.users?.find(userItem => userItem.id === identity.account.user_id);
       const familyMembers = state?.payload?.users?.filter(userItem => userItem.familyId && userItem.familyId === payer?.familyId) || [];
       if (!payer?.isFamilyPayer || !payer.familyId || familyMembers.length >= Number(payer.familyMembersCount || 0)) {
@@ -1110,7 +1138,7 @@ const handleApi = async (request, env, url) => {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
       const identity = await getIdentity();
       if (!identity) return json({ message: 'Unauthorized' }, 401, headers);
-      const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+      const state = await loadClubState(identity.session.club_id);
       return state ? json({ ...state, payload: payloadForUser(state.payload, identity.account.user_id, identity.account.role) }, 200, headers) : new Response(null, { status: 204, headers });
     }
     if (url.pathname === '/api/state' && request.method === 'PUT') {
@@ -1118,7 +1146,7 @@ const handleApi = async (request, env, url) => {
       const identity = await getIdentity();
       if (!identity) return json({ message: 'Unauthorized' }, 401, headers);
       const body = await request.json();
-      const current = await env.STATE_STORE.getClubState(identity.session.club_id);
+      const current = await loadClubState(identity.session.club_id);
       if (!current) return json({ message: 'Club state was not initialized' }, 503, headers);
       if (Number(body.expectedRevision) !== Number(current.revision)) return json({ conflict: true, revision: current.revision }, 409, headers);
       const incomingUsers = Array.isArray(body.payload?.users) ? body.payload.users : [];
