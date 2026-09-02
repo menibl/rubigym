@@ -38,6 +38,16 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
 
   const currentExercise = program?.exercises[exerciseIndex];
   const nextExercise = program?.exercises[exerciseIndex + 1];
+  const stationSecondsRemaining = useMemo(() => {
+    if (!currentExercise || isRepetitionBased) return undefined;
+    if (phase === 'COMPLETE') return 0;
+    const work = Number(currentExercise.workSeconds) || 0;
+    const rest = Number(currentExercise.restSeconds) || 0;
+    const rounds = Number(currentExercise.rounds) || 1;
+    if (phase === 'PREPARE') return rounds * (work + rest);
+    const futureRounds = Math.max(0, rounds - round) * (work + rest);
+    return phase === 'REST' ? secondsLeft + futureRounds : secondsLeft + rest + futureRounds;
+  }, [currentExercise, isRepetitionBased, phase, round, secondsLeft]);
   const totalRounds = useMemo(() => program?.exercises.reduce((sum, exercise) => sum + exercise.rounds, 0) || 0, [program]);
   const completedRounds = useMemo(() => {
     if (!program) return 0;
@@ -210,10 +220,10 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
   const phaseLabel = phase === 'WORK' ? isRepetitionBased ? 'לפי חזרות' : 'עבודה' : phase === 'REST' ? 'מנוחה' : phase === 'COMPLETE' ? 'האימון הושלם!' : 'מתכוננים';
 
   return (
-    <main className="h-screen overflow-hidden bg-slate-950 text-white" dir="rtl">
+    <main className="h-screen overflow-hidden bg-zinc-950 text-white [background:radial-gradient(circle_at_50%_0%,#2b271e_0%,#1c1d22_38%,#15161b_100%)]" dir="rtl">
       <div className="flex h-screen min-h-0 flex-col overflow-hidden">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-slate-950 px-5 py-3 lg:px-8">
-          <div className="flex items-center gap-4"><RubisLogo size={105} /><div><p className="text-sm font-black text-indigo-300">{program.groupName}</p><h1 className="text-xl font-black lg:text-2xl">{program.title}</h1></div></div>
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-300/20 bg-zinc-950/95 px-5 py-3 lg:px-8">
+          <div className="flex items-center gap-4"><RubisLogo size={105} /><div><p className="text-sm font-black text-amber-300">{program.groupName}</p><h1 className="text-xl font-black lg:text-2xl">{program.title}</h1></div></div>
           <div className="flex items-center gap-2">
             <span className="hidden rounded-lg bg-white/5 px-3 py-2 text-xs text-slate-400 sm:block">רווח: הפעלה/עצירה · חצים: מעבר תחנה · R: איפוס</span>
             <button onClick={toggleFullscreen} className="rounded-lg bg-white/10 p-2.5 hover:bg-white/20" title="מסך מלא"><Maximize size={20} /></button>
@@ -229,14 +239,15 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
             {phase !== 'COMPLETE' ? (
               <>
                 <div className={`shrink-0 font-mono text-[clamp(4rem,13vh,9rem)] font-black leading-none tracking-tighter tabular-nums ${!isRepetitionBased && secondsLeft <= 3 ? 'animate-pulse text-red-400' : 'text-white'}`}>{isRepetitionBased ? `${currentExercise.reps || program.defaultRepetitions || 'לפי התרגיל'} חזרות` : formatTime(secondsLeft)}</div>
-                <p className="mt-2 shrink-0 text-[clamp(2rem,5vh,4rem)] font-black leading-tight">{currentExercise.name}</p>
+                <p className="mt-2 shrink-0 text-[clamp(2.5rem,6.25vh,5rem)] font-black leading-tight text-white">{currentExercise.name}</p>
                 {(currentExercise.mediaUrl || currentExercise.mediaStorageId) && <ExerciseMedia exercise={currentExercise} className="mt-2 min-h-0 max-h-[24vh] w-full max-w-xl flex-1" />}
-                <div className="mt-2 flex shrink-0 flex-wrap items-center justify-center gap-2 text-base font-bold text-slate-300">
+                <div className="mt-2 flex shrink-0 flex-wrap items-center justify-center gap-2 text-[clamp(1.5rem,4.5vh,3.5rem)] font-black text-white">
                   <span className="rounded-xl bg-white/10 px-4 py-2">תחנה {exerciseIndex + 1}/{program.exercises.length}</span>
                   <span className="rounded-xl bg-white/10 px-4 py-2">סבב {round}/{currentExercise.rounds}</span>
                   {(currentExercise.weight || currentExercise.reps) && <span className="rounded-xl bg-white/10 px-4 py-2">{currentExercise.weight || currentExercise.reps}</span>}
                   {currentExercise.equipment && <span className="rounded-xl bg-white/10 px-4 py-2">ציוד: {currentExercise.equipment}</span>}
                 </div>
+                <div className="mt-2 shrink-0 rounded-xl border border-amber-300/30 bg-zinc-900/90 px-5 py-2 text-center"><span className="block text-xs font-black text-amber-300">זמן כולל לתחנה</span><strong className="font-mono text-[clamp(1.8rem,4vh,3rem)] tabular-nums">{stationSecondsRemaining === undefined ? 'לפי חזרות' : formatTime(stationSecondsRemaining)}</strong></div>
                 {currentExercise.notes && <div className="mt-2 max-w-3xl shrink-0 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-right"><span className="block text-xs font-black text-amber-300">דגשי המאמן</span><p className="mt-1 line-clamp-2 text-base text-white">{currentExercise.notes}</p></div>}
               </>
             ) : (

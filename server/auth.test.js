@@ -118,6 +118,23 @@ test('trainee receives personal and group programs assigned to a registered cale
   assert.deepEqual(visible.groupWorkoutPrograms.map(program => program.id), ['assigned-group']);
 });
 
+test('trainee receives a published group program linked by calendar session even when a legacy session has no assignment id', () => {
+  const payload = {
+    users: [{ id: 't1', role: 'TRAINEE', name: 'One' }],
+    sessions: [{ id: 's1', registeredUsers: ['t1'], waitlistUsers: [] }],
+    workoutPlans: [],
+    groupWorkoutPrograms: [
+      { id: 'linked-group', sessionId: 's1', status: 'PUBLISHED', libraryEntry: false },
+      { id: 'unrelated-group', sessionId: 's2', status: 'PUBLISHED', libraryEntry: false }
+    ],
+    nutritionPlans: [], blackPoints: [], payments: [], messages: [], attendanceLogs: [],
+    traineeProfiles: [], traineeMemoryEntries: [], discountCodes: []
+  };
+
+  const visible = payloadForUser(payload, 't1', 'TRAINEE');
+  assert.deepEqual(visible.groupWorkoutPrograms.map(program => program.id), ['linked-group']);
+});
+
 test('trainee can mark only received chat messages as read', () => {
   const current = {
     users: [{ id: 't1', role: 'TRAINEE', name: 'One' }, { id: 'm1', role: 'MANAGER', name: 'Manager' }],

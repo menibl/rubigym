@@ -216,3 +216,16 @@ test('TV display advances repetition-based workouts manually', async () => {
   assert.match(script, /isRepetitionBased\(\) \? 'הבא'/);
   assert.match(script, /isRepetitionBased\(\)\) advancePhase\(\)/);
 });
+
+test('TV display shows a high-contrast overall station countdown and enlarged exercise text', async () => {
+  const [script, styles] = await Promise.all([
+    readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/tv-display.css', import.meta.url), 'utf8')
+  ]);
+  assert.match(script, /function stationSecondsRemaining\(\)/);
+  assert.match(script, /זמן כולל לתחנה/);
+  assert.match(styles, /\.tv-cycle-meta[^}]*font-size:\s*5\.8vh/s);
+  assert.match(styles, /\.tv-linear-copy h2[^}]*font-size:\s*3\.45vh/s);
+  assert.match(styles, /\.tv-exercise-card h3[^}]*font-size:\s*3\.1vh/s);
+  assert.match(styles, /radial-gradient\(circle at 50% 0%/);
+});

@@ -43,7 +43,7 @@ import { createMembershipTerm } from '../data/membershipPolicy';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 import { isPagesDemoMode } from '../data/appMode';
-import type { PasswordLoginResult } from '../data/clubServer';
+import type { PasswordLoginResult, PhoneCodeRequestResult } from '../data/clubServer';
 
 interface AuthGatewayProps {
   users: User[];
@@ -51,7 +51,7 @@ interface AuthGatewayProps {
   settings: SystemSettings;
   onPasswordLogin: (login: string, password: string, otp?: string) => Promise<PasswordLoginResult>;
   onPhoneLogin: (phone: string, otp: string) => Promise<User>;
-  onRequestPhoneCode: (phone: string, purpose: 'LOGIN' | 'REGISTER') => Promise<{ ok: true; expiresInSeconds: number; testMode?: boolean }>;
+  onRequestPhoneCode: (phone: string, purpose: 'LOGIN' | 'REGISTER') => Promise<PhoneCodeRequestResult>;
   onVerifyRegistrationPhone: (phone: string, otp: string) => Promise<{ verified: true; phoneVerificationToken: string }>;
   onRegister: (user: User, payment: Payment, familyUsers?: User[], phoneVerificationToken?: string) => Promise<void>;
   initialScreen?: 'login' | 'register';
@@ -217,6 +217,14 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     setAuthPending(true);
     try {
       const result = await onRequestPhoneCode(phone, 'LOGIN');
+      if ('registrationRequired' in result && result.registrationRequired) {
+        setRegisterPhone(phone);
+        setRegisterStep(1);
+        setScreen('register');
+        setNotice('המספר עדיין אינו רשום במועדון. המשך/י מכאן להרשמה.');
+        return;
+      }
+      if (!result.ok) return;
       setOtpSent(true);
       setNotice(result.testMode ? 'הקוד נשלח בהדמיה. קוד הבדיקה הוא 1111.' : 'קוד אימות נשלח אליך ב-SMS.');
     } catch (sendError) {
@@ -277,6 +285,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     setAuthPending(true);
     try {
       const result = await onRequestPhoneCode(registerPhone, 'REGISTER');
+      if (!result.ok) return;
       setRegisterStep(2);
       setNotice(result.testMode ? 'הקוד נשלח בהדמיה. קוד הבדיקה הוא 1111.' : 'קוד אימות נשלח אליך ב-SMS.');
     } catch (sendError) {
