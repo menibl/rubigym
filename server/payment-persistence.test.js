@@ -13,11 +13,11 @@ const rivhitFetch = async (url, init) => {
   });
   if (url.endsWith('/SaleDetails')) return Response.json({
     Status: 0,
-    data: [{ SaleId: 'sale-1', TransactionId: 'transaction-1', Amount: 350, CardNum: '4580********1111' }]
+    data: [{ SaleId: 'sale-1', TransactionId: 'transaction-1', Amount: 1, CardNum: '4580********1111' }]
   });
   if (url.endsWith('/Verify')) {
     assert.equal(body.GroupPrivateToken, 'test-group-token');
-    assert.equal(body.TotalAmount, 350);
+    assert.equal(body.TotalAmount, 1);
     return Response.json({ Status: 'VERIFIED' });
   }
   return Response.json({}, { status: 404 });
