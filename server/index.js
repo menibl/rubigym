@@ -361,6 +361,7 @@ const createSignedOrder = async (body, env) => {
     fp: purchase.familyMemberPlans || undefined,
     c: body.discountCode ? String(body.discountCode).toUpperCase() : undefined,
     a: amount,
+    pa: rivhitChargeAmount(amount, env),
     t: Date.now()
   });
   return `${payload}.${await sign(payload, env.PAYMENT_SIGNING_SECRET)}`;
@@ -373,12 +374,22 @@ const verifySignedOrder = async (value, env) => {
   const order = decodePayload(payload);
   if (Date.now() - Number(order.t) > 24 * 60 * 60 * 1000) throw new Error('ORDER_EXPIRED');
   if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v, familyMembersCount: order.f, familyBillingMode: order.fm, familyMemberPlans: order.fp, discountCode: order.c }).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
+  if (order.pa !== undefined && Number(order.pa) !== rivhitChargeAmount(Number(order.a), env)) throw new Error('INVALID_PROVIDER_AMOUNT');
+  if (rivhitEnvironment(env) === 'production' && signedOrderChargeAmount(order) !== Number(order.a)) throw new Error('INVALID_PROVIDER_AMOUNT');
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(order.d)) throw new Error('INVALID_MODE');
   return order;
 };
 
 const rivhitEnvironment = env => String(env.RIVHIT_ENVIRONMENT || 'test').trim().toLowerCase();
 const rivhitBaseUrl = env => rivhitEnvironment(env) === 'production' ? RIVHIT_PRODUCTION_BASE_URL : RIVHIT_TEST_BASE_URL;
+const rivhitChargeAmount = (purchaseAmount, env) => {
+  const amount = Number(purchaseAmount);
+  if (rivhitEnvironment(env) === 'production') return amount;
+  const configured = Number(env.RIVHIT_TEST_CHARGE_AMOUNT || 1);
+  if (!Number.isFinite(configured) || configured <= 0 || configured > 120) return 1;
+  return Math.round(configured * 100) / 100;
+};
+const signedOrderChargeAmount = order => Number(order.pa === undefined ? order.a : order.pa);
 
 const rivhitPost = async (path, body, env) => {
   const providerFetch = typeof env.RIVHIT_FETCH === 'function' ? env.RIVHIT_FETCH : fetch;
@@ -472,8 +483,9 @@ const verifiedRivhitPayment = async (paymentReference, env) => {
   const reference = await verifyPaymentReference(paymentReference, env);
   const order = await verifySignedOrder(reference.o, env);
   const { sale, saleId, amount } = await getRivhitSale(reference.p, env);
-  if (amount !== Number(order.a)) throw new Error('AMOUNT_MISMATCH');
-  await verifyRivhitSale(saleId, Number(order.a), env);
+  const providerAmount = signedOrderChargeAmount(order);
+  if (amount !== providerAmount) throw new Error('AMOUNT_MISMATCH');
+  await verifyRivhitSale(saleId, providerAmount, env);
   const cardNumber = String(rivhitValue(sale, 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
   return {
     order,
@@ -518,8 +530,9 @@ const getOrderFromWebhook = async (payload, env) => {
 const verifyWebhookSale = async (payload, order, env) => {
   const saleId = String(rivhitValue(payload, 'SaleId', 'saleId') || '');
   const amount = Number(rivhitValue(payload, 'TotalAmount', 'Amount', 'totalAmount', 'amount'));
-  if (!saleId || !Number.isFinite(amount) || amount !== Number(order.a)) throw new Error('INVALID_RIVHIT_WEBHOOK');
-  await verifyRivhitSale(saleId, Number(order.a), env);
+  const providerAmount = signedOrderChargeAmount(order);
+  if (!saleId || !Number.isFinite(amount) || amount !== providerAmount) throw new Error('INVALID_RIVHIT_WEBHOOK');
+  await verifyRivhitSale(saleId, providerAmount, env);
   const cardNumber = String(rivhitValue(payload, 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
   return {
     paymentReference: saleId,
@@ -680,6 +693,7 @@ const handleCreatePayment = async (request, env) => {
   try { purchase = resolvePurchase(body); }
   catch { return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env)); }
   const { amount } = purchase;
+  const providerAmount = rivhitChargeAmount(amount, env);
   const signedOrder = await createSignedOrder(body, env);
   const appUrl = new URL(paymentReturnUrl(request, env));
   appUrl.searchParams.set('rivhit', 'success');
@@ -689,7 +703,7 @@ const handleCreatePayment = async (request, env) => {
   const customer = splitCustomerName(body.userName);
   const createResult = await rivhitPost('/GetUrl', {
     GroupPrivateToken: env.RIVHIT_GROUP_PRIVATE_TOKEN,
-    Items: [{ UnitPrice: amount, Quantity: 1, Description: purchase.label }],
+    Items: [{ UnitPrice: providerAmount, Quantity: 1, Description: purchase.label }],
     CustomerFirstName: customer.firstName,
     CustomerLastName: customer.lastName,
     EmailAddress: body.email ? String(body.email).slice(0, 50) : undefined,
