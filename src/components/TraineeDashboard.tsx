@@ -2403,7 +2403,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     </p>
                   )}
                   <button type="submit" disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
-                    <CreditCard size={17} /> {paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח ב־RIVHIT'}
+                    <CreditCard size={17} /> {paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח'}
                   </button>
                 </form>
               </section>

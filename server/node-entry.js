@@ -64,9 +64,12 @@ const assets = {
       if (!info.isFile()) return new Response('Not found', { status: 404 });
       const body = await readFile(candidate);
       const isHashedAsset = relative.startsWith('assets/');
+      const mustRevalidateImmediately = relative === 'index.html' || relative === 'sw.js' || relative === 'manifest.webmanifest';
       return new Response(body, {
         headers: {
-          'Cache-Control': isHashedAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
+          'Cache-Control': isHashedAsset
+            ? 'public, max-age=31536000, immutable'
+            : mustRevalidateImmediately ? 'no-store, no-cache, must-revalidate' : 'no-cache',
           'Content-Type': mimeTypes.get(path.extname(candidate).toLowerCase()) || 'application/octet-stream',
         },
       });

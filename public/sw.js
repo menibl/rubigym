@@ -1,9 +1,18 @@
+const BALY_RELEASE = '20260903-payment-provider';
+
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    await self.clients.claim();
+    const windows = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+    await Promise.all(windows.map(async client => {
+      client.postMessage({type: 'BALY_RELEASE_UPDATED', release: BALY_RELEASE});
+      if (client.navigate) await client.navigate(client.url);
+    }));
+  })());
 });
 
 self.addEventListener('push', (event) => {

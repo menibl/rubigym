@@ -67,3 +67,45 @@ test('RIVHIT production environment uses the production iCredit host', async () 
   assert.equal(response.status, 200);
   assert.equal(requestedUrl, 'https://icredit.rivhit.co.il/API/PaymentPageRequest.svc/GetUrl');
 });
+
+test('RIVHIT provider rejection returns its safe diagnostic message', async () => {
+  const env = {
+    RIVHIT_ENVIRONMENT: 'test',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'test-group-private-token',
+    PAYMENT_SIGNING_SECRET: 'rivhit-test-signing-secret-with-enough-entropy',
+    PUBLIC_APP_URL: 'https://balywellness.test/',
+    RIVHIT_FETCH: async () => Response.json({
+      Status: -1,
+      DebugMessage: 'Payment page does not exists'
+    }, { status: 500 })
+  };
+  const response = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+  }), env);
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { message: 'Payment page does not exists' });
+});
+
+test('RIVHIT non-JSON upstream failure remains a generic unavailable response', async () => {
+  const env = {
+    RIVHIT_ENVIRONMENT: 'test',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'test-group-private-token',
+    PAYMENT_SIGNING_SECRET: 'rivhit-test-signing-secret-with-enough-entropy',
+    PUBLIC_APP_URL: 'https://balywellness.test/',
+    RIVHIT_FETCH: async () => new Response('<html>gateway unavailable</html>', {
+      status: 502,
+      headers: { 'Content-Type': 'text/html' }
+    })
+  };
+  const response = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+  }), env);
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { message: 'שירות השרת אינו זמין כרגע. נסו שוב מאוחר יותר.' });
+});
