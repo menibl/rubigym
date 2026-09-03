@@ -175,10 +175,6 @@
   function layoutFor(stationCount, perStation) {
     var stationColumns = stationCount <= 3 ? stationCount : 3;
     var stationRows = Math.ceil(stationCount / stationColumns);
-    var stationColumnPercent = 100 / stationColumns;
-    var stationColumnGapShare = 1.15 * (stationColumns - 1) / stationColumns;
-    var stationRowPercent = 100 / stationRows;
-    var stationRowGapShare = 1.25 * (stationRows - 1) / stationRows;
     var exerciseColumns = 1;
     if (stationCount === 1) exerciseColumns = perStation <= 5 ? 1 : (perStation <= 8 ? 2 : 3);
     else if (stationCount === 2) exerciseColumns = perStation <= 5 ? 1 : 2;
@@ -186,8 +182,6 @@
     return {
       stationColumns: stationColumns,
       stationRows: stationRows,
-      stationWidth: 'calc(' + stationColumnPercent.toFixed(6) + '% - ' + stationColumnGapShare.toFixed(6) + 'vw)',
-      stationHeight: 'calc(' + stationRowPercent.toFixed(6) + '% - ' + stationRowGapShare.toFixed(6) + 'vh)',
       exerciseColumns: exerciseColumns,
       exerciseRows: exerciseRows,
       dense: exerciseRows > 4 || stationRows > 1,
@@ -195,10 +189,12 @@
     };
   }
 
-  function layoutStyle(layout) {
-    return '--station-columns:' + layout.stationColumns + ';--station-rows:' + layout.stationRows +
-      ';--station-width:' + layout.stationWidth + ';--station-height:' + layout.stationHeight +
-      ';--exercise-columns:' + layout.exerciseColumns + ';--exercise-rows:' + layout.exerciseRows;
+  function stationLayoutClasses(layout) {
+    return ' station-cols-' + layout.stationColumns + ' station-rows-' + Math.min(layout.stationRows, 12);
+  }
+
+  function exerciseLayoutClasses(layout) {
+    return ' exercise-cols-' + layout.exerciseColumns + ' exercise-rows-' + Math.min(layout.exerciseRows, 12);
   }
 
   function exerciseModeText(exercise) {
@@ -245,10 +241,10 @@
         state = i === exerciseIndex ? ' active' : (i < exerciseIndex ? ' done' : '');
         rowsHtml += exerciseRowHtml(item, i, state, 'עכשיו', layout);
       }
-      stage = '<section class="tv-stations" style="' + layoutStyle(layout) + '"><article class="tv-station"><header class="tv-station-head"><h2>רצף האימון</h2><span><span class="num">' +
+      stage = '<section class="tv-stations' + stationLayoutClasses(layout) + '"><article class="tv-station"><header class="tv-station-head"><h2>רצף האימון</h2><span><span class="num">' +
         exercises.length + '</span> תרגילים</span></header><div class="tv-exercise-list' + (layout.dense ? ' dense' : '') +
         (layout.mediaMode === 'square' ? ' media-square' : '') + (layout.mediaMode === 'active-only' ? ' media-square media-active-only' : '') +
-        '" style="--exercise-columns:' + layout.exerciseColumns + ';--exercise-rows:' + layout.exerciseRows + '">' + rowsHtml + '</div></article></section>';
+        exerciseLayoutClasses(layout) + '">' + rowsHtml + '</div></article></section>';
     }
     app.className = '';
     app.innerHTML = headerHtml(progress) + heroHtml(
@@ -297,10 +293,9 @@
       stationsHtml += '<article class="tv-station"><header class="tv-station-head"><h2>' + escapeHtml(station.name || 'תחנה ' + (i + 1)) +
         '</h2><span>' + escapeHtml((names.join(', ') || 'ללא קבוצה') + ' · בלוק ' + (i + 1)) + '</span></header><div class="tv-exercise-list' +
         (stationLayout.dense ? ' dense' : '') + (stationLayout.mediaMode === 'square' ? ' media-square' : '') +
-        (stationLayout.mediaMode === 'active-only' ? ' media-square media-active-only' : '') + '" style="--exercise-columns:' + stationLayout.exerciseColumns +
-        ';--exercise-rows:' + stationLayout.exerciseRows + '">' + rowsHtml + '</div></article>';
+        (stationLayout.mediaMode === 'active-only' ? ' media-square media-active-only' : '') + exerciseLayoutClasses(stationLayout) + '">' + rowsHtml + '</div></article>';
     }
-    var stage = phase === 'COMPLETE' ? '<div class="tv-finished"><h2>כל הכבוד לכולם!</h2></div>' : '<section class="tv-stations" style="' + layoutStyle(layout) + '">' + stationsHtml + '</section>';
+    var stage = phase === 'COMPLETE' ? '<div class="tv-finished"><h2>כל הכבוד לכולם!</h2></div>' : '<section class="tv-stations' + stationLayoutClasses(layout) + '">' + stationsHtml + '</section>';
     app.className = '';
     app.innerHTML = headerHtml(progress) + heroHtml(
       isRepetitionBased() ? escapeHtml(program.defaultRepetitions || '—') : formatTime(secondsLeft),
