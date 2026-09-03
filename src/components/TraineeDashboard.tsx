@@ -64,16 +64,16 @@ import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
 import { ExerciseMedia } from './ExerciseMedia';
 import { CLUB_CHECK_IN_CODE } from './ClubCheckInBarcode';
 import {
-  clearCardcomReturnParams,
-  clearPendingCardcomPayment,
-  getPendingCardcomPayment,
-  isCardcomConfigured,
+  clearRivhitReturnParams,
+  clearPendingRivhitPayment,
+  getPendingRivhitPayment,
+  isRivhitConfigured,
   markTransactionProcessed,
-  startCardcomPayment,
-  VerifiedCardcomPayment,
-  verifyPendingCardcomPayment,
+  startRivhitPayment,
+  VerifiedRivhitPayment,
+  verifyPendingRivhitPayment,
   wasTransactionProcessed
-} from '../data/cardcomPayments';
+} from '../data/rivhitPayments';
 import {
   addCalendarMonths,
   canUseAnnualFreeze,
@@ -201,7 +201,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const applyVerifiedMembershipPayment = (
     purchasedType: MembershipType,
     mode: 'PRIMARY' | 'ADDON',
-    verified: VerifiedCardcomPayment,
+    verified: VerifiedRivhitPayment,
     purchaseVariant?: PaymentPurchaseVariant,
     familyMembersCount?: number,
     familyName?: string,
@@ -285,7 +285,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }));
 
     onUpdatePayments([{
-      id: `payment-cardcom-${verified.transactionId || verified.lowProfileId}`,
+      id: `payment-rivhit-${verified.transactionId || verified.paymentReference}`,
       traineeId: activeUser.id,
       traineeName: activeUser.name,
       amount: verified.amount,
@@ -293,17 +293,17 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       timestamp: new Date().toISOString(),
       status: 'PAID',
       membershipTypePurchased: purchasedType,
-      paymentMethod: `Cardcom${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
+      paymentMethod: `RIVHIT iCredit${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
       isMock: false
     }, ...payments]);
   };
 
   useEffect(() => {
-    const returnStatus = new URLSearchParams(window.location.search).get('cardcom');
+    const returnStatus = new URLSearchParams(window.location.search).get('rivhit');
     if (!returnStatus) return;
-    const pending = getPendingCardcomPayment();
+    const pending = getPendingRivhitPayment();
     if (returnStatus === 'failed') {
-      clearCardcomReturnParams();
+      clearRivhitReturnParams();
       setActiveTab('membership');
       showFeedback('התשלום לא הושלם. לא בוצע חיוב ולא בוצע שינוי במנוי.', 'error');
       return;
@@ -312,15 +312,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const purchaseMode: 'PRIMARY' | 'ADDON' = pending.mode;
 
     setPaymentStarting(true);
-    verifyPendingCardcomPayment(pending)
+    verifyPendingRivhitPayment(pending)
       .then(verified => {
-        const transactionKey = verified.transactionId || verified.lowProfileId;
+        const transactionKey = verified.transactionId || verified.paymentReference;
         if (!wasTransactionProcessed(transactionKey)) {
           applyVerifiedMembershipPayment(pending.membershipType, purchaseMode, verified, pending.purchaseVariant, pending.familyMembersCount, pending.familyName, pending.familyBillingMode, pending.familyMemberPlans);
           markTransactionProcessed(transactionKey);
         }
-        clearPendingCardcomPayment();
-        clearCardcomReturnParams();
+        clearPendingRivhitPayment();
+        clearRivhitReturnParams();
         setActiveTab('membership');
         setSelectedMembershipPurchase(null);
         if (pending.familyMembersCount) sessionStorage.removeItem('baly_family_purchase_draft_v1');
@@ -328,12 +328,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         showFeedback(`${purchasedLabel} נרכש והופעל בהצלחה.`);
       })
       .catch(error => {
-        clearCardcomReturnParams();
+        clearRivhitReturnParams();
         setActiveTab('membership');
         showFeedback(error instanceof Error ? error.message : 'לא ניתן לאמת את התשלום.', 'error');
       })
       .finally(() => setPaymentStarting(false));
-    // The Cardcom return is intentionally processed once when the dashboard mounts.
+    // The RIVHIT return is intentionally processed once when the dashboard mounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -678,14 +678,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const handleMembershipCheckout = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedMembershipPurchase) return;
-    if (!isCardcomConfigured()) {
+    if (!isRivhitConfigured()) {
       showFeedback('שרת התשלומים טרם הוגדר. יש להשלים את כתובת השרת לפני ביצוע חיוב.', 'error');
       return;
     }
     setPaymentStarting(true);
     try {
       const isTrainingCard = selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING;
-      await startCardcomPayment({
+      await startRivhitPayment({
         userId: activeUser.id,
         userName: activeUser.name,
         email: activeUser.email,
@@ -707,10 +707,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   const handleFamilyCheckout = async () => {
     if (!familyPurchaseName.trim()) return showFeedback('יש להזין שם למשפחה.', 'error');
-    if (!isCardcomConfigured()) return showFeedback('שרת התשלומים טרם הוגדר.', 'error');
+    if (!isRivhitConfigured()) return showFeedback('שרת התשלומים טרם הוגדר.', 'error');
     setPaymentStarting(true);
     try {
-      await startCardcomPayment({
+      await startRivhitPayment({
         userId: activeUser.id,
         userName: activeUser.name,
         email: activeUser.email,
@@ -2344,7 +2344,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           </div>
         )}
 
-        {/* MEMBERSHIP MANAGEMENT & CARDCOM CHECKOUT */}
+        {/* MEMBERSHIP MANAGEMENT & RIVHIT CHECKOUT */}
         {activeTab === 'membership' && (
           <div className="space-y-6">
             <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
@@ -2355,7 +2355,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <div>
                   <span className="text-[11px] text-amber-300 font-bold">המנוי שלי</span>
                   <h3 className="text-2xl font-black mt-1">ניהול ובחירת מסלולים</h3>
-                  <p className="text-xs text-slate-400 mt-2">שינוי או רכישת מסלול נכנסים לתוקף רק לאחר אימות התשלום מול Cardcom.</p>
+                  <p className="text-xs text-slate-400 mt-2">שינוי או רכישת מסלול נכנסים לתוקף רק לאחר אימות התשלום מול RIVHIT.</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-3 min-w-52">
                   <div className="flex justify-between gap-4 text-xs">
@@ -2392,18 +2392,18 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   )}
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
-                    התשלום מתבצע בעמוד המאובטח של Cardcom. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
+                    התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
                   </div>
                   {selectedMembershipPurchase === MembershipType.GROUP_ANNUAL && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
                     הוראת קבע חודשית בסך ₪500 למשך 12 חודשים. בקשת ביטול נכנסת לתוקף חודש לאחר הגשתה.
                   </div>}
-                  {!isCardcomConfigured() && (
+                  {!isRivhitConfigured() && (
                     <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
                       שירות התשלומים עדיין אינו מחובר לשרת הציבורי. לא יתבצע חיוב עד להשלמת הגדרת השרת.
                     </p>
                   )}
-                  <button type="submit" disabled={paymentStarting || !isCardcomConfigured()} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
-                    <CreditCard size={17} /> {paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח ב־Cardcom'}
+                  <button type="submit" disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
+                    <CreditCard size={17} /> {paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח ב־RIVHIT'}
                   </button>
                 </form>
               </section>
@@ -2423,7 +2423,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id))).toLocaleString('he-IL')}</strong></div>
-                    <button type="button" onClick={() => void handleFamilyCheckout()} disabled={paymentStarting || !isCardcomConfigured()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
+                    <button type="button" onClick={() => void handleFamilyCheckout()} disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
                       {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
                     </button>
                   </div>

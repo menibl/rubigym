@@ -195,18 +195,20 @@ test('Pages TV polls the demo display channel instead of the production channel'
   assert.match(script, /isPages \? '\/api\/demo\/live-display' : '\/api\/live-display'/);
 });
 
-test('linear TV workouts render every exercise in the full-screen card grid', async () => {
+test('linear TV workouts render every exercise as an equal-height row', async () => {
   const script = await readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8');
-  assert.match(script, /tv-linear-grid/);
+  assert.match(script, /function exerciseRowHtml/);
+  assert.match(script, /tv-exercise-list/);
   assert.match(script, /for \(i = 0; i < exercises\.length; i \+= 1\)/);
-  assert.doesNotMatch(script, /stage \+ controlsHtml\(\) \+ '<\/main>' \+ linearSidebarHtml\(\)/);
+  assert.doesNotMatch(script, /linearSidebarHtml/);
 });
 
-test('rotating TV stations use a legacy-compatible table instead of overlapping absolute slots', async () => {
+test('rotating TV stations use the responsive station grid without a participant sidebar', async () => {
   const script = await readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8');
-  assert.match(script, /<table class="tv-stations-table">/);
-  assert.match(script, /<td class="tv-station-cell" colspan="2">/);
-  assert.doesNotMatch(script, /<div class="tv-station-slot" style=/);
+  assert.match(script, /function layoutFor\(stationCount, perStation\)/);
+  assert.match(script, /stationCount <= 3 \? stationCount : 3/);
+  assert.match(script, /<section class="tv-stations"/);
+  assert.doesNotMatch(script, /tv-stations-table/);
   assert.doesNotMatch(script, /rotatingSidebarHtml/);
 });
 
@@ -217,15 +219,16 @@ test('TV display advances repetition-based workouts manually', async () => {
   assert.match(script, /isRepetitionBased\(\)\) advancePhase\(\)/);
 });
 
-test('TV display shows a high-contrast overall station countdown and enlarged exercise text', async () => {
+test('TV display uses the approved high-contrast hero, Heebo type and hidden controls', async () => {
   const [script, styles] = await Promise.all([
     readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8'),
     readFile(new URL('../public/tv-display.css', import.meta.url), 'utf8')
   ]);
   assert.match(script, /function stationSecondsRemaining\(\)/);
-  assert.match(script, /זמן כולל לתחנה/);
-  assert.match(styles, /\.tv-cycle-meta[^}]*font-size:\s*5\.8vh/s);
-  assert.match(styles, /\.tv-linear-copy h2[^}]*font-size:\s*3\.45vh/s);
-  assert.match(styles, /\.tv-exercise-card h3[^}]*font-size:\s*3\.1vh/s);
-  assert.match(styles, /radial-gradient\(circle at 50% 0%/);
+  assert.match(script, /<small>זמן לתחנה<\/small>/);
+  assert.match(styles, /font-family:\s*"Heebo"/);
+  assert.match(styles, /\.tv-timer[^}]*font-size:\s*17\.4vh/s);
+  assert.match(styles, /\.tv-exercise-list[^}]*grid-template-rows:\s*repeat\(var\(--exercise-rows, 3\), minmax\(0, 1fr\)\)/s);
+  assert.match(styles, /\.tv-controls[^}]*opacity:\s*0/s);
+  assert.match(styles, /radial-gradient\(circle at 50% -20%/);
 });

@@ -32,18 +32,7 @@ read -rsp "Pulseem API key (leave empty to configure later): " PULSEEM_API_KEY; 
 read -rp "Pulseem approved sender number/name (leave empty to configure later): " PULSEEM_FROM_NUMBER
 read -rsp "Initial password for Ruby Bali manager (minimum 8 characters): " INITIAL_ADMIN_PASSWORD; echo
 if [[ ${#INITIAL_ADMIN_PASSWORD} -lt 8 ]]; then echo "Initial manager password must contain at least 8 characters." >&2; exit 1; fi
-read -rp "Use Cardcom demo mode for the first deployment? [Y/n]: " DEMO_CHOICE
-DEMO_PAYMENT_MODE=true
-if [[ ${DEMO_CHOICE,,} == n || ${DEMO_CHOICE,,} == no ]]; then DEMO_PAYMENT_MODE=false; fi
-
-CARDCOM_TERMINAL_NUMBER=
-CARDCOM_API_NAME=
-CARDCOM_API_PASSWORD=
-if [[ ${DEMO_PAYMENT_MODE} == false ]]; then
-  read -rp "Cardcom terminal number: " CARDCOM_TERMINAL_NUMBER
-  read -rp "Cardcom API name: " CARDCOM_API_NAME
-  read -rsp "Cardcom API password: " CARDCOM_API_PASSWORD; echo
-fi
+read -rsp "RIVHIT iCredit Group Private Token (leave empty to configure later): " RIVHIT_GROUP_PRIVATE_TOKEN; echo
 
 [[ ${APP_DOMAIN} =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid domain." >&2; exit 2; }
 [[ ${LANDING_DOMAIN} =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid landing domain." >&2; exit 2; }
@@ -87,12 +76,13 @@ OPENAI_WORKOUT_MAX_OUTPUT_TOKENS=12000
 AI_REQUESTS_PER_HOUR=30
 AI_ALLOWED_ORIGIN=https://${APP_DOMAIN},${STAGING_ORIGIN}
 VITE_AI_API_URL=https://${APP_DOMAIN}
-CARDCOM_TERMINAL_NUMBER=${CARDCOM_TERMINAL_NUMBER}
-CARDCOM_API_NAME=${CARDCOM_API_NAME}
-CARDCOM_API_PASSWORD=${CARDCOM_API_PASSWORD}
-DEMO_PAYMENT_MODE=${DEMO_PAYMENT_MODE}
+RIVHIT_ENVIRONMENT=test
+RIVHIT_GROUP_PRIVATE_TOKEN=${RIVHIT_GROUP_PRIVATE_TOKEN}
+RIVHIT_ENABLE_RECURRING=false
+RIVHIT_USE_3DS=false
 PAYMENT_SIGNING_SECRET=${PAYMENT_SIGNING_SECRET}
 PUBLIC_APP_URL=https://${APP_DOMAIN}/
+PAYMENT_STAGING_APP_URL=https://menibl.github.io/rubigym/
 PUBLIC_LANDING_URL=https://${LANDING_DOMAIN}/
 PAYMENT_ALLOWED_ORIGIN=https://${APP_DOMAIN},${STAGING_ORIGIN}
 VITE_PAYMENT_API_URL=https://${APP_DOMAIN}
