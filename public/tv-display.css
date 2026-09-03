@@ -52,8 +52,8 @@ button { font: inherit; }
 .tv-metric strong { display: block; font-size: 4.6vh; line-height: 1; font-weight: 900; }
 .tv-metric small { display: block; margin-top: .6vh; color: var(--text-dim); font-size: 1.8vh; line-height: 1; }
 
-.tv-stations { display: grid; grid-template-columns: repeat(var(--station-columns, 3), minmax(0, 1fr)); grid-template-rows: repeat(var(--station-rows, 1), minmax(0, 1fr)); gap: 1.25vh 1.15vw; min-width: 0; min-height: 0; }
-.tv-station { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; padding: 1.15vh .95vw; overflow: hidden; border: .1vh solid var(--line); border-radius: 1.25vh; background: var(--panel); }
+.tv-stations { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 1.25vh 1.15vw; min-width: 0; min-height: 0; overflow: hidden; }
+.tv-station { width: var(--station-width, 100%); height: var(--station-height, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 0 0 var(--station-width, 100%); min-width: 0; min-height: 0; padding: 1.15vh .95vw; overflow: hidden; border: .1vh solid var(--line); border-radius: 1.25vh; background: var(--panel); }
 .tv-station-head { display: flex; align-items: baseline; justify-content: space-between; min-width: 0; padding: 0 .15vw .85vh; border-bottom: .1vh solid var(--line); }
 .tv-station-head h2 { margin: 0; overflow: hidden; font-size: 2.85vh; line-height: 1; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
 .tv-station-head span { overflow: hidden; color: var(--text-dim); font-size: 1.75vh; text-overflow: ellipsis; white-space: nowrap; }
