@@ -119,8 +119,7 @@ sudo bash deploy/scripts/install-all.sh "$USER"
 - Telegram user ID ו־chat ID.
 - Telegram bot token בהקלדה מוסתרת.
 - OpenAI API key עבור עוזר האימונים; אפשר להשאיר ריק ולהגדיר מאוחר יותר.
-- האם להתחיל עם תשלום Cardcom במצב demo.
-- פרטי Cardcom אם בחרת production payment.
+- Group Private Token של RIVHIT iCredit, אם זמין; ההתקנה מתחילה במצב TEST.
 
 הסקריפט יבצע:
 
@@ -276,7 +275,7 @@ https://menibl.github.io/rubigym/
 - כניסה והרשאות.
 - מסכי מאמן/מתאמן/מנהל.
 - יצירת תוכנית אימון.
-- תשלום demo או Cardcom.
+- תשלום RIVHIT iCredit במצב TEST או production.
 - תצוגה בנייד.
 - שאין שגיאות API או CORS.
 
@@ -400,7 +399,7 @@ journalctl -u gymflow-daily-management.service -n 100 --no-pager
 
 - עדכן OpenClaw קודם בסביבת בדיקה, הרץ `doctor`, `config validate` ו־`security audit --deep`, ורק אז production.
 - אל תתקין skills או plugins ממקור שאינו מאומת.
-- סובב מיד Telegram token, GitHub token, OAuth, OpenAI key ופרטי Cardcom אם יש חשד לדליפה.
+- סובב מיד Telegram token, GitHub token, OAuth, OpenAI key ו־Group Private Token של RIVHIT אם יש חשד לדליפה.
 - בצע restore test לגיבוי PostgreSQL ול־GCP snapshot לפחות אחת לרבעון.
 - בדוק שבועית מקום בדיסק, failed systemd units, fail2ban ו־Cloud Monitoring alerts.
 
