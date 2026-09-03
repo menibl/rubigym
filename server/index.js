@@ -387,8 +387,28 @@ const rivhitPost = async (path, body, env) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  const result = await response.json().catch(() => null);
-  if (!response.ok || !result) throw new Error('RIVHIT_UNAVAILABLE');
+  const responseText = await response.text();
+  let result = null;
+  try { result = responseText ? JSON.parse(responseText) : null; }
+  catch { /* A non-JSON upstream response is handled below without logging its body. */ }
+  if (!result) {
+    console.error('RIVHIT request unavailable', {
+      operation: path.replace(/^\//, ''),
+      environment: rivhitEnvironment(env),
+      httpStatus: response.status,
+      contentType: response.headers.get('content-type') || 'unknown',
+      responseBytes: responseText.length
+    });
+    throw new Error('RIVHIT_UNAVAILABLE');
+  }
+  if (!response.ok) {
+    console.warn('RIVHIT request rejected', {
+      operation: path.replace(/^\//, ''),
+      environment: rivhitEnvironment(env),
+      httpStatus: response.status,
+      providerStatus: rivhitValue(result, 'Status', 'status')
+    });
+  }
   return result;
 };
 
@@ -695,7 +715,7 @@ const handleCreatePayment = async (request, env) => {
   let paymentUrlIsTrusted = false;
   try { paymentUrlIsTrusted = new URL(String(url)).origin === new URL(rivhitBaseUrl(env)).origin; } catch { /* invalid provider URL */ }
   if (status !== 0 || !url || !privateSaleToken || !paymentUrlIsTrusted) {
-    return json({ message: rivhitValue(createResult, 'ErrorMessage', 'Message', 'message') || 'RIVHIT לא הצליחה ליצור דף תשלום.' }, 502, corsHeaders(request, env));
+    return json({ message: rivhitValue(createResult, 'ErrorMessage', 'DebugMessage', 'Message', 'message') || 'שירות התשלום לא הצליח ליצור דף תשלום. יש לבדוק את הגדרת דף התשלום.' }, 502, corsHeaders(request, env));
   }
   const paymentReference = await createPaymentReference(signedOrder, String(privateSaleToken), String(publicSaleToken || ''), env);
   return json({ url: String(url), paymentReference }, 200, corsHeaders(request, env));
