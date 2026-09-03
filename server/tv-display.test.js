@@ -203,12 +203,20 @@ test('linear TV workouts render every exercise as an equal-height row', async ()
   assert.doesNotMatch(script, /linearSidebarHtml/);
 });
 
-test('rotating TV stations use the responsive station grid without a participant sidebar', async () => {
-  const script = await readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8');
+test('rotating TV stations use the responsive station layout without a participant sidebar', async () => {
+  const [script, styles] = await Promise.all([
+    readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/tv-display.css', import.meta.url), 'utf8')
+  ]);
   assert.match(script, /function layoutFor\(stationCount, perStation\)/);
   assert.match(script, /stationCount <= 3 \? stationCount : 3/);
+  assert.match(script, /stationColumnPercent = 100 \/ stationColumns/);
   assert.match(script, /stationRowPercent = 100 \/ stationRows/);
-  assert.match(script, /grid-template-rows:repeat\('/);
+  assert.match(script, /--station-width:/);
+  assert.match(script, /--station-height:/);
+  assert.doesNotMatch(script, /grid-template-rows:repeat\('/);
+  assert.match(styles, /\.tv-stations[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap/s);
+  assert.match(styles, /\.tv-station[^}]*width:\s*var\(--station-width[^}]*height:\s*var\(--station-height/s);
   assert.match(script, /<section class="tv-stations"/);
   assert.doesNotMatch(script, /tv-stations-table/);
   assert.doesNotMatch(script, /rotatingSidebarHtml/);

@@ -175,6 +175,8 @@
   function layoutFor(stationCount, perStation) {
     var stationColumns = stationCount <= 3 ? stationCount : 3;
     var stationRows = Math.ceil(stationCount / stationColumns);
+    var stationColumnPercent = 100 / stationColumns;
+    var stationColumnGapShare = 1.15 * (stationColumns - 1) / stationColumns;
     var stationRowPercent = 100 / stationRows;
     var stationRowGapShare = 1.25 * (stationRows - 1) / stationRows;
     var exerciseColumns = 1;
@@ -184,7 +186,8 @@
     return {
       stationColumns: stationColumns,
       stationRows: stationRows,
-      stationRowSize: 'calc(' + stationRowPercent.toFixed(6) + '% - ' + stationRowGapShare.toFixed(6) + 'vh)',
+      stationWidth: 'calc(' + stationColumnPercent.toFixed(6) + '% - ' + stationColumnGapShare.toFixed(6) + 'vw)',
+      stationHeight: 'calc(' + stationRowPercent.toFixed(6) + '% - ' + stationRowGapShare.toFixed(6) + 'vh)',
       exerciseColumns: exerciseColumns,
       exerciseRows: exerciseRows,
       dense: exerciseRows > 4 || stationRows > 1,
@@ -194,7 +197,7 @@
 
   function layoutStyle(layout) {
     return '--station-columns:' + layout.stationColumns + ';--station-rows:' + layout.stationRows +
-      ';grid-template-rows:repeat(' + layout.stationRows + ',minmax(0,' + layout.stationRowSize + '))' +
+      ';--station-width:' + layout.stationWidth + ';--station-height:' + layout.stationHeight +
       ';--exercise-columns:' + layout.exerciseColumns + ';--exercise-rows:' + layout.exerciseRows;
   }
 
