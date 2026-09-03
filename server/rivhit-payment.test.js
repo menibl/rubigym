@@ -40,7 +40,7 @@ test('RIVHIT TEST checkout uses hosted GetUrl and never exposes the private toke
   assert.equal(JSON.stringify(result).includes('private-token-must-stay-signed'), false);
   assert.equal(providerRequest.url, 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc/GetUrl');
   assert.equal(providerRequest.body.GroupPrivateToken, 'test-group-private-token');
-  assert.equal(providerRequest.body.Items[0].UnitPrice, 350);
+  assert.equal(providerRequest.body.Items[0].UnitPrice, 1);
   assert.equal(providerRequest.body.CustomerFirstName, 'מני');
   assert.equal(providerRequest.body.CustomerLastName, 'בללי');
   assert.match(providerRequest.body.IPNURL, /\/api\/payments\/rivhit\/webhook$/);
@@ -48,14 +48,16 @@ test('RIVHIT TEST checkout uses hosted GetUrl and never exposes the private toke
 });
 
 test('RIVHIT production environment uses the production iCredit host', async () => {
-  let requestedUrl = '';
+  let requestedUrl = '', providerRequest;
   const env = {
     RIVHIT_ENVIRONMENT: 'production',
     RIVHIT_GROUP_PRIVATE_TOKEN: 'production-group-private-token',
     PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
     PUBLIC_APP_URL: 'https://balywellness.com/',
-    RIVHIT_FETCH: async url => {
+    RIVHIT_TEST_CHARGE_AMOUNT: '1',
+    RIVHIT_FETCH: async (url, init) => {
       requestedUrl = url;
+      providerRequest = JSON.parse(init.body);
       return Response.json({ Status: 0, URL: 'https://icredit.rivhit.co.il/payment/example', PrivateSaleToken: 'private-token' });
     }
   };
@@ -66,6 +68,29 @@ test('RIVHIT production environment uses the production iCredit host', async () 
   }), env);
   assert.equal(response.status, 200);
   assert.equal(requestedUrl, 'https://icredit.rivhit.co.il/API/PaymentPageRequest.svc/GetUrl');
+  assert.equal(providerRequest.Items[0].UnitPrice, 280);
+});
+
+test('RIVHIT TEST checkout accepts a configured charge amount up to the sandbox limit', async () => {
+  let providerRequest;
+  const env = {
+    RIVHIT_ENVIRONMENT: 'test',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'test-group-private-token',
+    RIVHIT_TEST_CHARGE_AMOUNT: '120',
+    PAYMENT_SIGNING_SECRET: 'rivhit-test-signing-secret-with-enough-entropy',
+    PUBLIC_APP_URL: 'https://balywellness.test/',
+    RIVHIT_FETCH: async (_url, init) => {
+      providerRequest = JSON.parse(init.body);
+      return Response.json({ Status: 0, URL: 'https://testicredit.rivhit.co.il/payment/example', PrivateSaleToken: 'private-token' });
+    }
+  };
+  const response = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal(providerRequest.Items[0].UnitPrice, 120);
 });
 
 test('RIVHIT provider rejection returns its safe diagnostic message', async () => {

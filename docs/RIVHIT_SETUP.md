@@ -9,6 +9,7 @@
 ```dotenv
 RIVHIT_ENVIRONMENT=test
 RIVHIT_GROUP_PRIVATE_TOKEN=
+RIVHIT_TEST_CHARGE_AMOUNT=1
 RIVHIT_ENABLE_RECURRING=false
 RIVHIT_USE_3DS=false
 PAYMENT_SIGNING_SECRET=
@@ -23,6 +24,7 @@ VITE_PAYMENT_API_URL=https://balywellness.com
 ## מצב TEST
 
 - `RIVHIT_ENVIRONMENT=test` מפנה רק אל `testicredit.rivhit.co.il`.
+- `RIVHIT_TEST_CHARGE_AMOUNT=1` מחייב שקל אחד בלבד בסביבת הבדיקה, בעוד שהמסלול והמחיר המקורי נשמרים במערכת. הערך מוגבל ל־₪120 ומתעלמים ממנו לחלוטין ב־production.
 - משתמשים בכרטיסי הבדיקה וב־Group Private Token שקיבלתם מ־RIVHIT.
 - התשלום מופעל במערכת רק אחרי `SaleDetails` ואימות נוסף מול `Verify`.
 - ה־webhook זמין ב־`https://balywellness.com/api/payments/rivhit/webhook` והוא חסין לכפילויות.
