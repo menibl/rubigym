@@ -207,6 +207,8 @@ test('rotating TV stations use the responsive station grid without a participant
   const script = await readFile(new URL('../public/tv-display.js', import.meta.url), 'utf8');
   assert.match(script, /function layoutFor\(stationCount, perStation\)/);
   assert.match(script, /stationCount <= 3 \? stationCount : 3/);
+  assert.match(script, /stationRowPercent = 100 \/ stationRows/);
+  assert.match(script, /grid-template-rows:repeat\('/);
   assert.match(script, /<section class="tv-stations"/);
   assert.doesNotMatch(script, /tv-stations-table/);
   assert.doesNotMatch(script, /rotatingSidebarHtml/);
