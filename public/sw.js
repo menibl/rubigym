@@ -1,4 +1,9 @@
-const BALY_RELEASE = '20260903-payment-provider';
+const BALY_RELEASE = '20260904-reliable-push';
+
+const urlBase64ToBytes = (value) => {
+  const padded = `${value}${'='.repeat((4 - value.length % 4) % 4)}`.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(padded), character => character.charCodeAt(0));
+};
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -32,6 +37,31 @@ self.addEventListener('push', (event) => {
     tag: payload.tag ? String(payload.tag).slice(0, 180) : undefined,
     data: {url: payload.url || './'},
   }));
+});
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const publicKeyResponse = await fetch(new URL('api/push/public-key', self.registration.scope), {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (!publicKeyResponse.ok) return;
+      const {publicKey} = await publicKeyResponse.json();
+      const subscription = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToBytes(publicKey),
+      });
+      await fetch(new URL('api/push/subscriptions', self.registration.scope), {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(subscription.toJSON()),
+      });
+    } catch {
+      // The foreground app retries synchronization when it next becomes visible or online.
+    }
+  })());
 });
 
 self.addEventListener('notificationclick', (event) => {

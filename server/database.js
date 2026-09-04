@@ -94,6 +94,10 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       p256dh text NOT NULL,
       auth text NOT NULL,
       user_agent text,
+      failure_count integer NOT NULL DEFAULT 0,
+      last_success_at timestamptz,
+      last_failure_at timestamptz,
+      last_error text,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (club_id, user_id, endpoint)
@@ -115,6 +119,10 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       PRIMARY KEY (club_id, slot)
     );
     ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS profile jsonb;
+    ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS failure_count integer NOT NULL DEFAULT 0;
+    ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS last_success_at timestamptz;
+    ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS last_failure_at timestamptz;
+    ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS last_error text;
   `);
   return {
     async getClubState(clubId) {
@@ -277,7 +285,8 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
         INSERT INTO push_subscriptions (club_id,user_id,endpoint,p256dh,auth,user_agent)
         VALUES ($1,$2,$3,$4,$5,$6)
         ON CONFLICT (club_id,user_id,endpoint) DO UPDATE SET
-          p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,user_agent=EXCLUDED.user_agent,updated_at=now()`,
+          p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,user_agent=EXCLUDED.user_agent,
+          failure_count=0,last_error=NULL,updated_at=now()`,
       [clubId, userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, userAgent || null]);
     },
     async deletePushSubscription(clubId, userId, endpoint) {
@@ -288,6 +297,16 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       const result = await pool.query(`SELECT user_id,endpoint,p256dh,auth FROM push_subscriptions
         WHERE club_id=$1 AND user_id = ANY($2::text[])`, [clubId, userIds]);
       return result.rows;
+    },
+    async recordPushSubscriptionSuccess(clubId, userId, endpoint) {
+      await pool.query(`UPDATE push_subscriptions SET
+        failure_count=0,last_success_at=now(),last_error=NULL,updated_at=now()
+        WHERE club_id=$1 AND user_id=$2 AND endpoint=$3`, [clubId, userId, endpoint]);
+    },
+    async recordPushSubscriptionFailure(clubId, userId, endpoint, errorCode) {
+      await pool.query(`UPDATE push_subscriptions SET
+        failure_count=failure_count+1,last_failure_at=now(),last_error=$4,updated_at=now()
+        WHERE club_id=$1 AND user_id=$2 AND endpoint=$3`, [clubId, userId, endpoint, String(errorCode).slice(0, 120)]);
     },
     async claimPushDelivery(clubId, deliveryKey) {
       const result = await pool.query(`INSERT INTO push_deliveries (club_id,delivery_key) VALUES ($1,$2)

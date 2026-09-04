@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   p256dh text NOT NULL,
   auth text NOT NULL,
   user_agent text,
+  failure_count integer NOT NULL DEFAULT 0,
+  last_success_at timestamptz,
+  last_failure_at timestamptz,
+  last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (club_id, user_id, endpoint)
