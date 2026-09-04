@@ -40,6 +40,7 @@ import {
 } from '../data/rivhitPayments';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { createMembershipTerm } from '../data/membershipPolicy';
+import { billingPeriodForPlan, billingPeriodLabel, isSelectableTrainingCard, membershipCheckoutAmount } from '../data/membershipBilling';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 import { isPagesDemoMode } from '../data/appMode';
@@ -130,6 +131,16 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   );
   const selectedPlanConfig = registrationPlans.find(plan => plan.id === selectedPlan);
   const selectedPlanPrice = selectedPlanConfig?.price ?? MEMBERSHIP_PRICES[selectedPlan] ?? 0;
+  const selectedPlanUsesTrainingCard = isSelectableTrainingCard(selectedPlanConfig)
+    || (!selectedPlanConfig && [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(selectedPlan));
+  const selectedPlanAmount = selectedPlanConfig
+    ? membershipCheckoutAmount(selectedPlanConfig, trainingCardSize)
+    : selectedPlanPrice * (selectedPlanUsesTrainingCard ? trainingCardSize : 1);
+  const selectedPlanSessions = selectedPlanUsesTrainingCard
+    ? trainingCardSize
+    : billingPeriodForPlan(selectedPlanConfig) === 'SESSION_PACK'
+      ? Math.max(1, Number(selectedPlanConfig?.includedSessions) || 1)
+      : undefined;
   const familyAccountAt = (index: number): FamilyAccountDraft => familyAccountDrafts[index] || {
     name: resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי')[index + 1]?.memberName || `בן/בת משפחה ${index + 2}`,
     username: '',
@@ -191,6 +202,9 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
           timestamp: new Date().toISOString(),
           status: 'PAID',
           membershipTypePurchased: verified.membershipType,
+          billingPeriod: verified.billingPeriod,
+          billingTermMonths: verified.termMonths,
+          sessionsPurchased: verified.includedSessions,
           paymentMethod: `RIVHIT iCredit${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
           isMock: false
         };
@@ -375,10 +389,18 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     }
 
     const age = calculateAge(registerBirthDate);
-    const isTrainingCard = selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING;
+    const isTrainingCard = selectedPlanUsesTrainingCard;
     const normalizedFamilyPlans = resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי');
     const selectedFamilyPayerPlan = familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans[0]?.membershipType : MembershipType.FAMILY_MEMBERSHIP;
-    const membershipTerm = createMembershipTerm(isFamilyPlan && familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan);
+    const membershipTerm = createMembershipTerm(
+      isFamilyPlan && familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan,
+      new Date(),
+      isFamilyPlan ? undefined : selectedPlanConfig
+    );
+    if (isFamilyPlan && familyBillingMode === 'MONTHLY_PER_MEMBER') {
+      membershipTerm.recurringBillingMonths = 0;
+      membershipTerm.monthlyBillingDay = new Date().getDate();
+    }
     const now = Date.now();
     const familyId = isFamilyPlan ? `fam-${now}` : undefined;
     const familyAccounts = isFamilyPlan
@@ -437,10 +459,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       membershipType: isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan,
       membershipStatus: MembershipStatus.ACTIVE,
       ...membershipTerm,
-      personalTrainingCardSize: !isFamilyPlan && selectedPlan === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
-      personalTrainingRemaining: isFamilyPlan && selectedFamilyPayerPlan === MembershipType.PERSONAL_TRAINING ? normalizedFamilyPlans[0]?.trainingSessionsCount : selectedPlan === MembershipType.PERSONAL_TRAINING ? trainingCardSize : undefined,
-      duoTrainingCardSize: !isFamilyPlan && selectedPlan === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
-      duoTrainingRemaining: isFamilyPlan && selectedFamilyPayerPlan === MembershipType.DUO_TRAINING ? normalizedFamilyPlans[0]?.trainingSessionsCount : selectedPlan === MembershipType.DUO_TRAINING ? trainingCardSize : undefined,
+      personalTrainingCardSize: !isFamilyPlan && selectedPlan === MembershipType.PERSONAL_TRAINING ? selectedPlanSessions : undefined,
+      personalTrainingRemaining: isFamilyPlan && selectedFamilyPayerPlan === MembershipType.PERSONAL_TRAINING ? normalizedFamilyPlans[0]?.trainingSessionsCount : selectedPlan === MembershipType.PERSONAL_TRAINING ? selectedPlanSessions : undefined,
+      duoTrainingCardSize: !isFamilyPlan && selectedPlan === MembershipType.DUO_TRAINING ? selectedPlanSessions : undefined,
+      duoTrainingRemaining: isFamilyPlan && selectedFamilyPayerPlan === MembershipType.DUO_TRAINING ? normalizedFamilyPlans[0]?.trainingSessionsCount : selectedPlan === MembershipType.DUO_TRAINING ? selectedPlanSessions : undefined,
       nutritionPlanPaid: (isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan) === MembershipType.NUTRITION_COACHING,
       requestedWorkoutPlan: [MembershipType.WORKOUT_COACHING, MembershipType.OPEN_GYM_WITH_PLAN].includes(isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan),
       priorityScore: 100,
@@ -450,7 +472,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       familyMembersCount: isFamilyPlan ? familyMembersCount : undefined,
       familyBillingMode: isFamilyPlan ? familyBillingMode : undefined,
       familyMemberPlans: isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans : undefined,
-      familyCombinedAmount: isFamilyPlan ? familyPurchaseAmount(familyBillingMode, familyMembersCount, normalizedFamilyPlans) : undefined,
+      familyCombinedAmount: isFamilyPlan ? familyPurchaseAmount(familyBillingMode, familyMembersCount, normalizedFamilyPlans, registrationPlans) : undefined,
       familyTrackName: isFamilyPlan ? familyBillingMode === 'ANNUAL_BY_SIZE' ? `משפחתי שנתי (${familyMembersCount} מתאמנים)` : familyBillingMode === 'MONTHLY_PER_MEMBER' ? `משפחתי חודשי (${familyMembersCount} מתאמנים)` : 'משפחתי מותאם – תשלום מאוחד' : undefined,
       imageUrl: registerGender === Gender.FEMALE
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
@@ -461,6 +483,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       const memberAge = calculateAge(account.birthDate);
       const membershipType = familyBillingMode === 'CUSTOM_COMBINED' ? plan.membershipType : MembershipType.FAMILY_MEMBERSHIP;
       const memberTerm = createMembershipTerm(familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : membershipType);
+      if (familyBillingMode === 'MONTHLY_PER_MEMBER') {
+        memberTerm.recurringBillingMonths = 0;
+        memberTerm.monthlyBillingDay = new Date().getDate();
+      }
       return {
         id: `user-family-${now}-${index + 1}`,
         name: account.name.trim(),
@@ -509,7 +535,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         familyBillingMode: isFamilyPlan ? familyBillingMode : undefined,
         familyMemberPlans: isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans : undefined,
         discountCode: appliedDiscount?.code,
-        planAmount: !isFamilyPlan ? selectedPlanPrice * (isTrainingCard ? trainingCardSize : 1) : undefined,
+        planAmount: !isFamilyPlan ? selectedPlanAmount : undefined,
         planLabel: !isFamilyPlan ? selectedPlanConfig?.label : undefined,
         registrationDraft: { user: newUser, familyUsers, phoneVerificationToken }
       });
@@ -647,11 +673,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                         <strong>{planConfig.label}</strong>
                         <small>{planConfig.description}</small>
                       </span>
-                      <b>₪{planConfig.price}{planConfig.priceUnit === 'SESSION' ? ' לאימון' : planConfig.priceUnit === 'MONTH' ? ' לחודש' : ''}</b>
+                      <b>₪{planConfig.price} · {billingPeriodLabel(planConfig)}</b>
                     </button>
                   );})}
                 </div>
-                {!isFamilyPlan && (selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) && (
+                {!isFamilyPlan && selectedPlanUsesTrainingCard && (
                   <div className="auth-family-options">
                     <label>גודל כרטיסייה<select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)}>
                       {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{size * selectedPlanPrice}</option>)}
@@ -661,7 +687,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 )}
                 {isFamilyPlan && <div className="space-y-3">
                   <label className="block text-xs font-bold">שם המשפחה<input value={familyName} onChange={event => setFamilyName(event.target.value)} placeholder={`משפחת ${registerName.trim().split(' ')[0] || 'ישראל'}`} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyMembersCount} onCountChange={setFamilyMembersCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={registerName.trim() || 'המשלם הראשי'} />
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyMembersCount} onCountChange={setFamilyMembersCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={registerName.trim() || 'המשלם הראשי'} membershipPlans={registrationPlans} />
                   <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-zinc-950/70 p-4">
                     <div><strong className="text-sm text-amber-300">חשבונות כניסה לבני המשפחה</strong><small className="mt-1 block text-zinc-300">לאחר התשלום ייווצר לכל אחד חשבון מתאמן נפרד. בכניסה הראשונה יהיה עליו לחתום על הצהרת בריאות.</small></div>
                     {Array.from({ length: familyMembersCount - 1 }, (_, index) => {
@@ -690,16 +716,16 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   }}>הפעל</button></div>
                 </div>
                 <div className="auth-checkout-summary">
-                  <span>{selectedPlan === MembershipType.GROUP_ANNUAL ? 'חיוב חודשי ראשון' : 'לתשלום כעת'}</span>
+                  <span>{!isFamilyPlan && billingPeriodForPlan(selectedPlanConfig) === 'MONTHLY_ANNUAL_COMMITMENT' ? 'חיוב חודשי ראשון' : 'לתשלום כעת'}</span>
                   <strong>₪{(() => {
                     const base = isFamilyPlan
-                      ? familyPurchaseAmount(familyBillingMode, familyMembersCount, resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי'))
-                      : selectedPlanPrice * ((selectedPlan === MembershipType.PERSONAL_TRAINING || selectedPlan === MembershipType.DUO_TRAINING) ? trainingCardSize : 1);
+                      ? familyPurchaseAmount(familyBillingMode, familyMembersCount, resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי'), registrationPlans)
+                      : selectedPlanAmount;
                     const discount = appliedDiscount?.discountPercent ? Math.round(base * appliedDiscount.discountPercent / 100) : (appliedDiscount?.discountAmount || 0);
                     return Math.max(0, base - discount);
                   })()}</strong>
                 </div>
-                {!isFamilyPlan && selectedPlan === MembershipType.GROUP_ANNUAL && <small className="auth-mock-note">₪500 בחודש בהוראת קבע למשך 12 חודשים. בקשת ביטול נכנסת לתוקף חודש קדימה.</small>}
+                {!isFamilyPlan && billingPeriodForPlan(selectedPlanConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <small className="auth-mock-note">חיוב חודשי קבוע למשך 12 חודשים. בקשת ביטול נכנסת לתוקף בהתאם לתנאי המסלול.</small>}
                 <small className="auth-mock-note">פרטי האשראי יוזנו רק בעמוד המאובטח של RIVHIT iCredit ולא יישמרו ב־BALY.</small>
                 {!isRivhitConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}
                 <button className="auth-primary" type="submit" disabled={paymentStarting || !isRivhitConfigured()}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>

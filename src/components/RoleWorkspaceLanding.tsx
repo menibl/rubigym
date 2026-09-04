@@ -36,7 +36,7 @@ export type WorkspaceView =
 
 interface RoleWorkspaceLandingProps {
   activeUser: User;
-  onSelect: (view: WorkspaceView) => void;
+  onSelect: (view: WorkspaceView, contactId?: string) => void;
   onOpenProfile: () => void;
   users?: User[];
   sessions?: TrainingSession[];
@@ -81,12 +81,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
       : 'מתאמן';
   const unreadChatCount = messages.filter(message => message.receiverId === activeUser.id && !message.read).length;
   const openChat = (contactId = '') => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('workspace', 'chat');
-    if (contactId) url.searchParams.set('contact', contactId);
-    else url.searchParams.delete('contact');
-    window.history.replaceState({}, '', url);
-    onSelect('CHAT');
+    onSelect('CHAT', contactId);
   };
 
   const nextSession = useMemo(() => {

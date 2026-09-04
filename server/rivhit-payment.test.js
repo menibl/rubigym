@@ -134,3 +134,89 @@ test('RIVHIT non-JSON upstream failure remains a generic unavailable response', 
   assert.equal(response.status, 502);
   assert.deepEqual(await response.json(), { message: 'שירות השרת אינו זמין כרגע. נסו שוב מאוחר יותר.' });
 });
+
+test('checkout uses the manager configured plan price and fixed period', async () => {
+  let providerRequest;
+  const env = {
+    RIVHIT_ENVIRONMENT: 'production',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'production-group-private-token',
+    PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
+    PUBLIC_APP_URL: 'https://balywellness.com/',
+    STATE_STORE: {
+      getClubState: async () => ({ payload: { settings: { membershipPlans: [{
+        id: 'OPEN_GYM', label: 'Open Gym מעודכן', price: 777, active: true, billingPeriod: 'THREE_MONTHS'
+      }] } } })
+    },
+    RIVHIT_FETCH: async (_url, init) => {
+      providerRequest = JSON.parse(init.body);
+      return Response.json({ Status: 0, URL: 'https://icredit.rivhit.co.il/payment/example', PrivateSaleToken: 'private-token' });
+    }
+  };
+  const response = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION', planAmount: 1 })
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal(providerRequest.Items[0].UnitPrice, 777);
+  assert.equal(providerRequest.Items[0].Description, 'Open Gym מעודכן');
+  assert.equal(providerRequest.CreateRecurringSale, undefined);
+});
+
+test('monthly annual commitment creates twelve recurring monthly charges when enabled', async () => {
+  let providerRequest;
+  const env = {
+    RIVHIT_ENVIRONMENT: 'production',
+    RIVHIT_ENABLE_RECURRING: 'true',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'production-group-private-token',
+    PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
+    PUBLIC_APP_URL: 'https://balywellness.com/',
+    STATE_STORE: {
+      getClubState: async () => ({ payload: { settings: { membershipPlans: [{
+        id: 'GROUP_ANNUAL', label: 'קבוצתי שנתי', price: 525, active: true, billingPeriod: 'MONTHLY_ANNUAL_COMMITMENT'
+      }] } } })
+    },
+    RIVHIT_FETCH: async (_url, init) => {
+      providerRequest = JSON.parse(init.body);
+      return Response.json({ Status: 0, URL: 'https://icredit.rivhit.co.il/payment/example', PrivateSaleToken: 'private-token' });
+    }
+  };
+  const response = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'GROUP_ANNUAL', mode: 'REGISTRATION' })
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal(providerRequest.Items[0].UnitPrice, 525);
+  assert.equal(providerRequest.SaleType, 2);
+  assert.equal(providerRequest.CreateRecurringSale, true);
+  assert.equal(providerRequest.RecurringSaleCount, 12);
+});
+
+test('monthly plan creates an open-ended recurring charge without an annual commitment', async () => {
+  let providerRequest;
+  const env = {
+    RIVHIT_ENVIRONMENT: 'production',
+    RIVHIT_ENABLE_RECURRING: 'true',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'production-group-private-token',
+    PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
+    PUBLIC_APP_URL: 'https://balywellness.com/',
+    STATE_STORE: {
+      getClubState: async () => ({ payload: { settings: { membershipPlans: [{
+        id: 'OPEN_GYM', label: 'Open Gym חודשי', price: 310, active: true, billingPeriod: 'MONTHLY'
+      }] } } })
+    },
+    RIVHIT_FETCH: async (_url, init) => {
+      providerRequest = JSON.parse(init.body);
+      return Response.json({ Status: 0, URL: 'https://icredit.rivhit.co.il/payment/example', PrivateSaleToken: 'private-token' });
+    }
+  };
+  const response = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal(providerRequest.SaleType, 2);
+  assert.equal(providerRequest.RecurringSaleCount, 0);
+});
