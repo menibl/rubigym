@@ -42,6 +42,7 @@ import {
 } from '../types';
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
 import { createMembershipTerm } from '../data/membershipPolicy';
+import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
 import { LandingImageManager } from './LandingImageManager';
 import { SessionMembershipSelector } from './SessionMembershipSelector';
 import {
@@ -206,7 +207,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionViewMode, setSessionViewMode] = useState<'CALENDAR' | 'TABLE'>('CALENDAR');
   const [penaltySearch, setPenaltySearch] = useState('');
-  const [newMembershipPlan, setNewMembershipPlan] = useState({ label: '', description: '', price: 0, category: 'PRIMARY' as MembershipPlanConfig['category'], priceUnit: 'MONTH' as MembershipPlanConfig['priceUnit'] });
+  const [newMembershipPlan, setNewMembershipPlan] = useState({
+    label: '',
+    description: '',
+    price: 0,
+    category: 'PRIMARY' as MembershipPlanConfig['category'],
+    billingPeriod: 'MONTHLY' as NonNullable<MembershipPlanConfig['billingPeriod']>,
+    includedSessions: 1,
+    supportsTrainingCard: false
+  });
   const membershipPlans = settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS;
 
   const updateMembershipPlan = (id: string, patch: Partial<MembershipPlanConfig>) => {
@@ -226,11 +235,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       description: newMembershipPlan.description.trim(),
       price: Number(newMembershipPlan.price),
       category: newMembershipPlan.category,
-      priceUnit: newMembershipPlan.priceUnit,
+      billingPeriod: newMembershipPlan.billingPeriod,
+      priceUnit: priceUnitForBillingPeriod(newMembershipPlan.billingPeriod),
+      includedSessions: newMembershipPlan.billingPeriod === 'SESSION_PACK' ? Math.max(1, Number(newMembershipPlan.includedSessions) || 1) : undefined,
+      supportsTrainingCard: newMembershipPlan.billingPeriod === 'SESSION_PACK' && newMembershipPlan.supportsTrainingCard,
       active: true
     };
     onUpdateSettings({ ...settings, membershipPlans: [...membershipPlans, created] });
-    setNewMembershipPlan({ label: '', description: '', price: 0, category: 'PRIMARY', priceUnit: 'MONTH' });
+    setNewMembershipPlan({ label: '', description: '', price: 0, category: 'PRIMARY', billingPeriod: 'MONTHLY', includedSessions: 1, supportsTrainingCard: false });
   };
 
   const downloadCsv = (fileName: string, headers: string[], rows: Array<Array<string | number | boolean | undefined>>) => {
@@ -712,7 +724,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Record an offline payment to clear a debt.
   const handlePayDebt = (trainee: User) => {
     const purchasedType = trainee.membershipType || MembershipType.GROUP_MONTHLY;
-    const paymentAmount = MEMBERSHIP_PRICES[purchasedType];
+    const purchasedPlan = membershipPlans.find(plan => plan.id === purchasedType);
+    const paymentAmount = purchasedPlan?.price ?? MEMBERSHIP_PRICES[purchasedType];
     const newPayment: Payment = {
       id: `pay-${Date.now()}`,
       traineeId: trainee.id,
@@ -731,7 +744,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     // Update status to ACTIVE
     const updatedUsers = users.map(u => {
       if (u.id === trainee.id) {
-        const term = createMembershipTerm(purchasedType);
+        const term = createMembershipTerm(purchasedType, new Date(), purchasedPlan);
         return {
           ...u,
           membershipStatus: MembershipStatus.ACTIVE,
@@ -2013,22 +2026,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span className="rounded-full bg-slate-900 px-3 py-1 text-[10px] font-black text-white">{membershipPlans.length} מסלולים</span>
               </div>
               <div className="space-y-3">
-                {membershipPlans.map(plan => <article key={plan.id} className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[150px_minmax(220px,1fr)_110px_105px_auto] md:items-end">
+                {membershipPlans.map(plan => <article key={plan.id} className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[150px_minmax(220px,1fr)_110px_190px_auto] md:items-end">
                   <label className="text-[10px] font-bold text-slate-600">שם המסלול<input value={plan.label} onChange={event => updateMembershipPlan(plan.id, { label: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>
                   <label className="text-[10px] font-bold text-slate-600">תיאור<input value={plan.description} onChange={event => updateMembershipPlan(plan.id, { description: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>
                   <label className="text-[10px] font-bold text-slate-600">מחיר ₪<input type="number" min={0} value={plan.price} onChange={event => updateMembershipPlan(plan.id, { price: Math.max(0, Number(event.target.value)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>
-                  <label className="text-[10px] font-bold text-slate-600">יחידת חיוב<select value={plan.priceUnit || 'ONE_TIME'} onChange={event => updateMembershipPlan(plan.id, { priceUnit: event.target.value as MembershipPlanConfig['priceUnit'] })} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs"><option value="MONTH">לחודש</option><option value="SESSION">לאימון</option><option value="ONE_TIME">חד־פעמי</option></select></label>
+                  <label className="text-[10px] font-bold text-slate-600">תקופת ואופן החיוב<select value={billingPeriodForPlan(plan)} onChange={event => {
+                    const billingPeriod = event.target.value as NonNullable<MembershipPlanConfig['billingPeriod']>;
+                    updateMembershipPlan(plan.id, {
+                      billingPeriod,
+                      priceUnit: priceUnitForBillingPeriod(billingPeriod),
+                      includedSessions: billingPeriod === 'SESSION_PACK' ? Math.max(1, Number(plan.includedSessions) || 1) : undefined,
+                      supportsTrainingCard: billingPeriod === 'SESSION_PACK' ? Boolean(plan.supportsTrainingCard) : false
+                    });
+                  }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-900">{BILLING_PERIOD_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                  {billingPeriodForPlan(plan) === 'SESSION_PACK' && <div className="md:col-start-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2">
+                    <label className="text-[10px] font-bold text-slate-600">כמות אימונים<input type="number" min={1} max={100} value={plan.includedSessions || 1} onChange={event => updateMembershipPlan(plan.id, { includedSessions: Math.max(1, Number(event.target.value) || 1) })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>
+                    {[MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(plan.id as MembershipType) && <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600"><input type="checkbox" checked={Boolean(plan.supportsTrainingCard)} onChange={event => updateMembershipPlan(plan.id, { supportsTrainingCard: event.target.checked })} /> בחירת 1/4/8/12</label>}
+                  </div>}
                   <div className="flex gap-1"><button type="button" onClick={() => updateMembershipPlan(plan.id, { active: !plan.active })} className={`min-h-9 rounded-lg px-2 text-[10px] font-black ${plan.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>{plan.active ? 'פעיל' : 'מוסתר'}</button><button type="button" onClick={() => removeMembershipPlan(plan.id)} className="grid min-h-9 w-9 place-items-center rounded-lg bg-rose-100 text-rose-700" aria-label={`הסרת ${plan.label}`}><Trash2 size={14} /></button></div>
                 </article>)}
               </div>
               <div className="mt-4 rounded-xl border border-dashed border-amber-300 bg-white p-3">
                 <strong className="text-xs text-slate-900">הוספת מסלול חדש</strong>
-                <div className="mt-2 grid gap-2 md:grid-cols-[150px_minmax(220px,1fr)_100px_110px_110px_auto] md:items-end">
+                <div className="mt-2 grid gap-2 md:grid-cols-[150px_minmax(220px,1fr)_100px_110px_190px_auto] md:items-end">
                   <label className="text-[10px] font-bold text-slate-600">שם<input value={newMembershipPlan.label} onChange={event => setNewMembershipPlan(current => ({ ...current, label: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label>
                   <label className="text-[10px] font-bold text-slate-600">תיאור<input value={newMembershipPlan.description} onChange={event => setNewMembershipPlan(current => ({ ...current, description: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label>
                   <label className="text-[10px] font-bold text-slate-600">מחיר ₪<input type="number" min={0} value={newMembershipPlan.price} onChange={event => setNewMembershipPlan(current => ({ ...current, price: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label>
                   <label className="text-[10px] font-bold text-slate-600">סוג<select value={newMembershipPlan.category} onChange={event => setNewMembershipPlan(current => ({ ...current, category: event.target.value as MembershipPlanConfig['category'] }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs"><option value="PRIMARY">מסלול ראשי</option><option value="ADD_ON">תוספת</option></select></label>
-                  <label className="text-[10px] font-bold text-slate-600">חיוב<select value={newMembershipPlan.priceUnit} onChange={event => setNewMembershipPlan(current => ({ ...current, priceUnit: event.target.value as MembershipPlanConfig['priceUnit'] }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs"><option value="MONTH">לחודש</option><option value="SESSION">לאימון</option><option value="ONE_TIME">חד־פעמי</option></select></label>
+                  <label className="text-[10px] font-bold text-slate-600">תקופת ואופן החיוב<select value={newMembershipPlan.billingPeriod} onChange={event => setNewMembershipPlan(current => ({ ...current, billingPeriod: event.target.value as NonNullable<MembershipPlanConfig['billingPeriod']> }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-900">{BILLING_PERIOD_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                  {newMembershipPlan.billingPeriod === 'SESSION_PACK' && <div className="md:col-start-5 rounded-lg bg-slate-50 p-2"><label className="text-[10px] font-bold text-slate-600">כמות אימונים בחבילה<input type="number" min={1} max={100} value={newMembershipPlan.includedSessions} onChange={event => setNewMembershipPlan(current => ({ ...current, includedSessions: Math.max(1, Number(event.target.value) || 1) }))} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label></div>}
                   <button type="button" onClick={addMembershipPlan} className="min-h-9 rounded-lg bg-amber-500 px-3 text-xs font-black text-slate-950"><Plus size={14} className="inline" /> הוסף</button>
                 </div>
               </div>

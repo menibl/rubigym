@@ -85,6 +85,7 @@ import {
 import { DiscountCodeField } from './DiscountCodeField';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
+import { billingPeriodForPlan, billingPeriodLabel, isSelectableTrainingCard, membershipCheckoutAmount } from '../data/membershipBilling';
 
 interface TraineeDashboardProps {
   activeUser: User;
@@ -168,6 +169,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const membershipAddOns = membershipPlanConfigs.filter(plan => plan.category === 'ADD_ON');
   const selectedMembershipConfig = membershipPlanConfigs.find(plan => plan.id === selectedMembershipPurchase);
   const selectedMembershipPrice = selectedMembershipConfig?.price ?? (selectedMembershipPurchase ? MEMBERSHIP_PRICES[selectedMembershipPurchase] : 0) ?? 0;
+  const selectedMembershipUsesTrainingCard = isSelectableTrainingCard(selectedMembershipConfig)
+    || (!selectedMembershipConfig && Boolean(selectedMembershipPurchase && [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(selectedMembershipPurchase)));
+  const selectedMembershipAmount = selectedMembershipConfig
+    ? membershipCheckoutAmount(selectedMembershipConfig, trainingCardSize)
+    : selectedMembershipPrice * (selectedMembershipUsesTrainingCard ? trainingCardSize : 1);
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => toLocalIsoDate(new Date()));
   const [bookingView, setBookingView] = useState<'DAY' | 'WEEK'>('DAY');
   const [bookingNameFilter, setBookingNameFilter] = useState('');
@@ -241,7 +247,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       }
       if (user.id !== activeUser.id) return user;
       if (mode === 'PRIMARY') {
-        const membershipTerm = createMembershipTerm(familyMembersCount && purchasedFamilyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : purchasedType);
+        const purchasedPlan = membershipPlanConfigs.find(plan => plan.id === purchasedType);
+        const membershipTerm = createMembershipTerm(
+          familyMembersCount && purchasedFamilyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : purchasedType,
+          new Date(),
+          familyMembersCount ? undefined : purchasedPlan
+        );
+        if (familyMembersCount && purchasedFamilyBillingMode === 'MONTHLY_PER_MEMBER') {
+          membershipTerm.recurringBillingMonths = 0;
+          membershipTerm.monthlyBillingDay = new Date().getDate();
+        }
         return {
           ...user,
           membershipType: purchasedType,
@@ -270,6 +285,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       }
 
       const secondaryMemberships = user.secondaryMemberships || [];
+      const purchasedSessions = purchaseVariant ? Number(purchaseVariant.split('_')[1]) : Math.max(0, Number(verified.includedSessions) || 0);
       return {
         ...user,
         secondaryMemberships: secondaryMemberships.includes(purchasedType)
@@ -277,10 +293,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           : [...secondaryMemberships, purchasedType],
         nutritionPlanPaid: purchasedType === MembershipType.NUTRITION_COACHING ? true : user.nutritionPlanPaid,
         requestedWorkoutPlan: purchasedType === MembershipType.WORKOUT_COACHING ? true : user.requestedWorkoutPlan,
-        personalTrainingCardSize: purchaseVariant?.startsWith('PERSONAL_') ? Number(purchaseVariant.split('_')[1]) as TrainingCardSize : user.personalTrainingCardSize,
-        personalTrainingRemaining: purchaseVariant?.startsWith('PERSONAL_') ? (user.personalTrainingRemaining || 0) + Number(purchaseVariant.split('_')[1]) : user.personalTrainingRemaining,
-        duoTrainingCardSize: purchaseVariant?.startsWith('DUO_') ? Number(purchaseVariant.split('_')[1]) as TrainingCardSize : user.duoTrainingCardSize,
-        duoTrainingRemaining: purchaseVariant?.startsWith('DUO_') ? (user.duoTrainingRemaining || 0) + Number(purchaseVariant.split('_')[1]) : user.duoTrainingRemaining
+        personalTrainingCardSize: purchasedType === MembershipType.PERSONAL_TRAINING && purchasedSessions ? purchasedSessions : user.personalTrainingCardSize,
+        personalTrainingRemaining: purchasedType === MembershipType.PERSONAL_TRAINING && purchasedSessions ? (user.personalTrainingRemaining || 0) + purchasedSessions : user.personalTrainingRemaining,
+        duoTrainingCardSize: purchasedType === MembershipType.DUO_TRAINING && purchasedSessions ? purchasedSessions : user.duoTrainingCardSize,
+        duoTrainingRemaining: purchasedType === MembershipType.DUO_TRAINING && purchasedSessions ? (user.duoTrainingRemaining || 0) + purchasedSessions : user.duoTrainingRemaining
       };
     }));
 
@@ -293,6 +309,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       timestamp: new Date().toISOString(),
       status: 'PAID',
       membershipTypePurchased: purchasedType,
+      billingPeriod: verified.billingPeriod,
+      billingTermMonths: verified.termMonths,
+      sessionsPurchased: verified.includedSessions,
       paymentMethod: `RIVHIT iCredit${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
       isMock: false
     }, ...payments]);
@@ -684,7 +703,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
     setPaymentStarting(true);
     try {
-      const isTrainingCard = selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING;
+      const isTrainingCard = selectedMembershipUsesTrainingCard;
       await startRivhitPayment({
         userId: activeUser.id,
         userName: activeUser.name,
@@ -696,7 +715,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           ? `${selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING ? 'PERSONAL' : 'DUO'}_${trainingCardSize}` as PaymentPurchaseVariant
           : undefined,
         discountCode: appliedDiscount?.code,
-        planAmount: selectedMembershipPrice * (isTrainingCard ? trainingCardSize : 1),
+        planAmount: selectedMembershipAmount,
         planLabel: selectedMembershipConfig?.label
       });
     } catch (error) {
@@ -2379,10 +2398,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <b className="block text-sm text-slate-900">{selectedMembershipConfig?.label || MEMBERSHIP_TYPE_LABELS[selectedMembershipPurchase]?.label || selectedMembershipPurchase}</b>
                     <span className="text-[11px] text-slate-600">{membershipPurchaseMode === 'PRIMARY' ? 'מסלול ראשי' : 'שירות נוסף'}</span>
                   </div>
-                  <strong className="text-xl text-amber-800">₪{applySelectedDiscount(selectedMembershipPrice * ((selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) ? trainingCardSize : 1))}{selectedMembershipConfig?.priceUnit === 'MONTH' ? ' לחודש' : ''}</strong>
+                  <strong className="text-xl text-amber-800">₪{applySelectedDiscount(selectedMembershipAmount)} · {billingPeriodLabel(selectedMembershipConfig)}</strong>
                 </div>
                 <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
-                  {(selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING || selectedMembershipPurchase === MembershipType.DUO_TRAINING) && (
+                  {selectedMembershipUsesTrainingCard && (
                     <label className="text-xs font-bold text-slate-700">בחרו גודל כרטיסייה
                       <select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3">
                         {TRAINING_CARD_SIZES.map(size => <option key={size} value={size}>{size === 1 ? 'אימון אחד' : `${size} אימונים`} — ₪{(size * selectedMembershipPrice).toLocaleString('he-IL')}</option>)}
@@ -2394,8 +2413,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
                     התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
                   </div>
-                  {selectedMembershipPurchase === MembershipType.GROUP_ANNUAL && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
-                    הוראת קבע חודשית בסך ₪500 למשך 12 חודשים. בקשת ביטול נכנסת לתוקף חודש לאחר הגשתה.
+                  {billingPeriodForPlan(selectedMembershipConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
+                    חיוב חודשי קבוע בסך ₪{selectedMembershipPrice} למשך 12 חודשים. בקשת ביטול נכנסת לתוקף בהתאם לתנאי המסלול.
                   </div>}
                   {!isRivhitConfigured() && (
                     <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
@@ -2419,10 +2438,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
                   </div>
                   <label className="block text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} />
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} />
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
-                    <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id))).toLocaleString('he-IL')}</strong></div>
+                    <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id), membershipPlanConfigs)).toLocaleString('he-IL')}</strong></div>
                     <button type="button" onClick={() => void handleFamilyCheckout()} disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
                       {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
                     </button>
@@ -2444,7 +2463,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                         </div>
                         <p className="text-[11px] text-slate-500 mt-2 leading-5 flex-1">{planConfig.description}</p>
                         <div className="flex items-end justify-between gap-3 mt-4">
-                          <b className="text-xl text-slate-950">₪{planConfig.price}{planConfig.priceUnit === 'MONTH' ? ' לחודש' : ''}</b>
+                          <b className="text-xl text-slate-950">₪{planConfig.price} · {billingPeriodLabel(planConfig)}</b>
                           <button className="rounded-lg bg-slate-950 text-white text-xs font-bold px-3 py-2" onClick={() => openMembershipCheckout(plan, 'PRIMARY')}>
                             {activeUser.membershipType === plan ? 'חידוש מסלול' : 'בחירה ותשלום'}
                           </button>
@@ -2467,7 +2486,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                           {plan === MembershipType.PERSONAL_TRAINING && activeUser.personalTrainingRemaining !== undefined && <p className="mt-2 text-[11px] font-bold text-amber-800">יתרה: {activeUser.personalTrainingRemaining} אימונים</p>}
                           {plan === MembershipType.DUO_TRAINING && activeUser.duoTrainingRemaining !== undefined && <p className="mt-2 text-[11px] font-bold text-amber-800">יתרה: {activeUser.duoTrainingRemaining} אימונים</p>}
                           <div className="flex justify-between items-center mt-4">
-                            <b>₪{planConfig.price}{planConfig.priceUnit === 'SESSION' ? ' לאימון' : planConfig.priceUnit === 'MONTH' ? ' לחודש' : ''}</b>
+                            <b>₪{planConfig.price} · {billingPeriodLabel(planConfig)}</b>
                             <button className="rounded-lg border border-slate-300 text-xs font-bold px-3 py-2" onClick={() => openMembershipCheckout(plan, 'ADDON')}>
                               {alreadyPurchased ? 'רכישה נוספת' : 'הוספה ותשלום'}
                             </button>

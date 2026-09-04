@@ -229,11 +229,34 @@ const applyDiscount = (amount, discountCode) => {
   return discount?.percent ? Math.round(amount * (1 - discount.percent / 100)) : Math.max(0, amount - (discount?.amount || 0));
 };
 
-const normalizeFamilyPlans = plans => {
+const normalizedBillingPeriod = plan => {
+  const allowed = new Set(['ONE_TIME', 'MONTHLY', 'THREE_MONTHS', 'SIX_MONTHS', 'ANNUAL', 'SESSION_PACK', 'MONTHLY_ANNUAL_COMMITMENT']);
+  if (allowed.has(plan?.billingPeriod)) return plan.billingPeriod;
+  if (plan?.priceUnit === 'MONTH') return 'MONTHLY';
+  if (plan?.priceUnit === 'SESSION') return 'SESSION_PACK';
+  return 'ONE_TIME';
+};
+
+const planTermMonths = period => ({ MONTHLY: 1, THREE_MONTHS: 3, SIX_MONTHS: 6, ANNUAL: 12, MONTHLY_ANNUAL_COMMITMENT: 12 }[period] || 1);
+
+const configuredPlan = (catalog, membershipType) => Array.isArray(catalog)
+  ? catalog.find(plan => plan?.id === membershipType && plan.active !== false)
+  : undefined;
+
+const planPrice = (membershipType, catalog) => {
+  const plan = configuredPlan(catalog, membershipType);
+  if (Array.isArray(catalog) && catalog.length > 0 && !plan) throw new Error('INVALID_MEMBERSHIP');
+  const price = plan ? Number(plan.price) : Number(membershipPrices[membershipType]);
+  if (!Number.isFinite(price) || price <= 0) throw new Error('INVALID_MEMBERSHIP');
+  return { plan, price };
+};
+
+const normalizeFamilyPlans = (plans, catalog) => {
   if (!Array.isArray(plans)) return [];
   return plans.map((plan, index) => {
     const membershipType = String(plan?.membershipType || '');
-    if (!membershipPrices[membershipType] || membershipType === 'FAMILY_MEMBERSHIP') throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+    if (membershipType === 'FAMILY_MEMBERSHIP') throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+    planPrice(membershipType, catalog);
     const isTraining = membershipType === 'PERSONAL_TRAINING' || membershipType === 'DUO_TRAINING';
     const trainingSessionsCount = isTraining ? Math.max(1, Math.min(50, Math.round(Number(plan?.trainingSessionsCount || 1)))) : undefined;
     return {
@@ -245,7 +268,7 @@ const normalizeFamilyPlans = plans => {
   });
 };
 
-const resolvePurchase = body => {
+const resolvePurchase = (body, catalog = []) => {
   if (body.familyMembersCount || body.membershipType === 'FAMILY_MEMBERSHIP') {
     const count = Number(body.familyMembersCount);
     const mode = body.familyBillingMode || 'ANNUAL_BY_SIZE';
@@ -260,21 +283,32 @@ const resolvePurchase = body => {
       baseAmount = count * familyMonthlyPricePerMember;
       label = `משפחתי חודשי – ${count} × ₪${familyMonthlyPricePerMember}`;
     } else if (mode === 'CUSTOM_COMBINED') {
-      familyMemberPlans = normalizeFamilyPlans(body.familyMemberPlans);
+      familyMemberPlans = normalizeFamilyPlans(body.familyMemberPlans, catalog);
       if (familyMemberPlans.length !== count) throw new Error('INVALID_FAMILY_MEMBER_COUNT');
-      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + membershipPrices[plan.membershipType] * (plan.trainingSessionsCount || 1), 0);
+      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1), 0);
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
-    return { amount: applyDiscount(baseAmount, body.discountCode), label, familyBillingMode: mode, familyMemberPlans };
+    return { amount: applyDiscount(baseAmount, body.discountCode), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: mode !== 'CUSTOM_COMBINED', recurringMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 0 };
   }
   if (body.purchaseVariant) {
     const variant = trainingCardVariants[body.purchaseVariant];
     if (!variant || variant.membershipType !== body.membershipType) throw new Error('INVALID_VARIANT');
-    return { ...variant, amount: applyDiscount(variant.amount, body.discountCode) };
+    const { plan, price } = planPrice(body.membershipType, catalog);
+    const sessions = Number(String(body.purchaseVariant).split('_')[1]);
+    const baseAmount = plan ? price * sessions : variant.amount;
+    return { ...variant, amount: applyDiscount(baseAmount, body.discountCode), label: plan?.label || variant.label, billingPeriod: 'SESSION_PACK', includedSessions: sessions, termMonths: 1 };
   }
-  const amount = membershipPrices[body.membershipType];
-  if (!amount) throw new Error('INVALID_MEMBERSHIP');
-  return { amount: applyDiscount(amount, body.discountCode), label: membershipLabels[body.membershipType] };
+  const { plan, price } = planPrice(body.membershipType, catalog);
+  const billingPeriod = normalizedBillingPeriod(plan);
+  return {
+    amount: applyDiscount(price, body.discountCode),
+    label: plan?.label || membershipLabels[body.membershipType] || String(body.membershipType),
+    billingPeriod,
+    includedSessions: billingPeriod === 'SESSION_PACK' ? Math.max(1, Number(plan?.includedSessions) || 1) : undefined,
+    termMonths: planTermMonths(billingPeriod),
+    recurring: billingPeriod === 'MONTHLY' || billingPeriod === 'MONTHLY_ANNUAL_COMMITMENT',
+    recurringMonths: billingPeriod === 'MONTHLY_ANNUAL_COMMITMENT' ? 12 : undefined
+  };
 };
 
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
@@ -315,6 +349,8 @@ const publicLandingPayload = async (request, env, url, clubId) => {
       category: plan.category,
       active: true,
       priceUnit: plan.priceUnit,
+      billingPeriod: plan.billingPeriod,
+      includedSessions: plan.includedSessions,
       supportsTrainingCard: Boolean(plan.supportsTrainingCard)
     }))
     : [];
@@ -346,8 +382,7 @@ const sign = async (value, secret) => {
   return base64Url(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value))));
 };
 
-const createSignedOrder = async (body, env) => {
-  const purchase = resolvePurchase(body);
+const createSignedOrder = async (body, env, purchase) => {
   const { amount } = purchase;
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(body.mode)) throw new Error('INVALID_MODE');
   const payload = encodePayload({
@@ -362,6 +397,11 @@ const createSignedOrder = async (body, env) => {
     c: body.discountCode ? String(body.discountCode).toUpperCase() : undefined,
     a: amount,
     pa: rivhitChargeAmount(amount, env),
+    bp: purchase.billingPeriod,
+    tm: purchase.termMonths,
+    rr: purchase.recurring,
+    rm: purchase.recurringMonths,
+    sc: purchase.includedSessions,
     t: Date.now()
   });
   return `${payload}.${await sign(payload, env.PAYMENT_SIGNING_SECRET)}`;
@@ -372,8 +412,11 @@ const verifySignedOrder = async (value, env) => {
   const [payload, signature] = value.split('.');
   if (!payload || !signature || await sign(payload, env.PAYMENT_SIGNING_SECRET) !== signature) throw new Error('INVALID_SIGNATURE');
   const order = decodePayload(payload);
-  if (Date.now() - Number(order.t) > 24 * 60 * 60 * 1000) throw new Error('ORDER_EXPIRED');
-  if (resolvePurchase({ membershipType: order.m, purchaseVariant: order.v, familyMembersCount: order.f, familyBillingMode: order.fm, familyMemberPlans: order.fp, discountCode: order.c }).amount !== Number(order.a)) throw new Error('INVALID_AMOUNT');
+  const maximumAge = order.rr
+    ? (Number(order.rm) > 0 ? (Number(order.rm) + 1) * 31 * 24 * 60 * 60 * 1000 : 10 * 366 * 24 * 60 * 60 * 1000)
+    : 24 * 60 * 60 * 1000;
+  if (Date.now() - Number(order.t) > maximumAge) throw new Error('ORDER_EXPIRED');
+  if (!Number.isFinite(Number(order.a)) || Number(order.a) <= 0 || !order.m) throw new Error('INVALID_AMOUNT');
   if (order.pa !== undefined && Number(order.pa) !== rivhitChargeAmount(Number(order.a), env)) throw new Error('INVALID_PROVIDER_AMOUNT');
   if (rivhitEnvironment(env) === 'production' && signedOrderChargeAmount(order) !== Number(order.a)) throw new Error('INVALID_PROVIDER_AMOUNT');
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(order.d)) throw new Error('INVALID_MODE');
@@ -498,15 +541,15 @@ const verifiedRivhitPayment = async (paymentReference, env) => {
   };
 };
 
-const recurringFieldsFor = (body, env) => {
+const recurringFieldsFor = (purchase, env) => {
   if (String(env.RIVHIT_ENABLE_RECURRING).toLowerCase() !== 'true') return {};
-  const isAnnual = body.membershipType === 'GROUP_ANNUAL'
-    || (body.membershipType === 'FAMILY_MEMBERSHIP' && body.familyBillingMode === 'ANNUAL_BY_SIZE');
-  return isAnnual ? {
+  return purchase.recurring ? {
+    SaleType: 2,
     CreateRecurringSale: true,
     RecurringSaleCycle: 3,
+    RecurringSaleDay: Math.min(28, new Date().getDate()),
     RecurringSaleStep: 1,
-    RecurringSaleCount: 12,
+    RecurringSaleCount: Number(purchase.recurringMonths) || 0,
     RecurringSaleAutoCharge: true
   } : {};
 };
@@ -543,22 +586,24 @@ const verifyWebhookSale = async (payload, order, env) => {
 };
 
 const isoDate = date => date.toISOString().slice(0, 10);
-const membershipTermFor = type => {
+const membershipTermFor = (type, order = {}) => {
   const startedAt = new Date();
   const expiresAt = new Date(startedAt);
-  const months = type === 'GROUP_ANNUAL' ? 12 : type === 'DEDICATED_GROUP_HALF_YEAR' ? 6 : 1;
+  const months = Math.max(1, Number(order.tm) || (type === 'GROUP_ANNUAL' ? 12 : type === 'DEDICATED_GROUP_HALF_YEAR' ? 6 : 1));
   const originalDay = expiresAt.getUTCDate();
   expiresAt.setUTCDate(1);
   expiresAt.setUTCMonth(expiresAt.getUTCMonth() + months);
   const lastDay = new Date(Date.UTC(expiresAt.getUTCFullYear(), expiresAt.getUTCMonth() + 1, 0)).getUTCDate();
   expiresAt.setUTCDate(Math.min(originalDay, lastDay));
   const endDate = isoDate(expiresAt);
+  const hasAnnualCommitment = Number(order.rm) > 0 || type === 'GROUP_ANNUAL';
+  const hasRecurringBilling = Boolean(order.rr) || hasAnnualCommitment;
   return {
     membershipStartedAt: isoDate(startedAt),
     membershipExpiry: endDate,
-    membershipCommitmentEndsAt: type === 'GROUP_ANNUAL' ? endDate : undefined,
-    recurringBillingMonths: type === 'GROUP_ANNUAL' ? 12 : undefined,
-    monthlyBillingDay: type === 'GROUP_ANNUAL' ? startedAt.getUTCDate() : undefined
+    membershipCommitmentEndsAt: hasAnnualCommitment ? endDate : undefined,
+    recurringBillingMonths: hasRecurringBilling ? (Number(order.rm) || (type === 'GROUP_ANNUAL' ? 12 : 0)) : undefined,
+    monthlyBillingDay: hasRecurringBilling ? startedAt.getUTCDate() : undefined
   };
 };
 
@@ -578,7 +623,7 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
         ...candidate,
         membershipType: type,
         membershipStatus: 'ACTIVE',
-        ...membershipTermFor(type),
+        ...membershipTermFor(type, order),
         familyBillingMode: 'CUSTOM_COMBINED',
         familyCombinedAmount: amount,
         familyTrackName: 'משפחתי מותאם – תשלום מאוחד',
@@ -595,7 +640,7 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
         ...candidate,
         membershipType: order.m,
         membershipStatus: 'ACTIVE',
-        ...membershipTermFor(termType),
+        ...membershipTermFor(termType, order),
         isMembershipFrozen: false,
         membershipFreezeStartedAt: undefined,
         membershipFreezeUsedAt: undefined,
@@ -615,16 +660,16 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
     }
 
     const secondaryMemberships = candidate.secondaryMemberships || [];
-    const variantCount = order.v ? Number(String(order.v).split('_')[1]) : 0;
+    const variantCount = order.v ? Number(String(order.v).split('_')[1]) : Math.max(0, Number(order.sc) || 0);
     return {
       ...candidate,
       secondaryMemberships: secondaryMemberships.includes(order.m) ? secondaryMemberships : [...secondaryMemberships, order.m],
       nutritionPlanPaid: nutritionTypes.includes(order.m) ? true : candidate.nutritionPlanPaid,
       requestedWorkoutPlan: workoutTypes.includes(order.m) ? true : candidate.requestedWorkoutPlan,
-      personalTrainingCardSize: String(order.v || '').startsWith('PERSONAL_') ? variantCount : candidate.personalTrainingCardSize,
-      personalTrainingRemaining: String(order.v || '').startsWith('PERSONAL_') ? (candidate.personalTrainingRemaining || 0) + variantCount : candidate.personalTrainingRemaining,
-      duoTrainingCardSize: String(order.v || '').startsWith('DUO_') ? variantCount : candidate.duoTrainingCardSize,
-      duoTrainingRemaining: String(order.v || '').startsWith('DUO_') ? (candidate.duoTrainingRemaining || 0) + variantCount : candidate.duoTrainingRemaining
+      personalTrainingCardSize: order.m === 'PERSONAL_TRAINING' && variantCount ? variantCount : candidate.personalTrainingCardSize,
+      personalTrainingRemaining: order.m === 'PERSONAL_TRAINING' && variantCount ? (candidate.personalTrainingRemaining || 0) + variantCount : candidate.personalTrainingRemaining,
+      duoTrainingCardSize: order.m === 'DUO_TRAINING' && variantCount ? variantCount : candidate.duoTrainingCardSize,
+      duoTrainingRemaining: order.m === 'DUO_TRAINING' && variantCount ? (candidate.duoTrainingRemaining || 0) + variantCount : candidate.duoTrainingRemaining
     };
   });
 };
@@ -663,6 +708,9 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         timestamp: new Date().toISOString(),
         status: 'PAID',
         membershipTypePurchased: order.m,
+        billingPeriod: order.bp,
+        billingTermMonths: order.tm,
+        sessionsPurchased: order.sc,
         paymentMethod: `RIVHIT iCredit${payment.last4Digits ? ` •••• ${payment.last4Digits}` : ''}`,
         isMock: rivhitEnvironment(env) !== 'production'
       }, ...(state.payload.payments || [])]
@@ -690,11 +738,16 @@ const handleCreatePayment = async (request, env) => {
     }
   }
   let purchase;
-  try { purchase = resolvePurchase(body); }
+  try {
+    const state = env.STATE_STORE?.getClubState
+      ? await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness')
+      : null;
+    purchase = resolvePurchase(body, state?.payload?.settings?.membershipPlans || []);
+  }
   catch { return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env)); }
   const { amount } = purchase;
   const providerAmount = rivhitChargeAmount(amount, env);
-  const signedOrder = await createSignedOrder(body, env);
+  const signedOrder = await createSignedOrder(body, env, purchase);
   const appUrl = new URL(paymentReturnUrl(request, env));
   appUrl.searchParams.set('rivhit', 'success');
   const failedUrl = new URL(paymentReturnUrl(request, env));
@@ -720,7 +773,7 @@ const handleCreatePayment = async (request, env) => {
     Custom1: signedOrder,
     UniqueNum: crypto.randomUUID().replace(/-/g, '').slice(0, 20),
     Use3DS: String(env.RIVHIT_USE_3DS).toLowerCase() === 'true',
-    ...recurringFieldsFor(body, env)
+    ...recurringFieldsFor(purchase, env)
   }, env);
   const status = Number(rivhitValue(createResult, 'Status', 'status'));
   const url = rivhitValue(createResult, 'URL', 'Url', 'url');
@@ -753,6 +806,10 @@ const handleVerifyPayment = async (request, env) => {
     familyMembersCount: order.f,
     familyBillingMode: order.fm,
     familyMemberPlans: order.fp,
+    billingPeriod: order.bp,
+    termMonths: order.tm,
+    recurringMonths: order.rm,
+    includedSessions: order.sc,
     amount: order.a,
     ...providerPayment
   };
