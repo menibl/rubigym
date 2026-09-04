@@ -1364,6 +1364,7 @@ option {
 
 .auth-form input:focus { border-color: #c9a867; box-shadow: 0 0 0 3px rgba(201, 168, 103, .12); }
 .auth-text-link { display: block; margin: 15px auto 0; color: #c9a867; font-size: 11px; }
+.auth-mode-switch { font-size: 22px; font-weight: 700; line-height: 1.45; }
 .auth-message { margin-top: 14px; padding: 10px 12px; border-radius: 11px; font-size: 11px; line-height: 1.55; }
 .auth-message.error { background: #3d2224; color: #ffb9bc; }
 .auth-message.notice { background: #293226; color: #b9dfaa; }
