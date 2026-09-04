@@ -554,7 +554,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? (otpSent ? 'מאמת…' : 'שולח…') : otpSent ? 'אימות וכניסה' : 'שליחת קוד SMS'}</button>
               </form>
             )}
-            <button className="auth-text-link" onClick={() => openScreen('register')}>עדיין לא רשומים? להרשמה</button>
+            <button className="auth-text-link auth-mode-switch" onClick={() => openScreen('register')}>עדיין לא רשומים? להרשמה</button>
           </>
         )}
 
@@ -706,7 +706,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 <button className="auth-text-link" type="button" onClick={() => setRegisterStep(3)}>חזרה לפרטים האישיים</button>
               </form>
             )}
-            <button className="auth-text-link" onClick={() => openScreen('login')}>כבר רשומים? לכניסה</button>
+            <button className="auth-text-link auth-mode-switch" onClick={() => openScreen('login')}>כבר רשומים? לכניסה</button>
           </>
         )}
 
