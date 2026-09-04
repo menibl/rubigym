@@ -80,6 +80,13 @@ const getTraineeSessionWorkoutId = () => {
   return match ? decodeURIComponent(match[1]) : '';
 };
 
+const workspaceViews: WorkspaceView[] = ['CLUB_MANAGEMENT', 'TRAINING', 'WORKOUT_PLANNING', 'NUTRITION_PLANNING', 'BOOKING', 'MY_PROGRAM', 'MY_NUTRITION', 'MY_ACCOUNT', 'MY_MEMBERSHIP', 'CHECK_IN', 'CHAT'];
+const workspaceFromLocation = (): WorkspaceView | null => {
+  const requested = new URLSearchParams(window.location.search).get('workspace');
+  if (!requested) return null;
+  return workspaceViews.find(view => view.toLowerCase() === requested.toLowerCase()) || null;
+};
+
 export default function App() {
   // --- Global Application State ---
   const [settings, setSettings] = useState<SystemSettings>(INITIAL_SETTINGS);
@@ -226,6 +233,7 @@ export default function App() {
       .then(async config => {
         if (cancelled) return;
         setPublicLandingConfig(config);
+        if (config.plans.length) setSettings(current => ({ ...current, membershipPlans: config.plans }));
         if (config.surface === 'landing') return;
         const { user } = await getServerSession();
         if (!cancelled) await loadAuthenticatedState(user);
@@ -293,8 +301,21 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('workspace') === 'chat') setWorkspaceView('CHAT');
+    const syncWorkspaceFromHistory = () => setWorkspaceView(workspaceFromLocation());
+    const initialWorkspace = workspaceFromLocation();
+    if (initialWorkspace && !window.history.state?.balyApp) {
+      const workspaceUrl = new URL(window.location.href);
+      const homeUrl = new URL(window.location.href);
+      homeUrl.searchParams.delete('workspace');
+      homeUrl.searchParams.delete('contact');
+      window.history.replaceState({ balyApp: true }, '', homeUrl);
+      window.history.pushState({ balyApp: true, workspace: initialWorkspace }, '', workspaceUrl);
+    } else {
+      window.history.replaceState({ ...window.history.state, balyApp: true }, '', window.location.href);
+    }
+    syncWorkspaceFromHistory();
+    window.addEventListener('popstate', syncWorkspaceFromHistory);
+    return () => window.removeEventListener('popstate', syncWorkspaceFromHistory);
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -415,6 +436,23 @@ export default function App() {
     setIsAuthenticated(false);
     setWorkspaceView(null);
     setShowTraineeAccessAlert(true);
+  };
+
+  const navigateToWorkspace = (view: WorkspaceView, contactId = '') => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('workspace', view.toLowerCase());
+    if (view === 'CHAT' && contactId) url.searchParams.set('contact', contactId);
+    else url.searchParams.delete('contact');
+    window.history.pushState({ balyApp: true, workspace: view }, '', url);
+    setWorkspaceView(view);
+  };
+
+  const navigateHome = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('workspace');
+    url.searchParams.delete('contact');
+    window.history.replaceState({ balyApp: true }, '', url);
+    setWorkspaceView(null);
   };
 
   // Direct send message callback across dashboards
@@ -689,12 +727,12 @@ export default function App() {
       {/* Visual Header */}
       <header className="app-header bg-gradient-to-r from-zinc-950 via-zinc-900 to-amber-950 text-white shadow-md border-b border-amber-500/20">
         <div className="app-header-inner max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <div className="app-brand flex items-center gap-3">
+          <button type="button" onClick={navigateHome} className="app-brand flex items-center gap-3 text-right" aria-label="חזרה לדף הבית">
             <RubisLogo size={192} />
             <div className="app-brand-copy">
               <p>אימונים, בריאות וליווי אישי במקום אחד</p>
             </div>
-          </div>
+          </button>
 
           {/* User Auth & Profile Header Action Bar */}
           <div className="flex flex-wrap items-center gap-2">
@@ -749,7 +787,7 @@ export default function App() {
           {!workspaceView && (
             <RoleWorkspaceLanding
               activeUser={activeUser}
-              onSelect={setWorkspaceView}
+              onSelect={navigateToWorkspace}
               onOpenProfile={() => {
                 setUserToEdit(activeUser);
                 setSettingsInitialSection('profile');
@@ -768,13 +806,7 @@ export default function App() {
           {workspaceView && (
             <button
               type="button"
-              onClick={() => {
-                const url = new URL(window.location.href);
-                url.searchParams.delete('workspace');
-                url.searchParams.delete('contact');
-                window.history.replaceState({}, '', url);
-                setWorkspaceView(null);
-              }}
+              onClick={navigateHome}
               className="mb-4 flex min-h-11 items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-black text-white transition hover:border-amber-400 hover:text-amber-400"
             >
               <ArrowRight size={17} /> חזרה לבחירת אזור
@@ -789,13 +821,7 @@ export default function App() {
               initialContactId={new URLSearchParams(window.location.search).get('contact') || ''}
               onSendMessage={handleSendMessage}
               onUpdateMessages={setMessages}
-              onBack={() => {
-                const url = new URL(window.location.href);
-                url.searchParams.delete('workspace');
-                url.searchParams.delete('contact');
-                window.history.replaceState({}, '', url);
-                setWorkspaceView(null);
-              }}
+              onBack={navigateHome}
             />
           )}
 
@@ -879,7 +905,7 @@ export default function App() {
                 setSettingsInitialSection(section);
                 setIsSettingsOpen(true);
               }}
-              onHome={() => setWorkspaceView(null)}
+              onHome={navigateHome}
               onLogout={handleLogout}
               initialTab={traineeInitialTab}
             />
@@ -907,7 +933,7 @@ export default function App() {
         onUpdateDiscountCodes={setDiscountCodes}
         isAdminMode={activeUser.role === UserRole.MANAGER && userToEdit?.id !== activeUser.id}
         initialSection={settingsInitialSection}
-        onOpenFamilyPurchase={activeUser.role === UserRole.TRAINEE ? () => setWorkspaceView('MY_MEMBERSHIP') : undefined}
+        onOpenFamilyPurchase={activeUser.role === UserRole.TRAINEE ? () => navigateToWorkspace('MY_MEMBERSHIP') : undefined}
         onMedicalCertificateSubmitted={(fileName) => {
           users.filter(user => user.role === UserRole.MANAGER).forEach(manager => {
             handleSendMessage(
@@ -934,7 +960,7 @@ export default function App() {
               {!hasValidPayment && (
                 <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
                   <div className="flex gap-3"><CreditCard className="shrink-0 text-amber-400" size={22} /><div><h3 className="font-black">המנוי אינו משולם או אינו פעיל</h3><p className="mt-1 text-xs leading-5 text-zinc-400">יש לבחור מסלול או להסדיר את התשלום לפני הרשמה לאימון.</p></div></div>
-                  <button type="button" onClick={() => { setWorkspaceView('MY_MEMBERSHIP'); setShowTraineeAccessAlert(false); }} className="mt-3 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-zinc-950">להסדרת מנוי ותשלום</button>
+                  <button type="button" onClick={() => { navigateToWorkspace('MY_MEMBERSHIP'); setShowTraineeAccessAlert(false); }} className="mt-3 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-zinc-950">להסדרת מנוי ותשלום</button>
                 </div>
               )}
 

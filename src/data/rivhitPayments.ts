@@ -42,6 +42,10 @@ export interface VerifiedRivhitPayment {
   userId?: string;
   membershipType: MembershipType;
   amount: number;
+  billingPeriod?: import('../types').MembershipPlanConfig['billingPeriod'];
+  termMonths?: number;
+  recurringMonths?: number;
+  includedSessions?: number;
   transactionId: string;
   last4Digits?: string;
   mode: PendingRivhitPayment['mode'];

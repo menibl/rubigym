@@ -1,4 +1,5 @@
-import { MembershipType, User } from '../types';
+import { MembershipPlanConfig, MembershipType, User } from '../types';
+import { billingPeriodForPlan, membershipDurationMonthsForPlan } from './membershipBilling';
 
 export const toLocalIsoDate = (date: Date) => {
   const year = date.getFullYear();
@@ -23,16 +24,20 @@ export const membershipDurationMonths = (type: MembershipType) => {
   return 1;
 };
 
-export const createMembershipTerm = (type: MembershipType, startedAt = new Date()) => {
-  const months = membershipDurationMonths(type);
+export const createMembershipTerm = (type: MembershipType, startedAt = new Date(), plan?: MembershipPlanConfig) => {
+  const months = plan ? membershipDurationMonthsForPlan(plan) : membershipDurationMonths(type);
   const startDate = toLocalIsoDate(startedAt);
   const endDate = toLocalIsoDate(addCalendarMonths(startedAt, months));
+  const annualMonthlyCommitment = plan
+    ? billingPeriodForPlan(plan) === 'MONTHLY_ANNUAL_COMMITMENT'
+    : type === MembershipType.GROUP_ANNUAL;
+  const recurringMonthly = plan ? billingPeriodForPlan(plan) === 'MONTHLY' || annualMonthlyCommitment : annualMonthlyCommitment;
   return {
     membershipStartedAt: startDate,
     membershipExpiry: endDate,
-    membershipCommitmentEndsAt: type === MembershipType.GROUP_ANNUAL ? endDate : undefined,
-    recurringBillingMonths: type === MembershipType.GROUP_ANNUAL ? 12 : undefined,
-    monthlyBillingDay: type === MembershipType.GROUP_ANNUAL ? startedAt.getDate() : undefined
+    membershipCommitmentEndsAt: annualMonthlyCommitment ? endDate : undefined,
+    recurringBillingMonths: recurringMonthly ? (annualMonthlyCommitment ? 12 : 0) : undefined,
+    monthlyBillingDay: recurringMonthly ? startedAt.getDate() : undefined
   };
 };
 

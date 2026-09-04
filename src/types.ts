@@ -199,6 +199,8 @@ export interface MembershipPlanConfig {
   category: 'PRIMARY' | 'ADD_ON';
   active: boolean;
   priceUnit?: 'MONTH' | 'SESSION' | 'ONE_TIME';
+  billingPeriod?: 'ONE_TIME' | 'MONTHLY' | 'THREE_MONTHS' | 'SIX_MONTHS' | 'ANNUAL' | 'SESSION_PACK' | 'MONTHLY_ANNUAL_COMMITMENT';
+  includedSessions?: number;
   supportsTrainingCard?: boolean;
 }
 
@@ -210,7 +212,14 @@ export const DEFAULT_MEMBERSHIP_PLAN_CONFIGS: MembershipPlanConfig[] = [
     price: MEMBERSHIP_PRICES[id],
     category: 'PRIMARY' as const,
     active: true,
-    priceUnit: ([MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL].includes(id) ? 'MONTH' : 'ONE_TIME') as MembershipPlanConfig['priceUnit']
+    priceUnit: ([MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL, MembershipType.OPEN_GYM, MembershipType.YOUTH_TWICE_WEEKLY, MembershipType.YOUTH_ONCE_WEEKLY].includes(id) ? 'MONTH' : 'ONE_TIME') as MembershipPlanConfig['priceUnit'],
+    billingPeriod: (id === MembershipType.GROUP_ANNUAL
+      ? 'MONTHLY_ANNUAL_COMMITMENT'
+      : id === MembershipType.DEDICATED_GROUP_HALF_YEAR
+        ? 'SIX_MONTHS'
+        : [MembershipType.GROUP_MONTHLY, MembershipType.OPEN_GYM, MembershipType.YOUTH_TWICE_WEEKLY, MembershipType.YOUTH_ONCE_WEEKLY].includes(id)
+          ? 'MONTHLY'
+          : 'ONE_TIME') as MembershipPlanConfig['billingPeriod']
   })),
   ...CURRENT_MEMBERSHIP_ADD_ONS.map(id => ({
     id,
@@ -220,6 +229,8 @@ export const DEFAULT_MEMBERSHIP_PLAN_CONFIGS: MembershipPlanConfig[] = [
     category: 'ADD_ON' as const,
     active: true,
     priceUnit: ([MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(id) ? 'SESSION' : 'ONE_TIME') as MembershipPlanConfig['priceUnit'],
+    billingPeriod: ([MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(id) ? 'SESSION_PACK' : 'ONE_TIME') as MembershipPlanConfig['billingPeriod'],
+    includedSessions: [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(id) ? 1 : undefined,
     supportsTrainingCard: [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(id)
   }))
 ];
@@ -333,9 +344,9 @@ export interface User {
   recurringBillingMonths?: number;
   monthlyBillingDay?: number;
   punchCardRemaining?: number; // for punch card membership
-  personalTrainingCardSize?: TrainingCardSize;
+  personalTrainingCardSize?: number;
   personalTrainingRemaining?: number;
-  duoTrainingCardSize?: TrainingCardSize;
+  duoTrainingCardSize?: number;
   duoTrainingRemaining?: number;
   priorityScore: number; // 0 to 100, drops when trainee accumulates too many black points
 
@@ -743,6 +754,9 @@ export interface Payment {
   timestamp?: string; // ISO timestamp used for real-time staff alerts
   status: 'PAID' | 'REFUNDED' | 'PENDING';
   membershipTypePurchased: MembershipType;
+  billingPeriod?: MembershipPlanConfig['billingPeriod'];
+  billingTermMonths?: number;
+  sessionsPurchased?: number;
   paymentMethod: string;
   isMock: boolean;
 }

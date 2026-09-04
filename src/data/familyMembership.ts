@@ -4,6 +4,7 @@ import {
   FAMILY_MEMBERSHIP_PRICES,
   FamilyBillingMode,
   FamilyMemberPlanSelection,
+  MembershipPlanConfig,
   MembershipType,
   MEMBERSHIP_PRICES
 } from '../types';
@@ -26,8 +27,8 @@ export const resizeFamilyPlans = (
   membershipType: index === 0 ? MembershipType.GROUP_ANNUAL : MembershipType.OPEN_GYM
 });
 
-export const familyMemberPlanPrice = (plan: FamilyMemberPlanSelection) => {
-  const unitPrice = MEMBERSHIP_PRICES[plan.membershipType] || 0;
+export const familyMemberPlanPrice = (plan: FamilyMemberPlanSelection, planConfigs: MembershipPlanConfig[] = []) => {
+  const unitPrice = planConfigs.find(config => config.id === plan.membershipType && config.active)?.price ?? MEMBERSHIP_PRICES[plan.membershipType] ?? 0;
   if (plan.membershipType === MembershipType.PERSONAL_TRAINING || plan.membershipType === MembershipType.DUO_TRAINING) {
     return unitPrice * Math.max(1, Math.min(50, Math.round(plan.trainingSessionsCount || 1)));
   }
@@ -37,9 +38,10 @@ export const familyMemberPlanPrice = (plan: FamilyMemberPlanSelection) => {
 export const familyPurchaseAmount = (
   mode: FamilyBillingMode,
   count: number,
-  plans: FamilyMemberPlanSelection[]
+  plans: FamilyMemberPlanSelection[],
+  planConfigs: MembershipPlanConfig[] = []
 ) => mode === 'ANNUAL_BY_SIZE'
   ? (FAMILY_MEMBERSHIP_PRICES[count] || 0)
   : mode === 'MONTHLY_PER_MEMBER'
     ? count * FAMILY_MONTHLY_PRICE_PER_MEMBER
-    : plans.slice(0, count).reduce((sum, plan) => sum + familyMemberPlanPrice(plan), 0);
+    : plans.slice(0, count).reduce((sum, plan) => sum + familyMemberPlanPrice(plan, planConfigs), 0);
