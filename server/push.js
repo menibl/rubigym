@@ -2,6 +2,9 @@ import webpush from 'web-push';
 
 const reminderWindowMs = 10 * 60 * 1000;
 const israelTimeZone = 'Asia/Jerusalem';
+const retryablePushStatuses = new Set([408, 425, 429]);
+const invalidSubscriptionStatuses = new Set([400, 403, 404, 410]);
+const pushRetryDelaysMs = [250, 1_000];
 
 const cleanText = (value, fallback, maxLength = 180) => {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
@@ -45,27 +48,83 @@ const sendToSubscription = async (subscription, payload, env) => {
   });
 };
 
+export const pushErrorStatus = error => {
+  const status = Number(error?.statusCode || error?.status || 0);
+  return Number.isFinite(status) ? status : 0;
+};
+
+export const isRetryablePushError = error => {
+  const status = pushErrorStatus(error);
+  return retryablePushStatuses.has(status) || status >= 500 || status === 0;
+};
+
+export const isInvalidPushSubscriptionError = error => invalidSubscriptionStatuses.has(pushErrorStatus(error));
+
+const wait = delayMs => new Promise(resolve => setTimeout(resolve, delayMs));
+
+const sendToSubscriptionWithRetry = async (subscription, payload, env) => {
+  let lastError;
+  for (let attempt = 0; attempt <= pushRetryDelaysMs.length; attempt += 1) {
+    try {
+      await sendToSubscription(subscription, payload, env);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryablePushError(error) || attempt === pushRetryDelaysMs.length) throw error;
+      await wait(pushRetryDelaysMs[attempt]);
+    }
+  }
+  throw lastError;
+};
+
+const endpointProvider = endpoint => {
+  try { return new URL(endpoint).hostname.slice(0, 120); }
+  catch { return 'invalid-endpoint'; }
+};
+
 export const sendPushToUsers = async (store, env, clubId, userIds, payload, endpoint) => {
-  if (!store || !isPushConfigured(env) || !userIds.length) return {sent: 0};
+  if (!store || !isPushConfigured(env) || !userIds.length) return {sent: 0, failed: 0, removed: 0};
   const subscriptions = (await store.getPushSubscriptions(clubId, [...new Set(userIds)]))
     .filter(row => !endpoint || row.endpoint === endpoint);
+  if (!subscriptions.length) {
+    console.warn('Web push skipped because no active device subscription was found', {
+      userIds: [...new Set(userIds)],
+      tag: String(payload?.tag || '').slice(0, 120),
+    });
+  }
   let sent = 0;
-  await Promise.all(subscriptions.map(async row => {
+  let failed = 0;
+  let removed = 0;
+  await Promise.allSettled(subscriptions.map(async row => {
     try {
-      await sendToSubscription({
+      await sendToSubscriptionWithRetry({
         endpoint: row.endpoint,
         keys: {p256dh: row.p256dh, auth: row.auth},
       }, payload, env);
       sent += 1;
+      await store.recordPushSubscriptionSuccess?.(clubId, row.user_id, row.endpoint);
     } catch (error) {
-      if (error?.statusCode === 404 || error?.statusCode === 410) {
-        await store.deletePushSubscription(clubId, row.user_id, row.endpoint);
+      const status = pushErrorStatus(error);
+      if (isInvalidPushSubscriptionError(error)) {
+        await store.deletePushSubscription(clubId, row.user_id, row.endpoint).catch(() => undefined);
+        removed += 1;
+        console.warn('Removed invalid web push subscription', {
+          userId: row.user_id,
+          provider: endpointProvider(row.endpoint),
+          status,
+        });
         return;
       }
-      console.warn('Web push delivery failed', error?.statusCode || error?.message || error);
+      failed += 1;
+      await store.recordPushSubscriptionFailure?.(clubId, row.user_id, row.endpoint, status || 'NETWORK_ERROR').catch(() => undefined);
+      console.warn('Web push delivery failed after retries', {
+        userId: row.user_id,
+        provider: endpointProvider(row.endpoint),
+        status: status || 'NETWORK_ERROR',
+      });
     }
   }));
-  return {sent};
+  return {sent, failed, removed};
 };
 
 const pushEnabled = user => Boolean(user?.pushNotificationsEnabled);

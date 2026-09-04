@@ -2,7 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAuthenticatedSession} from './auth.js';
 import worker from './index.js';
-import {dispatchStateChangePushes, isPushConfigured, israelDateTimeToTimestamp, messagePushPayload, validatePushSubscription} from './push.js';
+import {
+  dispatchStateChangePushes,
+  isInvalidPushSubscriptionError,
+  isPushConfigured,
+  isRetryablePushError,
+  israelDateTimeToTimestamp,
+  messagePushPayload,
+  pushErrorStatus,
+  validatePushSubscription
+} from './push.js';
 
 test('requires the complete VAPID configuration', () => {
   assert.equal(isPushConfigured({}), false);
@@ -25,6 +34,18 @@ test('accepts only complete HTTPS push subscriptions', () => {
   assert.equal(validatePushSubscription({endpoint: 'http://push.example.com', keys: {p256dh: 'key', auth: 'auth'}}), null);
   assert.equal(validatePushSubscription({endpoint: 'https://127.0.0.1/push', keys: {p256dh: 'key', auth: 'auth'}}), null);
   assert.equal(validatePushSubscription({endpoint: 'https://push.example.com', keys: {p256dh: '', auth: ''}}), null);
+});
+
+test('retries temporary push provider failures and removes permanently invalid subscriptions', () => {
+  assert.equal(pushErrorStatus({statusCode: 429}), 429);
+  assert.equal(isRetryablePushError({statusCode: 429}), true);
+  assert.equal(isRetryablePushError({statusCode: 503}), true);
+  assert.equal(isRetryablePushError(new Error('network timeout')), true);
+  assert.equal(isRetryablePushError({statusCode: 410}), false);
+  assert.equal(isInvalidPushSubscriptionError({statusCode: 400}), true);
+  assert.equal(isInvalidPushSubscriptionError({statusCode: 403}), true);
+  assert.equal(isInvalidPushSubscriptionError({statusCode: 404}), true);
+  assert.equal(isInvalidPushSubscriptionError({statusCode: 410}), true);
 });
 
 test('calculates workout reminder times in the Israel time zone including daylight saving', () => {
@@ -98,5 +119,5 @@ test('push test targets only the subscription of the device requesting the test'
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {ok: true, sent: 0});
+  assert.deepEqual(await response.json(), {ok: true, sent: 0, failed: 0, removed: 0});
 });
