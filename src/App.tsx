@@ -294,9 +294,30 @@ export default function App() {
   // Keep this authenticated device registered for production Web Push.
   useEffect(() => {
     if (!isAuthenticated) return;
-    void syncServerPushSubscription(Boolean(activeUser.pushNotificationsEnabled)).catch(error => {
-      console.warn('Unable to synchronize push subscription', error);
-    });
+    let syncing = false;
+    const syncPush = async () => {
+      if (syncing) return;
+      syncing = true;
+      try {
+        await syncServerPushSubscription(Boolean(activeUser.pushNotificationsEnabled));
+      } catch (error) {
+        console.warn('Unable to synchronize push subscription', error);
+      } finally {
+        syncing = false;
+      }
+    };
+    const syncWhenVisible = () => {
+      if (document.visibilityState === 'visible') void syncPush();
+    };
+    void syncPush();
+    window.addEventListener('online', syncPush);
+    document.addEventListener('visibilitychange', syncWhenVisible);
+    const interval = window.setInterval(() => void syncPush(), 6 * 60 * 60 * 1000);
+    return () => {
+      window.removeEventListener('online', syncPush);
+      document.removeEventListener('visibilitychange', syncWhenVisible);
+      window.clearInterval(interval);
+    };
   }, [activeUser.id, activeUser.pushNotificationsEnabled, isAuthenticated]);
 
   useEffect(() => {

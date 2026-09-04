@@ -201,6 +201,31 @@ const urlBase64ToBytes = (value: string) => {
   return Uint8Array.from(atob(padded), character => character.charCodeAt(0));
 };
 
+const PUSH_BINDING_KEY = 'baly-push-vapid-binding-v2';
+
+const storedPushBinding = () => {
+  try { return localStorage.getItem(PUSH_BINDING_KEY); }
+  catch { return null; }
+};
+
+const savePushBinding = (publicKey?: string) => {
+  try {
+    if (publicKey) localStorage.setItem(PUSH_BINDING_KEY, publicKey);
+    else localStorage.removeItem(PUSH_BINDING_KEY);
+  } catch {
+    // Storage can be unavailable in private browsing; subscription still works.
+  }
+};
+
+const sameBytes = (left: Uint8Array, right: Uint8Array) => left.length === right.length
+  && left.every((value, index) => value === right[index]);
+
+export const pushSubscriptionMatchesKey = (subscription: PushSubscription, publicKey: string) => {
+  const applicationServerKey = subscription.options?.applicationServerKey;
+  if (!applicationServerKey) return storedPushBinding() === publicKey;
+  return sameBytes(new Uint8Array(applicationServerKey), urlBase64ToBytes(publicKey));
+};
+
 export const syncServerPushSubscription = async (enabled: boolean) => {
   if (isPagesDemoMode() || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     return {supported: false, subscribed: false, endpoint: undefined};
@@ -217,6 +242,7 @@ export const syncServerPushSubscription = async (enabled: boolean) => {
       });
       await existing.unsubscribe();
     }
+    savePushBinding();
     return {supported: true, subscribed: false, endpoint: undefined};
   }
 
@@ -225,7 +251,16 @@ export const syncServerPushSubscription = async (enabled: boolean) => {
   }
 
   const {publicKey} = await request<{publicKey: string}>('/api/push/public-key');
-  const subscription = existing || await registration.pushManager.subscribe({
+  let currentSubscription = existing;
+  if (currentSubscription && !pushSubscriptionMatchesKey(currentSubscription, publicKey)) {
+    await request<{ok: boolean}>('/api/push/subscriptions', {
+      method: 'DELETE',
+      body: JSON.stringify({endpoint: currentSubscription.endpoint}),
+    }).catch(() => undefined);
+    await currentSubscription.unsubscribe().catch(() => undefined);
+    currentSubscription = null;
+  }
+  const subscription = currentSubscription || await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToBytes(publicKey),
   });
@@ -233,6 +268,7 @@ export const syncServerPushSubscription = async (enabled: boolean) => {
     method: 'POST',
     body: JSON.stringify(subscription.toJSON()),
   });
+  savePushBinding(publicKey);
   return {supported: true, subscribed: true, endpoint: subscription.endpoint};
 };
 
