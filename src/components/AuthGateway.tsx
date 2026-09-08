@@ -50,14 +50,15 @@ interface AuthGatewayProps {
   users: User[];
   discountCodes: DiscountCode[];
   settings: SystemSettings;
-  onPasswordLogin: (login: string, password: string, otp?: string) => Promise<PasswordLoginResult>;
+  onPasswordLogin: (login: string, password: string) => Promise<PasswordLoginResult>;
   onPhoneLogin: (phone: string, otp: string) => Promise<User>;
   onRequestPhoneCode: (phone: string, purpose: 'LOGIN' | 'REGISTER') => Promise<PhoneCodeRequestResult>;
-  onVerifyRegistrationPhone: (phone: string, otp: string) => Promise<{ verified: true; phoneVerificationToken: string }>;
+  onVerifyRegistrationPhone: (phone: string, otp: string) => Promise<{ verified: true; phoneVerificationToken: string; registrationUserId?: string; user?: User }>;
   onRegister: (user: User, payment: Payment, familyUsers?: User[], phoneVerificationToken?: string) => Promise<void>;
   initialScreen?: 'login' | 'register';
   initialPlan?: MembershipType;
   landingUrl?: string;
+  resumeUser?: User;
 }
 
 type AuthScreen = 'login' | 'register';
@@ -82,29 +83,27 @@ const calculateAge = (birthDate: string) => {
   return Math.max(age, 0);
 };
 
-export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRequestPhoneCode, onVerifyRegistrationPhone, onRegister, initialScreen = 'login', initialPlan, landingUrl }) => {
+export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRequestPhoneCode, onVerifyRegistrationPhone, onRegister, initialScreen = 'login', initialPlan, landingUrl, resumeUser }) => {
   const demoMode = isPagesDemoMode();
   const demoManagerPassword = import.meta.env.VITE_DEMO_MANAGER_PASSWORD || '';
-  const [screen, setScreen] = useState<AuthScreen>(initialScreen);
+  const [screen, setScreen] = useState<AuthScreen>(resumeUser ? 'register' : initialScreen);
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('phone');
   const [username, setUsername] = useState(demoMode ? 'רובי באלי' : '');
   const [password, setPassword] = useState(demoMode ? demoManagerPassword : '');
-  const [passwordOtp, setPasswordOtp] = useState('');
-  const [passwordOtpSent, setPasswordOtpSent] = useState(false);
-  const [passwordPhoneHint, setPasswordPhoneHint] = useState('');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
-  const [registerStep, setRegisterStep] = useState<1 | 2 | 3 | 4>(1);
-  const [registerPhone, setRegisterPhone] = useState('');
+  const [registerStep, setRegisterStep] = useState<1 | 2 | 3 | 4>(resumeUser ? 3 : 1);
+  const [registerPhone, setRegisterPhone] = useState(resumeUser?.phone || '');
   const [registerOtp, setRegisterOtp] = useState('');
   const [phoneVerificationToken, setPhoneVerificationToken] = useState('');
-  const [registerName, setRegisterName] = useState('');
-  const [registerUsername, setRegisterUsername] = useState('');
-  const [registerEmail, setRegisterEmail] = useState('');
+  const [registrationUserId, setRegistrationUserId] = useState(resumeUser?.id || '');
+  const [registerName, setRegisterName] = useState(resumeUser?.registrationIncomplete ? '' : resumeUser?.name || '');
+  const [registerUsername, setRegisterUsername] = useState(resumeUser?.registrationIncomplete ? '' : resumeUser?.username || '');
+  const [registerEmail, setRegisterEmail] = useState(resumeUser?.email || '');
   const [registerPassword, setRegisterPassword] = useState('');
-  const [registerBirthDate, setRegisterBirthDate] = useState('');
-  const [registerGender, setRegisterGender] = useState<Gender>(Gender.FEMALE);
+  const [registerBirthDate, setRegisterBirthDate] = useState(resumeUser?.birthDate || '');
+  const [registerGender, setRegisterGender] = useState<Gender>(resumeUser?.gender || Gender.FEMALE);
   const [healthApproved, setHealthApproved] = useState(false);
   const [healthDeclaration, setHealthDeclaration] = useState<HealthDeclarationResult | null>(null);
   const [showHealthDeclaration, setShowHealthDeclaration] = useState(false);
@@ -124,7 +123,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [paymentStarting, setPaymentStarting] = useState(false);
   const [authPending, setAuthPending] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(resumeUser ? 'ההרשמה שלך התחילה ונשמרה. יש להשלים את הפרטים ולבחור מסלול לפני הכניסה לאפליקציה.' : '');
   const registrationPlans = useMemo(
     () => (settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS).filter(plan => plan.active),
     [settings.membershipPlans]
@@ -144,7 +143,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const familyAccountAt = (index: number): FamilyAccountDraft => familyAccountDrafts[index] || {
     name: resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי')[index + 1]?.memberName || `בן/בת משפחה ${index + 2}`,
     username: '',
-    email: '',
+    email: registerEmail.trim().toLowerCase(),
     phone: '',
     password: '',
     birthDate: '',
@@ -253,14 +252,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     resetMessages();
     setAuthPending(true);
     try {
-      const result = await onPasswordLogin(username.trim(), password, passwordOtpSent ? passwordOtp : '');
-      if ('requiresSmsVerification' in result) {
-        setPasswordOtpSent(true);
-        setPasswordPhoneHint(result.maskedPhone);
-        setNotice(result.testMode
-          ? 'הסיסמה אומתה. קוד הבדיקה ל-SMS הוא 1111.'
-          : `הסיסמה אומתה. קוד נוסף נשלח ב-SMS למספר ${result.maskedPhone}.`);
-      }
+      await onPasswordLogin(username.trim(), password);
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : 'לא ניתן להתחבר כרגע.');
     } finally {
@@ -316,7 +308,9 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     try {
       const result = await onVerifyRegistrationPhone(registerPhone, registerOtp);
       setPhoneVerificationToken(result.phoneVerificationToken);
+      setRegistrationUserId(result.registrationUserId || result.user?.id || '');
       setRegisterStep(3);
+      setNotice('מספר הטלפון אומת והחשבון נשמר. יש להשלים כעת את הפרטים והתשלום.');
     } catch (verifyError) {
       setError(verifyError instanceof Error ? verifyError.message : 'קוד האימות אינו תקין או שפג תוקפו.');
     } finally {
@@ -410,11 +404,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       setError('יש להשלים שם, שם משתמש, אימייל תקין, סיסמה בת 8 תווים ותאריך לידה עבור כל בן משפחה.');
       return;
     }
-    const familyIdentities = [registerUsername, registerEmail, registerPhone, ...familyAccounts.flatMap(account => [account.username, account.email, account.phone])]
-      .filter(Boolean)
-      .map(value => value.trim().toLowerCase().replace(/[^\p{L}\p{N}@.+]/gu, ''));
-    if (isFamilyPlan && new Set(familyIdentities).size !== familyIdentities.length) {
-      setError('לכל בן משפחה נדרשים שם משתמש, אימייל ומספר טלפון ייחודיים.');
+    const familyUsernames = [registerUsername, ...familyAccounts.map(account => account.username)].map(value => value.trim().toLowerCase());
+    const familyPhones = [registerPhone, ...familyAccounts.map(account => account.phone)].filter(Boolean).map(value => value.replace(/\D/g, ''));
+    if (isFamilyPlan && (new Set(familyUsernames).size !== familyUsernames.length || new Set(familyPhones).size !== familyPhones.length)) {
+      setError('לכל בן משפחה נדרשים שם משתמש ומספר טלפון אישי ייחודיים. ניתן להשתמש באותה כתובת אימייל משפחתית.');
       return;
     }
     const healthRecord = createHealthDeclarationRecord({
@@ -430,7 +423,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       medicalCertificateDataUrl: healthDeclaration?.medicalCertificateDataUrl
     });
     const newUser: User = {
-      id: `user-${now}`,
+      id: registrationUserId || `user-${now}`,
       name: registerName.trim(),
       username: registerUsername.trim(),
       password: registerPassword,
@@ -474,6 +467,8 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       familyMemberPlans: isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans : undefined,
       familyCombinedAmount: isFamilyPlan ? familyPurchaseAmount(familyBillingMode, familyMembersCount, normalizedFamilyPlans, registrationPlans) : undefined,
       familyTrackName: isFamilyPlan ? familyBillingMode === 'ANNUAL_BY_SIZE' ? `משפחתי שנתי (${familyMembersCount} מתאמנים)` : familyBillingMode === 'MONTHLY_PER_MEMBER' ? `משפחתי חודשי (${familyMembersCount} מתאמנים)` : 'משפחתי מותאם – תשלום מאוחד' : undefined,
+      registrationIncomplete: false,
+      registrationCompletedAt: new Date().toISOString(),
       imageUrl: registerGender === Gender.FEMALE
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
@@ -561,17 +556,15 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 <Phone size={16} /> טלפון ו־SMS
               </button>
               <button className={loginMethod === 'password' ? 'active' : ''} onClick={() => { setLoginMethod('password'); resetMessages(); }}>
-                <LockKeyhole size={16} /> משתמש וסיסמה + SMS
+                <LockKeyhole size={16} /> שם משתמש וסיסמה
               </button>
             </div>
 
             {loginMethod === 'password' ? (
               <form onSubmit={handlePasswordLogin} className="auth-form">
-                <label>שם משתמש או אימייל<input value={username} disabled={passwordOtpSent} onChange={event => { setUsername(event.target.value); setPasswordOtpSent(false); setPasswordOtp(''); }} autoComplete="username" placeholder="שם משתמש או name@example.com" /></label>
-                <label>סיסמה<input type="password" value={password} disabled={passwordOtpSent} onChange={event => { setPassword(event.target.value); setPasswordOtpSent(false); setPasswordOtp(''); }} autoComplete="current-password" /></label>
-                {passwordOtpSent && <label>קוד אימות ב-SMS {passwordPhoneHint && <small>({passwordPhoneHint})</small>}<input inputMode="numeric" maxLength={demoMode ? 4 : 6} value={passwordOtp} onChange={event => setPasswordOtp(event.target.value.replace(/\D/g, ''))} placeholder={demoMode ? '1111' : '6 ספרות'} autoComplete="one-time-code" /></label>}
-                <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? (passwordOtpSent ? 'מאמת…' : 'שולח קוד…') : passwordOtpSent ? 'אימות וכניסה' : 'המשך ושליחת קוד SMS'}</button>
-                {passwordOtpSent && <button className="auth-text-link" type="button" onClick={() => { setPasswordOtpSent(false); setPasswordOtp(''); setPasswordPhoneHint(''); resetMessages(); }}>שינוי פרטי הכניסה</button>}
+                <label>שם משתמש או אימייל<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" placeholder="שם משתמש או name@example.com" /></label>
+                <label>סיסמה<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label>
+                <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? 'מתחבר…' : 'כניסה'}</button>
               </form>
             ) : (
               <form onSubmit={handlePhoneLogin} className="auth-form">
@@ -607,7 +600,14 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
               <form onSubmit={handleRegistrationDetails} className="auth-form">
                 <label>שם מלא<input value={registerName} onChange={event => setRegisterName(event.target.value)} /></label>
                 <label>שם משתמש<input value={registerUsername} onChange={event => setRegisterUsername(event.target.value)} autoComplete="username" /></label>
-                <label>כתובת אימייל<input required type="email" value={registerEmail} onChange={event => setRegisterEmail(event.target.value)} autoComplete="email" placeholder="name@example.com" /></label>
+                <label>כתובת אימייל<input required type="email" value={registerEmail} onChange={event => {
+                  const previousEmail = registerEmail.trim().toLowerCase();
+                  const nextEmail = event.target.value;
+                  setRegisterEmail(nextEmail);
+                  setFamilyAccountDrafts(current => current.map(account => !account.email.trim() || account.email.trim().toLowerCase() === previousEmail
+                    ? { ...account, email: nextEmail.trim().toLowerCase() }
+                    : account));
+                }} autoComplete="email" placeholder="name@example.com" /></label>
                 <label>סיסמה<input type="password" value={registerPassword} onChange={event => setRegisterPassword(event.target.value)} autoComplete="new-password" /></label>
                 <label>תאריך לידה<input type="date" value={registerBirthDate} onChange={event => setRegisterBirthDate(event.target.value)} /></label>
                 <div className="auth-gender">
@@ -732,7 +732,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 <button className="auth-text-link" type="button" onClick={() => setRegisterStep(3)}>חזרה לפרטים האישיים</button>
               </form>
             )}
-            <button className="auth-text-link auth-mode-switch" onClick={() => openScreen('login')}>כבר רשומים? לכניסה</button>
+            {!resumeUser && <button className="auth-text-link auth-mode-switch" onClick={() => openScreen('login')}>כבר רשומים? לכניסה</button>}
           </>
         )}
 

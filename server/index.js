@@ -323,8 +323,6 @@ const smsFailureResponse = (error, headers) => {
   return null;
 };
 
-const maskedPhone = phone => `***-***-${String(phone || '').slice(-4)}`;
-
 const landingMediaSlots = new Set(['hero', 'coaching']);
 const landingImageMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const maxLandingImageBytes = 800_000;
@@ -851,11 +849,12 @@ const handleApi = async (request, env, url) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   try {
     const clubId = env.CLUB_ID || 'baly-wellness';
-    const getIdentity = async () => {
+    const getIdentity = async ({ allowIncomplete = false } = {}) => {
       const session = await getAuthenticatedSession(request, env.STATE_STORE);
       if (!session) return null;
       const account = await env.STATE_STORE.getAccount(session.club_id, session.user_id);
-      return account ? { session, account } : null;
+      if (!account || (!allowIncomplete && account.profile?.registrationIncomplete)) return null;
+      return { session, account };
     };
 
     const notifyStateChange = async (stateBefore, stateAfter, targetClubId = clubId) => {
@@ -946,32 +945,22 @@ const handleApi = async (request, env, url) => {
     if (url.pathname === '/api/auth/login' && request.method === 'POST') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
       const body = await request.json();
-      const account = await env.STATE_STORE.getAccountByLogin(clubId, body.login);
-      if (!account || !await verifyPassword(body.password, account.password_hash)) {
+      const candidates = env.STATE_STORE.getAccountsByLogin
+        ? await env.STATE_STORE.getAccountsByLogin(clubId, body.login)
+        : [await env.STATE_STORE.getAccountByLogin(clubId, body.login)].filter(Boolean);
+      let account = null;
+      for (const candidate of candidates) {
+        if (await verifyPassword(body.password, candidate.password_hash)) {
+          account = candidate;
+          break;
+        }
+      }
+      if (!account) {
         return json({ message: 'שם המשתמש או הסיסמה אינם נכונים.' }, 401, headers);
       }
       const state = await loadClubState(clubId);
       const user = state?.payload?.users?.find(candidate => candidate.id === account.user_id);
       if (!user) return json({ message: 'חשבון המשתמש אינו קיים בנתוני המועדון.' }, 409, headers);
-      const phone = normalizeIsraeliMobile(account.phone_normalized || user.phone);
-      if (!phone) return json({ message: 'לא מוגדר מספר טלפון נייד לחשבון. יש לפנות למועדון לעדכון הפרטים.' }, 409, headers);
-      if (!body.otp) {
-        try {
-          const result = await requestPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose: 'LOGIN' });
-          return json({
-            requiresSmsVerification: true,
-            maskedPhone: maskedPhone(phone),
-            expiresInSeconds: result.expiresInSeconds,
-            testMode: result.testMode
-          }, 202, headers);
-        } catch (error) {
-          const response = smsFailureResponse(error, headers);
-          if (response) return response;
-          throw error;
-        }
-      }
-      const verified = await verifyPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose: 'LOGIN', code: body.otp });
-      if (!verified) return json({ message: 'קוד האימות אינו תקין או שפג תוקפו.' }, 401, headers);
       const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, user.id);
       return json({ user: stripCredentials(user) }, 200, { ...headers, 'Set-Cookie': auth.cookie });
     }
@@ -1004,10 +993,42 @@ const handleApi = async (request, env, url) => {
     if (url.pathname === '/api/auth/verify-registration-phone' && request.method === 'POST') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
       const body = await request.json();
-      const verified = await verifyPhoneCode({ store: env.STATE_STORE, env, clubId, phone: body.phone, purpose: 'REGISTER', code: body.otp });
+      const phone = normalizeIsraeliMobile(body.phone);
+      const verified = phone && await verifyPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose: 'REGISTER', code: body.otp });
       if (!verified) return json({ message: 'קוד האימות אינו תקין או שפג תוקפו.' }, 401, headers);
-      const phoneVerificationToken = await createPhoneVerificationToken({ env, clubId, phone: body.phone });
-      return json({ verified: true, phoneVerificationToken }, 200, headers);
+      const state = await loadClubState(clubId);
+      if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
+      const now = new Date().toISOString();
+      const registrationUser = stripCredentials({
+        id: `registration-${crypto.randomUUID()}`,
+        name: 'הרשמה בתהליך',
+        username: `registration-${phone}`,
+        email: '',
+        phone,
+        role: 'TRAINEE',
+        gender: 'MALE',
+        age: 0,
+        priorityScore: 100,
+        membershipStatus: 'DEBT',
+        registrationIncomplete: true,
+        registrationVerifiedAt: now
+      });
+      const nextPayload = appendUserChangeMessages(state.payload, {
+        ...state.payload,
+        users: [registrationUser, ...(state.payload.users || [])]
+      });
+      const saved = await env.STATE_STORE.putClubState(clubId, nextPayload, state.revision);
+      if (saved.conflict) return json(saved, 409, headers);
+      await env.STATE_STORE.upsertAccount(await accountFromUser(clubId, registrationUser, crypto.randomUUID()));
+      await notifyStateChange(state.payload, nextPayload);
+      const phoneVerificationToken = await createPhoneVerificationToken({ env, clubId, phone });
+      const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, registrationUser.id);
+      return json({
+        verified: true,
+        phoneVerificationToken,
+        registrationUserId: registrationUser.id,
+        user: registrationUser
+      }, 200, { ...headers, 'Set-Cookie': auth.cookie });
     }
 
     if (url.pathname === '/api/auth/phone-login' && request.method === 'POST') {
@@ -1025,7 +1046,7 @@ const handleApi = async (request, env, url) => {
     }
 
     if (url.pathname === '/api/auth/session' && request.method === 'GET') {
-      const identity = await getIdentity();
+      const identity = await getIdentity({ allowIncomplete: true });
       if (!identity) return json({ authenticated: false }, 401, headers);
       const state = await loadClubState(identity.session.club_id);
       const user = state?.payload?.users?.find(candidate => candidate.id === identity.account.user_id);
@@ -1033,7 +1054,7 @@ const handleApi = async (request, env, url) => {
     }
 
     if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
-      const identity = await getIdentity();
+      const identity = await getIdentity({ allowIncomplete: true });
       if (identity) await env.STATE_STORE.deleteSession(identity.session.tokenHash);
       return json({ ok: true }, 200, { ...headers, 'Set-Cookie': clearSessionCookie });
     }
@@ -1055,7 +1076,18 @@ const handleApi = async (request, env, url) => {
       if (!user?.id || typeof user?.password !== 'string' || user.password.length < 8 || !user?.email || !isValidEmail(user.email) || user.role !== 'TRAINEE') {
         return json({ message: 'פרטי ההרשמה או כתובת האימייל אינם תקינים.' }, 400, headers);
       }
-      if (!await verifyPhoneVerificationToken({ env, clubId, phone: user.phone, token: body.phoneVerificationToken })) {
+      const identity = await getIdentity({ allowIncomplete: true });
+      const state = await loadClubState(clubId);
+      if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
+      const provisionalUser = identity?.session?.club_id === clubId
+        ? state.payload?.users?.find(candidate => candidate.id === identity.account.user_id && candidate.registrationIncomplete)
+        : null;
+      const completingProvisionalRegistration = Boolean(
+        provisionalUser
+        && provisionalUser.id === user.id
+        && normalizePhone(provisionalUser.phone) === normalizePhone(user.phone)
+      );
+      if (!completingProvisionalRegistration && !await verifyPhoneVerificationToken({ env, clubId, phone: user.phone, token: body.phoneVerificationToken })) {
         return json({ message: 'אימות מספר הטלפון חסר או שפג תוקפו. יש לשלוח קוד חדש.' }, 401, headers);
       }
       if (familyUsers.length > 5 || (familyUsers.length && (!user.isFamilyPayer || !user.familyId))) {
@@ -1070,33 +1102,32 @@ const handleApi = async (request, env, url) => {
           return json({ message: 'חסרים פרטי כניסה תקינים לאחד מבני המשפחה.' }, 400, headers);
         }
       }
-      const identityValues = registrations.flatMap(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean));
-      const normalizedIdentities = registrations.flatMap(candidate => [
-        normalizeLogin(candidate.username),
-        normalizeLogin(candidate.email),
-        normalizePhone(candidate.phone)
-      ].filter(Boolean));
-      if (new Set(normalizedIdentities).size !== normalizedIdentities.length) {
-        return json({ message: 'שם משתמש, אימייל או טלפון מופיעים יותר מפעם אחת בהרשמה.' }, 409, headers);
+      const usernames = registrations.map(candidate => normalizeLogin(candidate.username)).filter(Boolean);
+      const phones = registrations.map(candidate => normalizePhone(candidate.phone)).filter(Boolean);
+      const emails = [...new Set(registrations.map(candidate => normalizeLogin(candidate.email)).filter(Boolean))];
+      if (new Set(usernames).size !== usernames.length || new Set(phones).size !== phones.length) {
+        return json({ message: 'שם משתמש או מספר טלפון מופיעים יותר מפעם אחת בהרשמה.' }, 409, headers);
       }
-      for (const identityValue of identityValues) {
-        if (await env.STATE_STORE.getAccountByLogin(clubId, identityValue)) {
+      for (const identityValue of [...usernames, ...phones, ...emails]) {
+        const existingAccounts = env.STATE_STORE.getAccountsByLogin
+          ? await env.STATE_STORE.getAccountsByLogin(clubId, identityValue)
+          : [await env.STATE_STORE.getAccountByLogin(clubId, identityValue)].filter(Boolean);
+        if (existingAccounts.some(accountItem => accountItem.user_id !== provisionalUser?.id)) {
           return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
         }
       }
-      const state = await loadClubState(clubId);
-      if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
-      const safeUser = stripCredentials(user);
+      const safeUser = stripCredentials({ ...user, registrationIncomplete: false, registrationCompletedAt: new Date().toISOString() });
       const safeFamilyUsers = familyUsers.map(stripCredentials);
       const nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
-        users: [safeUser, ...safeFamilyUsers, ...(state.payload.users || [])],
+        users: [safeUser, ...safeFamilyUsers, ...(state.payload.users || []).filter(candidate => !registrations.some(registration => registration.id === candidate.id))],
         payments: body.payment ? [body.payment, ...(state.payload.payments || [])] : (state.payload.payments || [])
       });
       const saved = await env.STATE_STORE.putClubState(clubId, nextPayload, state.revision);
       if (saved.conflict) return json(saved, 409, headers);
       for (const candidate of registrations) {
-        await env.STATE_STORE.upsertAccount(await accountFromUser(clubId, stripCredentials(candidate), candidate.password));
+        const completedCandidate = candidate.id === user.id ? safeUser : stripCredentials(candidate);
+        await env.STATE_STORE.upsertAccount(await accountFromUser(clubId, completedCandidate, candidate.password));
       }
       await notifyStateChange(state.payload, nextPayload);
       const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, safeUser.id);
@@ -1120,10 +1151,16 @@ const handleApi = async (request, env, url) => {
         || candidate.familyPayerId !== payer.id || candidate.familyId !== payer.familyId) {
         return json({ message: 'פרטי בן המשפחה או פרטי הכניסה אינם תקינים.' }, 400, headers);
       }
-      for (const identityValue of [candidate.username, candidate.email, candidate.phone].filter(Boolean)) {
+      for (const identityValue of [candidate.username, candidate.phone].filter(Boolean)) {
         if (await env.STATE_STORE.getAccountByLogin(identity.session.club_id, identityValue)) {
           return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
         }
+      }
+      const emailAccounts = env.STATE_STORE.getAccountsByLogin
+        ? await env.STATE_STORE.getAccountsByLogin(identity.session.club_id, candidate.email)
+        : [await env.STATE_STORE.getAccountByLogin(identity.session.club_id, candidate.email)].filter(Boolean);
+      if (emailAccounts.some(accountItem => accountItem.profile?.familyId !== payer.familyId)) {
+        return json({ message: 'כתובת האימייל כבר רשומה בחשבון שאינו שייך למשפחה.' }, 409, headers);
       }
       const safeUser = stripCredentials(candidate);
       const nextPayload = appendUserChangeMessages(state.payload, {

@@ -327,6 +327,9 @@ export interface User {
   healthDeclarationHistory?: HealthDeclarationRecord[];
   clubAgreementSigned?: boolean;
   clubAgreementDate?: string;
+  registrationIncomplete?: boolean;
+  registrationVerifiedAt?: string;
+  registrationCompletedAt?: string;
 
   // Notification preferences
   pushNotificationsEnabled?: boolean;
