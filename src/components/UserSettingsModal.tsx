@@ -73,7 +73,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [showAddSubMember, setShowAddSubMember] = useState(false);
   const [subName, setSubName] = useState('');
   const [subUsername, setSubUsername] = useState('');
-  const [subEmail, setSubEmail] = useState('');
+  const [subEmail, setSubEmail] = useState(currentUser.email || '');
   const [subPassword, setSubPassword] = useState('');
   const [subPhone, setSubPhone] = useState('');
   const [subBirthDate, setSubBirthDate] = useState('');
@@ -98,6 +98,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setBirthDate(currentUser.birthDate || '');
       setProfileImage(currentUser.imageUrl || '');
       setRole(currentUser.role || UserRole.TRAINEE);
+      setSubEmail(currentUser.email || '');
       setPushEnabled(Boolean(currentUser.pushNotificationsEnabled));
       setWorkoutRemindersEnabled(Boolean(currentUser.workoutRemindersEnabled));
       setManagerPushEnabled(Boolean(currentUser.managerPushNotificationsEnabled));
@@ -394,11 +395,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       return;
     }
 
-    if (allUsers.some(u => [u.username, u.email].filter(Boolean).some(value => {
-      const normalized = String(value).trim().toLowerCase();
-      return normalized === subUsername.trim().toLowerCase() || normalized === normalizedEmail;
-    }))) {
-      setMsg({ type: 'error', text: 'שם המשתמש או כתובת האימייל כבר תפוסים' });
+    if (allUsers.some(u => String(u.username || '').trim().toLowerCase() === subUsername.trim().toLowerCase())
+      || allUsers.some(u => String(u.email || '').trim().toLowerCase() === normalizedEmail && u.familyId !== currentUser.familyId)) {
+      setMsg({ type: 'error', text: 'שם המשתמש כבר תפוס או שכתובת האימייל שייכת לחשבון שאינו במשפחה' });
       return;
     }
     if (!subBirthDate || !subHealthApproved || !subAgreementApproved) {
@@ -823,7 +822,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                         {canManageFamily && familyMembersList.length < (currentUser.familyMembersCount || 10) && (
                           <button
                             type="button"
-                            onClick={() => setShowAddSubMember(!showAddSubMember)}
+                            onClick={() => {
+                              setShowAddSubMember(current => !current);
+                              if (!showAddSubMember && !subEmail) setSubEmail(currentUser.email || '');
+                            }}
                             className="bg-indigo-600 text-white font-bold px-3 py-1.5 rounded-lg text-[11px] hover:bg-indigo-700 transition flex items-center gap-1 cursor-pointer"
                           >
                             <Plus size={14} />

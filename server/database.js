@@ -202,6 +202,14 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
         LIMIT 1`, [clubId, normalized, phone]);
       return result.rows[0] || null;
     },
+    async getAccountsByLogin(clubId, login) {
+      const normalized = String(login || '').trim().toLowerCase();
+      const phone = normalized.replace(/\D/g, '');
+      const result = await pool.query(`SELECT * FROM auth_accounts
+        WHERE club_id=$1 AND (username_normalized=$2 OR email_normalized=$2 OR ($3 <> '' AND phone_normalized=$3))
+        ORDER BY updated_at DESC`, [clubId, normalized, phone]);
+      return result.rows;
+    },
     async getAccount(clubId, userId) {
       const result = await pool.query('SELECT * FROM auth_accounts WHERE club_id=$1 AND user_id=$2', [clubId, userId]);
       return result.rows[0] || null;

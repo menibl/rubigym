@@ -47,21 +47,31 @@ const requestLogin = (body, store) => worker.fetch(new Request('https://balywell
   SMS_OTP_SIGNING_SECRET: signingSecret
 });
 
-test('password login requires a valid SMS code before creating a session', async () => {
+test('password login creates a session without sending an SMS challenge', async () => {
   const store = await createStore();
 
-  const firstResponse = await requestLogin({ login: 'trainee', password: 'correct-password' }, store);
-  const firstPayload = await firstResponse.json();
-  assert.equal(firstResponse.status, 202);
-  assert.equal(firstPayload.requiresSmsVerification, true);
-  assert.equal(firstPayload.maskedPhone, '***-***-5885');
-  assert.equal(store.sessions.length, 0);
-  assert.equal(store.challenges.length, 1);
-
-  const secondResponse = await requestLogin({ login: 'trainee', password: 'correct-password', otp: '1111' }, store);
-  assert.equal(secondResponse.status, 200);
-  assert.match(secondResponse.headers.get('Set-Cookie') || '', /^baly_session=/);
+  const response = await requestLogin({ login: 'trainee', password: 'correct-password' }, store);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('Set-Cookie') || '', /^baly_session=/);
   assert.equal(store.sessions.length, 1);
+  assert.equal(store.challenges.length, 0);
+});
+
+test('a shared family email selects the account whose password matches', async () => {
+  const sessions = [];
+  const parent = { user_id: 'parent', password_hash: await hashPassword('parent-password') };
+  const child = { user_id: 'child', password_hash: await hashPassword('child-password') };
+  const store = {
+    sessions,
+    async getAccountsByLogin(_clubId, login) { return login === 'family@example.com' ? [parent, child] : []; },
+    async getClubState() { return { payload: { users: [{ id: 'parent', role: 'TRAINEE' }, { id: 'child', role: 'TRAINEE' }] }, revision: 1 }; },
+    async createSession(tokenHash, clubId, userId, expiresAt) { sessions.push({ tokenHash, clubId, userId, expiresAt }); }
+  };
+  const response = await requestLogin({ login: 'family@example.com', password: 'child-password' }, store);
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.user.id, 'child');
+  assert.equal(sessions[0].userId, 'child');
 });
 
 test('invalid passwords do not send an SMS challenge', async () => {
