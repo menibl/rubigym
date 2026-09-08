@@ -20,6 +20,7 @@ test('a login repairs a trainee account missing from club state and creates the 
     phone_normalized: '0547332390', password_hash: await hashPassword('correct-password'), role: 'TRAINEE', profile: null
   };
   const challenges = [];
+  const sessions = [];
   const store = {
     async getAccountByLogin() { return account; },
     async getClubState() { return state; },
@@ -31,7 +32,8 @@ test('a login repairs a trainee account missing from club state and creates the 
       return { conflict: false, revision: state.revision };
     },
     async getOtpRequestStats() { return { requestsLastHour: 0, lastRequestedAt: null }; },
-    async createOtpChallenge(challenge) { challenges.push(challenge); }
+    async createOtpChallenge(challenge) { challenges.push(challenge); },
+    async createSession(tokenHash, clubId, userId, expiresAt) { sessions.push({ tokenHash, clubId, userId, expiresAt }); }
   };
 
   const response = await worker.fetch(new Request('https://balywellness.test/api/auth/login', {
@@ -42,8 +44,9 @@ test('a login repairs a trainee account missing from club state and creates the 
     SMS_OTP_SIGNING_SECRET: 'user-recovery-api-signing-secret-value'
   });
 
-  assert.equal(response.status, 202);
+  assert.equal(response.status, 200);
   assert.equal(state.payload.users.some(user => user.id === account.user_id && user.name === 'מני בללי'), true);
   assert.equal(state.payload.messages.some(message => message.receiverId === 'manager-1' && message.senderId === account.user_id), true);
-  assert.equal(challenges.length, 1);
+  assert.equal(challenges.length, 0);
+  assert.equal(sessions.length, 1);
 });

@@ -1,4 +1,4 @@
-import { Payment, User } from '../types';
+import { Gender, MembershipStatus, Payment, User, UserRole } from '../types';
 import { isPagesDemoMode } from './appMode';
 import { createDemoPayload } from './demoData';
 
@@ -76,25 +76,18 @@ export const getServerSession = async () => {
   return request<{ authenticated: boolean; user: User }>('/api/auth/session');
 };
 
-export type PasswordLoginResult = { user: User } | {
-  requiresSmsVerification: true;
-  maskedPhone: string;
-  expiresInSeconds: number;
-  testMode?: boolean;
-};
+export type PasswordLoginResult = { user: User };
 
-export const loginWithPassword = async (login: string, password: string, otp = ''): Promise<PasswordLoginResult> => {
+export const loginWithPassword = async (login: string, password: string): Promise<PasswordLoginResult> => {
   if (isPagesDemoMode()) {
     const user = findDemoUser(login);
     const passwords = demoPasswords();
     const expected = passwords[user?.id || ''] || (user?.id === 'user-robi' ? import.meta.env.VITE_DEMO_MANAGER_PASSWORD : '');
     if (!user || !expected || password !== expected) throw new Error('שם המשתמש או הסיסמה אינם נכונים.');
-    if (!otp) return { requiresSmsVerification: true, maskedPhone: `***-***-${String(user.phone || '').replace(/\D/g, '').slice(-4)}`, expiresInSeconds: 300, testMode: true };
-    if (otp !== '1111') throw new Error('קוד האימות אינו תקין או שפג תוקפו.');
     localStorage.setItem(DEMO_SESSION_KEY, user.id);
     return { user };
   }
-  return request<PasswordLoginResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ login, password, otp: otp || undefined }) });
+  return request<PasswordLoginResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ login, password }) });
 };
 
 export const loginWithPhone = async (phone: string, otp: string) => {
@@ -122,12 +115,41 @@ export const requestPhoneCode = async (phone: string, purpose: 'LOGIN' | 'REGIST
   });
 };
 
-export const verifyRegistrationPhone = async (phone: string, otp: string) => {
+export type RegistrationPhoneVerificationResult = {
+  verified: true;
+  phoneVerificationToken: string;
+  registrationUserId?: string;
+  user?: User;
+};
+
+export const verifyRegistrationPhone = async (phone: string, otp: string): Promise<RegistrationPhoneVerificationResult> => {
   if (isPagesDemoMode()) {
     if (otp !== '1111') throw new Error('קוד האימות אינו תקין או שפג תוקפו.');
-    return { verified: true as const, phoneVerificationToken: 'pages-demo' };
+    const state = readDemoState();
+    const normalizedPhone = phone.replace(/\D/g, '');
+    const existingPending = ((state.payload.users as User[]) || []).find(candidate => candidate.registrationIncomplete && candidate.phone.replace(/\D/g, '') === normalizedPhone);
+    const pendingUser: User = existingPending || {
+      id: `registration-${Date.now()}`,
+      name: 'הרשמה בתהליך',
+      username: `registration-${normalizedPhone}`,
+      email: '',
+      phone,
+      role: UserRole.TRAINEE,
+      gender: Gender.MALE,
+      age: 0,
+      priorityScore: 100,
+      membershipStatus: MembershipStatus.DEBT,
+      registrationIncomplete: true,
+      registrationVerifiedAt: new Date().toISOString()
+    };
+    if (!existingPending) writeDemoState({
+      payload: { ...state.payload, users: [pendingUser, ...(((state.payload.users as User[]) || []))] },
+      revision: state.revision + 1
+    });
+    localStorage.setItem(DEMO_SESSION_KEY, pendingUser.id);
+    return { verified: true as const, phoneVerificationToken: 'pages-demo', registrationUserId: pendingUser.id, user: pendingUser };
   }
-  return request<{ verified: true; phoneVerificationToken: string }>('/api/auth/verify-registration-phone', {
+  return request<RegistrationPhoneVerificationResult>('/api/auth/verify-registration-phone', {
     method: 'POST',
     body: JSON.stringify({ phone, otp })
   });
@@ -138,8 +160,13 @@ export const registerServerUser = async (user: User, payment: Payment, familyUse
     const state = readDemoState();
     const users = (state.payload.users as User[]) || [];
     const registrations = [user, ...familyUsers];
-    const identities = registrations.flatMap(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean).map(value => normalizeLogin(String(value))));
-    if (new Set(identities).size !== identities.length || users.some(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean).some(value => identities.includes(normalizeLogin(String(value)))))) {
+    const usernames = registrations.map(candidate => normalizeLogin(String(candidate.username || ''))).filter(Boolean);
+    const phones = registrations.map(candidate => String(candidate.phone || '').replace(/\D/g, '')).filter(Boolean);
+    const emails = [...new Set(registrations.map(candidate => normalizeLogin(String(candidate.email || ''))).filter(Boolean))];
+    const existingIdentityValues = [...usernames, ...phones, ...emails];
+    if (new Set(usernames).size !== usernames.length || new Set(phones).size !== phones.length
+      || users.filter(candidate => !registrations.some(registration => registration.id === candidate.id))
+        .some(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean).some(value => existingIdentityValues.includes(normalizeLogin(String(value)))))) {
       throw new Error('שם המשתמש, האימייל או הטלפון כבר רשומים.');
     }
     const passwords = demoPasswords();
@@ -148,7 +175,7 @@ export const registerServerUser = async (user: User, payment: Payment, familyUse
     const { password: _password, ...safeUser } = user;
     const safeFamilyUsers = familyUsers.map(({ password: _familyPassword, ...candidate }) => candidate as User);
     const next = writeDemoState({
-      payload: { ...state.payload, users: [safeUser, ...safeFamilyUsers, ...users], payments: [payment, ...((state.payload.payments as Payment[]) || [])] },
+      payload: { ...state.payload, users: [safeUser, ...safeFamilyUsers, ...users.filter(candidate => !registrations.some(registration => registration.id === candidate.id))], payments: [payment, ...((state.payload.payments as Payment[]) || [])] },
       revision: state.revision + 1
     });
     localStorage.setItem(DEMO_SESSION_KEY, safeUser.id);

@@ -168,6 +168,11 @@ export default function App() {
   };
 
   const loadAuthenticatedState = async (signedInUser: User) => {
+    if (signedInUser.registrationIncomplete) {
+      setActiveUser(signedInUser);
+      setIsAuthenticated(true);
+      return;
+    }
     const state = await getClubState();
     applyServerPayload(state.payload, state.revision);
     setActiveUser(signedInUser);
@@ -538,10 +543,9 @@ export default function App() {
     return user;
   };
 
-  const handlePasswordLogin = async (login: string, password: string, otp = '') => {
-    const result = await loginWithPassword(login, password, otp);
-    if ('user' in result) return { user: await finishServerLogin(result.user) };
-    return result;
+  const handlePasswordLogin = async (login: string, password: string) => {
+    const result = await loginWithPassword(login, password);
+    return { user: await finishServerLogin(result.user) };
   };
 
   const handlePhoneLogin = async (phone: string, otp: string) => {
@@ -606,7 +610,7 @@ export default function App() {
     return <GroupWorkoutDisplay program={displayProgram} />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || activeUser.registrationIncomplete) {
     const authParams = new URLSearchParams(window.location.search);
     const requestedPlan = authParams.get('plan');
     const initialPlan = requestedPlan && Object.values(MembershipType).includes(requestedPlan as MembershipType)
@@ -625,6 +629,7 @@ export default function App() {
         initialScreen={authParams.get('screen') === 'register' ? 'register' : 'login'}
         initialPlan={initialPlan}
         landingUrl={publicLandingConfig?.landingUrl || undefined}
+        resumeUser={isAuthenticated && activeUser.registrationIncomplete ? activeUser : undefined}
       />
     );
   }
