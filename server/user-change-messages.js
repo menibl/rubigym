@@ -6,7 +6,23 @@ const membershipLabels = {
   PERSONAL_TRAINING: 'אימון אישי', DUO_TRAINING: 'אימון זוגי'
 };
 
-const sameValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+const stableJson = value => {
+  if (value === null || value === undefined) return 'null';
+  if (Array.isArray(value)) return `[${value.map(item => stableJson(item)).join(',')}]`;
+  if (typeof value === 'object') {
+    return `{${Object.keys(value)
+      .filter(key => value[key] !== undefined)
+      .sort()
+      .map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+
+// PostgreSQL JSONB does not preserve object-key insertion order. Comparing raw
+// JSON.stringify output made an unchanged health questionnaire look modified on
+// every autosave, which in turn generated another message and another autosave.
+const sameValue = (left, right) => stableJson(left) === stableJson(right);
 const membershipName = value => membershipLabels[value] || String(value || 'ללא מסלול');
 const changed = (before, after, fields) => fields.some(field => !sameValue(before?.[field], after?.[field]));
 
@@ -31,6 +47,15 @@ const messageFor = (user, staff, content, timestamp, sequence) => ({
   content, timestamp, read: false, systemGenerated: true
 });
 
+const DUPLICATE_ALERT_WINDOW_MS = 10 * 60 * 1000;
+const hasRecentEquivalentMessage = (existingMessages, user, staff, content, now) => existingMessages.some(message => {
+  if (!message?.systemGenerated || message.senderId !== user.id || message.receiverId !== staff.id || message.content !== content) return false;
+  const messageTime = Date.parse(message.timestamp);
+  if (!Number.isFinite(messageTime)) return false;
+  const age = now.getTime() - messageTime;
+  return age >= 0 && age <= DUPLICATE_ALERT_WINDOW_MS;
+});
+
 export const appendUserChangeMessages = (beforePayload = {}, afterPayload = {}, now = new Date()) => {
   const beforeUsers = Array.isArray(beforePayload.users) ? beforePayload.users : [];
   const afterUsers = Array.isArray(afterPayload.users) ? afterPayload.users : [];
@@ -40,6 +65,7 @@ export const appendUserChangeMessages = (beforePayload = {}, afterPayload = {}, 
   const beforeProfiles = new Map((beforePayload.traineeProfiles || []).map(profile => [profile.traineeId, profile]));
   const afterProfiles = new Map((afterPayload.traineeProfiles || []).map(profile => [profile.traineeId, profile]));
   const timestamp = now.toISOString();
+  const existingMessages = Array.isArray(afterPayload.messages) ? afterPayload.messages : [];
   const messages = [];
   let sequence = 0;
   for (const user of afterUsers.filter(candidate => candidate.role === 'TRAINEE')) {
@@ -52,7 +78,10 @@ export const appendUserChangeMessages = (beforePayload = {}, afterPayload = {}, 
       if (descriptions.length) content = `עדכון מערכת: בפרטי ${user.name} בוצע שינוי — ${descriptions.join(' · ')}.`;
     }
     if (!content) continue;
-    for (const staffUser of staff) messages.push(messageFor(user, staffUser, content, timestamp, sequence++));
+    for (const staffUser of staff) {
+      if (hasRecentEquivalentMessage(existingMessages, user, staffUser, content, now)) continue;
+      messages.push(messageFor(user, staffUser, content, timestamp, sequence++));
+    }
   }
   return messages.length ? { ...afterPayload, messages: [...messages, ...(afterPayload.messages || [])] } : afterPayload;
 };
