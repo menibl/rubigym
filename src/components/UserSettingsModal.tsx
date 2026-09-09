@@ -10,6 +10,32 @@ import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarat
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
 
+const PROFILE_IMAGE_MAX_SIDE = 512;
+
+const prepareProfileImage = async (file: File) => {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const nextImage = new Image();
+      nextImage.onload = () => resolve(nextImage);
+      nextImage.onerror = () => reject(new Error('IMAGE_DECODE_FAILED'));
+      nextImage.src = objectUrl;
+    });
+    const scale = Math.min(1, PROFILE_IMAGE_MAX_SIDE / image.naturalWidth, PROFILE_IMAGE_MAX_SIDE / image.naturalHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('IMAGE_CANVAS_FAILED');
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
+
 interface UserSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -54,6 +80,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [phone, setPhone] = useState(currentUser.phone || '');
   const [birthDate, setBirthDate] = useState(currentUser.birthDate || '');
   const [profileImage, setProfileImage] = useState(currentUser.imageUrl || '');
+  const [profileImageProcessing, setProfileImageProcessing] = useState(false);
   const [role, setRole] = useState<UserRole>(currentUser.role || UserRole.TRAINEE);
   const [pushEnabled, setPushEnabled] = useState(Boolean(currentUser.pushNotificationsEnabled));
   const [workoutRemindersEnabled, setWorkoutRemindersEnabled] = useState(Boolean(currentUser.workoutRemindersEnabled));
@@ -97,6 +124,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setPhone(currentUser.phone || '');
       setBirthDate(currentUser.birthDate || '');
       setProfileImage(currentUser.imageUrl || '');
+      setProfileImageProcessing(false);
       setRole(currentUser.role || UserRole.TRAINEE);
       setSubEmail(currentUser.email || '');
       setPushEnabled(Boolean(currentUser.pushNotificationsEnabled));
@@ -163,6 +191,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
+    if (profileImageProcessing) {
+      setMsg({ type: 'error', text: 'התמונה עדיין בהכנה. ניתן לשמור מיד בסיום העיבוד.' });
+      return;
+    }
     setMsg(null);
 
     if (!name.trim()) {
@@ -226,37 +258,16 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setMsg({ type: 'error', text: 'יש לבחור קובץ תמונה בלבד.' });
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      setMsg({ type: 'error', text: 'גודל קובץ המקור המרבי הוא 8MB.' });
-      return;
-    }
 
+    setProfileImageProcessing(true);
+    setMsg({ type: 'success', text: 'מכין את התמונה לשמירה…' });
     try {
-      const source = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('IMAGE_READ_FAILED'));
-        reader.onerror = () => reject(reader.error || new Error('IMAGE_READ_FAILED'));
-        reader.readAsDataURL(file);
-      });
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const nextImage = new Image();
-        nextImage.onload = () => resolve(nextImage);
-        nextImage.onerror = () => reject(new Error('IMAGE_DECODE_FAILED'));
-        nextImage.src = source;
-      });
-      const maxSide = 512;
-      const scale = Math.min(1, maxSide / image.naturalWidth, maxSide / image.naturalHeight);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('IMAGE_CANVAS_FAILED');
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      setProfileImage(canvas.toDataURL('image/jpeg', 0.82));
-      setMsg({ type: 'success', text: 'התמונה הוכנה לשמירה. לחץ על שמור שינויים.' });
+      setProfileImage(await prepareProfileImage(file));
+      setMsg({ type: 'success', text: 'התמונה הוקטנה והוכנה לשמירה. לחץ על שמור שינויים.' });
     } catch {
       setMsg({ type: 'error', text: 'לא ניתן לעבד את התמונה. נסה תמונת JPG או PNG אחרת.' });
     } finally {
+      setProfileImageProcessing(false);
       event.target.value = '';
     }
   };
@@ -566,12 +577,15 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                   החלפת תמונת פרופיל
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,image/webp"
+                    accept="image/*"
                     className="sr-only"
                     onChange={handleProfileImageChange}
+                    disabled={profileImageProcessing}
                   />
                 </label>
-                <span className="text-[10px] text-slate-500">JPG, PNG או WEBP עד 2MB</span>
+                <span className="text-[10px] text-slate-500">
+                  {profileImageProcessing ? 'מקטין ומכין את התמונה…' : 'אפשר לבחור תמונה גדולה — היא תוקטן אוטומטית לפני השמירה'}
+                </span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -750,10 +764,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               <div className="flex justify-end pt-4 border-t border-slate-100">
                 <button
                   type="submit"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs transition flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20"
+                  disabled={profileImageProcessing}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60 text-white font-bold px-6 py-2.5 rounded-xl text-xs transition flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20"
                 >
                   <Check size={16} />
-                  שמור שינויים
+                  {profileImageProcessing ? 'מכין תמונה…' : 'שמור שינויים'}
                 </button>
               </div>
             </form>
