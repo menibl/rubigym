@@ -107,7 +107,7 @@ export const ClubChatCenter: React.FC<ClubChatCenterProps> = ({
             {visibleContacts.map(contact => (
               <button type="button" key={contact.user.id} onClick={() => selectContact(contact.user.id)} className="flex w-full items-center gap-3 border-b border-zinc-800 p-3 text-right transition hover:bg-zinc-800">
                 {contact.user.imageUrl
-                  ? <img src={contact.user.imageUrl} alt="" className="h-11 w-11 shrink-0 rounded-full border border-zinc-700 object-cover" />
+                  ? <img src={contact.user.imageUrl} alt={`תמונת הפרופיל של ${contact.user.name}`} className="h-11 w-11 shrink-0 rounded-full border border-zinc-700 object-cover" />
                   : <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-700 text-zinc-300"><UserRound size={21} /></span>}
                 <span className="min-w-0 flex-1">
                   <strong className="block truncate text-sm text-white">{contact.user.name}</strong>
@@ -128,7 +128,7 @@ export const ClubChatCenter: React.FC<ClubChatCenterProps> = ({
             <header className="flex min-h-16 items-center gap-3 border-b border-zinc-700 bg-zinc-900 px-3 py-2">
               <button type="button" onClick={() => setSelectedContactId('')} className="grid h-10 w-10 place-items-center rounded-full text-zinc-300 md:hidden" aria-label="חזרה לרשימת אנשי קשר"><ArrowRight size={20} /></button>
               {selectedContact.imageUrl
-                ? <img src={selectedContact.imageUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
+                ? <img src={selectedContact.imageUrl} alt={`תמונת הפרופיל של ${selectedContact.name}`} className="h-10 w-10 rounded-full object-cover" />
                 : <span className="grid h-10 w-10 place-items-center rounded-full bg-zinc-700"><UserRound size={19} /></span>}
               <div><strong className="block text-sm text-white">{selectedContact.name}</strong><small className="text-[10px] text-emerald-400">{selectedContact.role === UserRole.TRAINEE ? 'מתאמן/ת' : 'צוות המועדון'}</small></div>
             </header>

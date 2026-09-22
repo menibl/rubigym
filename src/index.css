@@ -3385,3 +3385,13 @@ option {
   .planning-builder-context { align-items: flex-start; flex-direction: column; }
   .planning-builder-context > div { width: 100%; text-align: right; }
 }
+
+/* Keyboard access: a consistent, high-contrast focus indicator across the app. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #f6c85f !important;
+  outline-offset: 3px !important;
+}
+
+:where(button, [role="button"]):disabled {
+  cursor: not-allowed;
+}

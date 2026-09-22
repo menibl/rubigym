@@ -359,11 +359,20 @@ const publicLandingPayload = async (request, env, url, clubId) => {
   const imageUrl = slot => mediaBySlot[slot]
     ? `/api/public/landing-media/${slot}?v=${new Date(mediaBySlot[slot].updated_at).getTime()}`
     : null;
+  const configuredBusiness = state?.payload?.settings?.businessDetails || {};
   return {
     surface,
     appUrl: env.PUBLIC_APP_URL || `${url.origin}/`,
     landingUrl: env.PUBLIC_LANDING_URL || (surface === 'landing' ? `${url.origin}/` : ''),
     plans,
+    businessDetails: {
+      legalName: configuredBusiness.legalName || 'BALY WELLNESS',
+      registrationNumber: configuredBusiness.registrationNumber || '',
+      managerName: configuredBusiness.managerName || 'רובי באלי',
+      phone: configuredBusiness.phone || '054-6995885',
+      email: configuredBusiness.email || '',
+      address: configuredBusiness.address || 'מושב שילת'
+    },
     images: {
       hero: imageUrl('hero'),
       coaching: imageUrl('coaching')
@@ -534,6 +543,7 @@ const verifiedRivhitPayment = async (paymentReference, env) => {
       paymentReference,
       saleId,
       transactionId: String(rivhitValue(sale, 'TransactionId', 'transactionId', 'SaleId', 'saleId') || saleId),
+      recurringSaleId: String(rivhitValue(sale, 'RecurringSaleId', 'recurringSaleId') || ''),
       last4Digits: (cardNumber.match(/(\d{4})\D*$/) || [])[1]
     }
   };
@@ -579,6 +589,7 @@ const verifyWebhookSale = async (payload, order, env) => {
     paymentReference: saleId,
     saleId,
     transactionId: String(rivhitValue(payload, 'TransactionId', 'transactionId') || saleId),
+    recurringSaleId: String(rivhitValue(payload, 'RecurringSaleId', 'recurringSaleId') || ''),
     last4Digits: (cardNumber.match(/(\d{4})\D*$/) || [])[1]
   };
 };
@@ -710,7 +721,12 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         billingTermMonths: order.tm,
         sessionsPurchased: order.sc,
         paymentMethod: `RIVHIT iCredit${payment.last4Digits ? ` •••• ${payment.last4Digits}` : ''}`,
-        isMock: rivhitEnvironment(env) !== 'production'
+        isMock: rivhitEnvironment(env) !== 'production',
+        provider: 'RIVHIT',
+        providerSaleId: payment.saleId,
+        providerTransactionId: payment.transactionId,
+        providerRecurringSaleId: payment.recurringSaleId || undefined,
+        recurringAmount: order.rr ? Number(order.a) : undefined
       }, ...(state.payload.payments || [])]
     });
     const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', payload, state.revision);
@@ -828,6 +844,25 @@ const handleWebhook = async (request, env) => {
   await persistVerifiedPurchase(env, order, payment);
   return new Response('OK', { status: 200 });
 };
+
+const updatePersistedPayment = async (env, clubId, paymentId, patch) => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const state = await env.STATE_STORE.getClubState(clubId);
+    if (!state) throw new Error('CLUB_STATE_MISSING');
+    const payment = (state.payload.payments || []).find(candidate => candidate.id === paymentId);
+    if (!payment) throw new Error('PAYMENT_NOT_FOUND');
+    const updatedPayment = { ...payment, ...patch };
+    const payload = {
+      ...state.payload,
+      payments: (state.payload.payments || []).map(candidate => candidate.id === paymentId ? updatedPayment : candidate)
+    };
+    const saved = await env.STATE_STORE.putClubState(clubId, payload, state.revision);
+    if (!saved.conflict) return updatedPayment;
+  }
+  throw new Error('PAYMENT_STATE_CONFLICT');
+};
+
+const providerSucceeded = result => Number(rivhitValue(result, 'Status', 'status', 'error_code')) === 0;
 
 const handleApi = async (request, env, url) => {
   const origin = request.headers.get('Origin') || '';
@@ -1361,6 +1396,73 @@ const handleApi = async (request, env, url) => {
       const identity = await getIdentity();
       if (!identity || !['MANAGER', 'COACH'].includes(identity.account.role)) return json({ message: 'שירות ה-AI זמין למאמנים ולמנהלים בלבד.' }, 403, headers);
       return await handleWorkoutAi(request, env, headers, json);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/refund') {
+      requirePaymentEnv(env);
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
+      const body = await request.json();
+      const reason = String(body.reason || '').trim();
+      if (!body.paymentId || reason.length < 3) return json({ message: 'יש לבחור עסקה ולהזין סיבת החזר.' }, 400, headers);
+      const state = await loadClubState(identity.session.club_id);
+      const payment = (state?.payload?.payments || []).find(candidate => candidate.id === body.paymentId);
+      if (!payment) return json({ message: 'העסקה לא נמצאה.' }, 404, headers);
+      if (payment.status === 'REFUNDED') return json({ message: 'העסקה כבר סומנה כמוחזרת.' }, 409, headers);
+      if (!payment.providerSaleId) return json({ message: 'לעסקה אין מזהה מכירה של רווחית. יש לבצע את ההחזר ברווחית ולעדכן את הרישום ידנית.' }, 422, headers);
+      const result = await rivhitPost('/CancelSale', { SaleId: payment.providerSaleId }, env);
+      if (!providerSucceeded(result)) return json({ message: rivhitValue(result, 'ClientMessage', 'DebugMessage') || 'רווחית דחתה את ההחזר.' }, 422, headers);
+      const providerData = result.data || result.Data || {};
+      const updatedPayment = await updatePersistedPayment(env, identity.session.club_id, payment.id, {
+        status: 'REFUNDED',
+        refundedAt: new Date().toISOString(),
+        refundedBy: identity.account.profile?.name || identity.account.login || 'מנהל',
+        refundReason: reason,
+        refundDocumentLink: rivhitValue(providerData, 'DocumentLink', 'ReceiptLink') || undefined
+      });
+      return json({ ok: true, payment: updatedPayment }, 200, headers);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/cancel-recurring') {
+      requirePaymentEnv(env);
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
+      const body = await request.json();
+      const reason = String(body.reason || '').trim();
+      const state = await loadClubState(identity.session.club_id);
+      const payment = (state?.payload?.payments || []).find(candidate => candidate.id === body.paymentId);
+      if (!payment?.providerRecurringSaleId) return json({ message: 'לעסקה אין מזהה הוראת קבע של רווחית.' }, 422, headers);
+      if (reason.length < 3) return json({ message: 'יש להזין סיבת ביטול.' }, 400, headers);
+      const result = await rivhitPost('/RecurringSaleCancel', { RecurringSaleId: payment.providerRecurringSaleId }, env);
+      if (!providerSucceeded(result)) return json({ message: rivhitValue(result, 'ClientMessage', 'DebugMessage') || 'רווחית דחתה את ביטול הוראת הקבע.' }, 422, headers);
+      const updatedPayment = await updatePersistedPayment(env, identity.session.club_id, payment.id, {
+        recurringCancelledAt: new Date().toISOString(),
+        recurringCancelledBy: identity.account.profile?.name || identity.account.login || 'מנהל',
+        refundReason: reason
+      });
+      return json({ ok: true, payment: updatedPayment }, 200, headers);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/update-recurring') {
+      requirePaymentEnv(env);
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
+      const body = await request.json();
+      const amount = Number(body.amount);
+      const reason = String(body.reason || '').trim();
+      const state = await loadClubState(identity.session.club_id);
+      const payment = (state?.payload?.payments || []).find(candidate => candidate.id === body.paymentId);
+      if (!payment?.providerRecurringSaleId) return json({ message: 'לעסקה אין מזהה הוראת קבע של רווחית.' }, 422, headers);
+      if (!Number.isFinite(amount) || amount <= 0 || reason.length < 3) return json({ message: 'יש להזין סכום תקין וסיבת שינוי.' }, 400, headers);
+      const result = await rivhitPost('/RecurringSaleUpdateItems', {
+        RecurringSaleId: payment.providerRecurringSaleId,
+        items: [{ Name: `BALY WELLNESS - ${payment.membershipTypePurchased}`, Quantity: 1, UnitPrice: amount }]
+      }, env);
+      if (!providerSucceeded(result)) return json({ message: rivhitValue(result, 'ClientMessage', 'DebugMessage') || 'רווחית דחתה את שינוי החיוב.' }, 422, headers);
+      const updatedPayment = await updatePersistedPayment(env, identity.session.club_id, payment.id, {
+        recurringAmount: amount,
+        recurringUpdatedAt: new Date().toISOString(),
+        recurringUpdatedBy: identity.account.profile?.name || identity.account.login || 'מנהל',
+        recurringUpdateReason: reason
+      });
+      return json({ ok: true, payment: updatedPayment }, 200, headers);
     }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/create') return await handleCreatePayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/verify') return await handleVerifyPayment(request, env);
