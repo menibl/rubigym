@@ -54,7 +54,6 @@ const documents: Record<LegalDocumentId, { title: string; content: React.ReactNo
     content: <>
       <p><strong>שם מסחרי:</strong> BALY WELLNESS</p><p><strong>מנהל:</strong> רובי באלי</p><p><strong>טלפון:</strong> <a href="tel:+972546995885">054-6995885</a></p><p><strong>כתובת פעילות:</strong> מושב שילת</p>
       <p><a href="https://wa.me/972546995885" target="_blank" rel="noopener noreferrer">פתיחת שיחה ב־WhatsApp <ExternalLink size={14} className="inline" /></a></p>
-      <p className="text-amber-700">לפני השקה מסחרית יש להשלים במערכת את השם המשפטי המלא, מספר העוסק, כתובת למשלוח דואר וכתובת דוא״ל לשירות.</p>
     </>
   }
 };
