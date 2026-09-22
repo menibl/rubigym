@@ -17,7 +17,7 @@ export const NutritionPlanningNavigator: React.FC<NutritionPlanningNavigatorProp
       {trainees.map(trainee => {
         const existing = nutritionPlans.find(plan => plan.traineeId === trainee.id);
         return <button type="button" key={trainee.id} className="planning-selection-card" onClick={() => onOpenTrainee(trainee.id)}>
-          <img src={trainee.imageUrl} alt="" />
+          <img src={trainee.imageUrl} alt={`תמונת הפרופיל של ${trainee.name}`} />
           <span><strong>{trainee.name}</strong><small>{existing ? `תוכנית קיימת · ${existing.dailyCalories} קלוריות` : 'תוכנית חדשה'} · גיל {trainee.age}</small></span>
           <span className="planning-list-icon"><Apple size={18} /></span><ChevronLeft size={18} />
         </button>;

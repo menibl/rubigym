@@ -185,7 +185,7 @@ export const WorkoutPlanningNavigator: React.FC<WorkoutPlanningNavigatorProps> =
 
     {route === 'PERSONAL_TRAINEE' && <SelectionList empty={trainees.length === 0} emptyText="לא נמצאו מתאמנים">
       {trainees.map(trainee => <button type="button" key={trainee.id} className="planning-selection-card" onClick={() => onOpenPersonalTrainee(trainee.id)}>
-        <img src={trainee.imageUrl} alt="" /><span><strong>{trainee.name}</strong><small>{trainee.membershipType || 'ללא מסלול'} · גיל {trainee.age}</small></span><ChevronLeft size={18} />
+        <img src={trainee.imageUrl} alt={`תמונת הפרופיל של ${trainee.name}`} /><span><strong>{trainee.name}</strong><small>{trainee.membershipType || 'ללא מסלול'} · גיל {trainee.age}</small></span><ChevronLeft size={18} />
       </button>)}
     </SelectionList>}
 
