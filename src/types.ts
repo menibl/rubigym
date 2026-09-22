@@ -762,6 +762,34 @@ export interface Payment {
   sessionsPurchased?: number;
   paymentMethod: string;
   isMock: boolean;
+  provider?: 'RIVHIT' | 'MANUAL';
+  providerSaleId?: string;
+  providerTransactionId?: string;
+  providerRecurringSaleId?: string;
+  refundedAt?: string;
+  refundedBy?: string;
+  refundReason?: string;
+  refundDocumentLink?: string;
+  recurringCancelledAt?: string;
+  recurringCancelledBy?: string;
+  recurringAmount?: number;
+  recurringUpdatedAt?: string;
+  recurringUpdatedBy?: string;
+  recurringUpdateReason?: string;
+}
+
+export interface BillingAuditEntry {
+  id: string;
+  paymentId: string;
+  traineeId: string;
+  action: 'REFUND_FULL' | 'CANCEL_RECURRING' | 'UPDATE_RECURRING_AMOUNT' | 'CHANGE_MEMBERSHIP';
+  reason: string;
+  performedById: string;
+  performedByName: string;
+  createdAt: string;
+  previousValue?: string;
+  newValue?: string;
+  providerReference?: string;
 }
 
 export interface AttendanceLog {
@@ -781,4 +809,12 @@ export interface SystemSettings {
   blackPointExpiryMonths: number; // default: 1 month
   openGymMaxParticipants: number; // default: 15
   membershipPlans?: MembershipPlanConfig[];
+  businessDetails?: {
+    legalName?: string;
+    registrationNumber?: string;
+    managerName?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  };
 }

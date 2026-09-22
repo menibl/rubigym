@@ -45,6 +45,7 @@ import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 import { isPagesDemoMode } from '../data/appMode';
 import type { PasswordLoginResult, PhoneCodeRequestResult } from '../data/clubServer';
+import { CookieConsentBanner, LegalLinks } from './LegalCenter';
 
 interface AuthGatewayProps {
   users: User[];
@@ -736,9 +737,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
           </>
         )}
 
+        <LegalLinks businessDetails={settings.businessDetails} className="mt-5 flex flex-wrap justify-center gap-3 border-t border-zinc-700 pt-4 text-xs font-bold text-amber-300 [&_button]:underline [&_button]:underline-offset-4" />
         {error && <div className="auth-message error">{error}</div>}
         {notice && <div className="auth-message notice">{notice}</div>}
       </section>
+      <CookieConsentBanner />
     </main>
   );
 };

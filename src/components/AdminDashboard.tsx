@@ -43,6 +43,7 @@ import {
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
 import { createMembershipTerm } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
+import { cancelRivhitRecurring, refundRivhitPayment, updateRivhitRecurringAmount } from '../data/rivhitPayments';
 import { LandingImageManager } from './LandingImageManager';
 import { SessionMembershipSelector } from './SessionMembershipSelector';
 import {
@@ -66,7 +67,8 @@ import {
   UserPlus,
   ClipboardCheck,
   FileDown,
-  HeartPulse
+  HeartPulse,
+  ExternalLink
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -152,6 +154,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'records' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
   const [programSessionId, setProgramSessionId] = useState('');
+  const [billingPaymentId, setBillingPaymentId] = useState('');
+  const [billingReason, setBillingReason] = useState('');
+  const [billingAmount, setBillingAmount] = useState('');
+  const [billingPending, setBillingPending] = useState(false);
+  const [billingNotice, setBillingNotice] = useState('');
+  const [billingError, setBillingError] = useState('');
 
   // Discount Codes form state
   const [newDiscountCode, setNewDiscountCode] = useState({
@@ -756,6 +764,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return u;
     });
     onUpdateUsers(updatedUsers);
+  };
+
+  const applyProviderPayment = (updatedPayment: Payment) => {
+    onUpdatePayments(payments.map(payment => payment.id === updatedPayment.id ? updatedPayment : payment));
+  };
+
+  const runBillingAction = async (action: 'REFUND' | 'CANCEL_RECURRING' | 'UPDATE_RECURRING') => {
+    const payment = payments.find(candidate => candidate.id === billingPaymentId);
+    if (!payment) return setBillingError('יש לבחור עסקה.');
+    if (billingReason.trim().length < 3) return setBillingError('יש להזין סיבה ברורה לפעולה.');
+    if (!window.confirm(action === 'REFUND'
+      ? `לבצע החזר מלא של ₪${payment.amount} ברווחית? פעולה זו אינה הפיכה.`
+      : action === 'CANCEL_RECURRING'
+        ? 'לבטל את הוראת הקבע ברווחית?'
+        : `לעדכן את החיוב המחזורי ל־₪${billingAmount}?`)) return;
+    setBillingPending(true);
+    setBillingError('');
+    setBillingNotice('');
+    try {
+      const updated = action === 'REFUND'
+        ? await refundRivhitPayment(payment.id, billingReason)
+        : action === 'CANCEL_RECURRING'
+          ? await cancelRivhitRecurring(payment.id, billingReason)
+          : await updateRivhitRecurringAmount(payment.id, Number(billingAmount), billingReason);
+      applyProviderPayment(updated);
+      setBillingNotice(action === 'REFUND' ? 'ההחזר אושר ברווחית ונרשם במערכת.' : action === 'CANCEL_RECURRING' ? 'הוראת הקבע בוטלה ברווחית.' : 'סכום החיוב המחזורי עודכן ברווחית.');
+      setBillingReason('');
+    } catch (error) {
+      setBillingError(error instanceof Error ? error.message : 'הפעולה נכשלה.');
+    } finally {
+      setBillingPending(false);
+    }
   };
 
   // Toggle membership selection in create forms
@@ -1763,10 +1803,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* TAB 4: PAYMENTS LEDGER */}
         {activeTab === 'payments' && (
           <div className="space-y-6">
+            <section className="rounded-2xl border border-amber-300/40 bg-slate-950 p-4 text-white shadow-lg" aria-labelledby="billing-management-title">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 id="billing-management-title" className="text-base font-black">ניהול חיובים ומנויים</h3>
+                  <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-300">החזר מלא, ביטול הוראת קבע ושינוי סכום מבוצעים מול רווחית ורק לאחר אישור הספק מתעדכנים במערכת. שינוי מסלול המתאמן מתבצע בנפרד בכרטיס המתאמן.</p>
+                </div>
+                <a href="https://online1.rivhit.co.il/LoginManager/Login/Index" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-amber-300/60 bg-amber-300 px-4 py-2 text-xs font-black text-slate-950 hover:bg-amber-200">
+                  פתיחת רווחית <ExternalLink size={15} />
+                </a>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <label className="grid gap-1 text-xs font-bold text-slate-200 md:col-span-2">עסקה
+                  <select value={billingPaymentId} onChange={event => { setBillingPaymentId(event.target.value); setBillingNotice(''); setBillingError(''); }} className="min-h-11 rounded-xl border border-slate-600 bg-slate-900 px-3 text-white">
+                    <option value="">בחר עסקה</option>
+                    {payments.map(payment => <option key={payment.id} value={payment.id}>{payment.date} · {payment.traineeName} · ₪{payment.amount} · {payment.status}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-1 text-xs font-bold text-slate-200">סכום חודשי חדש
+                  <input inputMode="decimal" value={billingAmount} onChange={event => setBillingAmount(event.target.value)} placeholder="לדוגמה 500" className="min-h-11 rounded-xl border border-slate-600 bg-slate-900 px-3 text-white placeholder:text-slate-500" />
+                </label>
+                <label className="grid gap-1 text-xs font-bold text-slate-200 md:col-span-3">סיבת הפעולה (נשמרת בתיעוד)
+                  <input value={billingReason} onChange={event => setBillingReason(event.target.value)} placeholder="לדוגמה: מעבר ממסלול חודשי לשנתי לבקשת המתאמן" className="min-h-11 rounded-xl border border-slate-600 bg-slate-900 px-3 text-white placeholder:text-slate-500" />
+                </label>
+              </div>
+              {billingPaymentId && (() => {
+                const selected = payments.find(payment => payment.id === billingPaymentId);
+                return selected ? <div className="mt-3 rounded-xl bg-slate-900 p-3 text-xs text-slate-300">
+                  <strong className="text-white">זמינות פעולות:</strong>{' '}
+                  {selected.providerSaleId ? 'קיים מזהה עסקה להחזר מלא' : 'אין מזהה עסקה — יש לבצע החזר ישירות ברווחית'} · {' '}
+                  {selected.providerRecurringSaleId ? 'קיימת הוראת קבע לשינוי/ביטול' : 'אין מזהה הוראת קבע לעסקה זו'}
+                </div> : null;
+              })()}
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <button type="button" disabled={billingPending || !payments.find(payment => payment.id === billingPaymentId)?.providerSaleId} onClick={() => runBillingAction('REFUND')} className="min-h-11 rounded-xl bg-rose-600 px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">החזר מלא ברווחית</button>
+                <button type="button" disabled={billingPending || !payments.find(payment => payment.id === billingPaymentId)?.providerRecurringSaleId} onClick={() => runBillingAction('CANCEL_RECURRING')} className="min-h-11 rounded-xl bg-slate-700 px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">ביטול הוראת קבע</button>
+                <button type="button" disabled={billingPending || !billingAmount || !payments.find(payment => payment.id === billingPaymentId)?.providerRecurringSaleId} onClick={() => runBillingAction('UPDATE_RECURRING')} className="min-h-11 rounded-xl bg-amber-300 px-3 text-xs font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">עדכון סכום חודשי</button>
+              </div>
+              {billingNotice && <p role="status" className="mt-3 rounded-lg bg-emerald-950 p-3 text-xs font-bold text-emerald-200">{billingNotice}</p>}
+              {billingError && <p role="alert" className="mt-3 rounded-lg bg-rose-950 p-3 text-xs font-bold text-rose-200">{billingError}</p>}
+            </section>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-4 flex items-center justify-between">
                 <div>
-                  <div className="text-xs text-emerald-700">סה"כ הכנסות שנסלקו (DUMMY)</div>
+                  <div className="text-xs text-emerald-700">סה"כ עסקאות ששולמו</div>
                   <div className="text-2xl font-bold font-mono text-emerald-950 mt-1">
                     ₪{payments.reduce((acc, curr) => acc + curr.amount, 0)}
                   </div>
@@ -1790,7 +1870,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 flex items-center justify-between">
                 <div>
-                  <div className="text-xs text-slate-700">סה"כ עסקאות סליקה מדומה</div>
+                  <div className="text-xs text-slate-700">סה"כ עסקאות מתועדות</div>
                   <div className="text-2xl font-bold font-mono text-slate-950 mt-1">
                     {payments.length}
                   </div>
@@ -1828,8 +1908,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="p-3 text-slate-500 font-mono">{p.date}</td>
                         <td className="p-3 text-slate-500">{p.paymentMethod}</td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[9px]">
-                            הושלם ידנית
+                          <span className={`px-2 py-0.5 rounded font-bold text-[9px] ${p.status === 'REFUNDED' ? 'bg-rose-100 text-rose-800' : p.status === 'PENDING' ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
+                            {p.status === 'REFUNDED' ? 'הוחזר' : p.status === 'PENDING' ? 'ממתין' : p.isMock ? 'בדיקה' : 'שולם'}
                           </span>
                         </td>
                       </tr>
@@ -2019,6 +2099,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <h3 className="text-sm font-semibold text-slate-800 border-b border-slate-200 pb-2">קביעת חוקי ופרמטרי מועדון הכושר</h3>
 
             <LandingImageManager />
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+              <h4 className="font-black text-slate-900">פרטי העסק המוצגים לציבור</h4>
+              <p className="mt-1 text-[11px] text-slate-600">הפרטים מופיעים בדף הבית ובמסמכי המדיניות. יש להשלים את כל השדות לפני השקה מסחרית.</p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {([
+                  ['legalName', 'שם משפטי מלא'],
+                  ['registrationNumber', 'מספר עוסק / ח.פ.'],
+                  ['managerName', 'שם איש קשר'],
+                  ['phone', 'טלפון'],
+                  ['email', 'דוא״ל שירות'],
+                  ['address', 'כתובת מלאה']
+                ] as const).map(([key, label]) => <label key={key} className="grid gap-1 text-xs font-bold text-slate-700">{label}
+                  <input value={settings.businessDetails?.[key] || ''} onChange={event => onUpdateSettings({ ...settings, businessDetails: { ...settings.businessDetails, [key]: event.target.value } })} className="min-h-11 rounded-xl border border-slate-300 px-3 text-sm text-slate-900" />
+                </label>)}
+              </div>
+            </section>
 
             <section className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">

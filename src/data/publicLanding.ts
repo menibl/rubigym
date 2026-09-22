@@ -6,6 +6,7 @@ export type PublicLandingConfig = {
   appUrl: string;
   landingUrl: string;
   plans: MembershipPlanConfig[];
+  businessDetails?: import('../types').SystemSettings['businessDetails'];
   images: {
     hero: string | null;
     coaching: string | null;
@@ -29,6 +30,7 @@ const localConfig = (): PublicLandingConfig => {
     appUrl: appUrl.toString(),
     landingUrl: surface === 'landing' ? window.location.href : '',
     plans: [],
+    businessDetails: { legalName: 'BALY WELLNESS', managerName: 'רובי באלי', phone: '054-6995885', address: 'מושב שילת' },
     images: { hero: null, coaching: null }
   };
 };

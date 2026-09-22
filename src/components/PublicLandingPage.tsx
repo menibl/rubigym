@@ -18,13 +18,15 @@ import {
 } from 'lucide-react';
 import clubHero from '../assets/baly-club-hero.png';
 import personalCoaching from '../assets/baly-personal-coaching.png';
-import { MembershipPlanConfig, MembershipType } from '../types';
+import { MembershipPlanConfig, MembershipType, SystemSettings } from '../types';
 import { RubisLogo } from './RubisLogo';
+import { CookieConsentBanner, LegalLinks } from './LegalCenter';
 
 interface PublicLandingPageProps {
   plans: MembershipPlanConfig[];
   heroImageUrl?: string | null;
   coachingImageUrl?: string | null;
+  businessDetails?: SystemSettings['businessDetails'];
   onLogin: () => void;
   onRegister: (plan?: MembershipType) => void;
 }
@@ -43,7 +45,9 @@ const planIcons: Partial<Record<MembershipType, React.ReactNode>> = {
   [MembershipType.YOUTH_TWICE_WEEKLY]: <Sparkles size={24} />
 };
 
-export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ plans, heroImageUrl, coachingImageUrl, onLogin, onRegister }) => {
+export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ plans, heroImageUrl, coachingImageUrl, businessDetails, onLogin, onRegister }) => {
+  const businessPhone = businessDetails?.phone || '054-6995885';
+  const internationalPhone = businessPhone.replace(/\D/g, '').replace(/^0/, '972');
   const preferredPlans = featuredPlanOrder
     .map(type => plans.find(plan => plan.id === type))
     .filter((plan): plan is MembershipPlanConfig => Boolean(plan));
@@ -112,7 +116,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ plans, her
       <section className="landing-benefits landing-section" aria-label="יתרונות המועדון">
         <article><span><Target size={22} /></span><h3>מתחילים מהמטרה שלך</h3><p>מתאימים את המסלול, הקצב וסוג האימון לנקודת הפתיחה וליעד האישי.</p></article>
         <article><span><ShieldCheck size={22} /></span><h3>מקצועיות לפני הכול</h3><p>דגש על טכניקה, עבודה מבוקרת והתקדמות שאפשר להתמיד בה לאורך זמן.</p></article>
-        <article><span><MessageCircle size={22} /></span><h3>תמיד יש עם מי לדבר</h3><p>קשר אישי וישיר, משוב אמיתי ומענה כשצריך לדייק או לשנות כיוון.</p></article>
+        <article><span><MessageCircle size={22} /></span><h3>קשר ישיר עם הצוות</h3><p>קשר אישי, משוב ומענה בשעות הפעילות כשצריך לדייק או לשנות כיוון.</p></article>
         <article><span><HeartPulse size={22} /></span><h3>כושר שמתאים לחיים</h3><p>מעטפת שמחברת בין אימון, הרגלים ובריאות — בלי רעש ובלי קיצורי דרך.</p></article>
       </section>
 
@@ -159,7 +163,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ plans, her
       <section className="landing-app landing-section">
         <div>
           <span className="landing-eyebrow">המועדון ממשיך איתך גם מחוץ לאימון</span>
-          <h2>כל מה שצריך,<br />באפליקציה אחת.</h2>
+          <h2>כלי המועדון,<br />באפליקציה אחת.</h2>
           <p>נרשמים לאימונים, מנהלים את המסלול, עוקבים אחרי התוכנית ונשארים בקשר ישיר עם צוות המועדון.</p>
         </div>
         <div className="landing-app-features">
@@ -173,24 +177,26 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({ plans, her
         <RubisLogo size={134} />
         <span>זה הזמן שלך להתחיל</span>
         <h2>מוכנים למצוא את המסלול שלכם?</h2>
-        <p>הצטרפו ל־BALY במושב שילת והתחילו להתאמן עם מסגרת, מקצועיות ויחס אישי.</p>
+        <p>הצטרפו ל־BALY {businessDetails?.address ? `ב${businessDetails.address}` : 'במושב שילת'} והתחילו להתאמן עם מסגרת, מקצועיות ויחס אישי.</p>
         <div className="landing-hero-actions">
           <button className="landing-button" onClick={() => onRegister()}><UserPlus size={18} /> הרשמה למועדון</button>
           <button className="landing-outline-button" onClick={onLogin}><KeyRound size={18} /> כבר חברים? כניסה</button>
         </div>
         <div className="landing-contact-row">
-          <a href="tel:+972546995885" dir="ltr">054-6995885</a>
+          <a href={`tel:+${internationalPhone}`} dir="ltr">{businessPhone}</a>
           <i />
-          <a href="https://wa.me/972546995885" target="_blank" rel="noopener noreferrer"><MessageCircle size={17} /> WhatsApp לרובי</a>
+          <a href={`https://wa.me/${internationalPhone}`} target="_blank" rel="noopener noreferrer"><MessageCircle size={17} /> WhatsApp ל{businessDetails?.managerName || 'רובי'}</a>
           <i />
-          <span><MapPin size={17} /> מושב שילת</span>
+          <span><MapPin size={17} /> {businessDetails?.address || 'מושב שילת'}</span>
         </div>
       </section>
 
       <footer className="landing-footer">
-        <span>© {new Date().getFullYear()} BALY Wellness</span>
+        <span>© {new Date().getFullYear()} {businessDetails?.legalName || 'BALY Wellness'}</span>
         <span>מועדון כושר, כוח ו־Wellness במושב שילת</span>
+        <LegalLinks businessDetails={businessDetails} className="flex flex-wrap justify-center gap-3 [&_button]:underline [&_button]:underline-offset-4" />
       </footer>
+      <CookieConsentBanner />
     </main>
   );
 };

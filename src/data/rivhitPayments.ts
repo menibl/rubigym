@@ -1,4 +1,4 @@
-import { FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, PaymentPurchaseVariant } from '../types';
+import { FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, Payment, PaymentPurchaseVariant } from '../types';
 
 const PENDING_PAYMENT_KEY = 'baly_rivhit_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_rivhit_processed_transactions_v1';
@@ -156,3 +156,26 @@ export const clearRivhitReturnParams = () => {
   url.searchParams.delete('rivhit');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 };
+
+const runAdminPaymentAction = async (path: string, body: Record<string, unknown>): Promise<Payment> => {
+  const apiBase = paymentApiBase();
+  if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
+  const response = await fetch(`${apiBase}/api/payments/rivhit/admin/${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok || !result.payment) throw new Error(result.message || 'הפעולה מול רווחית נכשלה.');
+  return result.payment as Payment;
+};
+
+export const refundRivhitPayment = (paymentId: string, reason: string) =>
+  runAdminPaymentAction('refund', { paymentId, reason });
+
+export const cancelRivhitRecurring = (paymentId: string, reason: string) =>
+  runAdminPaymentAction('cancel-recurring', { paymentId, reason });
+
+export const updateRivhitRecurringAmount = (paymentId: string, amount: number, reason: string) =>
+  runAdminPaymentAction('update-recurring', { paymentId, amount, reason });

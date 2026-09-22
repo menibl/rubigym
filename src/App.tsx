@@ -55,6 +55,7 @@ import { ClubWorkoutDisplay } from './components/ClubWorkoutDisplay';
 import { TraineeSessionWorkoutView } from './components/TraineeSessionWorkoutView';
 import { ClubChatCenter } from './components/ClubChatCenter';
 import { RoleWorkspaceLanding, WorkspaceView } from './components/RoleWorkspaceLanding';
+import { LegalLinks } from './components/LegalCenter';
 import { isMembershipCancellationEffective } from './data/membershipPolicy';
 import { hasNotificationMarker, saveNotificationMarker, showBrowserNotification } from './utils/browserNotifications';
 import { isPagesDemoMode } from './data/appMode';
@@ -589,6 +590,7 @@ export default function App() {
         plans={plans}
         heroImageUrl={publicLandingConfig.images.hero}
         coachingImageUrl={publicLandingConfig.images.coaching}
+        businessDetails={publicLandingConfig.businessDetails}
         onLogin={() => openAppScreen('login')}
         onRegister={plan => openAppScreen('register', plan)}
       />
@@ -945,6 +947,7 @@ export default function App() {
           <div>
             <span className="font-bold text-white font-sans text-xs text-amber-500">BALY wellness</span> — מערכת חכמה לניהול חוויית האימון והמנוי.
           </div>
+          <LegalLinks businessDetails={settings.businessDetails} className="flex flex-wrap justify-center gap-3 [&_button]:underline [&_button]:underline-offset-4" />
         </div>
       </footer>
       <UserSettingsModal
