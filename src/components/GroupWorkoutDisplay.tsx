@@ -256,7 +256,16 @@ const LinearGroupWorkoutDisplay: React.FC<GroupWorkoutDisplayProps> = ({ program
 
             <div className="mt-2 flex shrink-0 items-center justify-center gap-2">
               <button onClick={previousStation} className="rounded-xl bg-white/10 p-2.5 hover:bg-white/20"><ChevronRight size={25} /></button>
-              <button onClick={() => { beep(880, 0.1); if (isRepetitionBased) advanceAfterRest(); else setIsRunning(value => !value); }} disabled={phase === 'COMPLETE'} className={`flex h-14 w-14 items-center justify-center rounded-full shadow-2xl transition hover:scale-105 disabled:opacity-40 ${isRunning && !isRepetitionBased ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-white'}`}>{isRepetitionBased ? <ChevronLeft size={28} /> : isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}</button>
+              <button
+                onClick={() => { beep(880, 0.1); if (isRepetitionBased) advanceAfterRest(); else setIsRunning(value => !value); }}
+                disabled={phase === 'COMPLETE'}
+                aria-pressed={!isRepetitionBased ? isRunning : undefined}
+                aria-label={isRepetitionBased ? 'מעבר לשלב הבא' : isRunning ? 'השהיית האימון' : 'התחלת האימון'}
+                className={`flex h-14 min-w-28 items-center justify-center gap-2 rounded-full px-5 text-base font-black shadow-2xl transition hover:scale-105 disabled:opacity-40 ${isRunning && !isRepetitionBased ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-white'}`}
+              >
+                {isRepetitionBased ? <ChevronLeft size={24} /> : isRunning ? <Pause size={23} fill="currentColor" /> : <Play size={23} fill="currentColor" />}
+                <span>{isRepetitionBased ? 'הבא' : isRunning ? 'השהה' : 'התחל'}</span>
+              </button>
               <button onClick={nextStation} className="rounded-xl bg-white/10 p-2.5 hover:bg-white/20"><ChevronLeft size={25} /></button>
               <button onClick={resetWorkout} className="mr-2 rounded-xl bg-white/10 p-2.5 hover:bg-white/20"><RotateCcw size={22} /></button>
               <button onClick={() => beep(880, 0.15)} className="rounded-xl bg-white/10 p-2.5 hover:bg-white/20" title="בדיקת צליל"><Volume2 size={22} /></button>

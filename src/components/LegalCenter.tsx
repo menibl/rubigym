@@ -73,8 +73,8 @@ export const LegalDocumentModal: React.FC<{ documentId: LegalDocumentId | null; 
     content: <><p><strong>שם העסק:</strong> {businessDetails.legalName || 'BALY WELLNESS'}</p>{businessDetails.registrationNumber && <p><strong>מספר עוסק / ח.פ.:</strong> {businessDetails.registrationNumber}</p>}<p><strong>איש קשר:</strong> {businessDetails.managerName || 'רובי באלי'}</p><p><strong>טלפון:</strong> {businessDetails.phone || '054-6995885'}</p>{businessDetails.email && <p><strong>דוא״ל:</strong> {businessDetails.email}</p>}<p><strong>כתובת:</strong> {businessDetails.address || 'מושב שילת'}</p></>
   } : documents[documentId];
   return <div className="fixed inset-0 z-[200] grid place-items-center bg-black/75 p-4" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-    <section className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-amber-400/30 bg-[#f8f5ed] p-5 text-right text-slate-900 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="legal-title" dir="rtl">
-      <div className="sticky top-0 mb-4 flex items-center justify-between gap-3 border-b border-slate-300 bg-[#f8f5ed] pb-3">
+    <section className="legal-document-modal max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-amber-400/30 p-5 text-right shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="legal-title" dir="rtl">
+      <div className="legal-document-header sticky top-0 mb-4 flex items-center justify-between gap-3 border-b pb-3">
         <div><h2 id="legal-title" className="text-xl font-black">{document.title}</h2><small className="text-slate-600">עודכן לאחרונה: {updatedAt}</small></div>
         <button ref={closeButtonRef} type="button" onClick={onClose} className="grid min-h-11 min-w-11 place-items-center rounded-xl border border-slate-300 bg-white" aria-label="סגירת החלון"><X /></button>
       </div>

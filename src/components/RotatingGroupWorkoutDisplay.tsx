@@ -283,7 +283,16 @@ export const RotatingGroupWorkoutDisplay: React.FC<RotatingGroupWorkoutDisplayPr
 
             <div className="mt-2 flex shrink-0 items-center justify-center gap-2">
               <button onClick={previousStep} className="rounded-xl bg-white/10 p-2.5"><ChevronRight size={24} /></button>
-              <button onClick={() => { beep(); if (isRepetitionBased) advancePhase(); else setIsRunning(value => !value); }} disabled={phase === 'COMPLETE'} className={`flex h-14 w-14 items-center justify-center rounded-full shadow-2xl disabled:opacity-40 ${isRunning && !isRepetitionBased ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500'}`}>{isRepetitionBased ? <ChevronLeft size={28} /> : isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}</button>
+              <button
+                onClick={() => { beep(); if (isRepetitionBased) advancePhase(); else setIsRunning(value => !value); }}
+                disabled={phase === 'COMPLETE'}
+                aria-pressed={!isRepetitionBased ? isRunning : undefined}
+                aria-label={isRepetitionBased ? 'מעבר לשלב הבא' : isRunning ? 'השהיית האימון' : 'התחלת האימון'}
+                className={`flex h-14 min-w-28 items-center justify-center gap-2 rounded-full px-5 text-base font-black shadow-2xl disabled:opacity-40 ${isRunning && !isRepetitionBased ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500'}`}
+              >
+                {isRepetitionBased ? <ChevronLeft size={24} /> : isRunning ? <Pause size={23} fill="currentColor" /> : <Play size={23} fill="currentColor" />}
+                <span>{isRepetitionBased ? 'הבא' : isRunning ? 'השהה' : 'התחל'}</span>
+              </button>
               <button onClick={advanceStep} className="rounded-xl bg-white/10 p-2.5"><ChevronLeft size={24} /></button>
               <button onClick={resetWorkout} className="mr-1 rounded-xl bg-white/10 p-2.5"><RotateCcw size={21} /></button>
               <button onClick={() => beep()} className="rounded-xl bg-white/10 p-2.5"><Volume2 size={21} /></button>

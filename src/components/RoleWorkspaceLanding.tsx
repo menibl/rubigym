@@ -100,7 +100,8 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   const actions: HomeAction[] = isTrainee
     ? [
         { key: 'booking', title: 'רישום לאימון', description: 'יומן, הרשמה וביטול', icon: CalendarCheck, view: 'BOOKING' },
-        { key: 'profile', title: 'פרופיל', description: 'פרטים, מנוי ובריאות', icon: UserRound, view: 'MY_ACCOUNT' },
+        { key: 'profile', title: 'פרופיל ובריאות', description: 'פרטים אישיים והצהרת בריאות', icon: UserRound, view: 'MY_ACCOUNT' },
+        { key: 'membership', title: 'המנוי והתשלומים שלי', description: 'מסלול נוכחי, שינוי, הקפאה ותשלום', icon: CreditCard, view: 'MY_MEMBERSHIP' },
         { key: 'workout', title: 'תוכנית אימון', description: 'צפייה והפעלת האימון', icon: Dumbbell, view: 'MY_PROGRAM' },
         { key: 'nutrition', title: 'תוכנית תזונה', description: 'ארוחות, יעדים והחלפות', icon: Apple, view: 'MY_NUTRITION' },
         { key: 'chat', title: 'צ׳אט עם המאמן', description: unreadChatCount ? `${unreadChatCount} הודעות חדשות` : 'שיחה עם צוות המועדון', icon: MessageCircle, onClick: () => openChat(), badge: unreadChatCount }
