@@ -47,13 +47,26 @@ export const ClubChatCenter: React.FC<ClubChatCenterProps> = ({
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement | null>(null);
   const selectedContact = contacts.find(contact => contact.user.id === selectedContactId)?.user;
-  const conversation = useMemo(() => messages
+  const conversation = useMemo(() => {
+    const chronological = messages
     .filter(message => selectedContactId && (
       (message.senderId === activeUser.id && message.receiverId === selectedContactId)
       || (message.senderId === selectedContactId && message.receiverId === activeUser.id)
     ))
-    .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
-  [activeUser.id, messages, selectedContactId]);
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const seenSystemUpdates = new Set<string>();
+    const deduplicated: Message[] = [];
+    for (let index = chronological.length - 1; index >= 0; index -= 1) {
+      const message = chronological[index];
+      if (message.systemGenerated) {
+        const key = `${message.senderId}|${message.receiverId}|${message.content.trim()}`;
+        if (seenSystemUpdates.has(key)) continue;
+        seenSystemUpdates.add(key);
+      }
+      deduplicated.push(message);
+    }
+    return deduplicated.reverse();
+  }, [activeUser.id, messages, selectedContactId]);
   const visibleContacts = contacts.filter(contact => contact.user.name.toLocaleLowerCase('he-IL').includes(search.trim().toLocaleLowerCase('he-IL')));
 
   useEffect(() => {

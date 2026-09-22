@@ -89,19 +89,23 @@ export const HealthDeclarationForm: React.FC<HealthDeclarationFormProps> = ({
       </div>
 
       <div className="health-question-list">
-        {QUESTIONS.map(question => (
-          <fieldset key={question.id}>
-            <legend>{question.text}</legend>
+        {QUESTIONS.map(question => {
+          const questionLabelId = `health-question-${question.id}`;
+          return (
+          <fieldset key={question.id} aria-labelledby={questionLabelId}>
+            <legend id={questionLabelId} className="sr-only">{question.text}</legend>
+            <p className="health-question-text" aria-hidden="true">{question.text}</p>
             <div>
               <label className={answers[question.id] === 'YES' ? 'selected yes' : ''}>
-                <input type="radio" name={question.id} checked={answers[question.id] === 'YES'} onChange={() => setAnswers(current => ({ ...current, [question.id]: 'YES' }))} /> כן
+                <input type="radio" name={question.id} aria-label={`כן — ${question.text}`} checked={answers[question.id] === 'YES'} onChange={() => setAnswers(current => ({ ...current, [question.id]: 'YES' }))} /> כן
               </label>
               <label className={answers[question.id] === 'NO' ? 'selected no' : ''}>
-                <input type="radio" name={question.id} checked={answers[question.id] === 'NO'} onChange={() => setAnswers(current => ({ ...current, [question.id]: 'NO' }))} /> לא
+                <input type="radio" name={question.id} aria-label={`לא — ${question.text}`} checked={answers[question.id] === 'NO'} onChange={() => setAnswers(current => ({ ...current, [question.id]: 'NO' }))} /> לא
               </label>
             </div>
           </fieldset>
-        ))}
+          );
+        })}
       </div>
 
       <div className={`health-guidance ${requiresMedicalCertificate ? 'requires-certificate' : ''}`}>
