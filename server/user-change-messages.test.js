@@ -64,7 +64,7 @@ test('suppresses a repeated identical system alert during the autosave window', 
   assert.equal(repeated.messages[0].id, first.messages[0].id);
 });
 
-test('allows the same kind of genuine alert again after the deduplication window', () => {
+test('allows the same kind of genuine alert again after the daily deduplication window', () => {
   const beforeTrainee = { id: 'trainee', name: 'מני', role: 'TRAINEE', healthDeclarationSigned: false };
   const afterTrainee = { ...beforeTrainee, healthDeclarationSigned: true };
   const first = appendUserChangeMessages(
@@ -75,7 +75,7 @@ test('allows the same kind of genuine alert again after the deduplication window
   const later = appendUserChangeMessages(
     { users: [manager, beforeTrainee], messages: first.messages },
     { users: [manager, afterTrainee], messages: first.messages },
-    new Date(timestamp.getTime() + 11 * 60 * 1_000)
+    new Date(timestamp.getTime() + 25 * 60 * 60 * 1_000)
   );
   assert.equal(later.messages.length, 2);
 });

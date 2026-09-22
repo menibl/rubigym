@@ -195,14 +195,14 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
     const targetDayOfWeek = targetDateObj.getDay();
 
     // 1. Group & Personal Sessions
-    let explicitSessions = sessions.filter(s => s.date === dateKey);
+    let explicitSessions = sessions.filter(s => s.date === dateKey && !(s.excludedDates || []).includes(dateKey));
 
     // Virtual project recurring sessions if not explicitly present for dateKey
     const virtualSessions: TrainingSession[] = [];
     const knownSeries = new Set(explicitSessions.map(s => s.seriesId).filter(Boolean));
 
     sessions.forEach(s => {
-      if (s.recurringType && s.recurringType !== 'NONE' && s.date <= dateKey) {
+      if (s.recurringType && s.recurringType !== 'NONE' && s.date <= dateKey && !(s.excludedDates || []).includes(dateKey)) {
         const sDateObj = new Date(s.date + 'T00:00:00');
         if (sDateObj.getDay() === targetDayOfWeek) {
           let valid = true;
@@ -247,12 +247,12 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
     daySessions.sort((a, b) => a.time.localeCompare(b.time));
 
     // 2. Open Gym Sessions
-    let explicitOpenGym = openGymSessions.filter(og => og.date === dateKey);
+    let explicitOpenGym = openGymSessions.filter(og => og.date === dateKey && !(og.excludedDates || []).includes(dateKey));
     const virtualOpenGym: OpenGymSession[] = [];
     const knownOgSeries = new Set(explicitOpenGym.map(og => og.seriesId).filter(Boolean));
 
     openGymSessions.forEach(og => {
-      if (og.recurringType && og.recurringType !== 'NONE' && og.date <= dateKey) {
+      if (og.recurringType && og.recurringType !== 'NONE' && og.date <= dateKey && !(og.excludedDates || []).includes(dateKey)) {
         const ogDateObj = new Date(og.date + 'T00:00:00');
         if (ogDateObj.getDay() === targetDayOfWeek) {
           let valid = true;

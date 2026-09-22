@@ -47,7 +47,10 @@ const messageFor = (user, staff, content, timestamp, sequence) => ({
   content, timestamp, read: false, systemGenerated: true
 });
 
-const DUPLICATE_ALERT_WINDOW_MS = 10 * 60 * 1000;
+// Autosave retries and stale mobile clients can repeat the same state transition
+// long after the first save. Keep one identical staff alert per day while still
+// allowing a genuinely recurring change to be reported on a later day.
+const DUPLICATE_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const hasRecentEquivalentMessage = (existingMessages, user, staff, content, now) => existingMessages.some(message => {
   if (!message?.systemGenerated || message.senderId !== user.id || message.receiverId !== staff.id || message.content !== content) return false;
   const messageTime = Date.parse(message.timestamp);
