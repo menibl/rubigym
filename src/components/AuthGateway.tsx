@@ -35,6 +35,7 @@ import {
   isRivhitConfigured,
   markTransactionProcessed,
   startRivhitPayment,
+  validateRivhitDiscountCode,
   verifyPendingRivhitPayment,
   wasTransactionProcessed
 } from '../data/rivhitPayments';
@@ -121,6 +122,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [familyAccountDrafts, setFamilyAccountDrafts] = useState<FamilyAccountDraft[]>([]);
   const [discountInput, setDiscountInput] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
+  const [discountValidating, setDiscountValidating] = useState(false);
   const [paymentStarting, setPaymentStarting] = useState(false);
   const [authPending, setAuthPending] = useState(false);
   const [error, setError] = useState('');
@@ -159,6 +161,30 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const resetMessages = () => {
     setError('');
     setNotice('');
+  };
+
+  const handleApplyDiscount = async () => {
+    const normalized = discountInput.trim().toUpperCase();
+    if (!normalized) {
+      setAppliedDiscount(null);
+      setError('יש להזין קוד הנחה.');
+      return;
+    }
+    setDiscountValidating(true);
+    try {
+      const match = demoMode
+        ? discountCodes.find(code => code.code.toUpperCase() === normalized && (!code.isSingleUse || !code.isUsed)) || null
+        : await validateRivhitDiscountCode(normalized);
+      setAppliedDiscount(match);
+      setNotice(match ? `קוד ${match.code} הופעל בהצלחה.` : '');
+      setError(match ? '' : 'קוד ההנחה אינו תקין או שכבר נוצל.');
+    } catch (discountError) {
+      setAppliedDiscount(null);
+      setNotice('');
+      setError(discountError instanceof Error ? discountError.message : 'קוד ההנחה אינו תקין או שכבר נוצל.');
+    } finally {
+      setDiscountValidating(false);
+    }
   };
 
   const openScreen = (next: AuthScreen) => {
@@ -708,13 +734,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 </div>}
                 <div className="auth-discount-box">
                   <label>קוד הנחה</label>
-                  <div><input value={discountInput} onChange={event => setDiscountInput(event.target.value.toUpperCase())} placeholder="הזנת קוד" />
-                  <button type="button" onClick={() => {
-                    const match = discountCodes.find(code => code.code.toUpperCase() === discountInput.trim().toUpperCase() && (!code.isSingleUse || !code.isUsed));
-                    setAppliedDiscount(match || null);
-                    setNotice(match ? `קוד ${match.code} הופעל בהצלחה.` : '');
-                    setError(match ? '' : 'קוד ההנחה אינו תקין או שכבר נוצל.');
-                  }}>הפעל</button></div>
+                  <div><input value={discountInput} onChange={event => {
+                    setDiscountInput(event.target.value.toUpperCase());
+                    setAppliedDiscount(null);
+                  }} placeholder="הזנת קוד" />
+                  <button type="button" disabled={discountValidating} onClick={() => void handleApplyDiscount()}>{discountValidating ? 'בודק…' : 'הפעל'}</button></div>
                 </div>
                 <div className="auth-checkout-summary">
                   <span>{!isFamilyPlan && billingPeriodForPlan(selectedPlanConfig) === 'MONTHLY_ANNUAL_COMMITMENT' ? 'חיוב חודשי ראשון' : 'לתשלום כעת'}</span>

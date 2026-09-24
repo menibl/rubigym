@@ -1,4 +1,4 @@
-import { FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, Payment, PaymentPurchaseVariant } from '../types';
+import { DiscountCode, FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, Payment, PaymentPurchaseVariant } from '../types';
 
 const PENDING_PAYMENT_KEY = 'baly_rivhit_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_rivhit_processed_transactions_v1';
@@ -58,6 +58,22 @@ export interface VerifiedRivhitPayment {
 const paymentApiBase = () => (import.meta.env.VITE_PAYMENT_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
 export const isRivhitConfigured = () => Boolean(paymentApiBase());
+
+export const validateRivhitDiscountCode = async (code: string): Promise<DiscountCode> => {
+  const apiBase = paymentApiBase();
+  if (!apiBase) throw new Error('שירות קודי ההנחה אינו זמין.');
+  const response = await fetch(`${apiBase}/api/payments/rivhit/discount/validate`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: code.trim().toUpperCase() })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.valid || !result.discount) {
+    throw new Error(result.message || 'קוד ההנחה אינו תקין או שכבר נוצל.');
+  }
+  return result.discount as DiscountCode;
+};
 
 export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   const apiBase = paymentApiBase();

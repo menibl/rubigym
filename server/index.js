@@ -217,16 +217,30 @@ const trainingCardVariants = {
 
 const familyPrices = { 2: 900, 3: 1350, 4: 1800, 5: 2250, 6: 2700 };
 const familyMonthlyPricePerMember = 550;
-const discountCodes = {
-  RUBI10: { percent: 10 },
-  FAMILY15: { percent: 15 },
-  VIP50: { amount: 50 }
+
+const normalizeDiscountCode = value => String(value || '').trim().toUpperCase();
+
+const findAvailableDiscount = (availableDiscountCodes, rawCode) => {
+  const code = normalizeDiscountCode(rawCode);
+  if (!code) return null;
+  const discount = (Array.isArray(availableDiscountCodes) ? availableDiscountCodes : [])
+    .find(candidate => normalizeDiscountCode(candidate?.code) === code);
+  if (!discount) throw new Error('INVALID_DISCOUNT');
+  if (discount.isSingleUse && discount.isUsed) throw new Error('DISCOUNT_ALREADY_USED');
+  const percent = Number(discount.discountPercent || 0);
+  const fixedAmount = Number(discount.discountAmount || 0);
+  if ((!Number.isFinite(percent) || percent < 0 || percent > 100)
+    || (!Number.isFinite(fixedAmount) || fixedAmount < 0)
+    || (percent <= 0 && fixedAmount <= 0)) throw new Error('INVALID_DISCOUNT');
+  return { ...discount, code, discountPercent: percent, discountAmount: fixedAmount };
 };
 
-const applyDiscount = (amount, discountCode) => {
-  const discount = discountCode ? discountCodes[String(discountCode).toUpperCase()] : undefined;
-  if (discountCode && !discount) throw new Error('INVALID_DISCOUNT');
-  return discount?.percent ? Math.round(amount * (1 - discount.percent / 100)) : Math.max(0, amount - (discount?.amount || 0));
+const applyDiscount = (amount, discountCode, availableDiscountCodes = []) => {
+  const discount = findAvailableDiscount(availableDiscountCodes, discountCode);
+  if (!discount) return amount;
+  return discount.discountPercent > 0
+    ? Math.max(0, Math.round(amount * (1 - discount.discountPercent / 100)))
+    : Math.max(0, amount - discount.discountAmount);
 };
 
 const normalizedBillingPeriod = plan => {
@@ -268,7 +282,7 @@ const normalizeFamilyPlans = (plans, catalog) => {
   });
 };
 
-const resolvePurchase = (body, catalog = []) => {
+const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
   if (body.familyMembersCount || body.membershipType === 'FAMILY_MEMBERSHIP') {
     const count = Number(body.familyMembersCount);
     const mode = body.familyBillingMode || 'ANNUAL_BY_SIZE';
@@ -288,7 +302,7 @@ const resolvePurchase = (body, catalog = []) => {
       baseAmount = familyMemberPlans.reduce((sum, plan) => sum + planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1), 0);
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
-    return { amount: applyDiscount(baseAmount, body.discountCode), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: mode !== 'CUSTOM_COMBINED', recurringMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 0 };
+    return { amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: mode !== 'CUSTOM_COMBINED', recurringMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 0 };
   }
   if (body.purchaseVariant) {
     const variant = trainingCardVariants[body.purchaseVariant];
@@ -296,12 +310,12 @@ const resolvePurchase = (body, catalog = []) => {
     const { plan, price } = planPrice(body.membershipType, catalog);
     const sessions = Number(String(body.purchaseVariant).split('_')[1]);
     const baseAmount = plan ? price * sessions : variant.amount;
-    return { ...variant, amount: applyDiscount(baseAmount, body.discountCode), label: plan?.label || variant.label, billingPeriod: 'SESSION_PACK', includedSessions: sessions, termMonths: 1 };
+    return { ...variant, amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label: plan?.label || variant.label, billingPeriod: 'SESSION_PACK', includedSessions: sessions, termMonths: 1 };
   }
   const { plan, price } = planPrice(body.membershipType, catalog);
   const billingPeriod = normalizedBillingPeriod(plan);
   return {
-    amount: applyDiscount(price, body.discountCode),
+    amount: applyDiscount(price, body.discountCode, availableDiscountCodes),
     label: plan?.label || membershipLabels[body.membershipType] || String(body.membershipType),
     billingPeriod,
     includedSessions: billingPeriod === 'SESSION_PACK' ? Math.max(1, Number(plan?.includedSessions) || 1) : undefined,
@@ -742,6 +756,64 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
   throw new Error('PAYMENT_STATE_CONFLICT');
 };
 
+const persistVerifiedDiscountUsage = async (env, order, payment) => {
+  const code = normalizeDiscountCode(order.c);
+  if (!env.STATE_STORE || !code) return;
+  const paymentId = String(payment.transactionId || payment.saleId || payment.paymentReference || '');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
+    if (!state) throw new Error('CLUB_STATE_MISSING');
+    const discount = (state.payload.discountCodes || []).find(candidate => normalizeDiscountCode(candidate.code) === code);
+    if (!discount || !discount.isSingleUse || discount.usedByPaymentId === paymentId) return;
+    if (discount.isUsed) {
+      console.warn('Verified payment used a discount code that was consumed by another payment', { code });
+      return;
+    }
+    const usedAt = new Date().toISOString();
+    const payload = {
+      ...state.payload,
+      discountCodes: (state.payload.discountCodes || []).map(candidate => candidate.id === discount.id ? {
+        ...candidate,
+        isUsed: true,
+        usedAt,
+        usedBy: order.u || undefined,
+        usedByPaymentId: paymentId || undefined
+      } : candidate)
+    };
+    const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', payload, state.revision);
+    if (!saved.conflict) return;
+  }
+  throw new Error('DISCOUNT_STATE_CONFLICT');
+};
+
+const handleValidateDiscount = async (request, env) => {
+  if (!env.STATE_STORE) return json({ message: 'שירות קודי ההנחה אינו זמין.' }, 503, corsHeaders(request, env));
+  const body = await request.json();
+  const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
+  let discount;
+  try {
+    discount = findAvailableDiscount(state?.payload?.discountCodes || [], body.code);
+  } catch (error) {
+    if (error?.message === 'INVALID_DISCOUNT' || error?.message === 'DISCOUNT_ALREADY_USED') {
+      return json({ message: 'קוד ההנחה אינו תקין או שכבר נוצל.' }, 400, corsHeaders(request, env));
+    }
+    throw error;
+  }
+  if (!discount) return json({ message: 'יש להזין קוד הנחה.' }, 400, corsHeaders(request, env));
+  return json({
+    valid: true,
+    discount: {
+      id: discount.id,
+      code: discount.code,
+      discountPercent: discount.discountPercent,
+      discountAmount: discount.discountAmount,
+      isSingleUse: Boolean(discount.isSingleUse),
+      createdBy: discount.createdBy || '',
+      createdAt: discount.createdAt || ''
+    }
+  }, 200, corsHeaders(request, env));
+};
+
 const handleCreatePayment = async (request, env) => {
   requirePaymentEnv(env);
   const body = await request.json();
@@ -756,9 +828,18 @@ const handleCreatePayment = async (request, env) => {
     const state = env.STATE_STORE?.getClubState
       ? await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness')
       : null;
-    purchase = resolvePurchase(body, state?.payload?.settings?.membershipPlans || []);
+    purchase = resolvePurchase(
+      body,
+      state?.payload?.settings?.membershipPlans || [],
+      state?.payload?.discountCodes || []
+    );
   }
-  catch { return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env)); }
+  catch (error) {
+    if (error?.message === 'INVALID_DISCOUNT' || error?.message === 'DISCOUNT_ALREADY_USED') {
+      return json({ message: 'קוד ההנחה אינו תקין או שכבר נוצל.' }, 400, corsHeaders(request, env));
+    }
+    return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env));
+  }
   const { amount } = purchase;
   const providerAmount = rivhitChargeAmount(amount, env);
   const signedOrder = await createSignedOrder(body, env, purchase);
@@ -828,6 +909,7 @@ const handleVerifyPayment = async (request, env) => {
     ...providerPayment
   };
   await persistVerifiedPurchase(env, order, payment, identity?.user_id);
+  await persistVerifiedDiscountUsage(env, order, payment);
   return json(payment, 200, corsHeaders(request, env));
 };
 
@@ -842,6 +924,7 @@ const handleWebhook = async (request, env) => {
   const order = await getOrderFromWebhook(payload, env);
   const payment = await verifyWebhookSale(payload, order, env);
   await persistVerifiedPurchase(env, order, payment);
+  await persistVerifiedDiscountUsage(env, order, payment);
   return new Response('OK', { status: 200 });
 };
 
@@ -1464,6 +1547,7 @@ const handleApi = async (request, env, url) => {
       });
       return json({ ok: true, payment: updatedPayment }, 200, headers);
     }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/discount/validate') return await handleValidateDiscount(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/create') return await handleCreatePayment(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/verify') return await handleVerifyPayment(request, env);
     if (['GET', 'POST'].includes(request.method) && url.pathname === '/api/payments/rivhit/webhook') return await handleWebhook(request, env);

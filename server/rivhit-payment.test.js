@@ -71,6 +71,86 @@ test('RIVHIT production environment uses the production iCredit host', async () 
   assert.equal(providerRequest.Items[0].UnitPrice, 280);
 });
 
+test('checkout accepts a manager-created discount from club state', async () => {
+  let providerRequest;
+  const env = {
+    RIVHIT_ENVIRONMENT: 'production',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'production-group-private-token',
+    PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
+    PUBLIC_APP_URL: 'https://balywellness.com/',
+    STATE_STORE: {
+      getClubState: async () => ({ payload: {
+        settings: { membershipPlans: [] },
+        discountCodes: [{
+          id: 'discount-welcome', code: 'WELCOME10', discountPercent: 10,
+          isSingleUse: false, createdBy: 'רובי', createdAt: '2026-09-24'
+        }]
+      } })
+    },
+    RIVHIT_FETCH: async (_url, init) => {
+      providerRequest = JSON.parse(init.body);
+      return Response.json({ Status: 0, URL: 'https://icredit.rivhit.co.il/payment/example', PrivateSaleToken: 'private-token' });
+    }
+  };
+
+  const validateResponse = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/discount/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: ' welcome10 ' })
+  }), env);
+  assert.equal(validateResponse.status, 200);
+  const validation = await validateResponse.json();
+  assert.equal(validation.valid, true);
+  assert.equal(validation.discount.code, 'WELCOME10');
+  assert.equal(validation.discount.discountPercent, 10);
+
+  const checkoutResponse = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM',
+      mode: 'REGISTRATION', discountCode: 'welcome10'
+    })
+  }), env);
+  assert.equal(checkoutResponse.status, 200);
+  assert.equal(providerRequest.Items[0].UnitPrice, 252);
+});
+
+test('a used single-use discount is rejected before opening a payment page', async () => {
+  let providerCalled = false;
+  const env = {
+    RIVHIT_ENVIRONMENT: 'production',
+    RIVHIT_GROUP_PRIVATE_TOKEN: 'production-group-private-token',
+    PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
+    PUBLIC_APP_URL: 'https://balywellness.com/',
+    STATE_STORE: {
+      getClubState: async () => ({ payload: {
+        settings: { membershipPlans: [] },
+        discountCodes: [{
+          id: 'discount-used', code: 'ONCE50', discountPercent: 0, discountAmount: 50,
+          isSingleUse: true, isUsed: true, createdBy: 'רובי', createdAt: '2026-09-24'
+        }]
+      } })
+    },
+    RIVHIT_FETCH: async () => {
+      providerCalled = true;
+      return Response.json({ Status: 0 });
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM',
+      mode: 'REGISTRATION', discountCode: 'ONCE50'
+    })
+  }), env);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { message: 'קוד ההנחה אינו תקין או שכבר נוצל.' });
+  assert.equal(providerCalled, false);
+});
+
 test('RIVHIT TEST checkout accepts a configured charge amount up to the sandbox limit', async () => {
   let providerRequest;
   const env = {
