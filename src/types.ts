@@ -263,6 +263,9 @@ export interface DiscountCode {
   discountAmount?: number; // e.g. 50 ILS
   isSingleUse: boolean;
   isUsed?: boolean;
+  usedAt?: string;
+  usedBy?: string;
+  usedByPaymentId?: string;
   createdBy: string;
   createdAt: string;
 }

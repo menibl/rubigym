@@ -2368,13 +2368,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <div className="font-bold text-slate-900">
                             {code.discountPercent > 0 ? `${code.discountPercent}% הנחה` : `₪${code.discountAmount} הנחה קצובה`}
                             {code.isSingleUse && (
-                              <span className="mr-2 bg-purple-100 text-purple-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                                חד-פעמי
+                              <span className={`mr-2 text-[10px] px-2 py-0.5 rounded-full font-bold ${code.isUsed ? 'bg-slate-200 text-slate-600' : 'bg-purple-100 text-purple-800'}`}>
+                                {code.isUsed ? 'נוצל' : 'חד-פעמי'}
                               </span>
                             )}
                           </div>
                           <div className="text-[11px] text-slate-500 mt-0.5">
                             נוצר על ידי: {code.createdBy} | בתאריך: {code.createdAt}
+                            {code.usedAt && <> | נוצל בתאריך: {new Date(code.usedAt).toLocaleDateString('he-IL')}</>}
                           </div>
                         </div>
                       </div>
