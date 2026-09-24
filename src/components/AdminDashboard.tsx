@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { addMinutesToTime, CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
 import { EditSessionModal } from './EditSessionModal';
@@ -1425,7 +1426,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
                         <td className="p-3 text-slate-600">
                           <div>טלפון: {u.phone}</div>
-                          <div className="text-[10px]">גיל: {u.age} | מין: {u.gender === Gender.FEMALE ? 'נקבה' : 'זכר'}</div>
+                          <div className="text-[10px]">גיל: {u.age || 'לא הוגדר'} | מין: {getGenderLabel(u.gender)}</div>
                         </td>
                         <td className="p-3 font-medium">
                           <div>
