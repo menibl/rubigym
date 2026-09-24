@@ -62,6 +62,7 @@ import { isPagesDemoMode } from './data/appMode';
 import { getPublicLandingConfig, PublicLandingConfig } from './data/publicLanding';
 import { syncClubDisplaySchedule } from './data/clubDisplayRemote';
 import { personalPlanToDisplayProgram } from './data/workoutAssignment';
+import { mergeEntityCollectionById } from './data/clubStateMerge.js';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const isClubWorkoutDisplay = () => window.location.hash === '#club-workout-display';
@@ -124,6 +125,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const revisionRef = useRef(0);
+  const lastSyncedClubStateRef = useRef<Record<string, unknown>>({});
   const hydratedRef = useRef(false);
   const pendingClubStateRef = useRef<Record<string, unknown> | null>(null);
   const savingClubStateRef = useRef(false);
@@ -164,6 +166,7 @@ export default function App() {
     setWorkoutAssistantMessages((payload.workoutAssistantMessages as WorkoutAssistantMessage[]) || []);
     setWorkoutAssistantDrafts((payload.workoutAssistantDrafts as WorkoutAssistantDraft[]) || []);
     setGroupWorkoutPrograms((payload.groupWorkoutPrograms as GroupWorkoutProgram[]) || []);
+    lastSyncedClubStateRef.current = payload;
     revisionRef.current = revision;
     hydratedRef.current = true;
   };
@@ -189,6 +192,7 @@ export default function App() {
         pendingClubStateRef.current = null;
         try {
           const result = await saveClubState(payload, revisionRef.current);
+          lastSyncedClubStateRef.current = payload;
           revisionRef.current = result.revision;
           if (result.generatedMessages?.length) {
             setMessages(current => {
@@ -200,26 +204,18 @@ export default function App() {
           const saveError = error as Error & { status?: number };
           if (saveError.status === 409) {
             // Another device updated the club while this payload was being saved.
-            // Preserve entities that were added remotely (most importantly new
-            // trainees, their payments and system messages) before retrying the
-            // local optimistic snapshot against the newest revision.
+            // Rebase locally changed fields onto the newest server entities so a
+            // stale browser cannot erase a trainee's photo, gender or age.
             const retryPayload = pendingClubStateRef.current || payload;
             const latest = await getClubState();
-            const preserveRemoteAdditions = (localValue: unknown, remoteValue: unknown) => {
-              const local = Array.isArray(localValue) ? localValue : [];
-              const remote = Array.isArray(remoteValue) ? remoteValue : [];
-              const localIds = new Set(local.map(item => String((item as { id?: unknown })?.id || '')));
-              return [...local, ...remote.filter(item => {
-                const id = String((item as { id?: unknown })?.id || '');
-                return id && !localIds.has(id);
-              })];
-            };
+            const basePayload = lastSyncedClubStateRef.current;
             revisionRef.current = latest.revision;
+            lastSyncedClubStateRef.current = latest.payload;
             pendingClubStateRef.current = {
               ...retryPayload,
-              users: preserveRemoteAdditions(retryPayload.users, latest.payload.users),
-              payments: preserveRemoteAdditions(retryPayload.payments, latest.payload.payments),
-              messages: preserveRemoteAdditions(retryPayload.messages, latest.payload.messages)
+              users: mergeEntityCollectionById(basePayload.users, retryPayload.users, latest.payload.users),
+              payments: mergeEntityCollectionById(basePayload.payments, retryPayload.payments, latest.payload.payments),
+              messages: mergeEntityCollectionById(basePayload.messages, retryPayload.messages, latest.payload.messages)
             };
           } else {
             console.error('Unable to save club state', saveError);
