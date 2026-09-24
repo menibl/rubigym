@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import {
   User,
@@ -536,6 +537,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
     // 3. Gender restriction (Individual to this specific family member / trainee)
     if (session.genderRestriction !== Gender.ALL) {
+      if (![Gender.MALE, Gender.FEMALE].includes(activeUser.gender)) {
+        return { eligible: false, reason: 'המין בפרופיל אינו מוגדר. יש לעדכן את הפרופיל לפני הרשמה לאימון המוגבל לפי מין.' };
+      }
       const isFemaleClass = session.genderRestriction === Gender.FEMALE;
       const isMaleClass = session.genderRestriction === Gender.MALE;
       if (isFemaleClass && activeUser.gender !== Gender.FEMALE) {
@@ -547,6 +551,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
 
     // 4. Age limit restriction (Individual to this specific family member / trainee)
+    if ((session.ageMin || session.ageMax) && (!Number.isFinite(activeUser.age) || activeUser.age <= 0)) {
+      return { eligible: false, reason: 'תאריך הלידה או הגיל אינם מוגדרים בפרופיל. יש לעדכן אותם לפני הרשמה לאימון עם מגבלת גיל.' };
+    }
     if (session.ageMin && activeUser.age < session.ageMin) {
       return { eligible: false, reason: `מגבלת גיל! אימון זה מיועד לגילאי ${session.ageMin} ומעלה בלבד. (גיל המשתמש: ${activeUser.age})` };
     }
@@ -1521,7 +1528,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 )}
               </div>
 
-              <div>גיל: <span className="font-bold">{activeUser.age}</span> | מין: <span className="font-bold">{activeUser.gender === Gender.FEMALE ? 'נקבה 🚺' : 'זכר 🚹'}</span></div>
+              <div>גיל: <span className="font-bold">{activeUser.age || 'לא הוגדר'}</span> | מין: <span className="font-bold">{getGenderLabel(activeUser.gender, true)}</span></div>
               <div>תוקף מנוי: <span className="font-mono font-semibold">{activeUser.membershipExpiry}</span></div>
               <div>סדר המתנה: <span className="font-bold text-slate-800">כל הקודם זוכה</span></div>
 
@@ -1563,7 +1570,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-600 mt-0.5">
-                              גיל: {fMember.age} | {fMember.gender === Gender.FEMALE ? 'נקבה' : 'זכר'}
+                              גיל: {fMember.age || 'לא הוגדר'} | {getGenderLabel(fMember.gender)}
                             </div>
                             <div className="text-[10px] text-indigo-700 font-semibold mt-1 flex flex-wrap gap-1">
                               {fMember.secondaryMemberships && fMember.secondaryMemberships.length > 0 ? (
