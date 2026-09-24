@@ -9,6 +9,8 @@ import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, Sh
 import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
+import { validateRivhitDiscountCode } from '../data/rivhitPayments';
+import { isPagesDemoMode } from '../data/appMode';
 
 const PROFILE_IMAGE_MAX_SIDE = 512;
 
@@ -94,6 +96,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   // Discount code state
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<DiscountCode | null>(null);
+  const [couponValidating, setCouponValidating] = useState(false);
   const [couponMsg, setCouponMsg] = useState('');
 
   // Add sub-family member form inside family tab
@@ -151,18 +154,24 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const canManageFamily = Boolean(currentUser.isFamilyPayer || isAdminMode);
 
   // Coupon application handler
-  const handleApplyCoupon = () => {
+  const handleApplyCoupon = async () => {
     setCouponMsg('');
     if (!couponInput.trim()) return;
     const codeStr = couponInput.trim().toUpperCase();
-    const match = discountCodes.find(c => c.code === codeStr);
-    if (!match) {
-      setCouponMsg('קוד הנחה לא תקין או פג תוקף');
+    setCouponValidating(true);
+    try {
+      const match = isPagesDemoMode()
+        ? discountCodes.find(code => code.code.toUpperCase() === codeStr && (!code.isSingleUse || !code.isUsed)) || null
+        : await validateRivhitDiscountCode(codeStr);
+      if (!match) throw new Error('קוד הנחה לא תקין או שכבר נוצל');
+      setAppliedCoupon(match);
+      setCouponMsg(`קוד הנחה ${match.code} הוחל בהצלחה!`);
+    } catch (couponError) {
+      setCouponMsg(couponError instanceof Error ? couponError.message : 'קוד הנחה לא תקין או שכבר נוצל');
       setAppliedCoupon(null);
-      return;
+    } finally {
+      setCouponValidating(false);
     }
-    setAppliedCoupon(match);
-    setCouponMsg(`קוד הנחה ${match.code} הוחל בהצלחה!`);
   };
 
   // Change individual family member track
@@ -1067,15 +1076,20 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                                   type="text"
                                   placeholder="הזן קוד (למשל: RUBI20)"
                                   value={couponInput}
-                                  onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                                  onChange={(e) => {
+                                    setCouponInput(e.target.value.toUpperCase());
+                                    setAppliedCoupon(null);
+                                    setCouponMsg('');
+                                  }}
                                   className="w-full px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 font-mono text-white text-xs uppercase focus:outline-none focus:border-amber-400"
                                 />
                                 <button
                                   type="button"
-                                  onClick={handleApplyCoupon}
+                                  onClick={() => void handleApplyCoupon()}
+                                  disabled={couponValidating}
                                   className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs shrink-0 transition cursor-pointer"
                                 >
-                                  החל קוד
+                                  {couponValidating ? 'בודק…' : 'החל קוד'}
                                 </button>
                               </div>
                               {couponMsg && (
