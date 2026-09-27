@@ -594,7 +594,7 @@ const getOrderFromWebhook = async (payload, env) => {
 
 const verifyWebhookSale = async (payload, order, env) => {
   const saleId = String(rivhitValue(payload, 'SaleId', 'saleId') || '');
-  const amount = Number(rivhitValue(payload, 'TotalAmount', 'Amount', 'totalAmount', 'amount'));
+  const amount = Number(rivhitValue(payload, 'TransactionAmount', 'TotalAmount', 'Amount', 'totalAmount', 'amount'));
   const providerAmount = signedOrderChargeAmount(order);
   if (!saleId || !Number.isFinite(amount) || amount !== providerAmount) throw new Error('INVALID_RIVHIT_WEBHOOK');
   await verifyRivhitSale(saleId, providerAmount, env);
@@ -921,6 +921,18 @@ const handleWebhook = async (request, env) => {
   else if (contentType.includes('application/json')) payload = await request.json();
   else payload = Object.fromEntries(await request.formData());
   if (Array.isArray(payload)) payload = payload[0] || {};
+  // GET notifications may contain only SaleId. Recover the signed order from
+  // the provider, never from client-supplied user or membership fields.
+  if (!rivhitValue(payload, 'Custom1', 'custom1')) {
+    const saleId = String(rivhitValue(payload, 'SaleId', 'saleId') || '');
+    if (!saleId) throw new Error('RIVHIT_WEBHOOK_ORDER_MISSING');
+    const result = await rivhitPost('/SaleDetails', { SaleId: saleId }, env);
+    const sale = Array.isArray(result.data) ? result.data[0] : (result.Data?.[0] || result.data || result);
+    if (Number(result.Status) !== 0 || !sale || String(rivhitValue(sale, 'SaleId', 'saleId')) !== saleId) {
+      throw new Error('RIVHIT_PAYMENT_FAILED');
+    }
+    payload = sale;
+  }
   const order = await getOrderFromWebhook(payload, env);
   const payment = await verifyWebhookSale(payload, order, env);
   await persistVerifiedPurchase(env, order, payment);
