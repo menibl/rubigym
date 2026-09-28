@@ -6,6 +6,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
+import { resolveSessionProgram } from '../data/sessionProgram';
 import {
   User,
   TrainingSession,
@@ -403,6 +404,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // Check booking eligibility constraints (Section 5.1 & 11)
   const checkBookingEligibility = (session: TrainingSession): { eligible: boolean; reason?: string } => {
+    if (new Date(`${session.date}T${session.time}`).getTime() <= Date.now()) {
+      return { eligible: false, reason: 'האימון כבר התחיל. יש לבחור אימון עתידי.' };
+    }
     if (isBooked(session) || isWaitlisted(session)) {
       return { eligible: false, reason: 'כבר נרשמת לאימון זה או לרשימת ההמתנה שלו.' };
     }
@@ -523,9 +527,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       session.allowedMemberships &&
       session.allowedMemberships.length > 0
     ) {
+      const groupEquivalent = [MembershipType.CORE_GROUPS, MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL, MembershipType.FAMILY_MEMBERSHIP];
       const isAllowed = session.allowedMemberships.some(m => userMemberships.includes(m)) ||
-        (hasGroupAccess && !session.isPersonalTraining) ||
-        ((hasPersonalAccess || hasDuoAccess) && session.isPersonalTraining);
+        (!session.isPersonalTraining && session.allowedMemberships.some(m => groupEquivalent.includes(m)) && userMemberships.some(m => groupEquivalent.includes(m)));
 
       if (!isAllowed) {
         return {
@@ -565,6 +569,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   const checkOpenGymBookingEligibility = (og: OpenGymSession): { eligible: boolean; reason?: string } => {
+    if (new Date(`${og.date}T${og.timeSlot.split('-')[0].trim()}`).getTime() <= Date.now()) return { eligible: false, reason: 'המשבצת כבר התחילה. יש לבחור אימון עתידי.' };
     if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) return { eligible: false, reason: 'כבר נרשמת למשבצת זו.' };
     const dailyOpenGymBookings = openGymSessions.filter(session =>
       session.date === og.date
@@ -1407,36 +1412,24 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const nameNeedle = bookingNameFilter.trim().toLocaleLowerCase('he-IL');
     const sessionItems: BookingListItem[] = sessions
       .filter(session => session.date === dateKey)
+      .filter(session => new Date(`${session.date}T${session.time}`).getTime() > now.getTime())
       .filter(session => !nameNeedle || session.title.toLocaleLowerCase('he-IL').includes(nameNeedle))
       .filter(session => bookingTypeFilter === 'ALL' || (bookingTypeFilter === 'PERSONAL' ? session.isPersonalTraining : bookingTypeFilter === 'GROUP' ? !session.isPersonalTraining : false))
-      .filter(session => showAllBookingOptions || isBooked(session) || isWaitlisted(session) || isSessionRelevantToTrainee(session))
+      .filter(session => showAllBookingOptions || isBooked(session) || isWaitlisted(session) || (isSessionRelevantToTrainee(session) && checkBookingEligibility(session).eligible))
       .map(session => ({ kind: 'SESSION', startTime: session.time, session }));
     const openGymItems: BookingListItem[] = openGymSessions
       .filter(openGym => openGym.date === dateKey)
+      .filter(openGym => new Date(`${openGym.date}T${openGym.timeSlot.split('-')[0].trim()}`).getTime() > now.getTime())
       .filter(() => bookingTypeFilter === 'ALL' || bookingTypeFilter === 'OPEN_GYM')
       .filter(() => !nameNeedle || 'open gym אימון חופשי'.includes(nameNeedle))
-      .filter(openGym => showAllBookingOptions || isOpenGymBooked(openGym) || isOpenGymWaitlisted(openGym) || hasOpenGymMembershipAccess)
+      .filter(openGym => showAllBookingOptions || isOpenGymBooked(openGym) || isOpenGymWaitlisted(openGym) || (hasOpenGymMembershipAccess && checkOpenGymBookingEligibility(openGym).eligible))
       .map(openGym => ({ kind: 'OPEN_GYM', startTime: openGym.timeSlot.split('-')[0].trim(), openGym }));
     return [...sessionItems, ...openGymItems]
       .sort((a, b) => `${a.startTime}-${a.kind}`.localeCompare(`${b.startTime}-${b.kind}`, 'he'));
   };
   const sessionWorkoutProgram = (session: TrainingSession) => {
-    const assignedGroupProgram = session.assignedGroupWorkoutProgramId
-      ? groupWorkoutPrograms.find(program => program.id === session.assignedGroupWorkoutProgramId)
-      : undefined;
-    const linkedGroupProgram = groupWorkoutPrograms.find(program =>
-      program.sessionId === session.id && program.status === 'PUBLISHED' && !program.libraryEntry
-    );
-    const assignedPersonalPlan = session.assignedWorkoutPlanId
-      ? workoutPlans.find(plan => plan.id === session.assignedWorkoutPlanId && plan.exercises.length > 0)
-      : undefined;
-    const linkedPersonalPlan = workoutPlans.find(plan =>
-      plan.sessionId === session.id && !plan.libraryEntry && plan.exercises.length > 0
-    );
-
-    return session.isPersonalTraining
-      ? assignedPersonalPlan || linkedPersonalPlan
-      : assignedGroupProgram || linkedGroupProgram;
+    const { personal, group } = resolveSessionProgram(session, workoutPlans, groupWorkoutPrograms);
+    return session.isPersonalTraining ? personal : group;
   };
   const openSessionWorkoutDisplay = (session: TrainingSession) => {
     if (!session.registeredUsers.includes(activeUser.id) || !sessionWorkoutProgram(session)) return;
@@ -1809,8 +1802,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             <WeeklyCalendar
               role={UserRole.TRAINEE}
               activeUser={activeUser}
-              sessions={sessions}
-              openGymSessions={openGymSessions}
+              sessions={sessions.filter(session => bookingItemsForDay(session.date).some(item => item.kind === 'SESSION' && item.session.id === session.id))}
+              openGymSessions={openGymSessions.filter(session => bookingItemsForDay(session.date).some(item => item.kind === 'OPEN_GYM' && item.openGym.id === session.id))}
               users={users}
               onBookSession={handleBookSession}
               onCancelBooking={(sessionId) => {
@@ -1841,8 +1834,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               )}
             </div>
             <div className="booking-days-feed">
+              {bookingDays.every(day => bookingItemsForDay(day.key).length === 0) && <div className="booking-day-empty">אין אימונים זמינים בתאריכים שנבחרו. ניתן לבחור תאריך אחר או לצפות בכל אימוני המועדון.</div>}
               {bookingDays.map(day => {
                 const dayItems = bookingItemsForDay(day.key);
+                if (!dayItems.length) return null;
                 return (
                   <section key={day.key} className="booking-day-section" id={`booking-day-${day.key}`}>
                     <header>
