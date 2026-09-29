@@ -46,6 +46,7 @@ import { getClubState, getServerSession, loginWithPassword, loginWithPhone, logo
 import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
+import { resolveSessionProgram } from './data/sessionProgram';
 import { AuthGateway } from './components/AuthGateway';
 import { PublicLandingPage } from './components/PublicLandingPage';
 import { RubisLogo } from './components/RubisLogo';
@@ -635,20 +636,9 @@ export default function App() {
   if (traineeSessionWorkoutId && activeUser.role === UserRole.TRAINEE) {
     const session = sessions.find(item => item.id === traineeSessionWorkoutId);
     const isRegistered = Boolean(session?.registeredUsers.includes(activeUser.id));
-    const groupProgram = groupWorkoutPrograms.find(program =>
-      program.id === session?.assignedGroupWorkoutProgramId
-    ) || groupWorkoutPrograms.find(program =>
-      program.sessionId === traineeSessionWorkoutId
-      && program.status === 'PUBLISHED'
-      && !program.libraryEntry
-    );
-    const personalPlan = workoutPlans.find(plan =>
-      plan.id === session?.assignedWorkoutPlanId && plan.exercises.length > 0
-    ) || workoutPlans.find(plan =>
-      plan.sessionId === traineeSessionWorkoutId
-      && !plan.libraryEntry
-      && plan.exercises.length > 0
-    );
+    const { group: groupProgram, personal: personalPlan } = session
+      ? resolveSessionProgram(session, workoutPlans, groupWorkoutPrograms)
+      : { group: undefined, personal: undefined };
     const displayProgram = session?.isPersonalTraining
       ? (session && personalPlan ? personalPlanToDisplayProgram(personalPlan, activeUser.name, session) : undefined)
       : groupProgram;
