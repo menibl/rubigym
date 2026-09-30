@@ -1,6 +1,7 @@
 import { Gender, MembershipStatus, Payment, User, UserRole } from '../types';
 import { isPagesDemoMode } from './appMode';
 import { createDemoPayload } from './demoData';
+import { deleteClubUser, removeDeletedUserData } from '../../shared/user-deletion.js';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -309,6 +310,23 @@ export const sendPushTest = async (subscription: PushSubscription) => {
 
 export const getClubState = async () => isPagesDemoMode() ? readDemoState() : request<ClubStateEnvelope>('/api/state');
 
+export const deleteServerUser = async (userId: string, password: string, successorId: string) => {
+  if (isPagesDemoMode()) {
+    const manager = currentDemoUser();
+    if (manager?.role !== UserRole.MANAGER) throw new Error('הפעולה מותרת למנהל בלבד.');
+    const passwords = demoPasswords();
+    const expected = passwords[manager.id] || (manager.id === 'user-robi' ? import.meta.env.VITE_DEMO_MANAGER_PASSWORD : '');
+    if (!expected || password !== expected) throw new Error('סיסמת המנהל אינה נכונה.');
+    const current = readDemoState();
+    const payload = deleteClubUser(current.payload, userId, manager.id, successorId);
+    writeDemoState({ payload, revision: current.revision + 1 });
+    delete passwords[userId];
+    localStorage.setItem(DEMO_PASSWORDS_KEY, JSON.stringify(passwords));
+    return;
+  }
+  await request('/api/admin/delete-user', { method: 'POST', body: JSON.stringify({ userId, password, successorId, confirm: true }) });
+};
+
 export const saveClubState = async (payload: Record<string, unknown>, expectedRevision: number) => {
   if (isPagesDemoMode()) {
     const current = readDemoState();
@@ -317,7 +335,7 @@ export const saveClubState = async (payload: Record<string, unknown>, expectedRe
       error.status = 409;
       throw error;
     }
-    const next = writeDemoState({ payload, revision: current.revision + 1 });
+    const next = writeDemoState({ payload: removeDeletedUserData(payload, current.payload.deletedUserIds || []), revision: current.revision + 1 });
     return { revision: next.revision };
   }
   return request<{ revision: number; generatedMessages?: import('../types').Message[] }>('/api/state', { method: 'PUT', body: JSON.stringify({ payload, expectedRevision }) });

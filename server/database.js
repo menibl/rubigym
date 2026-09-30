@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 
 const { Pool } = pg;
 
@@ -133,13 +134,14 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const current = await client.query('SELECT revision FROM club_state WHERE club_id=$1 FOR UPDATE', [clubId]);
+        const current = await client.query('SELECT revision, payload FROM club_state WHERE club_id=$1 FOR UPDATE', [clubId]);
         const revision = Number(current.rows[0]?.revision || 0);
         if (expectedRevision !== undefined && revision !== Number(expectedRevision)) {
           await client.query('ROLLBACK');
           return { conflict: true, revision };
         }
         const nextRevision = revision + 1;
+        if (current.rows[0]?.payload?.deletedUserIds?.length) payload = removeDeletedUserData(payload, current.rows[0].payload.deletedUserIds);
         await client.query(`INSERT INTO club_state (club_id,payload,revision) VALUES ($1,$2,$3)
           ON CONFLICT (club_id) DO UPDATE SET payload=EXCLUDED.payload,revision=EXCLUDED.revision,updated_at=now()`, [clubId, payload, nextRevision]);
         await client.query('COMMIT');
@@ -152,6 +154,41 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
         [clubId, slot]
       );
       return result.rows[0] || null;
+    },
+    async deleteClubUser(clubId, targetId, managerId, successorId) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const current = await client.query('SELECT payload FROM club_state WHERE club_id=$1 FOR UPDATE', [clubId]);
+        if (!current.rows[0]) throw new Error('המועדון לא נמצא.');
+        const payload = deleteClubUser(current.rows[0].payload, targetId, managerId, successorId);
+        const account = await client.query('SELECT phone_normalized FROM auth_accounts WHERE club_id=$1 AND user_id=$2', [clubId, targetId]);
+        await client.query('UPDATE club_state SET payload=$2, revision=revision+1, updated_at=now() WHERE club_id=$1', [clubId, payload]);
+        await client.query('DELETE FROM auth_sessions WHERE club_id=$1 AND user_id=$2', [clubId, targetId]);
+        await client.query('DELETE FROM push_subscriptions WHERE club_id=$1 AND user_id=$2', [clubId, targetId]);
+        await client.query('DELETE FROM sms_otp_challenges WHERE club_id=$1 AND phone_normalized=$2', [clubId, account.rows[0]?.phone_normalized || '']);
+        await client.query('DELETE FROM auth_accounts WHERE club_id=$1 AND user_id=$2', [clubId, targetId]);
+        for (const user of payload.users) {
+          await client.query('UPDATE auth_accounts SET profile=$3, updated_at=now() WHERE club_id=$1 AND user_id=$2', [clubId, user.id, user]);
+        }
+        const display = await client.query('SELECT program FROM live_display WHERE club_id=$1 FOR UPDATE', [clubId]);
+        if (display.rows[0]?.program) {
+          const program = display.rows[0].program;
+          const deletedPlans = (current.rows[0].payload.workoutPlans || []).filter(plan => plan.traineeId === targetId);
+          const privateDisplay = deletedPlans.some(plan => program.id === plan.id || program.id === `personal-display-${plan.id}`);
+          const cleaned = privateDisplay ? null : removeDeletedUserData({ groupWorkoutPrograms: [program] }, [targetId]).groupWorkoutPrograms[0] || null;
+          await client.query('UPDATE live_display SET program=$2, updated_at=now() WHERE club_id=$1', [clubId, cleaned]);
+          if (privateDisplay) {
+            await client.query('DELETE FROM live_display_commands WHERE program_id=$1', [program.id]);
+            await client.query('DELETE FROM live_display_status WHERE program_id=$1', [program.id]);
+          }
+        }
+        await client.query('COMMIT');
+        return { ok: true };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally { client.release(); }
     },
     async listLandingMedia(clubId) {
       const result = await pool.query(
@@ -220,7 +257,12 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       return result.rows;
     },
     async upsertAccount(account) {
-      await pool.query(`INSERT INTO auth_accounts
+      const client = await pool.connect();
+      try {
+      await client.query('BEGIN');
+      const state = await client.query('SELECT payload FROM club_state WHERE club_id=$1 FOR UPDATE', [account.clubId]);
+      if (state.rows[0]?.payload?.deletedUserIds?.includes(account.userId)) throw new Error('Account was deleted; register again.');
+      await client.query(`INSERT INTO auth_accounts
         (club_id,user_id,username_normalized,email_normalized,phone_normalized,password_hash,role,profile)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         ON CONFLICT (club_id,user_id) DO UPDATE SET
@@ -231,6 +273,9 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
           role=EXCLUDED.role,
           profile=EXCLUDED.profile,
           updated_at=now()`, [account.clubId, account.userId, account.username, account.email || null, account.phone || null, account.passwordHash, account.role, account.profile || null]);
+      await client.query('COMMIT');
+      } catch (error) { await client.query('ROLLBACK'); throw error; }
+      finally { client.release(); }
     },
     async updateAccountIdentity(clubId, user) {
       await pool.query(`UPDATE auth_accounts SET
