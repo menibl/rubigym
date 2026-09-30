@@ -2,6 +2,8 @@ import { handleWorkoutAi, resolveOpenAiApiKey } from './workout-ai.js';
 import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validatePushSubscription } from './push.js';
 import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
+import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
+const deletionAttempts = new Map();
 import {
   createPhoneVerificationToken,
   normalizeIsraeliMobile,
@@ -1198,6 +1200,29 @@ const handleApi = async (request, env, url) => {
       return json({ ok: true }, 200, headers);
     }
 
+    if (url.pathname === '/api/admin/delete-user' && request.method === 'POST') {
+      const identity = await getIdentity();
+      if (!identity) return json({ message: 'נדרשת כניסה מחדש.' }, 401, headers);
+      if (identity.account.role !== 'MANAGER') return json({ message: 'הפעולה מותרת למנהל בלבד.' }, 403, headers);
+      if (origin && origin !== url.origin) return json({ message: 'הפעולה מותרת מאתר המועדון בלבד.' }, 403, headers);
+      const body = await request.json();
+      if (body.confirm !== true || typeof body.userId !== 'string' || typeof body.password !== 'string' || body.password.length > 1024) return json({ message: 'נדרשים אישור מפורש וסיסמת המנהל.' }, 400, headers);
+      const attemptKey = `${identity.session.club_id}:${identity.account.user_id}`;
+      const now = Date.now();
+      for (const [key, value] of deletionAttempts) if (value.until <= now) deletionAttempts.delete(key);
+      const attempt = deletionAttempts.get(attemptKey) || { count: 0, until: now + 15 * 60 * 1000 };
+      if (attempt.count >= 5) return json({ message: 'יותר מדי ניסיונות. נסו שוב בעוד 15 דקות.' }, 429, headers);
+      attempt.count += 1;
+      deletionAttempts.set(attemptKey, attempt);
+      if (!await verifyPassword(body.password, identity.account.password_hash)) return json({ message: 'סיסמת המנהל אינה נכונה.' }, 403, headers);
+      const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+      try { deleteClubUser(state?.payload || {}, body.userId, identity.account.user_id, body.successorId); }
+      catch (error) { return json({ message: error.message }, 409, headers); }
+      await env.STATE_STORE.deleteClubUser(identity.session.club_id, body.userId, identity.account.user_id, body.successorId);
+      deletionAttempts.delete(attemptKey);
+      return json({ ok: true }, 200, headers);
+    }
+
     if (url.pathname === '/api/auth/register' && request.method === 'POST') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
       const body = await request.json();
@@ -1457,7 +1482,12 @@ const handleApi = async (request, env, url) => {
       const current = await loadClubState(identity.session.club_id);
       if (!current) return json({ message: 'Club state was not initialized' }, 503, headers);
       if (Number(body.expectedRevision) !== Number(current.revision)) return json({ conflict: true, revision: current.revision }, 409, headers);
+      body.payload = removeDeletedUserData(body.payload || {}, current.payload.deletedUserIds || []);
       const incomingUsers = Array.isArray(body.payload?.users) ? body.payload.users : [];
+      const visibleUsers = payloadForUser(current.payload, identity.account.user_id, identity.account.role).users;
+      if (visibleUsers.some(user => !incomingUsers.some(candidate => candidate.id === user.id))) {
+        return json({ message: 'מחיקת משתמש מותרת רק באמצעות פעולת המחיקה של המנהל ואימות סיסמתו.' }, 403, headers);
+      }
       for (const candidate of incomingUsers) {
         if (!candidate?.password || candidate.password.length < 8) continue;
         const mayProvision = identity.account.role === 'MANAGER'

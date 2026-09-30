@@ -355,6 +355,13 @@ export default function App() {
           && latest.revision > revisionRef.current
         ) applyServerPayload(latest.payload, latest.revision);
       } catch (error) {
+        if ((error as Error & { status?: number }).status === 401) {
+          hydratedRef.current = false;
+          pendingClubStateRef.current = null;
+          setIsAuthenticated(false);
+          setWorkspaceView(null);
+          return;
+        }
         console.warn('Unable to refresh club data', error);
       }
     };
