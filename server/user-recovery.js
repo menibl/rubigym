@@ -19,7 +19,7 @@ export const recoverUsersFromAccounts = (payload = {}, accounts = []) => {
   const payments = Array.isArray(payload.payments) ? payload.payments : [];
   const existingIds = new Set(users.map(user => user.id));
   const recoveredUsers = accounts
-    .filter(account => account?.user_id && account.role === 'TRAINEE' && !existingIds.has(account.user_id))
+    .filter(account => account?.user_id && account.role === 'TRAINEE' && !existingIds.has(account.user_id) && !(payload.deletedUserIds || []).includes(account.user_id))
     .map(account => {
       const latestPayment = payments
         .filter(payment => payment.traineeId === account.user_id)

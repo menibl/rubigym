@@ -113,6 +113,8 @@ interface AdminDashboardProps {
   activeUser: User;
 }
 
+import { DeleteUserControl } from './DeleteUserControl';
+
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   users,
   sessions,
@@ -1389,7 +1391,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <h3 className="mb-3 text-sm font-black text-slate-900">צוות המאמנים</h3>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {users.filter(user => user.role === UserRole.COACH).map(coach => <article key={coach.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3"><img src={coach.imageUrl} alt={coach.name} className="h-10 w-10 rounded-full object-cover" /><div className="min-w-0"><strong className="block truncate text-xs text-slate-900">{coach.name}</strong><span className="text-[10px] text-slate-500">@{coach.username} · הרשאות מאמן</span></div></article>)}
+                {users.filter(user => user.role === UserRole.COACH).map(coach => <article key={coach.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3"><img src={coach.imageUrl} alt={coach.name} className="h-10 w-10 rounded-full object-cover" /><div className="min-w-0"><strong className="block truncate text-xs text-slate-900">{coach.name}</strong><span className="text-[10px] text-slate-500">@{coach.username} · הרשאות מאמן</span></div><DeleteUserControl user={coach} users={users} manager={activeUser} /></article>)}
                 {users.every(user => user.role !== UserRole.COACH) && <p className="text-xs text-slate-500">עדיין לא נוספו מאמנים.</p>}
               </div>
             </section>
@@ -1503,6 +1505,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="p-3 text-slate-500 font-mono">{u.membershipExpiry}</td>
                         <td className="p-3 text-left">
                           <div className="flex flex-col gap-1 items-end">
+                            <DeleteUserControl user={u} users={users} manager={activeUser} />
                             {u.membershipStatus === MembershipStatus.DEBT && (
                               <button
                                 onClick={() => handlePayDebt(u)}
