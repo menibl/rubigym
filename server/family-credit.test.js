@@ -74,9 +74,9 @@ test('unrelated, missing and duplicate members cannot receive a family purchase'
   assert.equal(f.calls(), 0);
 });
 
-test('family discount applies only to group monthly and annual plans', () => {
-  assert.equal(familyPlanAmount('GROUP_ANNUAL', 500) * 2 + familyPlanAmount('OPEN_GYM', 280) * 2, 1460);
-  assert.equal(familyPlanAmount('GROUP_MONTHLY', 600), 540);
+test('family plans use full catalog prices without an automatic group discount', () => {
+  assert.equal(familyPlanAmount('GROUP_ANNUAL', 500) * 2 + familyPlanAmount('OPEN_GYM', 280) * 2, 1560);
+  assert.equal(familyPlanAmount('GROUP_MONTHLY', 600), 600);
   assert.equal(familyPlanAmount('PERSONAL_TRAINING', 800), 800);
 });
 
