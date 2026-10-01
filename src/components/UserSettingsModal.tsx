@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, MembershipType, MembershipStatus, MEMBERSHIP_TYPE_LABELS, Gender, DiscountCode, MEMBERSHIP_PRICES, CURRENT_PRIMARY_MEMBERSHIP_PLANS, CURRENT_MEMBERSHIP_ADD_ONS, FAMILY_MEMBERSHIP_PRICES } from '../types';
+import { User, UserRole, MembershipType, MembershipStatus, Gender, DiscountCode, FAMILY_MEMBERSHIP_PRICES } from '../types';
 import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
 import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
@@ -12,6 +12,9 @@ import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
 import { validateRivhitDiscountCode } from '../data/rivhitPayments';
 import { isPagesDemoMode } from '../data/appMode';
 import { familyPlanAmount } from '../../shared/family-pricing.js';
+import { MembershipPlanConfig } from '../types';
+import { familyPlanCatalog } from '../data/familyMembership';
+import { billingPeriodLabel } from '../data/membershipBilling';
 
 const PROFILE_IMAGE_MAX_SIDE = 512;
 
@@ -45,6 +48,7 @@ interface UserSettingsModalProps {
   currentUser: User;
   onUpdateUser: (updatedUser: User) => void;
   allUsers: User[];
+  membershipPlans?: MembershipPlanConfig[];
   onUpdateAllUsers?: (updatedUsers: User[]) => void;
   onCreateFamilyMember?: (user: User) => Promise<void>;
   discountCodes?: DiscountCode[];
@@ -61,6 +65,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   currentUser,
   onUpdateUser,
   allUsers,
+  membershipPlans,
   onUpdateAllUsers,
   onCreateFamilyMember,
   discountCodes = [],
@@ -70,6 +75,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   onOpenFamilyPurchase,
   onMedicalCertificateSubmitted
 }) => {
+  const familyCatalog = familyPlanCatalog(membershipPlans);
   const [activeTab, setActiveTab] = useState<'profile' | 'family'>('profile');
   const [showHealthDeclaration, setShowHealthDeclaration] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -400,6 +406,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   };
 
   const handleAddFamilyMember = async (e: React.FormEvent) => {
+    if (!familyCatalog.some(plan => plan.id === subMembership)) {
+      e.preventDefault();
+      setMsg({ type: 'error', text: 'יש לבחור מסלול פעיל מרשימת מסלולי המועדון.' });
+      return;
+    }
     e.preventDefault();
     const normalizedEmail = subEmail.trim().toLowerCase();
     if (!subName.trim() || !subUsername.trim() || !normalizedEmail || !subPassword.trim()) {
@@ -911,9 +922,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                               onChange={(e) => setSubMembership(e.target.value as MembershipType)}
                               className="w-full p-2 border rounded-lg text-xs bg-white font-bold"
                             >
-                              {[...CURRENT_PRIMARY_MEMBERSHIP_PLANS, ...CURRENT_MEMBERSHIP_ADD_ONS].map(typeKey => (
-                                <option key={typeKey} value={typeKey}>
-                                  {MEMBERSHIP_TYPE_LABELS[typeKey].label} (₪{MEMBERSHIP_PRICES[typeKey]})
+                              {!familyCatalog.some(plan => plan.id === subMembership) && <option value={subMembership} disabled>בחרו מסלול פעיל</option>}
+                              {familyCatalog.map(plan => (
+                                <option key={plan.id} value={plan.id}>
+                                  {plan.label} (₪{plan.price} · {billingPeriodLabel(plan)})
                                 </option>
                               ))}
                             </select>
@@ -1029,9 +1041,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                                 disabled={!canManageFamily}
                                 className="px-2.5 py-1 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 text-[11px] focus:outline-none focus:border-indigo-500"
                               >
-                                {[...CURRENT_PRIMARY_MEMBERSHIP_PLANS, ...CURRENT_MEMBERSHIP_ADD_ONS].map(typeKey => (
-                                  <option key={typeKey} value={typeKey}>
-                                    {MEMBERSHIP_TYPE_LABELS[typeKey].label} (₪{MEMBERSHIP_PRICES[typeKey]})
+                                {!familyCatalog.some(plan => plan.id === m.membershipType) && <option value={m.membershipType} disabled>מסלול קודם — אינו זמין לרכישה</option>}
+                                {familyCatalog.map(plan => (
+                                  <option key={plan.id} value={plan.id}>
+                                    {plan.label} (₪{plan.price} · {billingPeriodLabel(plan)})
                                   </option>
                                 ))}
                               </select>
@@ -1044,7 +1057,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       {(() => {
                         const pricedCount = Math.min(6, Math.max(2, currentUser.familyMembersCount || familyMembersList.length));
                         const baseSubtotal = currentUser.familyBillingMode === 'CUSTOM_COMBINED' || !currentUser.familyMembersCount
-                          ? familyMembersList.reduce((sum, member) => sum + familyPlanAmount(member.membershipType, MEMBERSHIP_PRICES[member.membershipType || MembershipType.OPEN_GYM] || 0), 0)
+                          ? familyMembersList.reduce((sum, member) => sum + familyPlanAmount(member.membershipType, familyCatalog.find(plan => plan.id === member.membershipType)?.price || 0), 0)
                           : FAMILY_MEMBERSHIP_PRICES[pricedCount];
                         let couponDiscount = 0;
                         if (appliedCoupon) {
