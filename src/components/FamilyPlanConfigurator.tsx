@@ -5,14 +5,13 @@ import {
   FamilyMemberPlanSelection,
   MembershipPlanConfig,
   MembershipType,
-  MEMBERSHIP_PRICES,
-  MEMBERSHIP_TYPE_LABELS
 } from '../types';
 import {
-  CUSTOM_FAMILY_PLAN_OPTIONS,
+  familyPlanCatalog,
   familyPurchaseAmount,
   resizeFamilyPlans
 } from '../data/familyMembership';
+import { billingPeriodLabel } from '../data/membershipBilling';
 
 interface FamilyPlanConfiguratorProps {
   mode: FamilyBillingMode;
@@ -30,6 +29,7 @@ interface FamilyPlanConfiguratorProps {
 
 export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ count, onCountChange, plans, onPlansChange, payerName, payerId, membershipPlans = [], familyMembers = [], registrationMemberNames }) => {
   const normalizedPlans = resizeFamilyPlans(plans, count, payerName, payerId);
+  const catalog = familyPlanCatalog(membershipPlans);
   const changeCount = (nextCount: number) => {
     onCountChange(nextCount);
     onPlansChange(resizeFamilyPlans(plans, nextCount, payerName, payerId));
@@ -38,7 +38,7 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
     resizeFamilyPlans(plans, count, payerName, payerId).map((plan, planIndex) => planIndex === index ? { ...plan, ...patch } : plan)
   );
   const amount = familyPurchaseAmount('CUSTOM_COMBINED', count, normalizedPlans, membershipPlans);
-  const priceFor = (membershipType: MembershipType) => membershipPlans.find(plan => plan.id === membershipType && plan.active)?.price ?? MEMBERSHIP_PRICES[membershipType] ?? 0;
+  const priceFor = (membershipType: MembershipType) => catalog.find(plan => plan.id === membershipType)?.price ?? 0;
 
   return <section className="space-y-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4" dir="rtl">
     <div className="flex items-center gap-2"><Users size={18} className="text-indigo-700" /><strong className="text-sm text-slate-950">בחירת מבנה המנוי המשפחתי</strong></div>
@@ -70,7 +70,8 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
             const usesCard = membershipType === MembershipType.PERSONAL_TRAINING || membershipType === MembershipType.DUO_TRAINING;
             updatePlan(index, { membershipType, trainingSessionsCount: usesCard ? 10 : undefined });
           }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
-            {CUSTOM_FAMILY_PLAN_OPTIONS.map(type => <option key={type} value={type}>{MEMBERSHIP_TYPE_LABELS[type].label} — ₪{priceFor(type)}{type === MembershipType.PERSONAL_TRAINING || type === MembershipType.DUO_TRAINING ? ' לאימון' : ' לחודש'}</option>)}
+            {!catalog.some(config => config.id === plan.membershipType) && <option value={plan.membershipType} disabled>המסלול אינו זמין — יש לבחור מסלול פעיל</option>}
+            {catalog.map(config => <option key={config.id} value={config.id}>{config.label} — ₪{config.price} · {billingPeriodLabel(config)}</option>)}
           </select></label>
           {isTrainingCard ? <label className="text-[11px] font-bold text-slate-600">מספר אימונים<input type="number" min={1} max={50} value={plan.trainingSessionsCount || 10} onChange={event => updatePlan(index, { trainingSessionsCount: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label> : <div className="self-end rounded-lg bg-slate-100 px-3 py-2 text-center text-xs font-black text-slate-800">₪{priceFor(plan.membershipType)}</div>}
         </article>;
