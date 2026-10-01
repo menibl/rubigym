@@ -4,17 +4,11 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, MembershipType, MembershipStatus, Gender, DiscountCode, FAMILY_MEMBERSHIP_PRICES } from '../types';
+import { User, UserRole, MembershipType, MembershipStatus, Gender, DiscountCode } from '../types';
 import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
 import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
-import { validateRivhitDiscountCode } from '../data/rivhitPayments';
-import { isPagesDemoMode } from '../data/appMode';
-import { familyPlanAmount } from '../../shared/family-pricing.js';
-import { MembershipPlanConfig } from '../types';
-import { familyPlanCatalog } from '../data/familyMembership';
-import { billingPeriodLabel } from '../data/membershipBilling';
 
 const PROFILE_IMAGE_MAX_SIDE = 512;
 
@@ -48,7 +42,6 @@ interface UserSettingsModalProps {
   currentUser: User;
   onUpdateUser: (updatedUser: User) => void;
   allUsers: User[];
-  membershipPlans?: MembershipPlanConfig[];
   onUpdateAllUsers?: (updatedUsers: User[]) => void;
   onCreateFamilyMember?: (user: User) => Promise<void>;
   discountCodes?: DiscountCode[];
@@ -65,7 +58,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   currentUser,
   onUpdateUser,
   allUsers,
-  membershipPlans,
   onUpdateAllUsers,
   onCreateFamilyMember,
   discountCodes = [],
@@ -75,7 +67,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   onOpenFamilyPurchase,
   onMedicalCertificateSubmitted
 }) => {
-  const familyCatalog = familyPlanCatalog(membershipPlans);
   const [activeTab, setActiveTab] = useState<'profile' | 'family'>('profile');
   const [showHealthDeclaration, setShowHealthDeclaration] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -100,12 +91,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [familyName, setFamilyName] = useState(currentUser.familyName || '');
   const [familyQuota, setFamilyQuota] = useState(currentUser.familyMembersCount || 3);
 
-  // Discount code state
-  const [couponInput, setCouponInput] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<DiscountCode | null>(null);
-  const [couponValidating, setCouponValidating] = useState(false);
-  const [couponMsg, setCouponMsg] = useState('');
-
   // Add sub-family member form inside family tab
   const [showAddSubMember, setShowAddSubMember] = useState(false);
   const [subName, setSubName] = useState('');
@@ -115,7 +100,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [subPhone, setSubPhone] = useState('');
   const [subBirthDate, setSubBirthDate] = useState('');
   const [subGender, setSubGender] = useState<Gender>(Gender.MALE);
-  const [subMembership, setSubMembership] = useState<MembershipType>(MembershipType.GROUP_MONTHLY);
   const [subHealthApproved, setSubHealthApproved] = useState(false);
   const [subHealthDeclaration, setSubHealthDeclaration] = useState<HealthDeclarationResult | null>(null);
   const [showSubHealthForm, setShowSubHealthForm] = useState(false);
@@ -145,9 +129,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setFamilyQuota(currentUser.familyMembersCount || 3);
       setMsg(null);
       setShowAddSubMember(false);
-      setCouponInput('');
-      setAppliedCoupon(null);
-      setCouponMsg('');
     }
   }, [isOpen, currentUser, initialSection]);
 
@@ -159,36 +140,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     ? [currentUser, ...allUsers.filter(u => u.id !== currentUser.id && u.familyId === currentFamilyId)]
     : [];
   const canManageFamily = Boolean(currentUser.isFamilyPayer || isAdminMode);
-
-  // Coupon application handler
-  const handleApplyCoupon = async () => {
-    setCouponMsg('');
-    if (!couponInput.trim()) return;
-    const codeStr = couponInput.trim().toUpperCase();
-    setCouponValidating(true);
-    try {
-      const match = isPagesDemoMode()
-        ? discountCodes.find(code => code.code.toUpperCase() === codeStr && (!code.isSingleUse || !code.isUsed)) || null
-        : await validateRivhitDiscountCode(codeStr);
-      if (!match) throw new Error('קוד הנחה לא תקין או שכבר נוצל');
-      setAppliedCoupon(match);
-      setCouponMsg(`קוד הנחה ${match.code} הוחל בהצלחה!`);
-    } catch (couponError) {
-      setCouponMsg(couponError instanceof Error ? couponError.message : 'קוד הנחה לא תקין או שכבר נוצל');
-      setAppliedCoupon(null);
-    } finally {
-      setCouponValidating(false);
-    }
-  };
-
-  // Change individual family member track
-  const handleChangeMemberTrack = (memberId: string, newTrack: MembershipType) => {
-    if (onUpdateAllUsers) {
-      const updated = allUsers.map(u => u.id === memberId ? { ...u, membershipType: newTrack } : u);
-      onUpdateAllUsers(updated);
-      setMsg({ type: 'success', text: 'מסלול המנוי של בן המשפחה עודכן בהצלחה!' });
-    }
-  };
 
   // Remove a family member
   const handleRemoveFamilyMember = (memberId: string) => {
@@ -406,11 +357,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   };
 
   const handleAddFamilyMember = async (e: React.FormEvent) => {
-    if (!familyCatalog.some(plan => plan.id === subMembership)) {
-      e.preventDefault();
-      setMsg({ type: 'error', text: 'יש לבחור מסלול פעיל מרשימת מסלולי המועדון.' });
-      return;
-    }
     e.preventDefault();
     const normalizedEmail = subEmail.trim().toLowerCase();
     if (!subName.trim() || !subUsername.trim() || !normalizedEmail || !subPassword.trim()) {
@@ -480,7 +426,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       })],
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
-      membershipType: subMembership,
+      membershipType: undefined,
       membershipStatus: MembershipStatus.DEBT,
       membershipExpiry: new Date().toISOString().slice(0, 10),
       familyPaymentPending: true,
@@ -915,21 +861,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                             />
                           </div>
 
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-700 mb-1">מסלול מנוי לבן המשפחה:</label>
-                            <select
-                              value={subMembership}
-                              onChange={(e) => setSubMembership(e.target.value as MembershipType)}
-                              className="w-full p-2 border rounded-lg text-xs bg-white font-bold"
-                            >
-                              {!familyCatalog.some(plan => plan.id === subMembership) && <option value={subMembership} disabled>בחרו מסלול פעיל</option>}
-                              {familyCatalog.map(plan => (
-                                <option key={plan.id} value={plan.id}>
-                                  {plan.label} (₪{plan.price} · {billingPeriodLabel(plan)})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
 
                           <div className="grid grid-cols-2 gap-2">
                             <label className="text-[11px] font-bold text-slate-700">
@@ -1032,108 +963,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                               )}
                             </div>
 
-                            {/* Individual Track Selector for each family member */}
-                            <div className="pt-1 flex items-center justify-between gap-2 border-t border-slate-100 text-xs">
-                              <span className="text-slate-600 font-medium text-[11px]">מסלול אישי:</span>
-                              <select
-                                value={m.membershipType || MembershipType.GROUP_MONTHLY}
-                                onChange={(e) => handleChangeMemberTrack(m.id, e.target.value as MembershipType)}
-                                disabled={!canManageFamily}
-                                className="px-2.5 py-1 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 text-[11px] focus:outline-none focus:border-indigo-500"
-                              >
-                                {!familyCatalog.some(plan => plan.id === m.membershipType) && <option value={m.membershipType} disabled>מסלול קודם — אינו זמין לרכישה</option>}
-                                {familyCatalog.map(plan => (
-                                  <option key={plan.id} value={plan.id}>
-                                    {plan.label} (₪{plan.price} · {billingPeriodLabel(plan)})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
                           </div>
                         ))}
                       </div>
 
-                      {/* Full Billing Calculation & Discount Codes Engine */}
-                      {(() => {
-                        const pricedCount = Math.min(6, Math.max(2, currentUser.familyMembersCount || familyMembersList.length));
-                        const baseSubtotal = currentUser.familyBillingMode === 'CUSTOM_COMBINED' || !currentUser.familyMembersCount
-                          ? familyMembersList.reduce((sum, member) => sum + familyPlanAmount(member.membershipType, familyCatalog.find(plan => plan.id === member.membershipType)?.price || 0), 0)
-                          : FAMILY_MEMBERSHIP_PRICES[pricedCount];
-                        let couponDiscount = 0;
-                        if (appliedCoupon) {
-                          if (appliedCoupon.discountPercent > 0) {
-                            couponDiscount = Math.round(baseSubtotal * (appliedCoupon.discountPercent / 100));
-                          } else if (appliedCoupon.discountAmount) {
-                            couponDiscount = appliedCoupon.discountAmount;
-                          }
-                        }
-                        const finalTotal = Math.max(0, baseSubtotal - couponDiscount);
-
-                        return (
-                          <div className="bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-950 text-white rounded-2xl p-4 mt-4 space-y-3 shadow-lg">
-                            <div className="font-bold text-sm text-indigo-300 flex items-center justify-between border-b border-indigo-800/80 pb-2">
-                              <span className="flex items-center gap-1.5">
-                                <DollarSign size={16} className="text-emerald-400" />
-                                אומדן מסלולי המשפחה — הסכום הסופי נקבע בתשלום
-                              </span>
-                              <span className="text-xs bg-indigo-800/60 text-indigo-200 px-2 py-0.5 rounded-full">
-                                {familyMembersList.length} בני משפחה
-                              </span>
-                            </div>
-
-                            {/* Coupon Code Input */}
-                            <div className="space-y-1.5 pt-1">
-                              <label className="block text-[11px] font-bold text-indigo-200">
-                                קוד הנחה (מאת המאמן הראשי / מנהל):
-                              </label>
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="הזן קוד (למשל: RUBI20)"
-                                  value={couponInput}
-                                  onChange={(e) => {
-                                    setCouponInput(e.target.value.toUpperCase());
-                                    setAppliedCoupon(null);
-                                    setCouponMsg('');
-                                  }}
-                                  className="w-full px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 font-mono text-white text-xs uppercase focus:outline-none focus:border-amber-400"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => void handleApplyCoupon()}
-                                  disabled={couponValidating}
-                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs shrink-0 transition cursor-pointer"
-                                >
-                                  {couponValidating ? 'בודק…' : 'החל קוד'}
-                                </button>
-                              </div>
-                              {couponMsg && (
-                                <p className={`text-[11px] font-bold ${appliedCoupon ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {couponMsg}
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Breakdown List */}
-                            <div className="space-y-1 text-xs pt-2 border-t border-indigo-900/60">
-                              <div className="flex justify-between text-slate-300">
-                                <span>סיכום מסלולים אישיים ({familyMembersList.length} נפשות):</span>
-                                <span className="font-mono">₪{baseSubtotal}</span>
-                              </div>
-                              {couponDiscount > 0 && (
-                                <div className="flex justify-between text-amber-400 font-bold">
-                                  <span>הנחת קוד קופון ({appliedCoupon?.code}):</span>
-                                  <span className="font-mono">-₪{couponDiscount}</span>
-                                </div>
-                              )}
-                              <div className="flex justify-between text-white text-sm font-extrabold pt-2 border-t border-indigo-800/80">
-                                <span>סה"כ לתשלום חודשי:</span>
-                                <span className="text-emerald-400 font-mono text-base">₪{finalTotal}</span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
+                      <p className="text-sm text-slate-500">בחירת המסלולים וקוד ההנחה מתבצעים בדף התשלום המשפחתי בלבד.</p>
                     </div>
                   )}
                 </div>

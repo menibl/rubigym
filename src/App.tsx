@@ -951,7 +951,6 @@ export default function App() {
         currentUser={userToEdit || activeUser}
         onUpdateUser={handleUpdateUser}
         allUsers={users}
-        membershipPlans={settings.membershipPlans}
         onUpdateAllUsers={setUsers}
         onCreateFamilyMember={handleCreateFamilyMember}
         discountCodes={discountCodes}
