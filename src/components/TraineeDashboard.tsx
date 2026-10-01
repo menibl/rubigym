@@ -155,10 +155,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   })();
   const [familyPurchaseName, setFamilyPurchaseName] = useState(familyDraft?.familyName || activeUser.familyName || `משפחת ${activeUser.name.split(' ')[0]}`);
   const [familyPurchaseCount, setFamilyPurchaseCount] = useState<number>(familyDraft?.familyQuota || activeUser.familyMembersCount || 2);
-  const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>(familyDraft?.familyBillingMode || activeUser.familyBillingMode || 'ANNUAL_BY_SIZE');
+  const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>('CUSTOM_COMBINED');
   const familyUsers = [activeUser, ...users.filter(user => user.id !== activeUser.id && activeUser.familyId && user.familyId === activeUser.familyId)];
   const initialFamilyPlans = activeUser.familyMemberPlans?.length ? activeUser.familyMemberPlans : familyUsers.map(user => ({ memberId: user.id, memberName: user.name, membershipType: user.membershipType || MembershipType.OPEN_GYM }));
-  const [familyMemberPlans, setFamilyMemberPlans] = useState<FamilyMemberPlanSelection[]>(() => resizeFamilyPlans(initialFamilyPlans, familyPurchaseCount, activeUser.name, activeUser.id));
+  const [familyMemberPlans, setFamilyMemberPlans] = useState<FamilyMemberPlanSelection[]>(() => resizeFamilyPlans(initialFamilyPlans, familyPurchaseCount, activeUser.name, activeUser.id).map((plan, index) => ({ ...plan, ...(index === 0 ? { memberId: activeUser.id, memberName: activeUser.name } : {}), membershipType: plan.membershipType === MembershipType.FAMILY_MEMBERSHIP ? MembershipType.GROUP_ANNUAL : plan.membershipType })));
   const [discountInput, setDiscountInput] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -229,6 +229,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             ...user,
             membershipType: plan.membershipType,
             membershipStatus: MembershipStatus.ACTIVE,
+            familyPaymentPending: false,
             ...term,
             familyId,
             familyName: familyName || activeUser.familyName || `משפחת ${activeUser.name.split(' ')[0]}`,
@@ -237,7 +238,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             familyMembersCount,
             familyBillingMode: purchasedFamilyBillingMode,
             familyMemberPlans: purchasedFamilyPlans,
-            familyCombinedAmount: verified.amount,
+            familyCombinedAmount: verified.packageAmount ?? verified.amount,
             familyTrackName: 'משפחתי מותאם – תשלום מאוחד',
             personalTrainingCardSize: plan.membershipType === MembershipType.PERSONAL_TRAINING ? undefined : user.personalTrainingCardSize,
             personalTrainingRemaining: plan.membershipType === MembershipType.PERSONAL_TRAINING ? plan.trainingSessionsCount : user.personalTrainingRemaining,
@@ -281,7 +282,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             familyMembersCount,
             familyBillingMode: purchasedFamilyBillingMode || 'ANNUAL_BY_SIZE',
             familyMemberPlans: purchasedFamilyPlans,
-            familyCombinedAmount: verified.amount,
+            familyCombinedAmount: verified.packageAmount ?? verified.amount,
             familyTrackName: purchasedFamilyBillingMode === 'MONTHLY_PER_MEMBER' ? `משפחתי חודשי (${familyMembersCount} מתאמנים)` : `משפחתי שנתי (${familyMembersCount} מתאמנים)`
           } : {})
         };
@@ -405,6 +406,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // Check booking eligibility constraints (Section 5.1 & 11)
   const checkBookingEligibility = (session: TrainingSession): { eligible: boolean; reason?: string } => {
+    if (activeUser.familyPaymentPending) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
     if (new Date(`${session.date}T${session.time}`).getTime() <= Date.now()) {
       return { eligible: false, reason: 'האימון כבר התחיל. יש לבחור אימון עתידי.' };
     }
@@ -570,6 +572,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   const checkOpenGymBookingEligibility = (og: OpenGymSession): { eligible: boolean; reason?: string } => {
+    if (activeUser.familyPaymentPending) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
     if (new Date(`${og.date}T${og.timeSlot.split('-')[0].trim()}`).getTime() <= Date.now()) return { eligible: false, reason: 'המשבצת כבר התחילה. יש לבחור אימון עתידי.' };
     if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) return { eligible: false, reason: 'כבר נרשמת למשבצת זו.' };
     const dailyOpenGymBookings = openGymSessions.filter(session =>
@@ -738,6 +741,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   const handleFamilyCheckout = async () => {
+    const selected = resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id);
+    if (selected[0]?.memberId !== activeUser.id || selected.some(plan => !familyUsers.some(member => member.id === plan.memberId)) || new Set(selected.map(plan => plan.memberId)).size !== selected.length) {
+      return showFeedback('יש לבחור בן משפחה משויך ושונה לכל מסלול. יש להוסיף בני משפחה חסרים דרך ניהול המשפחה.', 'error');
+    }
     if (!familyPurchaseName.trim()) return showFeedback('יש להזין שם למשפחה.', 'error');
     if (!isRivhitConfigured()) return showFeedback('שרת התשלומים טרם הוגדר.', 'error');
     setPaymentStarting(true);
@@ -2441,7 +2448,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
                   </div>
                   <label className="block text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} />
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} />
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id), membershipPlanConfigs)).toLocaleString('he-IL')}</strong></div>

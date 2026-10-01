@@ -539,6 +539,7 @@ export default function App() {
     await registerFamilyMember(newUser);
     const latest = await getClubState();
     applyServerPayload(latest.payload, latest.revision);
+    setUserToEdit(current => current ? (latest.payload.users as User[]).find(user => user.id === current.id) || current : current);
   };
 
   const finishServerLogin = async (user: User) => {

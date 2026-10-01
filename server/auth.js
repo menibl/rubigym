@@ -254,13 +254,13 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     const requested = incoming.users.find(candidate => candidate.id === userId) || {};
     const updated = { ...user };
     for (const field of selfEditableFields) if (field in requested) updated[field] = requested[field];
-    if (canManageFamily) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
+    if (canManageFamily && !user.familyPaymentPending) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
     return updated;
   }).map(user => {
     if (!canManageFamily || user.id === userId || user.familyId !== actor.familyId) return user;
     const requested = incoming.users.find(candidate => candidate.id === user.id) || {};
     const updated = { ...user };
-    for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
+    if (!user.familyPaymentPending) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
     return updated;
   });
   const newFamilyMembers = incoming.users
@@ -276,13 +276,13 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     message.receiverId === userId && readIncomingMessageIds.has(message.id)
       ? { ...message, read: true }
       : message);
-  const ownNewAttendance = (incoming.attendanceLogs || []).filter(log => log.traineeId === userId);
+  const ownNewAttendance = actor?.familyPaymentPending ? [] : (incoming.attendanceLogs || []).filter(log => log.traineeId === userId);
   const existingAttendanceIds = new Set((current.attendanceLogs || []).map(log => log.id));
   return {
     ...current,
     users: [...nextUsers, ...newFamilyMembers],
-    sessions: mergeOwnBooking(current.sessions, incoming.sessions, userId),
-    openGymSessions: mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId),
+    sessions: actor?.familyPaymentPending ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId),
+    openGymSessions: actor?.familyPaymentPending ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId),
     messages: [...messagesWithReadReceipts, ...ownNewMessages.filter(message => !existingMessageIds.has(message.id))],
     attendanceLogs: [...(current.attendanceLogs || []), ...ownNewAttendance.filter(log => !existingAttendanceIds.has(log.id))],
     traineeProfiles: [

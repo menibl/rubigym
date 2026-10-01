@@ -1,7 +1,6 @@
 import React from 'react';
 import { Users } from 'lucide-react';
 import {
-  FAMILY_MEMBERSHIP_PRICES,
   FamilyBillingMode,
   FamilyMemberPlanSelection,
   MembershipPlanConfig,
@@ -11,7 +10,6 @@ import {
 } from '../types';
 import {
   CUSTOM_FAMILY_PLAN_OPTIONS,
-  FAMILY_MONTHLY_PRICE_PER_MEMBER,
   familyPurchaseAmount,
   resizeFamilyPlans
 } from '../data/familyMembership';
@@ -26,9 +24,11 @@ interface FamilyPlanConfiguratorProps {
   payerName: string;
   payerId?: string;
   membershipPlans?: MembershipPlanConfig[];
+  familyMembers?: Array<{ id: string; name: string }>;
+  registrationMemberNames?: string[];
 }
 
-export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ mode, onModeChange, count, onCountChange, plans, onPlansChange, payerName, payerId, membershipPlans = [] }) => {
+export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ count, onCountChange, plans, onPlansChange, payerName, payerId, membershipPlans = [], familyMembers = [], registrationMemberNames }) => {
   const normalizedPlans = resizeFamilyPlans(plans, count, payerName, payerId);
   const changeCount = (nextCount: number) => {
     onCountChange(nextCount);
@@ -37,22 +37,12 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
   const updatePlan = (index: number, patch: Partial<FamilyMemberPlanSelection>) => onPlansChange(
     resizeFamilyPlans(plans, count, payerName, payerId).map((plan, planIndex) => planIndex === index ? { ...plan, ...patch } : plan)
   );
-  const selectMode = (nextMode: FamilyBillingMode) => {
-    onModeChange(nextMode);
-    if (nextMode === 'CUSTOM_COMBINED') onPlansChange(normalizedPlans);
-  };
-  const amount = familyPurchaseAmount(mode, count, normalizedPlans, membershipPlans);
+  const amount = familyPurchaseAmount('CUSTOM_COMBINED', count, normalizedPlans, membershipPlans);
   const priceFor = (membershipType: MembershipType) => membershipPlans.find(plan => plan.id === membershipType && plan.active)?.price ?? MEMBERSHIP_PRICES[membershipType] ?? 0;
 
   return <section className="space-y-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4" dir="rtl">
     <div className="flex items-center gap-2"><Users size={18} className="text-indigo-700" /><strong className="text-sm text-slate-950">בחירת מבנה המנוי המשפחתי</strong></div>
-    <div className="grid gap-2 sm:grid-cols-3">
-      {([
-        ['ANNUAL_BY_SIZE', 'משפחתי שנתי', 'מחיר קבוע לפי מספר נפשות, התחייבות לשנה'],
-        ['MONTHLY_PER_MEMBER', 'משפחתי חודשי', `₪${FAMILY_MONTHLY_PRICE_PER_MEMBER} לכל מתאמן בחודש`],
-        ['CUSTOM_COMBINED', 'משפחתי מותאם', 'מסלול אחר לכל בן משפחה ותשלום מאוחד']
-      ] as Array<[FamilyBillingMode, string, string]>).map(([value, title, description]) => <button key={value} type="button" onClick={() => selectMode(value)} className={`rounded-xl border p-3 text-right ${mode === value ? 'border-indigo-600 bg-indigo-700 text-white' : 'border-indigo-200 bg-white text-slate-800'}`}><strong className="block text-xs">{title}</strong><span className={`mt-1 block text-[10px] ${mode === value ? 'text-indigo-100' : 'text-slate-500'}`}>{description}</span></button>)}
-    </div>
+    <p className="rounded-xl bg-indigo-900 p-3 text-sm text-white"><strong>משפחתי מותאם</strong> — מסלול נפרד לכל בן משפחה ותשלום מאוחד.</p>
 
     <label className="block text-xs font-bold text-slate-700">מספר בני משפחה
       <select value={count} onChange={event => changeCount(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5">
@@ -60,14 +50,21 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
       </select>
     </label>
 
-    {mode === 'ANNUAL_BY_SIZE' && <p className="rounded-xl bg-white p-3 text-xs leading-5 text-slate-700">מחיר החבילה: <b>₪{FAMILY_MEMBERSHIP_PRICES[count]?.toLocaleString('he-IL')}</b> לחודש, בהתחייבות ל־12 חודשים.</p>}
-    {mode === 'MONTHLY_PER_MEMBER' && <p className="rounded-xl bg-white p-3 text-xs leading-5 text-slate-700">₪{FAMILY_MONTHLY_PRICE_PER_MEMBER} × {count} מתאמנים = <b>₪{amount.toLocaleString('he-IL')} לחודש</b>, ללא התחייבות שנתית.</p>}
-
-    {mode === 'CUSTOM_COMBINED' && <div className="space-y-3">
+    {!registrationMemberNames && familyMembers.length < count && <p role="alert" className="text-sm text-slate-800">אין מספיק בני משפחה משויכים. יש להוסיף בן משפחה דרך ניהול המשפחה לפני בחירת מסלול עבורו.</p>}
+    <div className="space-y-3">
       {normalizedPlans.map((plan, index) => {
         const isTrainingCard = plan.membershipType === MembershipType.PERSONAL_TRAINING || plan.membershipType === MembershipType.DUO_TRAINING;
         return <article key={`${plan.memberId || index}-${index}`} className="grid gap-2 rounded-xl border border-indigo-100 bg-white p-3 sm:grid-cols-[1fr_1.4fr_.7fr]">
-          <label className="text-[11px] font-bold text-slate-600">{index === 0 ? 'המשלם הראשי' : `בן/בת משפחה ${index + 1}`}<input value={plan.memberName} onChange={event => updatePlan(index, { memberName: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label>
+          <label className="text-[11px] font-bold text-slate-600">{index === 0 ? 'המשלם הראשי' : `בן/בת משפחה ${index + 1}`}
+            {registrationMemberNames ? <input readOnly value={registrationMemberNames[index] || ''} placeholder="יש להשלים את פרטי בן המשפחה בטופס" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+              : <select value={index === 0 ? payerId || '' : familyMembers.some(member => member.id === plan.memberId) ? plan.memberId : ''} disabled={index === 0} onChange={event => {
+                const member = familyMembers.find(candidate => candidate.id === event.target.value);
+                updatePlan(index, { memberId: member?.id, memberName: member?.name || '' });
+              }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                <option value="">בחרו בן משפחה משויך</option>
+                {familyMembers.map(member => <option key={member.id} value={member.id} disabled={index !== 0 && (member.id === payerId || normalizedPlans.some((other, otherIndex) => otherIndex !== index && other.memberId === member.id))}>{member.name}</option>)}
+              </select>}
+          </label>
           <label className="text-[11px] font-bold text-slate-600">מסלול<select value={plan.membershipType} onChange={event => {
             const membershipType = event.target.value as MembershipType;
             const usesCard = membershipType === MembershipType.PERSONAL_TRAINING || membershipType === MembershipType.DUO_TRAINING;
@@ -79,6 +76,7 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
         </article>;
       })}
       <p className="rounded-xl bg-indigo-900 p-3 text-xs text-white">סך הכול לחיוב מאוחד לבעל המשפחה: <b className="text-base">₪{amount.toLocaleString('he-IL')}</b></p>
-    </div>}
+      <p className="text-xs text-slate-700">הסכום כולל הנחת 10% למסלולים קבוצתיים בלבד. לפני התשלום יוצגו הקיזוז והיתרה המחושבים בשרת. התשלום חד־פעמי, ללא הוראת קבע.</p>
+    </div>
   </section>;
 };

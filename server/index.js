@@ -3,6 +3,8 @@ import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validateP
 import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
+import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
+import { familyPlanAmount } from '../shared/family-pricing.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
 import {
@@ -302,7 +304,7 @@ const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
     } else if (mode === 'CUSTOM_COMBINED') {
       familyMemberPlans = normalizeFamilyPlans(body.familyMemberPlans, catalog);
       if (familyMemberPlans.length !== count) throw new Error('INVALID_FAMILY_MEMBER_COUNT');
-      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1), 0);
+      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + familyPlanAmount(plan.membershipType, planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1)), 0);
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
     return { amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: mode !== 'CUSTOM_COMBINED', recurringMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 0 };
@@ -421,6 +423,9 @@ const createSignedOrder = async (body, env, purchase) => {
     fp: purchase.familyMemberPlans || undefined,
     c: body.discountCode ? String(body.discountCode).toUpperCase() : undefined,
     a: amount,
+    fa: purchase.packageAmount,
+    ca: purchase.creditAmount,
+    cs: purchase.sourcePaymentId,
     pa: rivhitChargeAmount(amount, env),
     bp: purchase.billingPeriod,
     tm: purchase.termMonths,
@@ -567,17 +572,9 @@ const verifiedRivhitPayment = async (paymentReference, env) => {
   };
 };
 
-const recurringFieldsFor = (purchase, env) => {
-  if (String(env.RIVHIT_ENABLE_RECURRING).toLowerCase() !== 'true') return {};
-  return purchase.recurring ? {
-    SaleType: 2,
-    CreateRecurringSale: true,
-    RecurringSaleCycle: 3,
-    RecurringSaleDay: Math.min(28, new Date().getDate()),
-    RecurringSaleStep: 1,
-    RecurringSaleCount: Number(purchase.recurringMonths) || 0,
-    RecurringSaleAutoCharge: true
-  } : {};
+const recurringFieldsFor = () => {
+  // Checkout is one-off; recurring billing is not enabled for these purchases.
+  return { CreateRecurringSale: false };
 };
 
 const splitCustomerName = value => {
@@ -650,6 +647,7 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
         ...candidate,
         membershipType: type,
         membershipStatus: 'ACTIVE',
+        familyPaymentPending: false,
         ...membershipTermFor(type, order),
         familyBillingMode: 'CUSTOM_COMBINED',
         familyCombinedAmount: amount,
@@ -716,7 +714,15 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     if (!user) throw new Error('PAYMENT_USER_NOT_FOUND');
     if ((state.payload.payments || []).some(existing => existing.id === paymentId)) return;
 
-    const updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.a));
+    let updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.fa ?? order.a));
+    if (order.cs) {
+      // Adding a member does not buy another free month for the existing payer.
+      updatedUsers = updatedUsers.map(updated => {
+        const previous = state.payload.users.find(item => item.id === updated.id);
+        if (!order.fp?.some(plan => plan.memberId === updated.id)) return updated;
+        return { ...updated, membershipExpiry: previous?.familyPaymentPending ? user.membershipExpiry : previous?.membershipExpiry || updated.membershipExpiry };
+      });
+    }
     const payload = appendUserChangeMessages(state.payload, {
       ...state.payload,
       users: updatedUsers,
@@ -733,6 +739,10 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         traineeId: userId,
         traineeName: user.name,
         amount: Number(order.a),
+        familyPackageAmount: order.fa,
+        familyCreditAmount: order.ca,
+        familyCreditSourcePaymentId: order.cs,
+        purchaseMode: order.d,
         date: new Date().toISOString().slice(0, 10),
         timestamp: new Date().toISOString(),
         status: 'PAID',
@@ -832,6 +842,7 @@ const handleCreatePayment = async (request, env) => {
     }
   }
   let purchase;
+  let checkoutState;
   try {
     const state = env.STATE_STORE?.getClubState
       ? await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness')
@@ -841,6 +852,7 @@ const handleCreatePayment = async (request, env) => {
       state?.payload?.settings?.membershipPlans || [],
       state?.payload?.discountCodes || []
     );
+    checkoutState = state;
   }
   catch (error) {
     if (error?.message === 'INVALID_DISCOUNT' || error?.message === 'DISCOUNT_ALREADY_USED') {
@@ -848,9 +860,43 @@ const handleCreatePayment = async (request, env) => {
     }
     return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env));
   }
+  purchase.recurring = false;
+  let creditClaim;
+  const clubId = env.CLUB_ID || 'baly-wellness';
+  if (body.membershipType === 'FAMILY_MEMBERSHIP' && body.mode === 'PRIMARY' && purchase.familyBillingMode === 'CUSTOM_COMBINED') {
+    try {
+      purchase.familyMemberPlans = validateFamilySelection(checkoutState?.payload || {}, body.userId, purchase.familyMemberPlans);
+    } catch {
+      return json({ message: 'יש לבחור לכל מסלול בן משפחה משויך, ללא כפילויות, כשהמשלם הראשי ראשון.' }, 400, corsHeaders(request, env));
+    }
+    const hasPendingMember = purchase.familyMemberPlans.some(plan => checkoutState.payload.users.some(member => member.id === plan.memberId && member.familyPaymentPending));
+    const quote = hasPendingMember ? familyCreditQuote(checkoutState.payload, body.userId, purchase.amount, rivhitEnvironment(env) === 'production')
+      : { packageAmount: purchase.amount, creditAmount: 0, amountDue: purchase.amount, sourcePaymentId: null };
+    purchase = { ...purchase, ...quote, amount: quote.amountDue };
+    const quoteKey = await sign(JSON.stringify({ userId: body.userId, purchase }), env.PAYMENT_SIGNING_SECRET);
+    if (body.quoteOnly) return json({ ...quote, quoteKey }, 200, corsHeaders(request, env));
+    if (body.quoteKey !== quoteKey) return json({ message: 'פרטי החיוב השתנו. יש לבדוק ולאשר את הסכום מחדש.' }, 409, corsHeaders(request, env));
+    if (quote.sourcePaymentId) {
+      if (!env.STATE_STORE.reserveFamilyCredit) throw new Error('FAMILY_CREDIT_STORAGE_UNAVAILABLE');
+      creditClaim = await env.STATE_STORE.reserveFamilyCredit(clubId, quote.sourcePaymentId, crypto.randomUUID(), quoteKey);
+      if (!creditClaim.created) {
+        if (creditClaim.fingerprint === quoteKey && creditClaim.checkout) return json(creditClaim.checkout, 200, corsHeaders(request, env));
+        return json({ message: 'התשלום הקודם כבר משויך לבקשת תשלום משפחתית. יש להשלים אותה או לפנות למנהל; לא נוצר חיוב נוסף.' }, 409, corsHeaders(request, env));
+      }
+    }
+  }
   const { amount } = purchase;
   const providerAmount = rivhitChargeAmount(amount, env);
   const signedOrder = await createSignedOrder(body, env, purchase);
+  if (amount === 0 && creditClaim) {
+    const order = decodePayload(signedOrder.split('.')[0]);
+    const creditPayment = { transactionId: `credit-${creditClaim.claim_id}` };
+    await persistVerifiedPurchase(env, order, creditPayment);
+    await persistVerifiedDiscountUsage(env, order, creditPayment);
+    const completed = { completed: true };
+    await env.STATE_STORE.saveFamilyCreditCheckout(clubId, purchase.sourcePaymentId, creditClaim.claim_id, completed);
+    return json(completed, 200, corsHeaders(request, env));
+  }
   const appUrl = new URL(paymentReturnUrl(request, env));
   appUrl.searchParams.set('rivhit', 'success');
   const failedUrl = new URL(paymentReturnUrl(request, env));
@@ -876,7 +922,7 @@ const handleCreatePayment = async (request, env) => {
     Custom1: signedOrder,
     UniqueNum: crypto.randomUUID().replace(/-/g, '').slice(0, 20),
     Use3DS: String(env.RIVHIT_USE_3DS).toLowerCase() === 'true',
-    ...recurringFieldsFor(purchase, env)
+    ...recurringFieldsFor()
   }, env);
   const status = Number(rivhitValue(createResult, 'Status', 'status'));
   const url = rivhitValue(createResult, 'URL', 'Url', 'url');
@@ -888,7 +934,9 @@ const handleCreatePayment = async (request, env) => {
     return json({ message: rivhitValue(createResult, 'ErrorMessage', 'DebugMessage', 'Message', 'message') || 'שירות התשלום לא הצליח ליצור דף תשלום. יש לבדוק את הגדרת דף התשלום.' }, 502, corsHeaders(request, env));
   }
   const paymentReference = await createPaymentReference(signedOrder, String(privateSaleToken), String(publicSaleToken || ''), env);
-  return json({ url: String(url), paymentReference }, 200, corsHeaders(request, env));
+  const checkout = { url: String(url), paymentReference, familyMemberPlans: purchase.familyMemberPlans };
+  if (creditClaim) await env.STATE_STORE.saveFamilyCreditCheckout(clubId, purchase.sourcePaymentId, creditClaim.claim_id, checkout);
+  return json(checkout, 200, corsHeaders(request, env));
 };
 
 const handleVerifyPayment = async (request, env) => {
@@ -914,6 +962,7 @@ const handleVerifyPayment = async (request, env) => {
     recurringMonths: order.rm,
     includedSessions: order.sc,
     amount: order.a,
+    packageAmount: order.fa,
     ...providerPayment
   };
   await persistVerifiedPurchase(env, order, payment, identity?.user_id);
@@ -1279,11 +1328,22 @@ const handleApi = async (request, env, url) => {
         }
       }
       const safeUser = stripCredentials({ ...user, registrationIncomplete: false, registrationCompletedAt: new Date().toISOString() });
+      let registrationPayment = body.payment;
+      if (env.RIVHIT_GROUP_PRIVATE_TOKEN && registrationPayment) {
+        if (!registrationPayment.paymentReference) return json({ message: 'נדרש אישור עסקה מאומת. יש לרענן את הדף ולהשלים את אימות התשלום.' }, 400, headers);
+        const verified = await verifiedRivhitPayment(registrationPayment.paymentReference, env);
+        if (verified.order.u !== user.id || verified.order.d !== 'REGISTRATION') return json({ message: 'התשלום אינו שייך להרשמה הזו.' }, 400, headers);
+        const { paymentReference: _reference, ...receipt } = registrationPayment;
+        registrationPayment = { ...receipt, id: `payment-rivhit-${verified.payment.transactionId}`, traineeId: user.id,
+          amount: verified.order.a, status: 'PAID', membershipTypePurchased: verified.order.m,
+          provider: 'RIVHIT', providerSaleId: verified.payment.saleId, providerTransactionId: verified.payment.transactionId,
+          purchaseMode: 'REGISTRATION', isMock: rivhitEnvironment(env) !== 'production' };
+      }
       const safeFamilyUsers = familyUsers.map(stripCredentials);
       const nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
         users: [safeUser, ...safeFamilyUsers, ...(state.payload.users || []).filter(candidate => !registrations.some(registration => registration.id === candidate.id))],
-        payments: body.payment ? [body.payment, ...(state.payload.payments || [])] : (state.payload.payments || [])
+        payments: registrationPayment ? [registrationPayment, ...(state.payload.payments || [])] : (state.payload.payments || [])
       });
       const saved = await env.STATE_STORE.putClubState(clubId, nextPayload, state.revision);
       if (saved.conflict) return json(saved, 409, headers);
@@ -1305,12 +1365,13 @@ const handleApi = async (request, env, url) => {
       const state = await loadClubState(identity.session.club_id);
       const payer = state?.payload?.users?.find(userItem => userItem.id === identity.account.user_id);
       const familyMembers = state?.payload?.users?.filter(userItem => userItem.familyId && userItem.familyId === payer?.familyId) || [];
-      if (!payer?.isFamilyPayer || !payer.familyId || familyMembers.length >= Number(payer.familyMembersCount || 0)) {
+      if (!payer || (payer.familyPayerId && payer.familyPayerId !== payer.id) || (payer.familyId && !payer.isFamilyPayer) || familyMembers.length >= 6) {
         return json({ message: 'אין מקום נוסף בחשבון המשפחתי או שהמשתמש אינו המשלם הראשי.' }, 403, headers);
       }
       if (!candidate?.id || !candidate?.name || !candidate?.username || !candidate?.email || !isValidEmail(candidate.email)
         || typeof candidate.password !== 'string' || candidate.password.length < 8 || candidate.role !== 'TRAINEE'
-        || candidate.familyPayerId !== payer.id || candidate.familyId !== payer.familyId) {
+        || candidate.familyPayerId !== payer.id || candidate.familyId !== (payer.familyId || `fam-${payer.id}`)
+        || state.payload.users.some(existing => existing.id === candidate.id)) {
         return json({ message: 'פרטי בן המשפחה או פרטי הכניסה אינם תקינים.' }, 400, headers);
       }
       for (const identityValue of [candidate.username, candidate.phone].filter(Boolean)) {
@@ -1321,13 +1382,27 @@ const handleApi = async (request, env, url) => {
       const emailAccounts = env.STATE_STORE.getAccountsByLogin
         ? await env.STATE_STORE.getAccountsByLogin(identity.session.club_id, candidate.email)
         : [await env.STATE_STORE.getAccountByLogin(identity.session.club_id, candidate.email)].filter(Boolean);
-      if (emailAccounts.some(accountItem => accountItem.profile?.familyId !== payer.familyId)) {
+      if (emailAccounts.some(accountItem => accountItem.user_id !== payer.id && (!payer.familyId || accountItem.profile?.familyId !== payer.familyId))) {
         return json({ message: 'כתובת האימייל כבר רשומה בחשבון שאינו שייך למשפחה.' }, 409, headers);
       }
-      const safeUser = stripCredentials(candidate);
+      const hasPaidSlot = payer.membershipType === 'FAMILY_MEMBERSHIP' && payer.membershipStatus === 'ACTIVE'
+        && payer.familyBillingMode !== 'CUSTOM_COMBINED' && familyMembers.length < Number(payer.familyMembersCount || 0);
+      const familyId = payer.familyId || `fam-${payer.id}`;
+      const familyName = payer.familyName || String(candidate.familyName || `משפחת ${payer.name}`).slice(0, 100);
+      const safeUser = {
+        ...stripCredentials(candidate),
+        familyId, familyName, familyPayerId: payer.id, isFamilyPayer: false,
+        membershipType: hasPaidSlot ? 'FAMILY_MEMBERSHIP' : candidate.membershipType,
+        membershipStatus: hasPaidSlot ? 'ACTIVE' : 'DEBT',
+        membershipExpiry: hasPaidSlot ? payer.membershipExpiry : new Date().toISOString().slice(0, 10),
+        familyPaymentPending: !hasPaidSlot,
+        secondaryMemberships: [], nutritionPlanPaid: false, requestedWorkoutPlan: false,
+        personalTrainingRemaining: 0, duoTrainingRemaining: 0, offlinePaymentApproved: false,
+      };
       const nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
-        users: [safeUser, ...(state.payload.users || [])]
+        users: [safeUser, ...(state.payload.users || []).map(existing => existing.id === payer.id
+          ? { ...existing, familyId, familyName, isFamilyPayer: true } : existing)]
       });
       const saved = await env.STATE_STORE.putClubState(identity.session.club_id, nextPayload, state.revision);
       if (saved.conflict) return json(saved, 409, headers);
@@ -1540,6 +1615,7 @@ const handleApi = async (request, env, url) => {
       const payment = (state?.payload?.payments || []).find(candidate => candidate.id === body.paymentId);
       if (!payment) return json({ message: 'העסקה לא נמצאה.' }, 404, headers);
       if (payment.status === 'REFUNDED') return json({ message: 'העסקה כבר סומנה כמוחזרת.' }, 409, headers);
+      if (await env.STATE_STORE.getFamilyCreditClaim?.(identity.session.club_id, payment.id)) return json({ message: 'העסקה משמשת לקיזוז משפחתי. יש להסדיר את הקיזוז לפני ביצוע החזר, כדי לא לזכות פעמיים.' }, 409, headers);
       if (!payment.providerSaleId) return json({ message: 'לעסקה אין מזהה מכירה של רווחית. יש לבצע את ההחזר ברווחית ולעדכן את הרישום ידנית.' }, 422, headers);
       const result = await rivhitPost('/CancelSale', { SaleId: payment.providerSaleId }, env);
       if (!providerSucceeded(result)) return json({ message: rivhitValue(result, 'ClientMessage', 'DebugMessage') || 'רווחית דחתה את ההחזר.' }, 422, headers);
