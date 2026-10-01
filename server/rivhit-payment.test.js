@@ -240,10 +240,10 @@ test('checkout uses the manager configured plan price and fixed period', async (
   assert.equal(response.status, 200);
   assert.equal(providerRequest.Items[0].UnitPrice, 777);
   assert.equal(providerRequest.Items[0].Description, 'Open Gym מעודכן');
-  assert.equal(providerRequest.CreateRecurringSale, undefined);
+  assert.equal(providerRequest.CreateRecurringSale, false);
 });
 
-test('monthly annual commitment creates twelve recurring monthly charges when enabled', async () => {
+test('annual commitment checkout stays one-off even with the legacy recurring flag', async () => {
   let providerRequest;
   const env = {
     RIVHIT_ENVIRONMENT: 'production',
@@ -268,12 +268,12 @@ test('monthly annual commitment creates twelve recurring monthly charges when en
   }), env);
   assert.equal(response.status, 200);
   assert.equal(providerRequest.Items[0].UnitPrice, 525);
-  assert.equal(providerRequest.SaleType, 2);
-  assert.equal(providerRequest.CreateRecurringSale, true);
-  assert.equal(providerRequest.RecurringSaleCount, 12);
+  assert.equal(providerRequest.SaleType, 1);
+  assert.equal(providerRequest.CreateRecurringSale, false);
+  assert.equal(providerRequest.RecurringSaleCount, undefined);
 });
 
-test('monthly plan creates an open-ended recurring charge without an annual commitment', async () => {
+test('monthly plan remains one-off even when the legacy recurring ENV is enabled', async () => {
   let providerRequest;
   const env = {
     RIVHIT_ENVIRONMENT: 'production',
@@ -297,6 +297,7 @@ test('monthly plan creates an open-ended recurring charge without an annual comm
     body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
   }), env);
   assert.equal(response.status, 200);
-  assert.equal(providerRequest.SaleType, 2);
-  assert.equal(providerRequest.RecurringSaleCount, 0);
+  assert.equal(providerRequest.SaleType, 1);
+  assert.equal(providerRequest.CreateRecurringSale, false);
+  assert.equal(providerRequest.RecurringSaleCount, undefined);
 });

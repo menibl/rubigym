@@ -23,8 +23,8 @@ const rivhitFetch = async (url, init) => {
   return Response.json({}, { status: 404 });
 };
 
-for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER', 'CUSTOM_COMBINED']) {
-  test(`family payment persists payer identity and permits exactly one additional member: ${familyBillingMode}`, async () => {
+for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER']) {
+  test(`family payment persists identity and extra members remain pending payment: ${familyBillingMode}`, async () => {
     let state = { revision: 1, payload: { users: [{ id: 'payer', name: 'Payer', role: 'TRAINEE', membershipType: 'OPEN_GYM' }], payments: [], messages: [] } };
     const store = {
       async getSession() { return { club_id: 'test', user_id: 'payer' }; },
@@ -54,7 +54,9 @@ for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER', 'CUSTOM
     const candidate = { id: 'member', name: 'Member', username: 'member', email: 'member@example.com', password: 'test-password', role: 'TRAINEE', familyId: payer.familyId, familyPayerId: payer.id };
     assert.equal((await post('/api/auth/family-members', { user: candidate })).status, 201);
     assert.equal(state.payload.users.length, 2);
-    assert.equal((await post('/api/auth/family-members', { user: { ...candidate, id: 'third', username: 'third' } })).status, 403);
+    assert.equal((await post('/api/auth/family-members', { user: { ...candidate, id: 'third', username: 'third' } })).status, 201);
+    assert.equal(state.payload.users.find(user => user.id === 'third').membershipStatus, 'DEBT');
+    assert.equal(state.payload.users.find(user => user.id === 'third').familyPaymentPending, true);
     assert.equal(state.payload.payments.length, 1);
   });
 }

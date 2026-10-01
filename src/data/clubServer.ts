@@ -192,15 +192,17 @@ export const registerFamilyMember = async (user: User) => {
   if (isPagesDemoMode()) {
     const state = readDemoState();
     const users = (state.payload.users as User[]) || [];
-    const identities = [user.username, user.email, user.phone].filter(Boolean).map(value => normalizeLogin(String(value)));
-    if (users.some(candidate => [candidate.username, candidate.email, candidate.phone].filter(Boolean).some(value => identities.includes(normalizeLogin(String(value)))))) {
+    const payer = users.find(candidate => candidate.id === user.familyPayerId);
+    if (!payer || (payer.familyPayerId && payer.familyPayerId !== payer.id)) throw new Error('המשלם הראשי אינו תקין.');
+    const identities = [user.username, user.phone].filter(Boolean).map(value => normalizeLogin(String(value)));
+    if (users.some(candidate => [candidate.username, candidate.phone].filter(Boolean).some(value => identities.includes(normalizeLogin(String(value)))))) {
       throw new Error('שם המשתמש, האימייל או הטלפון כבר רשומים.');
     }
     const passwords = demoPasswords();
     passwords[user.id] = user.password || '';
     localStorage.setItem(DEMO_PASSWORDS_KEY, JSON.stringify(passwords));
     const { password: _password, ...safeUser } = user;
-    const next = writeDemoState({ payload: { ...state.payload, users: [safeUser, ...users] }, revision: state.revision + 1 });
+    const next = writeDemoState({ payload: { ...state.payload, users: [{ ...safeUser, membershipStatus: 'DEBT', familyPaymentPending: true }, ...users.map(candidate => candidate.id === payer.id ? { ...candidate, familyId: user.familyId, familyName: user.familyName, isFamilyPayer: true } : candidate)] }, revision: state.revision + 1 });
     return { user: safeUser as User, revision: next.revision };
   }
   return request<{ user: User; revision: number }>('/api/auth/family-members', { method: 'POST', body: JSON.stringify({ user }) });

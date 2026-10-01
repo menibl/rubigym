@@ -31,6 +31,15 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       revision bigint NOT NULL DEFAULT 1,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS family_credit_claims (
+      club_id text NOT NULL,
+      source_payment_id text NOT NULL,
+      claim_id text NOT NULL,
+      fingerprint text NOT NULL,
+      checkout jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (club_id, source_payment_id)
+    );
     CREATE TABLE IF NOT EXISTS club_state_backups (
       id bigserial PRIMARY KEY,
       club_id text NOT NULL,
@@ -126,6 +135,19 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
     ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS last_error text;
   `);
   return {
+    async reserveFamilyCredit(clubId, sourcePaymentId, claimId, fingerprint) {
+      const inserted = await pool.query('INSERT INTO family_credit_claims (club_id,source_payment_id,claim_id,fingerprint) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING *', [clubId, sourcePaymentId, claimId, fingerprint]);
+      if (inserted.rows[0]) return { ...inserted.rows[0], created: true };
+      const existing = await pool.query('SELECT * FROM family_credit_claims WHERE club_id=$1 AND source_payment_id=$2', [clubId, sourcePaymentId]);
+      return { ...existing.rows[0], created: false };
+    },
+    async getFamilyCreditClaim(clubId, sourcePaymentId) {
+      const result = await pool.query('SELECT claim_id FROM family_credit_claims WHERE club_id=$1 AND source_payment_id=$2', [clubId, sourcePaymentId]);
+      return result.rows[0] || null;
+    },
+    async saveFamilyCreditCheckout(clubId, sourcePaymentId, claimId, checkout) {
+      await pool.query('UPDATE family_credit_claims SET checkout=$4 WHERE club_id=$1 AND source_payment_id=$2 AND claim_id=$3', [clubId, sourcePaymentId, claimId, checkout]);
+    },
     async getClubState(clubId) {
       const result = await pool.query('SELECT payload, revision, updated_at FROM club_state WHERE club_id=$1', [clubId]);
       return result.rows[0] || null;

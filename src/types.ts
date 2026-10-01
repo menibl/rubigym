@@ -344,6 +344,7 @@ export interface User {
   membershipType?: MembershipType;
   secondaryMemberships?: MembershipType[]; // Multiple active subscriptions (e.g. Group + Personal + Punch card)
   membershipStatus?: MembershipStatus;
+  familyPaymentPending?: boolean;
   membershipExpiry?: string; // ISO date string
   membershipStartedAt?: string;
   membershipCommitmentEndsAt?: string;
@@ -752,6 +753,7 @@ export interface Announcement {
 }
 
 export interface Payment {
+  paymentReference?: string;
   id: string;
   traineeId: string;
   traineeName: string;

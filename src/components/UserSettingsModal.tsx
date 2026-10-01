@@ -11,6 +11,7 @@ import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords'
 import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
 import { validateRivhitDiscountCode } from '../data/rivhitPayments';
 import { isPagesDemoMode } from '../data/appMode';
+import { familyPlanAmount } from '../../shared/family-pricing.js';
 
 const PROFILE_IMAGE_MAX_SIDE = 512;
 
@@ -394,9 +395,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       return;
     }
 
-    sessionStorage.setItem('baly_family_purchase_draft_v1', JSON.stringify({ familyName: familyName.trim(), familyQuota }));
-    onClose();
-    onOpenFamilyPurchase?.();
+    setShowAddSubMember(true);
+    if (!subEmail) setSubEmail(currentUser.email || '');
   };
 
   const handleAddFamilyMember = async (e: React.FormEvent) => {
@@ -416,7 +416,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
 
     if (allUsers.some(u => String(u.username || '').trim().toLowerCase() === subUsername.trim().toLowerCase())
-      || allUsers.some(u => String(u.email || '').trim().toLowerCase() === normalizedEmail && u.familyId !== currentUser.familyId)) {
+      || allUsers.some(u => u.id !== currentUser.id && String(u.email || '').trim().toLowerCase() === normalizedEmail && (!currentUser.familyId || u.familyId !== currentUser.familyId))) {
       setMsg({ type: 'error', text: 'שם המשתמש כבר תפוס או שכתובת האימייל שייכת לחשבון שאינו במשפחה' });
       return;
     }
@@ -470,14 +470,15 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       clubAgreementSigned: true,
       clubAgreementDate: new Date().toISOString().split('T')[0],
       membershipType: subMembership,
-      membershipStatus: MembershipStatus.ACTIVE,
-      membershipExpiry: currentUser.membershipExpiry || '2027-12-31',
+      membershipStatus: MembershipStatus.DEBT,
+      membershipExpiry: new Date().toISOString().slice(0, 10),
+      familyPaymentPending: true,
       priorityScore: 100,
       imageUrl: subGender === Gender.FEMALE
         ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-      familyId: currentUser.familyId,
-      familyName: currentUser.familyName,
+      familyId: currentUser.familyId || `fam-${currentUser.id}`,
+      familyName: currentUser.familyName || familyName.trim(),
       isFamilyPayer: false,
       familyPayerId: currentUser.id
     };
@@ -822,10 +823,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                           onChange={(e) => setFamilyQuota(Number(e.target.value))}
                           className="w-full px-3 py-2 border rounded-xl bg-white"
                         >
-                          <option value={2}>2 מנויים (₪550/חודש)</option>
-                          <option value={3}>3 מנויים (₪750/חודש)</option>
-                          <option value={4}>4 מנויים (₪920/חודש)</option>
-                          <option value={5}>5 מנויים (₪1100/חודש)</option>
+                          {[2, 3, 4, 5, 6].map(count => <option key={count} value={count}>{count} מתאמנים — המחיר לפי המסלולים שנבחרו</option>)}
                         </select>
                       </div>
                       <button
@@ -833,17 +831,18 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                         onClick={handleEnableFamilyAccount}
                         className="bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl hover:bg-indigo-700 transition cursor-pointer"
                       >
-                        מעבר לבחירה ולתשלום על מסלול משפחתי
+                        הוספת בן משפחה לפני בחירת מסלול ותשלום
                       </button>
                     </div>
                   )}
 
                   {/* Existing Family Members List */}
-                  {currentUser.familyId && (
+                  {(currentUser.familyId || showAddSubMember) && (
                     <div className="space-y-3 pt-2">
+                      {currentUser.isFamilyPayer && onOpenFamilyPurchase && <button type="button" onClick={() => { onClose(); onOpenFamilyPurchase(); }} className="rounded-xl bg-indigo-600 px-4 py-2 font-bold text-white">בחירת מסלולים ותשלום עבור בני המשפחה</button>}
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-slate-800">רשימת משתמשי המשפחה:</span>
-                        {canManageFamily && familyMembersList.length < (currentUser.familyMembersCount || 10) && (
+                        {canManageFamily && familyMembersList.length < 6 && (
                           <button
                             type="button"
                             onClick={() => {
@@ -861,7 +860,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       {/* Add sub member inline form */}
                       {showAddSubMember && (
                         <form onSubmit={handleAddFamilyMember} className="p-3 bg-white border border-indigo-200 rounded-xl space-y-2.5">
-                          <div className="font-bold text-slate-800 text-[11px]">הוספת בן משפחה חדש:</div>
+                          <div className="font-bold text-slate-800 text-[11px]">הוספת בן משפחה חדש — המנוי ממתין לתשלום עד לרכישת המסלול:</div>
                           <div className="grid grid-cols-2 gap-2">
                             <input
                               type="text"
@@ -997,6 +996,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                               <div>
                                 <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                                   {m.name}
+                                  {m.familyPaymentPending && <span className="mr-2 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">ממתין לתשלום</span>}
                                   {m.isFamilyPayer && (
                                     <span className="bg-amber-100 text-amber-900 text-[10px] px-2 py-0.5 rounded-md font-bold border border-amber-200">
                                       משלם ראשי
@@ -1043,7 +1043,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       {/* Full Billing Calculation & Discount Codes Engine */}
                       {(() => {
                         const pricedCount = Math.min(6, Math.max(2, currentUser.familyMembersCount || familyMembersList.length));
-                        const baseSubtotal = FAMILY_MEMBERSHIP_PRICES[pricedCount];
+                        const baseSubtotal = currentUser.familyBillingMode === 'CUSTOM_COMBINED' || !currentUser.familyMembersCount
+                          ? familyMembersList.reduce((sum, member) => sum + familyPlanAmount(member.membershipType, MEMBERSHIP_PRICES[member.membershipType || MembershipType.OPEN_GYM] || 0), 0)
+                          : FAMILY_MEMBERSHIP_PRICES[pricedCount];
                         let couponDiscount = 0;
                         if (appliedCoupon) {
                           if (appliedCoupon.discountPercent > 0) {
@@ -1059,10 +1061,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                             <div className="font-bold text-sm text-indigo-300 flex items-center justify-between border-b border-indigo-800/80 pb-2">
                               <span className="flex items-center gap-1.5">
                                 <DollarSign size={16} className="text-emerald-400" />
-                                חישוב תשלום חודשי כולל למשפחה
+                                אומדן מסלולי המשפחה — הסכום הסופי נקבע בתשלום
                               </span>
                               <span className="text-xs bg-indigo-800/60 text-indigo-200 px-2 py-0.5 rounded-full">
-                                {familyMembersList.length} מנויים פעילים
+                                {familyMembersList.length} בני משפחה
                               </span>
                             </div>
 
