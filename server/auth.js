@@ -244,6 +244,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
   }
 
   const actor = current.users.find(user => user.id === userId);
+  const unpaid = actor?.registrationPaymentPending || actor?.familyPaymentPending || actor?.membershipStatus === 'DEBT';
   const incomingUserIds = new Set(incoming.users.map(user => user.id));
   const canManageFamily = Boolean(actor?.isFamilyPayer && actor.familyId);
   const nextUsers = current.users.filter(user => {
@@ -254,13 +255,13 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     const requested = incoming.users.find(candidate => candidate.id === userId) || {};
     const updated = { ...user };
     for (const field of selfEditableFields) if (field in requested) updated[field] = requested[field];
-    if (canManageFamily && !user.familyPaymentPending) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
+    if (canManageFamily && !user.familyPaymentPending && !user.registrationPaymentPending) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
     return updated;
   }).map(user => {
     if (!canManageFamily || user.id === userId || user.familyId !== actor.familyId) return user;
     const requested = incoming.users.find(candidate => candidate.id === user.id) || {};
     const updated = { ...user };
-    if (!user.familyPaymentPending) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
+    if (!user.familyPaymentPending && !user.registrationPaymentPending) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
     return updated;
   });
   const newFamilyMembers = incoming.users
@@ -276,13 +277,13 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     message.receiverId === userId && readIncomingMessageIds.has(message.id)
       ? { ...message, read: true }
       : message);
-  const ownNewAttendance = actor?.familyPaymentPending ? [] : (incoming.attendanceLogs || []).filter(log => log.traineeId === userId);
+  const ownNewAttendance = unpaid ? [] : (incoming.attendanceLogs || []).filter(log => log.traineeId === userId);
   const existingAttendanceIds = new Set((current.attendanceLogs || []).map(log => log.id));
   return {
     ...current,
     users: [...nextUsers, ...newFamilyMembers],
-    sessions: actor?.familyPaymentPending ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId),
-    openGymSessions: actor?.familyPaymentPending ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId),
+    sessions: unpaid ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId),
+    openGymSessions: unpaid ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId),
     messages: [...messagesWithReadReceipts, ...ownNewMessages.filter(message => !existingMessageIds.has(message.id))],
     attendanceLogs: [...(current.attendanceLogs || []), ...ownNewAttendance.filter(log => !existingAttendanceIds.has(log.id))],
     traineeProfiles: [
