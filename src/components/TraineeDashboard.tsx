@@ -7,6 +7,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { resolveSessionProgram } from '../data/sessionProgram';
+import { nextBookedSession } from '../data/nextBookedSession';
 import {
   User,
   TrainingSession,
@@ -1385,13 +1386,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   }, {} as Record<string, number>) || {};
 
   const now = new Date();
-  const upcomingSessions = sessions
-    .filter(session =>
-      session.registeredUsers.includes(activeUser.id) &&
-      new Date(`${session.date}T${session.time || '00:00'}`) >= now
-    )
-    .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
-  const nextSession = upcomingSessions[0];
+  const nextSession = nextBookedSession(activeUser.id, sessions, openGymSessions, now);
   const sessionCapacity = nextSession?.maxParticipants || 12;
   const registeredCount = nextSession?.registeredUsers.length || 0;
   const bookingDays = Array.from({ length: 7 }, (_, index) => {
@@ -1683,10 +1678,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <h3>{nextSession.title}</h3>
                   <div className="next-session-meta">
                     <span><CalendarIcon size={14} /> {nextSession.date} · {nextSession.time}</span>
-                    <span><UserCheck size={14} /> {nextSession.coachName}</span>
+                      {nextSession.coachName && <span><UserCheck size={14} /> {nextSession.coachName}</span>}
                   </div>
                   <div className="next-session-bottom">
-                    <button onClick={() => setActiveTab('classes')}>לצפייה באימון</button>
+                      <button onClick={() => {
+                        setSelectedBookingDate(nextSession.date);
+                        setBookingView('DAY');
+                        setBookingNameFilter('');
+                        setBookingTypeFilter(nextSession.kind === 'OPEN_GYM' ? 'OPEN_GYM' : 'ALL');
+                        setActiveTab('classes');
+                      }}>לצפייה באימון</button>
                     <div className="capacity-block">
                       <div className="capacity-dots" aria-label={`${registeredCount} מתוך ${sessionCapacity} מקומות תפוסים`}>
                         {Array.from({ length: Math.min(sessionCapacity, 20) }).map((_, index) => (
