@@ -23,6 +23,42 @@ const rivhitFetch = async (url, init) => {
   return Response.json({}, { status: 404 });
 };
 
+for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER', 'CUSTOM_COMBINED']) {
+  test(`family payment persists payer identity and permits exactly one additional member: ${familyBillingMode}`, async () => {
+    let state = { revision: 1, payload: { users: [{ id: 'payer', name: 'Payer', role: 'TRAINEE', membershipType: 'OPEN_GYM' }], payments: [], messages: [] } };
+    const store = {
+      async getSession() { return { club_id: 'test', user_id: 'payer' }; },
+      async getAccount() { return { user_id: 'payer', role: 'TRAINEE' }; },
+      async getAccountByLogin() { return null; },
+      async getAccountsByLogin() { return []; },
+      async upsertAccount() {},
+      async getClubState() { return state; },
+      async putClubState(_id, payload, revision) {
+        assert.equal(revision, state.revision);
+        state = { payload, revision: revision + 1 }; return { revision: state.revision, conflict: false };
+      },
+    };
+    const env = { STATE_STORE: store, CLUB_ID: 'test', RIVHIT_ENVIRONMENT: 'test', RIVHIT_GROUP_PRIVATE_TOKEN: 'test-group-token', RIVHIT_FETCH: rivhitFetch, PAYMENT_SIGNING_SECRET: 'family-test-signing-secret', PUBLIC_APP_URL: 'https://balywellness.test/' };
+    const post = (path, body) => worker.fetch(new Request(`https://balywellness.test${path}`, { method: 'POST', headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
+    const response = await post('/api/payments/rivhit/create', {
+      userId: 'payer', userName: 'Payer', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyMembersCount: 2, familyName: 'Family', familyBillingMode,
+      familyMemberPlans: [{ memberId: 'payer', memberName: 'Payer', membershipType: 'OPEN_GYM' }, { memberName: 'Member', membershipType: 'OPEN_GYM' }],
+    });
+    assert.equal(response.status, 200);
+    const checkout = await response.json();
+    assert.equal((await post('/api/payments/rivhit/verify', { paymentReference: checkout.paymentReference })).status, 200);
+    const payer = state.payload.users[0];
+    assert.equal(payer.isFamilyPayer, true);
+    assert.equal(payer.familyId, 'fam-payer');
+    assert.equal(payer.familyMembersCount, 2);
+    const candidate = { id: 'member', name: 'Member', username: 'member', email: 'member@example.com', password: 'test-password', role: 'TRAINEE', familyId: payer.familyId, familyPayerId: payer.id };
+    assert.equal((await post('/api/auth/family-members', { user: candidate })).status, 201);
+    assert.equal(state.payload.users.length, 2);
+    assert.equal((await post('/api/auth/family-members', { user: { ...candidate, id: 'third', username: 'third' } })).status, 403);
+    assert.equal(state.payload.payments.length, 1);
+  });
+}
+
 test('verified nutrition payment unlocks the purchased service and is idempotent', async () => {
   let state = {
     payload: {

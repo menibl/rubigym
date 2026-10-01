@@ -224,7 +224,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         if (plan) {
           const isPayer = user.id === activeUser.id;
           const term = createMembershipTerm(plan.membershipType);
-          const familyId = activeUser.familyId || `fam-${Date.now()}`;
+          const familyId = activeUser.familyId || `fam-${activeUser.id}`;
           return {
             ...user,
             membershipType: plan.membershipType,
@@ -274,7 +274,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           cancellationEffectiveDate: undefined,
           offlinePaymentApproved: false,
           ...(familyMembersCount ? {
-            familyId: user.familyId || `fam-${Date.now()}`,
+            familyId: user.familyId || `fam-${user.id}`,
             familyName: familyName || user.familyName || `משפחת ${user.name.split(' ')[0]}`,
             isFamilyPayer: true,
             familyPayerId: undefined,
