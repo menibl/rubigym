@@ -331,6 +331,7 @@ export interface User {
   clubAgreementSigned?: boolean;
   clubAgreementDate?: string;
   registrationIncomplete?: boolean;
+  registrationPaymentPending?: boolean;
   registrationVerifiedAt?: string;
   registrationCompletedAt?: string;
 

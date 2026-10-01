@@ -34,7 +34,6 @@ import {
   getPendingRivhitPayment,
   isRivhitConfigured,
   markTransactionProcessed,
-  startRivhitPayment,
   validateRivhitDiscountCode,
   verifyPendingRivhitPayment,
   wasTransactionProcessed
@@ -47,6 +46,7 @@ import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembershi
 import { isPagesDemoMode } from '../data/appMode';
 import type { PasswordLoginResult, PhoneCodeRequestResult } from '../data/clubServer';
 import { CookieConsentBanner, LegalLinks } from './LegalCenter';
+import { unpaidRegistration } from '../../shared/registration-status.js';
 
 interface AuthGatewayProps {
   users: User[];
@@ -56,7 +56,7 @@ interface AuthGatewayProps {
   onPhoneLogin: (phone: string, otp: string) => Promise<User>;
   onRequestPhoneCode: (phone: string, purpose: 'LOGIN' | 'REGISTER') => Promise<PhoneCodeRequestResult>;
   onVerifyRegistrationPhone: (phone: string, otp: string) => Promise<{ verified: true; phoneVerificationToken: string; registrationUserId?: string; user?: User }>;
-  onRegister: (user: User, payment: Payment, familyUsers?: User[], phoneVerificationToken?: string) => Promise<void>;
+  onRegister: (user: User, payment: Payment | undefined, familyUsers?: User[], phoneVerificationToken?: string) => Promise<void>;
   initialScreen?: 'login' | 'register';
   initialPlan?: MembershipType;
   landingUrl?: string;
@@ -100,8 +100,8 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [registerOtp, setRegisterOtp] = useState('');
   const [phoneVerificationToken, setPhoneVerificationToken] = useState('');
   const [registrationUserId, setRegistrationUserId] = useState(resumeUser?.id || '');
-  const [registerName, setRegisterName] = useState(resumeUser?.registrationIncomplete ? '' : resumeUser?.name || '');
-  const [registerUsername, setRegisterUsername] = useState(resumeUser?.registrationIncomplete ? '' : resumeUser?.username || '');
+  const [registerName, setRegisterName] = useState(resumeUser?.name === 'הרשמה בתהליך' ? '' : resumeUser?.name || '');
+  const [registerUsername, setRegisterUsername] = useState(resumeUser?.username?.startsWith('registration-') ? '' : resumeUser?.username || '');
   const [registerEmail, setRegisterEmail] = useState(resumeUser?.email || '');
   const [registerPassword, setRegisterPassword] = useState('');
   const [registerBirthDate, setRegisterBirthDate] = useState(resumeUser?.birthDate || '');
@@ -362,11 +362,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       setError('הסיסמה חייבת להכיל לפחות 8 תווים.');
       return;
     }
-    if (users.some(item => item.username?.toLowerCase() === registerUsername.trim().toLowerCase())) {
+    if (users.some(item => item.id !== registrationUserId && item.username?.toLowerCase() === registerUsername.trim().toLowerCase())) {
       setError('שם המשתמש כבר תפוס.');
       return;
     }
-    if (users.some(item => item.email?.trim().toLowerCase() === normalizedEmail)) {
+    if (users.some(item => item.id !== registrationUserId && item.email?.trim().toLowerCase() === normalizedEmail)) {
       setError('כתובת האימייל כבר רשומה. ניתן לעבור למסך הכניסה.');
       return;
     }
@@ -399,16 +399,14 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       }
     }
 
-    setRegisterStep(4);
+    await handleRegistrationPayment(event, true);
   };
 
-  const handleRegistrationPayment = async (event: React.FormEvent) => {
+  const handleRegistrationPayment = async (event: React.FormEvent, profileOnly = false) => {
     event.preventDefault();
     resetMessages();
-    if (!isRivhitConfigured()) {
-      setError('שרת התשלומים טרם הוגדר. לא ניתן לבצע חיוב בשלב זה.');
-      return;
-    }
+    // The first save creates only the account; family members/plans are chosen in the app.
+    const isFamilyPlan = !profileOnly && selectedPlan === MembershipType.FAMILY_MEMBERSHIP;
 
     const age = calculateAge(registerBirthDate);
     const isTrainingCard = selectedPlanUsesTrainingCard;
@@ -477,7 +475,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       clubAgreementDate: new Date().toISOString().split('T')[0],
       pushNotificationsEnabled: pushApproved && 'Notification' in window && Notification.permission === 'granted',
       workoutRemindersEnabled: pushApproved && pushWorkoutReminders,
-      membershipType: isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan,
+      membershipType: profileOnly ? undefined : isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan,
       membershipStatus: MembershipStatus.ACTIVE,
       ...membershipTerm,
       personalTrainingCardSize: !isFamilyPlan && selectedPlan === MembershipType.PERSONAL_TRAINING ? selectedPlanSessions : undefined,
@@ -543,28 +541,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     });
     setPaymentStarting(true);
     try {
-      await startRivhitPayment({
-        userId: newUser.id,
-        userName: newUser.name,
-        email: newUser.email,
-        phone: newUser.phone,
-        membershipType: isFamilyPlan ? MembershipType.FAMILY_MEMBERSHIP : selectedPlan,
-        mode: 'REGISTRATION',
-        purchaseVariant: isTrainingCard
-          ? `${selectedPlan === MembershipType.PERSONAL_TRAINING ? 'PERSONAL' : 'DUO'}_${trainingCardSize}` as PaymentPurchaseVariant
-          : undefined,
-        familyMembersCount: isFamilyPlan ? familyMembersCount : undefined,
-        familyName: isFamilyPlan ? newUser.familyName : undefined,
-        familyBillingMode: isFamilyPlan ? familyBillingMode : undefined,
-        familyMemberPlans: isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans : undefined,
-        discountCode: appliedDiscount?.code,
-        planAmount: !isFamilyPlan ? selectedPlanAmount : undefined,
-        planLabel: !isFamilyPlan ? selectedPlanConfig?.label : undefined,
-        registrationDraft: { user: newUser, familyUsers, phoneVerificationToken }
-      });
+      await onRegister(unpaidRegistration(newUser) as User, undefined,
+        familyUsers.map(member => unpaidRegistration(member) as User), phoneVerificationToken);
     } catch (paymentError) {
       setPaymentStarting(false);
-      setError(paymentError instanceof Error ? paymentError.message : 'לא ניתן לפתוח את דף התשלום.');
+      setError(paymentError instanceof Error ? paymentError.message : 'לא ניתן לשמור את פרטי ההרשמה. נסו שוב.');
     }
   };
 
@@ -674,7 +655,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   <label className="auth-checkbox"><input type="checkbox" checked={pushWorkoutReminders} disabled={!pushApproved} onChange={event => setPushWorkoutReminders(event.target.checked)} /><span>שליחת תזכורות לפני אימונים שנרשמתי אליהם.</span></label>
                   <small>ניתן לבטל את ההתראות בכל עת דרך הפרופיל.</small>
                 </div>
-                <button className="auth-primary" type="submit"><CheckCircle2 size={18} /> המשך לבחירת מסלול</button>
+                <button className="auth-primary" type="submit" disabled={paymentStarting}><CheckCircle2 size={18} /> {paymentStarting ? 'שומר פרטים…' : 'שמירת הפרטים והמשך לבחירת מסלול'}</button>
               </form>
             )}
             {registerStep === 4 && (

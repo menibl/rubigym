@@ -182,6 +182,12 @@ export default function App() {
     applyServerPayload(state.payload, state.revision);
     setActiveUser(signedInUser);
     setIsAuthenticated(true);
+    if (signedInUser.registrationPaymentPending) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('workspace', 'my_membership');
+      window.history.replaceState({ balyApp: true, workspace: 'MY_MEMBERSHIP' }, '', url);
+      setWorkspaceView('MY_MEMBERSHIP');
+    }
   };
 
   const flushPendingClubState = async () => {
@@ -512,7 +518,7 @@ export default function App() {
     setMessages(current => current.map(message => alertIdSet.has(`chat-${message.id}`) ? { ...message, read: true } : message));
   };
 
-  const handleGatewayRegistration = async (newUser: User, payment: Payment, familyUsers: User[] = [], phoneVerificationToken = '') => {
+  const handleGatewayRegistration = async (newUser: User, payment: Payment | undefined, familyUsers: User[] = [], phoneVerificationToken = '') => {
     const { user } = await registerServerUser(newUser, payment, familyUsers, phoneVerificationToken);
     await loadAuthenticatedState(user);
     if (newUser.healthDeclarationRequiresMedicalCertificate) {

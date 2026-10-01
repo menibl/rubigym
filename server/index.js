@@ -5,6 +5,7 @@ import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
+import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
 import {
@@ -648,6 +649,7 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
         membershipType: type,
         membershipStatus: 'ACTIVE',
         familyPaymentPending: false,
+        registrationPaymentPending: false,
         ...membershipTermFor(type, order),
         familyBillingMode: 'CUSTOM_COMBINED',
         familyCombinedAmount: amount,
@@ -666,6 +668,12 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
         ...candidate,
         membershipType: order.m,
         membershipStatus: 'ACTIVE',
+        registrationPaymentPending: false,
+        familyPaymentPending: false,
+        personalTrainingRemaining: order.m === 'PERSONAL_TRAINING' ? Number(order.v?.split('_')[1] || order.sc || 1) : candidate.personalTrainingRemaining,
+        duoTrainingRemaining: order.m === 'DUO_TRAINING' ? Number(order.v?.split('_')[1] || order.sc || 1) : candidate.duoTrainingRemaining,
+        nutritionPlanPaid: nutritionTypes.includes(order.m) ? true : candidate.nutritionPlanPaid,
+        requestedWorkoutPlan: workoutTypes.includes(order.m) ? true : candidate.requestedWorkoutPlan,
         ...membershipTermFor(termType, order),
         isMembershipFrozen: false,
         membershipFreezeStartedAt: undefined,
@@ -1040,7 +1048,10 @@ const handleApi = async (request, env, url) => {
       const session = await getAuthenticatedSession(request, env.STATE_STORE);
       if (!session) return null;
       const account = await env.STATE_STORE.getAccount(session.club_id, session.user_id);
-      if (!account || (!allowIncomplete && account.profile?.registrationIncomplete)) return null;
+      if (!account) return null;
+      const current = await env.STATE_STORE.getClubState?.(session.club_id);
+      const profile = current?.payload?.users?.find(user => user.id === account.user_id) || account.profile;
+      if (!allowIncomplete && profile?.registrationIncomplete) return null;
       return { session, account };
     };
 
@@ -1066,6 +1077,12 @@ const handleApi = async (request, env, url) => {
         }
         const recovered = recoverUsersFromAccounts(state.payload, accounts);
         const repairedFamily = repairPaidFamilyOwners(recovered.payload);
+        repairedFamily.payload = { ...repairedFamily.payload, users: (repairedFamily.payload.users || []).map(user => {
+          if (!completedLegacyRegistration(user)) return user;
+          if ((repairedFamily.payload.payments || []).some(payment => payment.traineeId === user.id && payment.status === 'PAID')) return user;
+          repairedFamily.changed = true;
+          return unpaidRegistration(user);
+        }) };
         if (!recovered.recoveredUsers.length && !repairedFamily.changed) return state;
         const nextPayload = appendUserChangeMessages(state.payload, repairedFamily.payload);
         const result = await env.STATE_STORE.putClubState(targetClubId, nextPayload, state.revision);
@@ -1327,7 +1344,7 @@ const handleApi = async (request, env, url) => {
           return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
         }
       }
-      const safeUser = stripCredentials({ ...user, registrationIncomplete: false, registrationCompletedAt: new Date().toISOString() });
+      let safeUser = stripCredentials({ ...user, registrationIncomplete: false, registrationCompletedAt: new Date().toISOString() });
       let registrationPayment = body.payment;
       if (env.RIVHIT_GROUP_PRIVATE_TOKEN && registrationPayment) {
         if (!registrationPayment.paymentReference) return json({ message: 'נדרש אישור עסקה מאומת. יש לרענן את הדף ולהשלים את אימות התשלום.' }, 400, headers);
@@ -1339,7 +1356,8 @@ const handleApi = async (request, env, url) => {
           provider: 'RIVHIT', providerSaleId: verified.payment.saleId, providerTransactionId: verified.payment.transactionId,
           purchaseMode: 'REGISTRATION', isMock: rivhitEnvironment(env) !== 'production' };
       }
-      const safeFamilyUsers = familyUsers.map(stripCredentials);
+      if (!registrationPayment) safeUser = unpaidRegistration(safeUser);
+      const safeFamilyUsers = familyUsers.map(candidate => registrationPayment ? stripCredentials(candidate) : unpaidRegistration(stripCredentials(candidate)));
       const nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
         users: [safeUser, ...safeFamilyUsers, ...(state.payload.users || []).filter(candidate => !registrations.some(registration => registration.id === candidate.id))],
@@ -1348,7 +1366,7 @@ const handleApi = async (request, env, url) => {
       const saved = await env.STATE_STORE.putClubState(clubId, nextPayload, state.revision);
       if (saved.conflict) return json(saved, 409, headers);
       for (const candidate of registrations) {
-        const completedCandidate = candidate.id === user.id ? safeUser : stripCredentials(candidate);
+        const completedCandidate = candidate.id === user.id ? safeUser : safeFamilyUsers.find(member => member.id === candidate.id);
         await env.STATE_STORE.upsertAccount(await accountFromUser(clubId, completedCandidate, candidate.password));
       }
       await notifyStateChange(state.payload, nextPayload);

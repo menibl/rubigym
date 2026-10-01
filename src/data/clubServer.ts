@@ -156,7 +156,7 @@ export const verifyRegistrationPhone = async (phone: string, otp: string): Promi
   });
 };
 
-export const registerServerUser = async (user: User, payment: Payment, familyUsers: User[] = [], phoneVerificationToken = '') => {
+export const registerServerUser = async (user: User, payment: Payment | undefined, familyUsers: User[] = [], phoneVerificationToken = '') => {
   if (isPagesDemoMode()) {
     const state = readDemoState();
     const users = (state.payload.users as User[]) || [];
@@ -176,7 +176,7 @@ export const registerServerUser = async (user: User, payment: Payment, familyUse
     const { password: _password, ...safeUser } = user;
     const safeFamilyUsers = familyUsers.map(({ password: _familyPassword, ...candidate }) => candidate as User);
     const next = writeDemoState({
-      payload: { ...state.payload, users: [safeUser, ...safeFamilyUsers, ...users.filter(candidate => !registrations.some(registration => registration.id === candidate.id))], payments: [payment, ...((state.payload.payments as Payment[]) || [])] },
+      payload: { ...state.payload, users: [safeUser, ...safeFamilyUsers, ...users.filter(candidate => !registrations.some(registration => registration.id === candidate.id))], payments: [...(payment ? [payment] : []), ...((state.payload.payments as Payment[]) || [])] },
       revision: state.revision + 1
     });
     localStorage.setItem(DEMO_SESSION_KEY, safeUser.id);
