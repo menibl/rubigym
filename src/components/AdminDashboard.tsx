@@ -42,7 +42,7 @@ import {
   AttendanceLog
 } from '../types';
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
-import { createMembershipTerm } from '../data/membershipPolicy';
+import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
 import { cancelRivhitRecurring, refundRivhitPayment, updateRivhitRecurringAmount } from '../data/rivhitPayments';
 import { LandingImageManager } from './LandingImageManager';
@@ -1506,6 +1506,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="p-3 text-left">
                           <div className="flex flex-col gap-1 items-end">
                             <DeleteUserControl user={u} users={users} manager={activeUser} />
+                            {u.membershipFreezeRequestedAt && <div className="w-full rounded-lg border p-2 text-sm">
+                              <p>בקשת הקפאה לחודש — {new Date(u.membershipFreezeRequestedAt).toLocaleDateString('he-IL')}</p>
+                              <button disabled={!canUseAnnualFreeze(u)} className="rounded border px-2 py-1" onClick={() => {
+                                if (!canUseAnnualFreeze(u) || !confirm('לאשר חודש הקפאה רצוף החל מהיום? ללא החזר כספי או הארכת תוקף אוטומטיים.')) return;
+                                const now = new Date();
+                                onUpdateUsers(users.map(member => member.id === u.id ? { ...member, membershipFreezeRequestedAt: undefined, membershipFreezeDecisionAt: now.toISOString(), isMembershipFrozen: true, membershipFreezeStartedAt: toLocalIsoDate(now), membershipFreezeUsedAt: toLocalIsoDate(now), membershipFrozenUntil: toLocalIsoDate(addCalendarMonths(now, 1)) } : member));
+                              }}>אישור הקפאה לחודש</button>
+                              <button className="rounded border px-2 py-1" onClick={() => {
+                                if (confirm('לדחות את בקשת ההקפאה?')) onUpdateUsers(users.map(member => member.id === u.id ? { ...member, membershipFreezeRequestedAt: undefined, membershipFreezeDecisionAt: new Date().toISOString() } : member));
+                              }}>דחיית בקשה</button>
+                              {!canUseAnnualFreeze(u) && <p>הקפאת השנה נוצלה או שהמנוי כבר מוקפא.</p>}
+                            </div>}
                             {u.membershipStatus === MembershipStatus.DEBT && (
                               <button
                                 onClick={() => handlePayDebt(u)}

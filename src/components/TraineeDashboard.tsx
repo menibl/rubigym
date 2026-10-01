@@ -222,6 +222,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         const plan = purchasedFamilyPlans?.find(item => item.memberId === user.id)
           || (user.id === activeUser.id ? purchasedFamilyPlans?.[0] : undefined);
         if (plan) {
+          if (plan.participation && plan.participation !== 'INCLUDED') return user;
           const isPayer = user.id === activeUser.id;
           const term = createMembershipTerm(plan.membershipType);
           const familyId = activeUser.familyId || `fam-${activeUser.id}`;
@@ -660,6 +661,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   // FREEZE MEMBERSHIP (one continuous calendar month per rolling membership year)
+  const requestFamilyFreeze = (memberId: string) => {
+    const member = memberId === activeUser.id ? activeUser : familyUsers.find(user => user.id === memberId);
+    if (!member || member.membershipFreezeRequestedAt) return;
+    if (!canUseAnnualFreeze(member)) return showFeedback('המנוי מוקפא או שהקפאת השנה כבר נוצלה.', 'error');
+    if (!confirm(`לשלוח למנהל בקשת הקפאה לחודש עבור ${member.name}? ההקפאה תתחיל רק לאחר אישור המנהל. לא יבוצע החזר אוטומטי.`)) return;
+    onUpdateUsers(users.map(user => user.id === memberId ? { ...user, membershipFreezeRequestedAt: new Date().toISOString() } : user));
+    showFeedback('בקשת ההקפאה נשלחה למנהל. עד לאישור המנוי אינו מוקפא.');
+  };
   const handleFreezeMembership = () => {
     if (!freezeAvailable) {
       showFeedback(freezeActive
@@ -667,23 +676,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         : 'הקפאת החודש כבר נוצלה במהלך 12 החודשים האחרונים.', 'error');
       return;
     }
-    if (confirm('האם להפעיל הקפאה לחודש אחד רצוף? ❄️\nההקפאה מתחילה מיד, אינה ניתנת לפיצול או לביטול מוקדם, וניתנת למימוש פעם אחת בלבד בכל 12 חודשים.')) {
-      const startedAt = new Date();
-      const frozenUntilStr = toLocalIsoDate(addCalendarMonths(startedAt, 1));
-      const startedAtStr = toLocalIsoDate(startedAt);
-
-      if (onUpdateUsers) {
-        const updatedUsers = users.map(u => u.id === activeUser.id ? { 
-          ...u, 
-          isMembershipFrozen: true,
-          membershipFreezeStartedAt: startedAtStr,
-          membershipFreezeUsedAt: startedAtStr,
-          membershipFrozenUntil: frozenUntilStr 
-        } : u);
-        onUpdateUsers(updatedUsers);
-      }
-      showFeedback(`המנוי שלך הוקפא בהצלחה עד לתאריך ${frozenUntilStr}! ❄️`);
-    }
+    requestFamilyFreeze(activeUser.id);
   };
 
   // CANCEL ANNUAL MEMBERSHIP (one full calendar month notice)
@@ -745,6 +738,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   const handleFamilyCheckout = async () => {
     const selected = resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id);
+    if (!selected.some(plan => !plan.participation || plan.participation === 'INCLUDED')) return showFeedback('יש לבחור לפחות בן משפחה אחד לתשלום. אין צורך לשלם עבור מי שטרם מתחיל.', 'error');
+    if (selected.some(plan => (!plan.participation || plan.participation === 'INCLUDED') && familyUsers.some(member => member.id === plan.memberId && isMembershipFreezeActive(member)))) return showFeedback('מנוי מוקפא אינו נכלל בתשלום. בחרו עבורו ללא חיוב.', 'error');
     if (selected[0]?.memberId !== activeUser.id || selected.some(plan => !familyUsers.some(member => member.id === plan.memberId)) || new Set(selected.map(plan => plan.memberId)).size !== selected.length) {
       return showFeedback('יש לבחור בן משפחה משויך ושונה לכל מסלול. יש להוסיף בני משפחה חסרים דרך ניהול המשפחה.', 'error');
     }
@@ -2452,7 +2447,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
                   </div>
                   <label className="block text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} />
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} />
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id), membershipPlanConfigs)).toLocaleString('he-IL')}</strong></div>
@@ -2516,8 +2511,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <strong className="block text-sm text-slate-900">הוספת בן משפחה</strong>
                     <span className="text-[11px] text-slate-500 mt-1 block">פתיחת הגדרות המשפחה, הוספת משתמש ובחירת מסלול עבורו.</span>
                   </button>
-                  <button disabled={!freezeAvailable} className={`rounded-2xl border p-4 text-right ${freezeActive ? 'border-sky-200 bg-sky-50' : freezeAvailable ? 'border-slate-200 bg-white' : 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-70'}`} onClick={handleFreezeMembership}>
-                    <strong className="block text-sm text-slate-900">{freezeActive ? 'המנוי מוקפא' : freezeAvailable ? 'הקפאת מנוי' : 'הקפאת השנה נוצלה'}</strong>
+                  <button disabled={!freezeAvailable || Boolean(activeUser.membershipFreezeRequestedAt)} className={`rounded-2xl border p-4 text-right ${freezeActive ? 'border-sky-200 bg-sky-50' : freezeAvailable ? 'border-slate-200 bg-white' : 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-70'}`} onClick={handleFreezeMembership}>
+                    <strong className="block text-sm text-slate-900">{activeUser.membershipFreezeRequestedAt ? 'בקשת הקפאה ממתינה לאישור מנהל' : freezeActive ? 'המנוי מוקפא' : freezeAvailable ? 'בקשת הקפאת מנוי' : 'הקפאת השנה נוצלה'}</strong>
                     <span className="text-[11px] text-slate-600 mt-1 block">{freezeActive ? `הקפאה רצופה עד ${activeUser.membershipFrozenUntil}; לא ניתן לבטל מוקדם.` : freezeAvailable ? 'חודש אחד רצוף, פעם אחת בכל 12 חודשים.' : 'ניתן להקפיא שוב לאחר שיחלפו 12 חודשים ממועד ההקפאה הקודמת.'}</span>
                   </button>
                   {activeUser.membershipType === MembershipType.GROUP_ANNUAL && (
@@ -2575,7 +2570,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               <button onClick={() => setActiveTab('workout')}><Dumbbell size={18} /> תוכנית האימונים שלי</button>
               <button onClick={() => setActiveTab('membership')}><WalletCards size={18} /> ניהול מסלול ותשלומים</button>
               <button onClick={() => setActiveTab('card')}><QrCode size={18} /> כרטיס דיגיטלי וצ'ק־אין</button>
-              <button disabled={!freezeAvailable} onClick={handleFreezeMembership}>❄️ {freezeActive ? `מוקפא עד ${activeUser.membershipFrozenUntil}` : freezeAvailable ? 'הקפאת מנוי לחודש' : 'הקפאת השנה נוצלה'}</button>
+              <button disabled={!freezeAvailable || Boolean(activeUser.membershipFreezeRequestedAt)} onClick={handleFreezeMembership}>❄️ {activeUser.membershipFreezeRequestedAt ? 'בקשת הקפאה ממתינה לאישור מנהל' : freezeActive ? `מוקפא עד ${activeUser.membershipFrozenUntil}` : freezeAvailable ? 'בקשת הקפאה לחודש' : 'הקפאת השנה נוצלה'}</button>
               {activeUser.membershipType === MembershipType.GROUP_ANNUAL && (
                 <button className="danger" onClick={handleCancelAnnualMembership}>ביטול מנוי שנתי</button>
               )}
