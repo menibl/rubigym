@@ -8,6 +8,7 @@ import {
   MembershipType,
   MEMBERSHIP_PRICES
 } from '../types';
+import { familyPlanAmount } from '../../shared/family-pricing.js';
 
 export const FAMILY_MONTHLY_PRICE_PER_MEMBER = 550;
 
@@ -32,7 +33,7 @@ export const familyMemberPlanPrice = (plan: FamilyMemberPlanSelection, planConfi
   if (plan.membershipType === MembershipType.PERSONAL_TRAINING || plan.membershipType === MembershipType.DUO_TRAINING) {
     return unitPrice * Math.max(1, Math.min(50, Math.round(plan.trainingSessionsCount || 1)));
   }
-  return unitPrice;
+  return familyPlanAmount(plan.membershipType, unitPrice);
 };
 
 export const familyPurchaseAmount = (

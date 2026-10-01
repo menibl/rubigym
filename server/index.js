@@ -3,6 +3,7 @@ import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validateP
 import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
+import { familyPlanAmount } from '../shared/family-pricing.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
 import {
@@ -302,7 +303,7 @@ const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
     } else if (mode === 'CUSTOM_COMBINED') {
       familyMemberPlans = normalizeFamilyPlans(body.familyMemberPlans, catalog);
       if (familyMemberPlans.length !== count) throw new Error('INVALID_FAMILY_MEMBER_COUNT');
-      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1), 0);
+      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + familyPlanAmount(plan.membershipType, planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1)), 0);
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
     return { amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: mode !== 'CUSTOM_COMBINED', recurringMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 0 };
