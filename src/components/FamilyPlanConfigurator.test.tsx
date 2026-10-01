@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { MembershipType, MembershipPlanConfig } from '../types';
-import { familyPlanCatalog } from '../data/familyMembership';
+import { familyPlanCatalog, familyPurchaseAmount } from '../data/familyMembership';
 
 test('family options use club labels, prices, periods and active custom plans', () => {
   const catalog: MembershipPlanConfig[] = [
@@ -18,6 +18,16 @@ test('family options use club labels, prices, periods and active custom plans', 
   assert.match(html, /720/);
   assert.match(html, /שלושה חודשים/);
   assert.doesNotMatch(html, /מסלול מושבת/);
+});
+
+test('partial purchase shows zero for excluded retired plan and a consistent total', () => {
+  const plans = [{ memberId: 'p', memberName: 'Parent', membershipType: MembershipType.GROUP_ANNUAL, participation: 'SKIP' as const }, { memberId: 'c', memberName: 'Child', membershipType: MembershipType.OPEN_GYM }];
+  assert.equal(familyPurchaseAmount('CUSTOM_COMBINED', 2, plans), 280);
+  const html = renderToStaticMarkup(<FamilyPlanConfigurator mode="CUSTOM_COMBINED" onModeChange={() => {}} count={2} onCountChange={() => {}} payerName="Parent" payerId="p" plans={plans} onPlansChange={() => {}} familyMembers={[{ id: 'p', name: 'Parent' }, { id: 'c', name: 'Child' }]} />);
+  assert.match(html, /₪0/);
+  assert.match(html, /₪280/);
+  assert.doesNotMatch(html, /המסלול אינו זמין/);
+  assert.match(html, /טרם מתחיל/);
 });
 
 test('family checkout offers only custom pricing and linked member selectors', () => {

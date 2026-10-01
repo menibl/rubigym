@@ -9,7 +9,7 @@ export function familyCreditQuote(payload, userId, packageAmount, production = t
   // rather than separate provider fields. Preserve those existing paid records.
   const legacyReceipt = payment && /^payment-rivhit-.+/.test(payment.id || '') && /^RIVHIT iCredit/.test(payment.paymentMethod || '');
   const providerReceipt = payment?.provider === 'RIVHIT' && (payment.providerSaleId || payment.providerTransactionId);
-  if (!payment || payment.status !== 'PAID' || payment.refundedAt || (production && payment.isMock)
+  if (!payment || payment.familyPartialPurchase || payment.status !== 'PAID' || payment.refundedAt || (production && payment.isMock)
     || (!providerReceipt && !legacyReceipt)) return base;
   const paidAt = Date.parse(payment.timestamp || payment.date || '');
   const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit' });
@@ -27,6 +27,10 @@ export function validateFamilySelection(payload, payerId, plans) {
   return plans.map(plan => {
     const member = payload.users.find(user => user.id === plan.memberId);
     if (!member || (member.id !== payerId && (!payer.familyId || member.familyId !== payer.familyId || member.familyPayerId !== payerId))) throw new Error('INVALID_FAMILY_SELECTION');
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const frozen = member.isMembershipFrozen && (!member.membershipFrozenUntil || member.membershipFrozenUntil >= today);
+    if (plan.participation === 'FROZEN' && !frozen) throw new Error('INVALID_FAMILY_SELECTION');
+    if ((!plan.participation || plan.participation === 'INCLUDED') && frozen) throw new Error('INVALID_FAMILY_SELECTION');
     return { ...plan, memberName: member.name };
   });
 }
