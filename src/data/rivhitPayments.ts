@@ -91,6 +91,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
       mode: request.mode,
       purchaseVariant: request.purchaseVariant,
       familyMembersCount: request.familyMembersCount,
+      familyName: request.familyName,
       familyBillingMode: request.familyBillingMode,
       familyMemberPlans: request.familyMemberPlans,
       discountCode: request.discountCode,
