@@ -230,6 +230,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             membershipType: plan.membershipType,
             membershipStatus: MembershipStatus.ACTIVE,
             familyPaymentPending: false,
+            registrationPaymentPending: false,
             ...term,
             familyId,
             familyName: familyName || activeUser.familyName || `משפחת ${activeUser.name.split(' ')[0]}`,
@@ -265,6 +266,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           ...user,
           membershipType: purchasedType,
           membershipStatus: MembershipStatus.ACTIVE,
+          registrationPaymentPending: false,
+          familyPaymentPending: false,
           ...membershipTerm,
           isMembershipFrozen: false,
           membershipFreezeStartedAt: undefined,
@@ -707,7 +710,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   const openMembershipCheckout = (membershipType: MembershipType, mode: 'PRIMARY' | 'ADDON') => {
     setSelectedMembershipPurchase(membershipType);
-    setMembershipPurchaseMode(mode);
+    setMembershipPurchaseMode(activeUser.registrationPaymentPending ? 'PRIMARY' : mode);
   };
 
   const handleMembershipCheckout = async (event: React.FormEvent) => {
@@ -2376,6 +2379,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {/* MEMBERSHIP MANAGEMENT & RIVHIT CHECKOUT */}
         {activeTab === 'membership' && (
           <div className="space-y-6">
+            {activeUser.registrationPaymentPending && <p role="alert" className="rounded-xl border border-amber-400/40 bg-zinc-900 p-4 text-amber-200">החשבון שלך נרשם בהצלחה, אך התשלום עדיין לא הושלם. יש לבחור מסלול ולהשלים תשלום כדי להירשם לאימונים.</p>}
             <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
               <button className="text-xs text-amber-300 mb-4" onClick={() => { setSelectedMembershipPurchase(null); setActiveTab('profile'); }}>
                 חזרה לפרופיל
