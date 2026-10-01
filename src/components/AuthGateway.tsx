@@ -117,7 +117,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [isFamilyPlan, setIsFamilyPlan] = useState(false);
   const [familyName, setFamilyName] = useState('');
   const [familyMembersCount, setFamilyMembersCount] = useState(2);
-  const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>('ANNUAL_BY_SIZE');
+  const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>('CUSTOM_COMBINED');
   const [familyMemberPlans, setFamilyMemberPlans] = useState<FamilyMemberPlanSelection[]>([]);
   const [familyAccountDrafts, setFamilyAccountDrafts] = useState<FamilyAccountDraft[]>([]);
   const [discountInput, setDiscountInput] = useState('');
@@ -220,6 +220,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         const draft = pending.registrationDraft as { user?: User; familyUsers?: User[]; phoneVerificationToken?: string } | undefined;
         if (!draft?.user || draft.user.id !== pending.userId) throw new Error('פרטי ההרשמה לא נמצאו במכשיר זה. יש לפנות למועדון עם אישור העסקה.');
         const payment: Payment = {
+          paymentReference: pending.paymentReference,
           id: `payment-rivhit-${transactionKey}`,
           traineeId: draft.user.id,
           traineeName: draft.user.name,
@@ -411,7 +412,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
 
     const age = calculateAge(registerBirthDate);
     const isTrainingCard = selectedPlanUsesTrainingCard;
-    const normalizedFamilyPlans = resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי');
+    const normalizedFamilyPlans = resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי').map((plan, index) => ({ ...plan, memberName: index === 0 ? registerName.trim() : familyAccountAt(index - 1).name.trim() }));
     const selectedFamilyPayerPlan = familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans[0]?.membershipType : MembershipType.FAMILY_MEMBERSHIP;
     const membershipTerm = createMembershipTerm(
       isFamilyPlan && familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan,
@@ -714,7 +715,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 )}
                 {isFamilyPlan && <div className="space-y-3">
                   <label className="block text-xs font-bold">שם המשפחה<input value={familyName} onChange={event => setFamilyName(event.target.value)} placeholder={`משפחת ${registerName.trim().split(' ')[0] || 'ישראל'}`} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyMembersCount} onCountChange={setFamilyMembersCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={registerName.trim() || 'המשלם הראשי'} membershipPlans={registrationPlans} />
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyMembersCount} onCountChange={setFamilyMembersCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={registerName.trim() || 'המשלם הראשי'} membershipPlans={registrationPlans} registrationMemberNames={[registerName.trim(), ...Array.from({ length: familyMembersCount - 1 }, (_, index) => familyAccountAt(index).name)]} />
                   <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-zinc-950/70 p-4">
                     <div><strong className="text-sm text-amber-300">חשבונות כניסה לבני המשפחה</strong><small className="mt-1 block text-zinc-300">לאחר התשלום ייווצר לכל אחד חשבון מתאמן נפרד. בכניסה הראשונה יהיה עליו לחתום על הצהרת בריאות.</small></div>
                     {Array.from({ length: familyMembersCount - 1 }, (_, index) => {

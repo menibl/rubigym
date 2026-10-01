@@ -42,6 +42,7 @@ export interface VerifiedRivhitPayment {
   userId?: string;
   membershipType: MembershipType;
   amount: number;
+  packageAmount?: number;
   billingPeriod?: import('../types').MembershipPlanConfig['billingPeriod'];
   termMonths?: number;
   recurringMonths?: number;
@@ -78,12 +79,24 @@ export const validateRivhitDiscountCode = async (code: string): Promise<Discount
 export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות התשלום עדיין לא הוגדר בשרת.');
+  let quoteKey: string | undefined;
+  if (request.membershipType === 'FAMILY_MEMBERSHIP' && request.mode === 'PRIMARY') {
+    const quoteResponse = await fetch(`${apiBase}/api/payments/rivhit/create`, {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...request, registrationDraft: undefined, quoteOnly: true })
+    });
+    const quote = await quoteResponse.json().catch(() => ({}));
+    if (!quoteResponse.ok || !quote.quoteKey) throw new Error(quote.message || 'לא ניתן לחשב את הקיזוז.');
+    if (!window.confirm(`מחיר המסלולים: ₪${quote.packageAmount}\nקיזוז תשלום קודם: ₪${quote.creditAmount}\nלתשלום חד־פעמי עכשיו: ₪${quote.amountDue}\nבחידוש הבא נדרש תשלום ידני. להמשיך?`)) throw new Error('המעבר לתשלום בוטל. לא בוצע חיוב.');
+    quoteKey = quote.quoteKey;
+  }
   const response = await fetch(`${apiBase}/api/payments/rivhit/create`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       userId: request.userId,
+      quoteKey,
       userName: request.userName,
       email: request.email,
       phone: request.phone,
@@ -100,6 +113,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
     })
   });
   const result = await response.json().catch(() => ({}));
+  if (response.ok && result.completed) { window.location.reload(); return; }
   if (!response.ok || !result.url || !result.paymentReference) {
     throw new Error(result.message || 'לא ניתן לפתוח את דף התשלום של RIVHIT.');
   }
@@ -114,7 +128,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
     familyMembersCount: request.familyMembersCount,
     familyName: request.familyName,
     familyBillingMode: request.familyBillingMode,
-    familyMemberPlans: request.familyMemberPlans,
+    familyMemberPlans: result.familyMemberPlans || request.familyMemberPlans,
     discountCode: request.discountCode
   };
   sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
