@@ -19,7 +19,8 @@ import {
   UserPlus,
   UserRound
 } from 'lucide-react';
-import { Announcement, Gender, MEMBERSHIP_TYPE_LABELS, MembershipType, Message, Payment, TrainingSession, User, UserRole } from '../types';
+import { Announcement, Gender, MEMBERSHIP_TYPE_LABELS, MembershipType, Message, OpenGymSession, Payment, TrainingSession, User, UserRole } from '../types';
+import { nextBookedSession } from '../data/nextBookedSession';
 
 export type WorkspaceView =
   | 'CLUB_MANAGEMENT'
@@ -40,6 +41,7 @@ interface RoleWorkspaceLandingProps {
   onOpenProfile: () => void;
   users?: User[];
   sessions?: TrainingSession[];
+  openGymSessions: OpenGymSession[];
   announcements?: Announcement[];
   messages?: Message[];
   payments?: Payment[];
@@ -63,6 +65,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   onOpenProfile,
   users = [],
   sessions = [],
+  openGymSessions,
   announcements = [],
   messages = [],
   payments = [],
@@ -85,6 +88,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   };
 
   const nextSession = useMemo(() => {
+    if (isTrainee) return nextBookedSession(activeUser.id, sessions, openGymSessions);
     const now = Date.now();
     return sessions
       .filter(session => {
@@ -95,7 +99,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
           : session.coachId === activeUser.id;
       })
       .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`))[0];
-  }, [activeUser.id, isTrainee, sessions]);
+  }, [activeUser.id, isTrainee, sessions, openGymSessions]);
 
   const actions: HomeAction[] = isTrainee
     ? [

@@ -809,6 +809,7 @@ export default function App() {
             <RoleWorkspaceLanding
               activeUser={activeUser}
               onSelect={navigateToWorkspace}
+              openGymSessions={openGymSessions}
               onOpenProfile={() => {
                 setUserToEdit(activeUser);
                 setSettingsInitialSection('profile');

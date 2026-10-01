@@ -2,6 +2,7 @@ import { handleWorkoutAi, resolveOpenAiApiKey } from './workout-ai.js';
 import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validatePushSubscription } from './push.js';
 import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
+import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
 import {
@@ -415,6 +416,7 @@ const createSignedOrder = async (body, env, purchase) => {
     d: body.mode,
     v: body.purchaseVariant || undefined,
     f: body.familyMembersCount || undefined,
+    fn: body.familyName ? String(body.familyName).trim().slice(0, 100) : undefined,
     fm: purchase.familyBillingMode || undefined,
     fp: purchase.familyMemberPlans || undefined,
     c: body.discountCode ? String(body.discountCode).toUpperCase() : undefined,
@@ -652,6 +654,7 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
         familyBillingMode: 'CUSTOM_COMBINED',
         familyCombinedAmount: amount,
         familyTrackName: 'משפחתי מותאם – תשלום מאוחד',
+        ...(candidate.id === userId ? familyPurchaseIdentity(candidate, order) : {}),
         personalTrainingRemaining: type === 'PERSONAL_TRAINING' ? customPlan.trainingSessionsCount : candidate.personalTrainingRemaining,
         duoTrainingRemaining: type === 'DUO_TRAINING' ? customPlan.trainingSessionsCount : candidate.duoTrainingRemaining,
         nutritionPlanPaid: nutritionTypes.includes(type) ? true : candidate.nutritionPlanPaid,
@@ -675,6 +678,7 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
         cancellationEffectiveDate: undefined,
         offlinePaymentApproved: false,
         familyMembersCount: order.f || candidate.familyMembersCount,
+        ...familyPurchaseIdentity(candidate, order),
         familyBillingMode: order.fm || candidate.familyBillingMode,
         familyMemberPlans: order.fp || candidate.familyMemberPlans,
         familyCombinedAmount: order.m === 'FAMILY_MEMBERSHIP' ? amount : candidate.familyCombinedAmount,
@@ -733,6 +737,8 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         timestamp: new Date().toISOString(),
         status: 'PAID',
         membershipTypePurchased: order.m,
+        familyMembersCount: order.f,
+        familyBillingMode: order.fm,
         billingPeriod: order.bp,
         billingTermMonths: order.tm,
         sessionsPurchased: order.sc,
@@ -999,10 +1005,10 @@ const handleApi = async (request, env, url) => {
 
     const loadClubState = async targetClubId => {
       let state = await env.STATE_STORE.getClubState(targetClubId);
-      if (!state || !env.STATE_STORE.listAccounts) return state;
+      if (!state) return state;
 
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        const accounts = await env.STATE_STORE.listAccounts(targetClubId);
+        const accounts = env.STATE_STORE.listAccounts ? await env.STATE_STORE.listAccounts(targetClubId) : [];
         if (env.STATE_STORE.updateAccountIdentity) {
           const usersById = new Map((state.payload?.users || []).map(user => [user.id, user]));
           await Promise.all(accounts
@@ -1010,8 +1016,9 @@ const handleApi = async (request, env, url) => {
             .map(account => env.STATE_STORE.updateAccountIdentity(targetClubId, stripCredentials(usersById.get(account.user_id)))));
         }
         const recovered = recoverUsersFromAccounts(state.payload, accounts);
-        if (!recovered.recoveredUsers.length) return state;
-        const nextPayload = appendUserChangeMessages(state.payload, recovered.payload);
+        const repairedFamily = repairPaidFamilyOwners(recovered.payload);
+        if (!recovered.recoveredUsers.length && !repairedFamily.changed) return state;
+        const nextPayload = appendUserChangeMessages(state.payload, repairedFamily.payload);
         const result = await env.STATE_STORE.putClubState(targetClubId, nextPayload, state.revision);
         if (!result.conflict) {
           console.warn('Recovered trainee profiles from durable login accounts', { count: recovered.recoveredUsers.length });
