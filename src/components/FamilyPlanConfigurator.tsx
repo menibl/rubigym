@@ -5,6 +5,7 @@ import {
   FamilyMemberPlanSelection,
   MembershipPlanConfig,
   MembershipType,
+  User,
 } from '../types';
 import {
   familyPlanCatalog,
@@ -12,6 +13,7 @@ import {
   resizeFamilyPlans
 } from '../data/familyMembership';
 import { billingPeriodLabel } from '../data/membershipBilling';
+import { isMembershipFreezeActive } from '../data/membershipPolicy';
 
 interface FamilyPlanConfiguratorProps {
   mode: FamilyBillingMode;
@@ -23,11 +25,12 @@ interface FamilyPlanConfiguratorProps {
   payerName: string;
   payerId?: string;
   membershipPlans?: MembershipPlanConfig[];
-  familyMembers?: Array<{ id: string; name: string }>;
+  familyMembers?: Array<Pick<User, 'id' | 'name' | 'isMembershipFrozen' | 'membershipFrozenUntil' | 'membershipFreezeRequestedAt'>>;
+  onRequestFreeze?: (memberId: string) => void;
   registrationMemberNames?: string[];
 }
 
-export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ count, onCountChange, plans, onPlansChange, payerName, payerId, membershipPlans = [], familyMembers = [], registrationMemberNames }) => {
+export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ count, onCountChange, plans, onPlansChange, payerName, payerId, membershipPlans = [], familyMembers = [], registrationMemberNames, onRequestFreeze }) => {
   const normalizedPlans = resizeFamilyPlans(plans, count, payerName, payerId);
   const catalog = familyPlanCatalog(membershipPlans);
   const changeCount = (nextCount: number) => {
@@ -53,6 +56,9 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
     {!registrationMemberNames && familyMembers.length < count && <p role="alert" className="text-sm text-slate-800">אין מספיק בני משפחה משויכים. יש להוסיף בן משפחה דרך ניהול המשפחה לפני בחירת מסלול עבורו.</p>}
     <div className="space-y-3">
       {normalizedPlans.map((plan, index) => {
+        const member = familyMembers.find(item => item.id === plan.memberId);
+        const frozen = member && isMembershipFreezeActive(member as User);
+        const included = !plan.participation || plan.participation === 'INCLUDED';
         const isTrainingCard = plan.membershipType === MembershipType.PERSONAL_TRAINING || plan.membershipType === MembershipType.DUO_TRAINING;
         return <article key={`${plan.memberId || index}-${index}`} className="grid gap-2 rounded-xl border border-indigo-100 bg-white p-3 sm:grid-cols-[1fr_1.4fr_.7fr]">
           <label className="text-[11px] font-bold text-slate-600">{index === 0 ? 'המשלם הראשי' : `בן/בת משפחה ${index + 1}`}
@@ -65,19 +71,33 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
                 {familyMembers.map(member => <option key={member.id} value={member.id} disabled={index !== 0 && (member.id === payerId || normalizedPlans.some((other, otherIndex) => otherIndex !== index && other.memberId === member.id))}>{member.name}</option>)}
               </select>}
           </label>
-          <label className="text-[11px] font-bold text-slate-600">מסלול<select value={plan.membershipType} onChange={event => {
+          {!registrationMemberNames && <div className="sm:col-span-3">
+            <label className="block text-sm font-bold">השתתפות ברכישה — {plan.memberName}
+              <select className="mt-1 w-full rounded-lg border p-3" value={plan.participation || 'INCLUDED'} onChange={event => updatePlan(index, { participation: event.target.value as FamilyMemberPlanSelection['participation'] })}>
+                <option value="INCLUDED" disabled={Boolean(frozen)}>כלול בתשלום — בחירת מסלול</option>
+                <option value="NOT_STARTED">טרם מתחיל להתאמן — ללא חיוב ברכישה זו</option>
+                <option value="SKIP">לא לחדש כעת / כבר שולם — ללא חיוב ברכישה זו</option>
+                {frozen && <option value="FROZEN">מנוי מוקפא — ללא חיוב ברכישה זו</option>}
+              </select>
+            </label>
+            {frozen && <p className="mt-2 text-sm">המנוי מוקפא עד {member?.membershipFrozenUntil}. יש לבחור ללא חיוב.</p>}
+            {!included && <p className="mt-2 text-sm">לא יחויב ולא יופעל מסלול חדש. זכויות ששולמו והתחייבויות קיימות נשארות ללא שינוי; ללא מנוי תקף לא ניתן להירשם לאימון.</p>}
+            {onRequestFreeze && member && !frozen && <button type="button" disabled={Boolean(member.membershipFreezeRequestedAt)} className="mt-2 rounded-lg border px-3 py-2 text-sm" onClick={() => onRequestFreeze(member.id)}>{member.membershipFreezeRequestedAt ? 'בקשת הקפאה ממתינה לאישור מנהל' : 'בקשת הקפאה לחודש מהמנהל'}</button>}
+          </div>}
+          {included && <label className="text-[11px] font-bold text-slate-600">מסלול<select value={plan.membershipType} onChange={event => {
             const membershipType = event.target.value as MembershipType;
             const usesCard = membershipType === MembershipType.PERSONAL_TRAINING || membershipType === MembershipType.DUO_TRAINING;
             updatePlan(index, { membershipType, trainingSessionsCount: usesCard ? 10 : undefined });
           }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
             {!catalog.some(config => config.id === plan.membershipType) && <option value={plan.membershipType} disabled>המסלול אינו זמין — יש לבחור מסלול פעיל</option>}
             {catalog.map(config => <option key={config.id} value={config.id}>{config.label} — ₪{config.price} · {billingPeriodLabel(config)}</option>)}
-          </select></label>
-          {isTrainingCard ? <label className="text-[11px] font-bold text-slate-600">מספר אימונים<input type="number" min={1} max={50} value={plan.trainingSessionsCount || 10} onChange={event => updatePlan(index, { trainingSessionsCount: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label> : <div className="self-end rounded-lg bg-slate-100 px-3 py-2 text-center text-xs font-black text-slate-800">₪{priceFor(plan.membershipType)}</div>}
+          </select></label>}
+          {included && isTrainingCard ? <label className="text-[11px] font-bold text-slate-600">מספר אימונים<input type="number" min={1} max={50} value={plan.trainingSessionsCount || 10} onChange={event => updatePlan(index, { trainingSessionsCount: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label> : <div className="self-end rounded-lg bg-slate-100 px-3 py-2 text-center text-xs font-black text-slate-800">₪{included ? priceFor(plan.membershipType) : 0}</div>}
         </article>;
       })}
       <p className="rounded-xl bg-indigo-900 p-3 text-xs text-white">סך הכול לחיוב מאוחד לבעל המשפחה: <b className="text-base">₪{amount.toLocaleString('he-IL')}</b></p>
       <p className="text-xs text-slate-700">הסכום מחושב לפי מחירי מסלולי המועדון, ללא הנחה משפחתית אוטומטית. לפני התשלום יוצגו הקיזוז והיתרה המחושבים בשרת. התשלום חד־פעמי, ללא הוראת קבע.</p>
+      {normalizedPlans.some(plan => plan.participation && plan.participation !== 'INCLUDED') && <p className="text-sm">ברכישה חלקית נגבה רק מחיר המסלולים שנבחרו. לא מקוזז שוב תשלום של מי שלא נכלל ברכישה. אם כבר שילמתם עבור עצמכם, בחרו עבורכם ״כבר שולם״ וכללו רק את בן המשפחה החדש.</p>}
     </div>
   </section>;
 };

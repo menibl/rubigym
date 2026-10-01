@@ -28,6 +28,7 @@ const changed = (before, after, fields) => fields.some(field => !sameValue(befor
 
 const describeUserChanges = (before, after) => {
   const descriptions = [];
+  if (after.membershipFreezeRequestedAt && !sameValue(before.membershipFreezeRequestedAt, after.membershipFreezeRequestedAt)) descriptions.push('בקשת הקפאת מנוי לחודש ממתינה לאישור מנהל');
   if (!sameValue(before.membershipType, after.membershipType)) descriptions.push(`המסלול השתנה מ־${membershipName(before.membershipType)} ל־${membershipName(after.membershipType)}`);
   if (changed(before, after, ['secondaryMemberships', 'requestedWorkoutPlan', 'nutritionPlanPaid'])) descriptions.push('שירותים ותוכניות עודכנו');
   if (changed(before, after, ['membershipStatus', 'membershipExpiry', 'membershipStartedAt', 'membershipCommitmentEndsAt', 'recurringBillingMonths', 'monthlyBillingDay', 'isMembershipFrozen', 'membershipFreezeStartedAt', 'membershipFreezeUsedAt', 'membershipFrozenUntil', 'isCancelledEarly', 'cancellationPenaltyPaid', 'cancellationRequestedAt', 'cancellationEffectiveDate'])) descriptions.push('סטטוס המנוי, תוקף, הקפאה או ביטול עודכנו');

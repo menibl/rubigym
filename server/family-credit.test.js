@@ -108,3 +108,54 @@ test('simultaneous checkout attempts cannot create two credit-backed provider pa
   assert.ok(responses.every(response => [200, 409].includes(response.status)));
   assert.equal(f.calls(), 1);
 });
+
+test('unstarted dependent has no charge and receives no paid rights after verification', async () => {
+  const f = fixture();
+  f.request.familyMemberPlans[1].participation = 'NOT_STARTED';
+  f.request.familyMemberPlans[1].membershipType = 'RETIRED_PLAN';
+  const before = structuredClone(f.state().payload.users[1]);
+  const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+  assert.equal(quote.amountDue, 280);
+  assert.equal(quote.creditAmount, 0);
+  const checkout = await (await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).json();
+  assert.equal((await f.post('verify', { paymentReference: checkout.paymentReference })).status, 200);
+  assert.deepEqual(f.state().payload.users[1], before);
+});
+
+test('paid payer may skip their retired plan and pay only for the dependent', async () => {
+  const f = fixture();
+  f.request.familyMemberPlans[0].participation = 'SKIP';
+  f.request.familyMemberPlans[0].membershipType = 'RETIRED_PLAN';
+  const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+  assert.equal(quote.amountDue, 280);
+  assert.equal(quote.creditAmount, 0);
+  const checkout = await (await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).json();
+  assert.equal((await f.post('verify', { paymentReference: checkout.paymentReference })).status, 200);
+  assert.equal(f.state().payload.users[0].membershipType, 'OPEN_GYM');
+  assert.equal(f.state().payload.users[0].membershipExpiry, '2099-12-31');
+  assert.equal(f.state().payload.users[1].membershipStatus, 'ACTIVE');
+  assert.equal(f.state().payload.payments[0].familyPartialPurchase, true);
+  assert.equal(familyCreditQuote(f.state().payload, 'payer', 840).creditAmount, 0);
+});
+
+test('empty purchases and fake freeze declarations are rejected', async () => {
+  const f = fixture();
+  for (const plan of f.request.familyMemberPlans) plan.participation = 'SKIP';
+  assert.equal((await f.post('create', { ...f.request, quoteOnly: true })).status, 400);
+  f.request.familyMemberPlans[0].participation = 'INCLUDED';
+  f.request.familyMemberPlans[1].participation = 'FROZEN';
+  assert.equal((await f.post('create', { ...f.request, quoteOnly: true })).status, 400);
+  assert.equal(f.calls(), 0);
+});
+
+test('frozen dependent cannot be charged or reactivated; excluded frozen data is preserved', async () => {
+  const f = fixture();
+  Object.assign(f.state().payload.users[1], { isMembershipFrozen: true, membershipFrozenUntil: '2099-12-31', membershipStatus: 'ACTIVE' });
+  assert.equal((await f.post('create', { ...f.request, quoteOnly: true })).status, 400);
+  f.request.familyMemberPlans[1].participation = 'FROZEN';
+  const before = structuredClone(f.state().payload.users[1]);
+  const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+  const checkout = await (await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).json();
+  assert.equal((await f.post('verify', { paymentReference: checkout.paymentReference })).status, 200);
+  assert.deepEqual(f.state().payload.users[1], before);
+});

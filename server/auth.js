@@ -244,7 +244,15 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
   }
 
   const actor = current.users.find(user => user.id === userId);
-  const unpaid = actor?.registrationPaymentPending || actor?.familyPaymentPending || actor?.membershipStatus === 'DEBT';
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+  const unpaid = actor?.registrationPaymentPending || actor?.familyPaymentPending || actor?.membershipStatus === 'DEBT'
+    || (actor?.isMembershipFrozen && (!actor.membershipFrozenUntil || actor.membershipFrozenUntil >= today));
+  const mergeFreezeRequest = (user, requested) => {
+    const timestamp = Date.parse(requested.membershipFreezeRequestedAt || '');
+    if (!user.membershipFreezeRequestedAt && Number.isFinite(timestamp) && timestamp <= Date.now()
+      && timestamp > Date.parse(user.membershipFreezeDecisionAt || '1970-01-01')) return { ...user, membershipFreezeRequestedAt: new Date(timestamp).toISOString() };
+    return user;
+  };
   const incomingUserIds = new Set(incoming.users.map(user => user.id));
   const canManageFamily = Boolean(actor?.isFamilyPayer && actor.familyId);
   const nextUsers = current.users.filter(user => {
@@ -256,13 +264,13 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     const updated = { ...user };
     for (const field of selfEditableFields) if (field in requested) updated[field] = requested[field];
     if (canManageFamily && !user.familyPaymentPending && !user.registrationPaymentPending) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
-    return updated;
+    return mergeFreezeRequest(updated, requested);
   }).map(user => {
     if (!canManageFamily || user.id === userId || user.familyId !== actor.familyId) return user;
     const requested = incoming.users.find(candidate => candidate.id === user.id) || {};
     const updated = { ...user };
     if (!user.familyPaymentPending && !user.registrationPaymentPending) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
-    return updated;
+    return mergeFreezeRequest(updated, requested);
   });
   const newFamilyMembers = incoming.users
     .filter(user => !current.users.some(existing => existing.id === user.id))

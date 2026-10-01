@@ -246,6 +246,7 @@ export const FAMILY_MEMBERSHIP_PRICES: Record<number, number> = {
 export type FamilyBillingMode = 'ANNUAL_BY_SIZE' | 'MONTHLY_PER_MEMBER' | 'CUSTOM_COMBINED';
 
 export interface FamilyMemberPlanSelection {
+  participation?: 'INCLUDED' | 'NOT_STARTED' | 'SKIP' | 'FROZEN';
   memberId?: string;
   memberName: string;
   membershipType: MembershipType;
@@ -367,6 +368,8 @@ export interface User {
   familyTrackName?: string; // e.g. "מסלול משפחתי 4 מנויים"
   familyBillingMode?: FamilyBillingMode;
   familyMemberPlans?: FamilyMemberPlanSelection[];
+  membershipFreezeRequestedAt?: string;
+  membershipFreezeDecisionAt?: string;
   familyCombinedAmount?: number;
 
   // Personal Training & Membership configuration fields

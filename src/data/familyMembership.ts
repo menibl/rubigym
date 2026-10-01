@@ -34,6 +34,7 @@ export const resizeFamilyPlans = (
 });
 
 export const familyMemberPlanPrice = (plan: FamilyMemberPlanSelection, planConfigs: MembershipPlanConfig[] = []) => {
+  if (plan.participation && plan.participation !== 'INCLUDED') return 0;
   const unitPrice = planConfigs.find(config => config.id === plan.membershipType && config.active)?.price ?? MEMBERSHIP_PRICES[plan.membershipType] ?? 0;
   if (plan.membershipType === MembershipType.PERSONAL_TRAINING || plan.membershipType === MembershipType.DUO_TRAINING) {
     return unitPrice * Math.max(1, Math.min(50, Math.round(plan.trainingSessionsCount || 1)));

@@ -274,15 +274,20 @@ const planPrice = (membershipType, catalog) => {
 const normalizeFamilyPlans = (plans, catalog) => {
   if (!Array.isArray(plans)) return [];
   return plans.map((plan, index) => {
+    const participation = plan?.participation || 'INCLUDED';
+    if (!['INCLUDED', 'NOT_STARTED', 'SKIP', 'FROZEN'].includes(participation)) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
     const membershipType = String(plan?.membershipType || '');
-    if (membershipType === 'FAMILY_MEMBERSHIP') throw new Error('INVALID_FAMILY_MEMBER_PLAN');
-    planPrice(membershipType, catalog);
+    if (participation === 'INCLUDED') {
+      if (membershipType === 'FAMILY_MEMBERSHIP') throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+      planPrice(membershipType, catalog);
+    }
     const isTraining = membershipType === 'PERSONAL_TRAINING' || membershipType === 'DUO_TRAINING';
     const trainingSessionsCount = isTraining ? Math.max(1, Math.min(50, Math.round(Number(plan?.trainingSessionsCount || 1)))) : undefined;
     return {
       memberId: plan?.memberId ? String(plan.memberId).slice(0, 100) : undefined,
       memberName: String(plan?.memberName || `בן משפחה ${index + 1}`).slice(0, 100),
       membershipType,
+      participation,
       trainingSessionsCount
     };
   });
@@ -304,8 +309,10 @@ const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
       label = `משפחתי חודשי – ${count} × ₪${familyMonthlyPricePerMember}`;
     } else if (mode === 'CUSTOM_COMBINED') {
       familyMemberPlans = normalizeFamilyPlans(body.familyMemberPlans, catalog);
+      if (body.mode !== 'PRIMARY' && familyMemberPlans.some(plan => plan.participation !== 'INCLUDED')) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
       if (familyMemberPlans.length !== count) throw new Error('INVALID_FAMILY_MEMBER_COUNT');
-      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + familyPlanAmount(plan.membershipType, planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1)), 0);
+      if (!familyMemberPlans.some(plan => plan.participation === 'INCLUDED')) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + (plan.participation !== 'INCLUDED' ? 0 : familyPlanAmount(plan.membershipType, planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1))), 0);
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
     return { amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: mode !== 'CUSTOM_COMBINED', recurringMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 0 };
@@ -643,6 +650,9 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
     if (candidate.id !== userId && !customPlan) return candidate;
 
     if (customPlan) {
+      if (customPlan.participation && customPlan.participation !== 'INCLUDED') {
+        return candidate.id === userId ? { ...candidate, ...familyPurchaseIdentity(candidate, order) } : candidate;
+      }
       const type = customPlan.membershipType;
       return {
         ...candidate,
@@ -748,6 +758,8 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         traineeName: user.name,
         amount: Number(order.a),
         familyPackageAmount: order.fa,
+        familyPartialPurchase: Boolean(order.fp?.some(plan => plan.participation && plan.participation !== 'INCLUDED')),
+        familyMemberPlans: order.fp,
         familyCreditAmount: order.ca,
         familyCreditSourcePaymentId: order.cs,
         purchaseMode: order.d,
@@ -877,7 +889,10 @@ const handleCreatePayment = async (request, env) => {
     } catch {
       return json({ message: 'יש לבחור לכל מסלול בן משפחה משויך, ללא כפילויות, כשהמשלם הראשי ראשון.' }, 400, corsHeaders(request, env));
     }
-    const hasPendingMember = purchase.familyMemberPlans.some(plan => checkoutState.payload.users.some(member => member.id === plan.memberId && member.familyPaymentPending));
+    // A partial purchase must never spend credit belonging to an excluded
+    // member, nor use the full value of an earlier family package.
+    const hasPendingMember = purchase.familyMemberPlans.every(plan => plan.participation === 'INCLUDED')
+      && purchase.familyMemberPlans.some(plan => checkoutState.payload.users.some(member => member.id === plan.memberId && member.familyPaymentPending));
     const quote = hasPendingMember ? familyCreditQuote(checkoutState.payload, body.userId, purchase.amount, rivhitEnvironment(env) === 'production')
       : { packageAmount: purchase.amount, creditAmount: 0, amountDue: purchase.amount, sourcePaymentId: null };
     purchase = { ...purchase, ...quote, amount: quote.amountDue };
