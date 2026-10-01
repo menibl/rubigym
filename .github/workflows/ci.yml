@@ -50,6 +50,9 @@ jobs:
       - name: Test server monitor hardening
         run: bash deploy/tests/server-monitor.test.sh
 
+      - name: Test promotion gate
+        run: node --test deploy/tests/promotion-gate.test.mjs
+
       - name: Validate Docker Compose configuration
         env:
           GYMFLOW_ENV_FILE: ${{ github.workspace }}/deploy/.env.example
@@ -91,17 +94,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check out exact staging candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Require staging as the production source
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          test "${GITHUB_HEAD_REF}" = "staging"
-          result=$(gh run list \
-            --repo "${GITHUB_REPOSITORY}" \
-            --workflow deploy-pages.yml \
-            --branch staging \
-            --limit 1 \
-            --json conclusion,headSha \
-            --jq '.[0] | [.conclusion,.headSha] | @tsv')
-          test "${result}" = $'success\t'"${EXPECTED_SHA}"
+        run: node deploy/scripts/check-promotion.mjs
