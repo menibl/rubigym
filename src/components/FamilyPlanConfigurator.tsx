@@ -77,7 +77,7 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
         </article>;
       })}
       <p className="rounded-xl bg-indigo-900 p-3 text-xs text-white">סך הכול לחיוב מאוחד לבעל המשפחה: <b className="text-base">₪{amount.toLocaleString('he-IL')}</b></p>
-      <p className="text-xs text-slate-700">הסכום כולל הנחת 10% למסלולים קבוצתיים בלבד. לפני התשלום יוצגו הקיזוז והיתרה המחושבים בשרת. התשלום חד־פעמי, ללא הוראת קבע.</p>
+      <p className="text-xs text-slate-700">הסכום מחושב לפי מחירי מסלולי המועדון, ללא הנחה משפחתית אוטומטית. לפני התשלום יוצגו הקיזוז והיתרה המחושבים בשרת. התשלום חד־פעמי, ללא הוראת קבע.</p>
     </div>
   </section>;
 };
