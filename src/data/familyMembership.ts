@@ -1,6 +1,7 @@
 import {
   CURRENT_MEMBERSHIP_ADD_ONS,
   CURRENT_PRIMARY_MEMBERSHIP_PLANS,
+  DEFAULT_MEMBERSHIP_PLAN_CONFIGS,
   FAMILY_MEMBERSHIP_PRICES,
   FamilyBillingMode,
   FamilyMemberPlanSelection,
@@ -11,6 +12,10 @@ import {
 import { familyPlanAmount } from '../../shared/family-pricing.js';
 
 export const FAMILY_MONTHLY_PRICE_PER_MEMBER = 550;
+
+export const familyPlanCatalog = (configs?: MembershipPlanConfig[]) =>
+  (configs?.length ? configs : DEFAULT_MEMBERSHIP_PLAN_CONFIGS)
+    .filter(plan => plan.active && plan.id !== MembershipType.FAMILY_MEMBERSHIP);
 
 export const CUSTOM_FAMILY_PLAN_OPTIONS = [
   ...CURRENT_PRIMARY_MEMBERSHIP_PLANS,
