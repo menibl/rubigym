@@ -206,6 +206,7 @@ export const refundRivhitPayment = (paymentId: string, reason: string) =>
   runAdminPaymentAction('refund', { paymentId, reason });
 
 export interface FamilyCreditRecoveryResult {
+  diagnostic?: { code: string; stage: string };
   ok: boolean;
   state: 'NONE' | 'USED' | 'BLOCKED' | 'RELEASED' | 'RELEASABLE' | 'REVIEW_REQUIRED' | 'SYNCED' | 'EXISTING_PAGE';
   message: string;

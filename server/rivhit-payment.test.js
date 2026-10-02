@@ -2,6 +2,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from './index.js';
 
+test('expired provider account is explained without marking a trainee subscription expired', async () => {
+  const response = await worker.fetch(new Request('https://club.test/api/payments/rivhit/create', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: 'new-user', userName: 'Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+  }), {
+    RIVHIT_ENVIRONMENT: 'test', RIVHIT_GROUP_PRIVATE_TOKEN: 'test-token', PAYMENT_SIGNING_SECRET: 'test-signing-secret', PUBLIC_APP_URL: 'https://club.test/',
+    RIVHIT_FETCH: async () => Response.json({ Status: 1, Message: 'Account has expired' })
+  });
+  assert.equal(response.status, 502);
+  const result = await response.json();
+  assert.equal(result.code, 'RIVHIT_ACCOUNT_EXPIRED');
+  assert.match(result.message, /אינה מעידה שפג תוקף המנוי/);
+  assert.match(result.message, /ההודעה לבדה אינה קובעת/);
+  assert.doesNotMatch(result.message, /דיווח שפג תוקף החשבון/);
+});
+
 test('RIVHIT TEST checkout uses hosted GetUrl and never exposes the private token', async () => {
   let providerRequest;
   const env = {
