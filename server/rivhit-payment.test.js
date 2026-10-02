@@ -14,6 +14,8 @@ test('expired provider account is explained without marking a trainee subscripti
   const result = await response.json();
   assert.equal(result.code, 'RIVHIT_ACCOUNT_EXPIRED');
   assert.match(result.message, /אינה מעידה שפג תוקף המנוי/);
+  assert.match(result.message, /ההודעה לבדה אינה קובעת/);
+  assert.doesNotMatch(result.message, /דיווח שפג תוקף החשבון/);
 });
 
 test('RIVHIT TEST checkout uses hosted GetUrl and never exposes the private token', async () => {

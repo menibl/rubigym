@@ -971,7 +971,7 @@ const handleCreatePayment = async (request, env) => {
     const providerMessage = rivhitValue(createResult, 'ErrorMessage', 'DebugMessage', 'Message', 'message');
     if (String(providerMessage || '').trim().toLowerCase() === 'account has expired') {
       console.warn('RIVHIT checkout rejected', { code: 'RIVHIT_ACCOUNT_EXPIRED', operation: 'GetUrl' });
-      return json({ code: 'RIVHIT_ACCOUNT_EXPIRED', message: 'ספק התשלום דיווח שפג תוקף החשבון בשירות הסליקה. יש לפנות למנהל המועדון לבירור מול רווחית. הודעה זו אינה מעידה שפג תוקף המנוי שלך.' }, 502, corsHeaders(request, env));
+      return json({ code: 'RIVHIT_ACCOUNT_EXPIRED', message: 'לא ניתן ליצור דף תשלום לבקשה זו. רווחית החזירה את ההודעה Account has expired. ההודעה לבדה אינה קובעת אם הבעיה בחשבון, בהרשאה או בבקשה המסוימת, ואינה מעידה שפג תוקף המנוי שלך. יש לפנות למנהל לבדיקת הבקשה מול רווחית.' }, 502, corsHeaders(request, env));
     }
     return json({ message: rivhitValue(createResult, 'ErrorMessage', 'DebugMessage', 'Message', 'message') || 'שירות התשלום לא הצליח ליצור דף תשלום. יש לבדוק את הגדרת דף התשלום.' }, 502, corsHeaders(request, env));
   }
