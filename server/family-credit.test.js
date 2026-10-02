@@ -12,9 +12,10 @@ function fixture(paid = 280) {
   const claims = new Map();
   let providerCalls = 0;
   let amount;
+  let role = 'TRAINEE';
   const store = {
     async getSession() { return { club_id: 'test', user_id: 'payer' }; },
-    async getAccount() { return { user_id: 'payer', role: 'TRAINEE' }; },
+    async getAccount() { return { user_id: 'payer', role }; },
     async getClubState() { return state; },
     async putClubState(_club, payload, revision) { if (revision !== state.revision) return { conflict: true }; state = { payload, revision: revision + 1 }; return { conflict: false, revision: state.revision }; },
     async reserveFamilyCredit(_club, source, claim_id, fingerprint) {
@@ -22,6 +23,7 @@ function fixture(paid = 280) {
       const claim = { claim_id, fingerprint }; claims.set(source, claim); return { ...claim, created: true };
     },
     async saveFamilyCreditCheckout(_club, source, _claim, checkout) { claims.get(source).checkout = checkout; },
+    async getFamilyCreditClaim(_club, source) { return claims.get(source); },
   };
   const env = { STATE_STORE: store, CLUB_ID: 'test', RIVHIT_ENVIRONMENT: 'production', RIVHIT_GROUP_PRIVATE_TOKEN: 'production-group-private-token', PAYMENT_SIGNING_SECRET: 'test-signing-secret', PUBLIC_APP_URL: 'https://baly.test/', RIVHIT_FETCH: async (url, init) => {
     if (url.endsWith('/GetUrl')) {
@@ -35,8 +37,22 @@ function fixture(paid = 280) {
   } };
   const post = (path, body) => worker.fetch(new Request(`https://baly.test/api/payments/rivhit/${path}`, { method: 'POST', headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
   const request = { userId: 'payer', userName: 'Payer', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyMembersCount: 2, familyBillingMode: 'CUSTOM_COMBINED', familyMemberPlans: [{ memberId: 'payer', memberName: 'Payer', membershipType: 'OPEN_GYM' }, { memberId: 'child', memberName: 'Child', membershipType: 'OPEN_GYM' }] };
-  return { post, request, state: () => state, calls: () => providerCalls, amount: () => amount };
+  return { post, request, state: () => state, calls: () => providerCalls, amount: () => amount, asManager: () => { role = 'MANAGER'; } };
 }
+
+test('manager recovery reconciles saved signed checkout without another GetUrl or duplicate receipt', async () => {
+  const f = fixture();
+  const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+  assert.equal((await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).status, 200);
+  f.asManager();
+  const result = await f.post('admin/family-credit-recovery', { paymentId: 'old', action: 'check' });
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).state, 'SYNCED');
+  assert.equal(f.state().payload.users[1].membershipStatus, 'ACTIVE');
+  assert.equal((await (await f.post('admin/family-credit-recovery', { paymentId: 'old', action: 'check' })).json()).state, 'USED');
+  assert.equal(f.state().payload.payments.length, 2);
+  assert.equal(f.calls(), 1);
+});
 
 test('Open Gym family pays only 280 more; successful repeated verification activates child once', async () => {
   const f = fixture();
