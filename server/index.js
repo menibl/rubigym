@@ -5,6 +5,7 @@ import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
+import { samePayment, mergePaymentEvidence } from '../shared/payment-ledger.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
@@ -731,7 +732,17 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     if (!state) throw new Error('CLUB_STATE_MISSING');
     const user = (state.payload.users || []).find(candidate => candidate.id === userId);
     if (!user) throw new Error('PAYMENT_USER_NOT_FOUND');
-    if ((state.payload.payments || []).some(existing => existing.id === paymentId)) return;
+    const evidence = { id: paymentId, traineeId: userId, provider: 'RIVHIT', providerSaleId: payment.saleId,
+      providerTransactionId: payment.transactionId, providerRecurringSaleId: payment.recurringSaleId,
+      isMock: rivhitEnvironment(env) !== 'production',
+      paymentMethod: `RIVHIT iCredit${payment.last4Digits ? ` •••• ${payment.last4Digits}` : ''}` };
+    if ((state.payload.payments || []).some(existing => samePayment(existing, evidence))) {
+      const payments = state.payload.payments.map(existing => samePayment(existing, evidence) ? mergePaymentEvidence(existing, evidence) : existing);
+      if (JSON.stringify(payments) === JSON.stringify(state.payload.payments)) return;
+      const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', { ...state.payload, payments }, state.revision);
+      if (!saved.conflict) return;
+      continue;
+    }
 
     let updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.fa ?? order.a));
     if (order.cs) {
