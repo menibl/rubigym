@@ -65,3 +65,18 @@ test('recovery endpoint rejects trainee, coach and unauthenticated access', asyn
     assert.equal(response.status, 403);
   }
 });
+
+test('diagnostics use allowlisted codes and never expose provider secrets', async () => {
+  for (const message of ['RIVHIT_PAYMENT_FAILED', 'RIVHIT_UNAVAILABLE', 'AMOUNT_MISMATCH', 'secret-provider-token']) {
+    const f = fixture({ checkout: { paymentReference: 'secret-reference' } });
+    const logged = [];
+    f.options.logDiagnostic = details => logged.push(details);
+    f.options.verifyAndPersist = async () => { throw new Error(message); };
+    const result = await recoverFamilyCredit(f.options);
+    assert.equal(result.state, 'REVIEW_REQUIRED');
+    assert.equal(result.diagnostic.code, message.startsWith('secret') ? 'RECOVERY_UNKNOWN_ERROR' : message);
+    assert.equal(logged.length, 1);
+    assert.doesNotMatch(JSON.stringify({ result, logged }), /secret-provider-token|secret-reference/);
+    assert.equal(f.releases(), 0);
+  }
+});
