@@ -48,6 +48,16 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       reason text NOT NULL,
       created_at timestamptz NOT NULL DEFAULT now()
     );
+    ALTER TABLE family_credit_claims ADD COLUMN IF NOT EXISTS recovery_stage text;
+    CREATE TABLE IF NOT EXISTS family_credit_recovery_audit (
+      id bigserial PRIMARY KEY,
+      club_id text NOT NULL,
+      source_payment_id text NOT NULL,
+      claim_id text NOT NULL,
+      manager_id text NOT NULL,
+      reason text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
     CREATE TABLE IF NOT EXISTS live_display (
       club_id text PRIMARY KEY,
       program jsonb,
@@ -136,17 +146,32 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
   `);
   return {
     async reserveFamilyCredit(clubId, sourcePaymentId, claimId, fingerprint) {
-      const inserted = await pool.query('INSERT INTO family_credit_claims (club_id,source_payment_id,claim_id,fingerprint) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING *', [clubId, sourcePaymentId, claimId, fingerprint]);
+      const inserted = await pool.query("INSERT INTO family_credit_claims (club_id,source_payment_id,claim_id,fingerprint,recovery_stage) VALUES ($1,$2,$3,$4,'RESERVED') ON CONFLICT DO NOTHING RETURNING *", [clubId, sourcePaymentId, claimId, fingerprint]);
       if (inserted.rows[0]) return { ...inserted.rows[0], created: true };
       const existing = await pool.query('SELECT * FROM family_credit_claims WHERE club_id=$1 AND source_payment_id=$2', [clubId, sourcePaymentId]);
       return { ...existing.rows[0], created: false };
     },
     async getFamilyCreditClaim(clubId, sourcePaymentId) {
-      const result = await pool.query('SELECT claim_id FROM family_credit_claims WHERE club_id=$1 AND source_payment_id=$2', [clubId, sourcePaymentId]);
+      const result = await pool.query('SELECT * FROM family_credit_claims WHERE club_id=$1 AND source_payment_id=$2', [clubId, sourcePaymentId]);
       return result.rows[0] || null;
     },
     async saveFamilyCreditCheckout(clubId, sourcePaymentId, claimId, checkout) {
       await pool.query('UPDATE family_credit_claims SET checkout=$4 WHERE club_id=$1 AND source_payment_id=$2 AND claim_id=$3', [clubId, sourcePaymentId, claimId, checkout]);
+    },
+    async markFamilyCreditDispatched(clubId, sourcePaymentId, claimId) {
+      const result = await pool.query("UPDATE family_credit_claims SET recovery_stage='DISPATCHED' WHERE club_id=$1 AND source_payment_id=$2 AND claim_id=$3 AND recovery_stage='RESERVED' RETURNING claim_id", [clubId, sourcePaymentId, claimId]);
+      return result.rowCount === 1;
+    },
+    async releaseUndispatchedFamilyCredit(clubId, sourcePaymentId, claimId, managerId, reason) {
+      // Compare-and-delete and audit are one SQL statement. A concurrent dispatch
+      // wins or loses the same row lock; it cannot proceed after a release.
+      const result = await pool.query(`WITH released AS (
+        DELETE FROM family_credit_claims WHERE club_id=$1 AND source_payment_id=$2 AND claim_id=$3
+          AND recovery_stage='RESERVED' AND checkout IS NULL AND created_at < now() - interval '5 minutes'
+        RETURNING club_id, source_payment_id, claim_id
+      ) INSERT INTO family_credit_recovery_audit (club_id,source_payment_id,claim_id,manager_id,reason)
+        SELECT club_id,source_payment_id,claim_id,$4,$5 FROM released RETURNING id`, [clubId, sourcePaymentId, claimId, managerId, reason]);
+      return result.rowCount === 1;
     },
     async getClubState(clubId) {
       const result = await pool.query('SELECT payload, revision, updated_at FROM club_state WHERE club_id=$1', [clubId]);
