@@ -42,6 +42,7 @@ import {
   AttendanceLog
 } from '../types';
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
+import { FamilyCreditRecoveryControl } from './FamilyCreditRecoveryControl';
 import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
 import { cancelRivhitRecurring, refundRivhitPayment, updateRivhitRecurringAmount } from '../data/rivhitPayments';
@@ -1856,6 +1857,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button type="button" disabled={billingPending || !payments.find(payment => payment.id === billingPaymentId)?.providerRecurringSaleId} onClick={() => runBillingAction('CANCEL_RECURRING')} className="min-h-11 rounded-xl bg-slate-700 px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">ביטול הוראת קבע</button>
                 <button type="button" disabled={billingPending || !billingAmount || !payments.find(payment => payment.id === billingPaymentId)?.providerRecurringSaleId} onClick={() => runBillingAction('UPDATE_RECURRING')} className="min-h-11 rounded-xl bg-amber-300 px-3 text-xs font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">עדכון סכום חודשי</button>
               </div>
+              <FamilyCreditRecoveryControl key={billingPaymentId} paymentId={billingPaymentId} reason={billingReason} />
               {billingNotice && <p role="status" className="mt-3 rounded-lg bg-emerald-950 p-3 text-xs font-bold text-emerald-200">{billingNotice}</p>}
               {billingError && <p role="alert" className="mt-3 rounded-lg bg-rose-950 p-3 text-xs font-bold text-rose-200">{billingError}</p>}
             </section>

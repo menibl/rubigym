@@ -4,6 +4,7 @@ import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
+import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
@@ -445,7 +446,7 @@ const createSignedOrder = async (body, env, purchase) => {
   return `${payload}.${await sign(payload, env.PAYMENT_SIGNING_SECRET)}`;
 };
 
-const verifySignedOrder = async (value, env) => {
+const verifySignedOrder = async (value, env, allowExpired = false) => {
   if (!value || typeof value !== 'string') throw new Error('INVALID_ORDER');
   const [payload, signature] = value.split('.');
   if (!payload || !signature || await sign(payload, env.PAYMENT_SIGNING_SECRET) !== signature) throw new Error('INVALID_SIGNATURE');
@@ -453,7 +454,7 @@ const verifySignedOrder = async (value, env) => {
   const maximumAge = order.rr
     ? (Number(order.rm) > 0 ? (Number(order.rm) + 1) * 31 * 24 * 60 * 60 * 1000 : 10 * 366 * 24 * 60 * 60 * 1000)
     : 24 * 60 * 60 * 1000;
-  if (Date.now() - Number(order.t) > maximumAge) throw new Error('ORDER_EXPIRED');
+  if (!allowExpired && Date.now() - Number(order.t) > maximumAge) throw new Error('ORDER_EXPIRED');
   if (!Number.isFinite(Number(order.a)) || Number(order.a) <= 0 || !order.m) throw new Error('INVALID_AMOUNT');
   if (order.pa !== undefined && Number(order.pa) !== rivhitChargeAmount(Number(order.a), env)) throw new Error('INVALID_PROVIDER_AMOUNT');
   if (rivhitEnvironment(env) === 'production' && signedOrderChargeAmount(order) !== Number(order.a)) throw new Error('INVALID_PROVIDER_AMOUNT');
@@ -509,12 +510,12 @@ const createPaymentReference = async (order, privateSaleToken, publicSaleToken, 
   return `${payload}.${await sign(payload, env.PAYMENT_SIGNING_SECRET)}`;
 };
 
-const verifyPaymentReference = async (value, env) => {
+const verifyPaymentReference = async (value, env, allowExpired = false) => {
   if (!value || typeof value !== 'string') throw new Error('INVALID_PAYMENT_REFERENCE');
   const [payload, signature] = value.split('.');
   if (!payload || !signature || await sign(payload, env.PAYMENT_SIGNING_SECRET) !== signature) throw new Error('INVALID_PAYMENT_REFERENCE');
   const reference = decodePayload(payload);
-  if (!reference.o || !reference.p || Date.now() - Number(reference.t) > 24 * 60 * 60 * 1000) throw new Error('PAYMENT_REFERENCE_EXPIRED');
+  if (!reference.o || !reference.p || (!allowExpired && Date.now() - Number(reference.t) > 24 * 60 * 60 * 1000)) throw new Error('PAYMENT_REFERENCE_EXPIRED');
   return reference;
 };
 
@@ -560,9 +561,9 @@ const verifyRivhitSale = async (saleId, amount, env) => {
   if (String(result.Status || '').toUpperCase() !== 'VERIFIED') throw new Error('RIVHIT_PAYMENT_NOT_VERIFIED');
 };
 
-const verifiedRivhitPayment = async (paymentReference, env) => {
-  const reference = await verifyPaymentReference(paymentReference, env);
-  const order = await verifySignedOrder(reference.o, env);
+const verifiedRivhitPayment = async (paymentReference, env, allowExpired = false) => {
+  const reference = await verifyPaymentReference(paymentReference, env, allowExpired);
+  const order = await verifySignedOrder(reference.o, env, allowExpired);
   const { sale, saleId, amount } = await getRivhitSale(reference.p, env);
   const providerAmount = signedOrderChargeAmount(order);
   if (amount !== providerAmount) throw new Error('AMOUNT_MISMATCH');
@@ -911,6 +912,10 @@ const handleCreatePayment = async (request, env) => {
   const { amount } = purchase;
   const providerAmount = rivhitChargeAmount(amount, env);
   const signedOrder = await createSignedOrder(body, env, purchase);
+  if (creditClaim && env.STATE_STORE.markFamilyCreditDispatched
+    && !await env.STATE_STORE.markFamilyCreditDispatched(clubId, purchase.sourcePaymentId, creditClaim.claim_id)) {
+    return json({ message: 'בקשת הקיזוז השתנתה. יש להתחיל מחדש; לא נשלחה בקשה לספק.' }, 409, corsHeaders(request, env));
+  }
   if (amount === 0 && creditClaim) {
     const order = decodePayload(signedOrder.split('.')[0]);
     const creditPayment = { transactionId: `credit-${creditClaim.claim_id}` };
@@ -1636,6 +1641,34 @@ const handleApi = async (request, env, url) => {
       const identity = await getIdentity();
       if (!identity || !['MANAGER', 'COACH'].includes(identity.account.role)) return json({ message: 'שירות ה-AI זמין למאמנים ולמנהלים בלבד.' }, 403, headers);
       return await handleWorkoutAi(request, env, headers, json);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/family-credit-recovery') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
+      requirePaymentEnv(env);
+      const body = await request.json();
+      const reason = String(body.reason || '').trim().slice(0, 500);
+      if (!body.paymentId || !['check', 'release'].includes(body.action) || (body.action === 'release' && reason.length < 3)) return json({ message: 'יש לבחור תשלום, פעולה וסיבה לשחרור.' }, 400, headers);
+      const state = await loadClubState(identity.session.club_id);
+      const payments = state?.payload?.payments || [];
+      const payment = payments.find(item => item.id === body.paymentId);
+      if (!payment) return json({ message: 'התשלום לא נמצא.' }, 404, headers);
+      const result = await recoverFamilyCredit({
+        store: env.STATE_STORE, clubId: identity.session.club_id, payment, payments,
+        action: body.action, managerId: identity.session.user_id, reason,
+        readOrder: async referenceValue => {
+          const reference = await verifyPaymentReference(referenceValue, env, true);
+          return verifySignedOrder(reference.o, env, true);
+        },
+        verifyAndPersist: async referenceValue => {
+          // Only a manager recovering a server-stored reference may reconcile an
+          // expired redirect. Signature, amount and provider verification remain mandatory.
+          const { order, payment: verified } = await verifiedRivhitPayment(referenceValue, env, true);
+          await persistVerifiedPurchase(env, order, verified);
+          await persistVerifiedDiscountUsage(env, order, verified);
+        }
+      });
+      return json(result, 200, headers);
     }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/refund') {
       requirePaymentEnv(env);

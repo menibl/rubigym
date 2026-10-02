@@ -205,6 +205,25 @@ const runAdminPaymentAction = async (path: string, body: Record<string, unknown>
 export const refundRivhitPayment = (paymentId: string, reason: string) =>
   runAdminPaymentAction('refund', { paymentId, reason });
 
+export interface FamilyCreditRecoveryResult {
+  ok: boolean;
+  state: 'NONE' | 'USED' | 'BLOCKED' | 'RELEASED' | 'RELEASABLE' | 'REVIEW_REQUIRED' | 'SYNCED' | 'EXISTING_PAGE';
+  message: string;
+  url?: string;
+}
+
+export const recoverFamilyPaymentCredit = async (paymentId: string, action: 'check' | 'release', reason: string): Promise<FamilyCreditRecoveryResult> => {
+  const apiBase = paymentApiBase();
+  if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
+  const response = await fetch(`${apiBase}/api/payments/rivhit/admin/family-credit-recovery`, {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paymentId, action, reason })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) throw new Error(result.message || 'לא ניתן לברר את מצב הקיזוז. אין לבצע תשלום נוסף.');
+  return result;
+};
+
 export const cancelRivhitRecurring = (paymentId: string, reason: string) =>
   runAdminPaymentAction('cancel-recurring', { paymentId, reason });
 
