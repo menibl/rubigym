@@ -37,8 +37,47 @@ function fixture(paid = 280) {
   } };
   const post = (path, body) => worker.fetch(new Request(`https://baly.test/api/payments/rivhit/${path}`, { method: 'POST', headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
   const request = { userId: 'payer', userName: 'Payer', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyMembersCount: 2, familyBillingMode: 'CUSTOM_COMBINED', familyMemberPlans: [{ memberId: 'payer', memberName: 'Payer', membershipType: 'OPEN_GYM' }, { memberId: 'child', memberName: 'Child', membershipType: 'OPEN_GYM' }] };
-  return { post, request, state: () => state, calls: () => providerCalls, amount: () => amount, asManager: () => { role = 'MANAGER'; } };
+  return { post, request, store, claims, state: () => state, calls: () => providerCalls, amount: () => amount, asManager: () => { role = 'MANAGER'; } };
 }
+
+test('stale undispatched claim can retry, but dispatched or unknown claims cannot', async () => {
+  for (const stage of ['RESERVED', 'DISPATCHED', null]) {
+    const f = fixture();
+    f.claims.set('old', { claim_id: 'stale', recovery_stage: stage, created_at: '2020-01-01' });
+    let released = 0;
+    f.store.releaseUndispatchedFamilyCredit = async (_club, source, id) => {
+      assert.equal(stage, 'RESERVED'); assert.equal(id, 'stale');
+      released++; f.claims.delete(source); return true;
+    };
+    const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+    const response = await f.post('create', { ...f.request, quoteKey: quote.quoteKey });
+    assert.equal(response.status, stage === 'RESERVED' ? 200 : 409);
+    assert.equal(released, stage === 'RESERVED' ? 1 : 0);
+    assert.equal(f.calls(), stage === 'RESERVED' ? 1 : 0);
+  }
+});
+
+test('lost release race does not dispatch a second checkout', async () => {
+  const f = fixture();
+  f.claims.set('old', { claim_id: 'stale', recovery_stage: 'RESERVED', created_at: '2020-01-01' });
+  f.store.releaseUndispatchedFamilyCredit = async () => false;
+  const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+  assert.equal((await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).status, 409);
+  assert.equal(f.calls(), 0);
+});
+
+test('already paid payer bypasses old credit claim without spending original receipt', async () => {
+  const f = fixture(500);
+  f.claims.set('old', { claim_id: 'locked', recovery_stage: 'DISPATCHED' });
+  f.request.familyMemberPlans[0].participation = 'SKIP';
+  const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+  assert.equal(quote.creditAmount, 0);
+  assert.equal(quote.amountDue, 280);
+  assert.equal((await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).status, 200);
+  assert.equal(f.amount(), 280);
+  assert.equal(f.claims.get('old').claim_id, 'locked');
+  assert.equal(f.state().payload.payments[0].amount, 500);
+});
 
 test('manager recovery reconciles saved signed checkout without another GetUrl or duplicate receipt', async () => {
   const f = fixture();

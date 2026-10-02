@@ -903,6 +903,15 @@ const handleCreatePayment = async (request, env) => {
     if (quote.sourcePaymentId) {
       if (!env.STATE_STORE.reserveFamilyCredit) throw new Error('FAMILY_CREDIT_STORAGE_UNAVAILABLE');
       creditClaim = await env.STATE_STORE.reserveFamilyCredit(clubId, quote.sourcePaymentId, crypto.randomUUID(), quoteKey);
+      // Recover a pre-dispatch crash only. The database CAS excludes checkout,
+      // fresh claims and concurrent dispatch; never retry an uncertain GetUrl.
+      if (!creditClaim.created && creditClaim.recovery_stage === 'RESERVED' && !creditClaim.checkout
+        && Date.now() - Date.parse(creditClaim.created_at) > 5 * 60 * 1000
+        && env.STATE_STORE.releaseUndispatchedFamilyCredit) {
+        const released = await env.STATE_STORE.releaseUndispatchedFamilyCredit(clubId, quote.sourcePaymentId,
+          creditClaim.claim_id, body.userId, 'Automatic retry of stale undispatched family checkout');
+        if (released) creditClaim = await env.STATE_STORE.reserveFamilyCredit(clubId, quote.sourcePaymentId, crypto.randomUUID(), quoteKey);
+      }
       if (!creditClaim.created) {
         if (creditClaim.fingerprint === quoteKey && creditClaim.checkout) return json(creditClaim.checkout, 200, corsHeaders(request, env));
         return json({ message: 'התשלום הקודם כבר משויך לבקשת תשלום משפחתית. יש להשלים אותה או לפנות למנהל; לא נוצר חיוב נוסף.' }, 409, corsHeaders(request, env));
@@ -959,6 +968,11 @@ const handleCreatePayment = async (request, env) => {
   let paymentUrlIsTrusted = false;
   try { paymentUrlIsTrusted = new URL(String(url)).origin === new URL(rivhitBaseUrl(env)).origin; } catch { /* invalid provider URL */ }
   if (status !== 0 || !url || !privateSaleToken || !paymentUrlIsTrusted) {
+    const providerMessage = rivhitValue(createResult, 'ErrorMessage', 'DebugMessage', 'Message', 'message');
+    if (String(providerMessage || '').trim().toLowerCase() === 'account has expired') {
+      console.warn('RIVHIT checkout rejected', { code: 'RIVHIT_ACCOUNT_EXPIRED', operation: 'GetUrl' });
+      return json({ code: 'RIVHIT_ACCOUNT_EXPIRED', message: 'ספק התשלום דיווח שפג תוקף החשבון בשירות הסליקה. יש לפנות למנהל המועדון לבירור מול רווחית. הודעה זו אינה מעידה שפג תוקף המנוי שלך.' }, 502, corsHeaders(request, env));
+    }
     return json({ message: rivhitValue(createResult, 'ErrorMessage', 'DebugMessage', 'Message', 'message') || 'שירות התשלום לא הצליח ליצור דף תשלום. יש לבדוק את הגדרת דף התשלום.' }, 502, corsHeaders(request, env));
   }
   const paymentReference = await createPaymentReference(signedOrder, String(privateSaleToken), String(publicSaleToken || ''), env);
@@ -1656,6 +1670,7 @@ const handleApi = async (request, env, url) => {
       const result = await recoverFamilyCredit({
         store: env.STATE_STORE, clubId: identity.session.club_id, payment, payments,
         action: body.action, managerId: identity.session.user_id, reason,
+        logDiagnostic: details => console.warn('RIVHIT family credit recovery', details),
         readOrder: async referenceValue => {
           const reference = await verifyPaymentReference(referenceValue, env, true);
           return verifySignedOrder(reference.o, env, true);
