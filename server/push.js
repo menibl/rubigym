@@ -1,4 +1,5 @@
 import webpush from 'web-push';
+import { sendWeeklyReminders } from './weekly-reminders.js';
 
 const reminderWindowMs = 10 * 60 * 1000;
 const israelTimeZone = 'Asia/Jerusalem';
@@ -286,15 +287,14 @@ export const sendUpcomingWorkoutReminders = async (store, env, now = Date.now())
 };
 
 export const startPushReminderScheduler = (store, env) => {
-  if (!store || !isPushConfigured(env)) {
-    console.log('Web push reminders disabled: VAPID configuration is missing');
+  if (!store) {
     return null;
   }
-  const run = () => sendUpcomingWorkoutReminders(store, env).catch(error => {
+  const run = () => Promise.all([sendUpcomingWorkoutReminders(store, env), sendWeeklyReminders(store, env, dispatchStateChangePushes)]).catch(error => {
     console.error('Push reminder scheduler failed', error?.message || error);
   });
   void run();
-  const timer = setInterval(run, 5 * 60 * 1000);
+  const timer = setInterval(run, 60 * 1000);
   timer.unref?.();
   console.log('Web push reminder scheduler active');
   return timer;
