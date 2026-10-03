@@ -1132,6 +1132,23 @@ const handleApi = async (request, env, url) => {
       return state;
     };
 
+    const userForPhone = (state, phone, account = null) => {
+      const matches = (state?.payload?.users || []).filter(user =>
+        normalizeIsraeliMobile(user.phone) === phone && !(state.payload.deletedUserIds || []).includes(user.id));
+      if (account) return matches.find(user => user.id === account.user_id) || null;
+      if (matches.length > 1) return null;
+      return matches.find(user => user.role === 'TRAINEE') || null;
+    };
+    const ensurePhoneAccount = async user => {
+      // A stale phone index must not replace an existing password.
+      const durable = await env.STATE_STORE.getAccount?.(clubId, user.id);
+      if (durable) {
+        await env.STATE_STORE.updateAccountIdentity?.(clubId, stripCredentials(user));
+      } else {
+        await env.STATE_STORE.upsertAccount(await accountFromUser(clubId, stripCredentials(user), crypto.randomUUID()));
+      }
+    };
+
     if (url.pathname === '/api/public/landing' && request.method === 'GET') {
       return json(await publicLandingPayload(request, env, url, clubId), 200, {
         ...headers,
@@ -1214,11 +1231,13 @@ const handleApi = async (request, env, url) => {
         return json({ message: 'יש להזין מספר טלפון נייד תקין.' }, 400, headers);
       }
       const existingAccount = await env.STATE_STORE.getAccountByLogin(clubId, phone);
-      if (purpose === 'LOGIN' && !existingAccount) {
+      const existingState = await loadClubState(clubId);
+      const existingUser = userForPhone(existingState, phone, existingAccount);
+      if (purpose === 'LOGIN' && !existingAccount && !existingUser) {
         return json({ ok: false, registrationRequired: true }, 200, headers);
       }
-      if (purpose === 'REGISTER' && existingAccount) {
-        return json({ message: 'מספר הטלפון כבר רשום. ניתן לעבור למסך הכניסה.' }, 409, headers);
+      if (purpose === 'REGISTER' && (existingAccount || existingUser)) {
+        return json({ ok: false, loginRequired: true }, 200, headers);
       }
       try {
         const result = await requestPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose });
@@ -1238,6 +1257,17 @@ const handleApi = async (request, env, url) => {
       if (!verified) return json({ message: 'קוד האימות אינו תקין או שפג תוקפו.' }, 401, headers);
       const state = await loadClubState(clubId);
       if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
+      // An older registration can have a profile but no login account. Reuse it
+      // only after phone ownership was verified, instead of creating a duplicate.
+      const existingAccount = await env.STATE_STORE.getAccountByLogin(clubId, phone);
+      const existingUser = userForPhone(state, phone, existingAccount);
+      if (existingAccount || (state.payload.users || []).some(user => normalizeIsraeliMobile(user.phone) === phone)) {
+        if (!existingUser?.registrationIncomplete) return json({ message: 'החשבון כבר רשום. יש להיכנס באמצעות קוד SMS להמשך התהליך.' }, 409, headers);
+        if (!existingAccount) await ensurePhoneAccount(existingUser);
+        const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, existingUser.id);
+        return json({ verified: true, phoneVerificationToken: await createPhoneVerificationToken({ env, clubId, phone }),
+          registrationUserId: existingUser.id, user: stripCredentials(existingUser) }, 200, { ...headers, 'Set-Cookie': auth.cookie });
+      }
       const now = new Date().toISOString();
       const registrationUser = stripCredentials({
         id: `registration-${crypto.randomUUID()}`,
@@ -1276,11 +1306,12 @@ const handleApi = async (request, env, url) => {
       const body = await request.json();
       const phone = normalizeIsraeliMobile(body.phone);
       const account = phone ? await env.STATE_STORE.getAccountByLogin(clubId, phone) : null;
-      const verified = account && await verifyPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose: 'LOGIN', code: body.otp });
+      const verified = phone && await verifyPhoneCode({ store: env.STATE_STORE, env, clubId, phone, purpose: 'LOGIN', code: body.otp });
       if (!verified) return json({ message: 'מספר הטלפון או קוד האימות אינם תקינים.' }, 401, headers);
       const state = await loadClubState(clubId);
-      const user = state?.payload?.users?.find(candidate => candidate.id === account.user_id);
+      const user = userForPhone(state, phone, account);
       if (!user) return json({ message: 'חשבון המשתמש אינו קיים בנתוני המועדון.' }, 409, headers);
+      if (!account) await ensurePhoneAccount(user);
       const auth = await createAuthenticatedSession(env.STATE_STORE, clubId, user.id);
       return json({ user: stripCredentials(user) }, 200, { ...headers, 'Set-Cookie': auth.cookie });
     }

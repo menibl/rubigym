@@ -312,13 +312,18 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       setError('יש להזין מספר טלפון תקין.');
       return;
     }
-    if (users.some(item => item.phone.replace(/\D/g, '') === registerPhone.replace(/\D/g, ''))) {
-      setError('מספר הטלפון כבר רשום. ניתן לעבור למסך הכניסה.');
-      return;
-    }
     setAuthPending(true);
     try {
       const result = await onRequestPhoneCode(registerPhone, 'REGISTER');
+      if ('loginRequired' in result && result.loginRequired) {
+        setPhone(registerPhone);
+        setLoginMethod('phone');
+        setOtp('');
+        setOtpSent(false);
+        setScreen('login');
+        setNotice('החשבון שלך כבר נשמר. כניסה באמצעות קוד SMS תאפשר להמשיך את ההרשמה או להשלים את התשלום.');
+        return;
+      }
       if (!result.ok) return;
       setRegisterStep(2);
       setNotice(result.testMode ? 'הקוד נשלח בהדמיה. קוד הבדיקה הוא 1111.' : 'קוד אימות נשלח אליך ב-SMS.');
