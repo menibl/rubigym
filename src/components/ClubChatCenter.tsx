@@ -59,7 +59,7 @@ export const ClubChatCenter: React.FC<ClubChatCenterProps> = ({
     for (let index = chronological.length - 1; index >= 0; index -= 1) {
       const message = chronological[index];
       if (message.systemGenerated) {
-        const key = `${message.senderId}|${message.receiverId}|${message.content.trim()}`;
+        const key = message.id.startsWith('weekly-') ? message.id : `${message.senderId}|${message.receiverId}|${message.content.trim()}`;
         if (seenSystemUpdates.has(key)) continue;
         seenSystemUpdates.add(key);
       }
@@ -151,6 +151,7 @@ export const ClubChatCenter: React.FC<ClubChatCenterProps> = ({
                 if (message.systemGenerated) return (
                   <article key={message.id} className="mx-auto max-w-[92%] rounded-xl border border-amber-500/30 bg-amber-950/50 px-3 py-2 text-center shadow">
                     <p className="whitespace-pre-wrap break-words text-xs font-bold leading-5 text-amber-100">{message.content}</p>
+                    {message.actionUrl === '?workspace=booking' && <a href="?workspace=booking" className="mt-2 inline-flex min-h-11 items-center rounded-lg bg-amber-300 px-4 font-bold text-slate-950">הרשמה לאימונים</a>}
                     <time className="mt-1 block text-[9px] text-amber-300/80">{messageTime(message.timestamp)}</time>
                   </article>
                 );

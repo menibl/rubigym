@@ -739,6 +739,8 @@ export interface Message {
   timestamp: string; // ISO string
   read: boolean;
   systemGenerated?: boolean;
+  actionUrl?: string;
+  actionLabel?: string;
 }
 
 export interface Announcement {
