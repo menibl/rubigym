@@ -349,7 +349,7 @@ export default function App() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || activeUser.registrationIncomplete) return;
     let cancelled = false;
     const refreshClubState = async () => {
       try {
@@ -379,7 +379,7 @@ export default function App() {
       window.clearTimeout(firstRefresh);
       window.clearInterval(interval);
     };
-  }, [isAuthenticated, workspaceView]);
+  }, [isAuthenticated, workspaceView, activeUser.id, activeUser.registrationIncomplete]);
 
   // In-app notification delivery while the application is open.
   useEffect(() => {
@@ -631,6 +631,7 @@ export default function App() {
       : undefined;
     return (
       <AuthGateway
+        key={isAuthenticated && activeUser.registrationIncomplete ? `resume-${activeUser.id}` : 'guest'}
         users={users}
         discountCodes={discountCodes}
         settings={settings}

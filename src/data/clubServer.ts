@@ -118,11 +118,13 @@ export const loginWithPhone = async (phone: string, otp: string) => {
 
 export type PhoneCodeRequestResult =
   | { ok: true; expiresInSeconds: number; testMode?: boolean }
-  | { ok: false; registrationRequired: true };
+  | { ok: false; registrationRequired: true }
+  | { ok: false; loginRequired: true };
 
 export const requestPhoneCode = async (phone: string, purpose: 'LOGIN' | 'REGISTER'): Promise<PhoneCodeRequestResult> => {
   if (isPagesDemoMode()) {
     if (purpose === 'LOGIN' && !findDemoUser(phone)) return { ok: false, registrationRequired: true };
+    if (purpose === 'REGISTER' && findDemoUser(phone)) return { ok: false, loginRequired: true };
     return { ok: true, expiresInSeconds: 300, testMode: true };
   }
   return request<PhoneCodeRequestResult>('/api/auth/request-phone-code', {
