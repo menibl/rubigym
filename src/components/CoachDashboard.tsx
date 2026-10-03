@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { WeeklyCalendar } from './WeeklyCalendar';
+import { savePersonalBooking } from '../data/clubServer';
 import { CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
 import { EditSessionModal } from './EditSessionModal';
 import { copyGroupProgramToSessions, copyPersonalPlanToSessions } from '../data/workoutAssignment';
@@ -547,9 +548,11 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
     coTraineeId: ''
   });
 
-  const handleCreatePersonalTraining = (e: React.FormEvent) => {
+  const [personalBookingBusy, setPersonalBookingBusy] = useState(false);
+  const handleCreatePersonalTraining = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTrainee) return;
+    if (!selectedTrainee || personalBookingBusy) return;
+    if (!confirm(`ינוכה אימון אחד מהכרטיסייה ${ptForm.coTraineeId ? 'הזוגית' : 'האישית'} של ${selectedTrainee.name} בלבד. להמשיך?`)) return;
 
     const coTrainees = ptForm.coTraineeId ? [ptForm.coTraineeId] : [];
     const registered = [selectedTrainee.id, ...coTrainees];
@@ -575,51 +578,14 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
       coachApprovalStatus: 'APPROVED'
     };
 
-    onUpdateSessions([ptSession, ...sessions]);
-
-    // Send in-app message notification to trainee
-    const msgContent = `🏋️ המאמן ${activeUser.name} קבע עבורך אימון אישי ליום ${ptForm.date} בשעה ${ptForm.time}. האימון התווסף ליומן שלך!`;
-    onSendMessage(msgContent, selectedTrainee.id);
-    if (ptForm.coTraineeId) {
-      onSendMessage(`🏋️ הצטרפת באישור המאמן לאימון אישי של ${selectedTrainee.name} ביום ${ptForm.date} בשעה ${ptForm.time}.`, ptForm.coTraineeId);
-    }
-
-    // Use one session from the matching card and warn both sides when only two remain.
-    if (onUpdateUsers) {
-      const cardMembers = ptForm.coTraineeId ? [selectedTrainee.id, ptForm.coTraineeId] : [selectedTrainee.id];
-      cardMembers.forEach(memberId => {
-        const member = users.find(user => user.id === memberId);
-        const currentBalance = ptForm.coTraineeId ? member?.duoTrainingRemaining : member?.personalTrainingRemaining;
-        if (currentBalance !== undefined && Math.max(0, currentBalance - 1) === 2) {
-          const warning = `⚠️ נותרו לך 2 אימונים בלבד בכרטיסיית ${ptForm.coTraineeId ? 'האימון הזוגי' : 'האימון האישי'}. ניתן לחדש דרך ניהול המסלול.`;
-          onSendMessage(warning, memberId);
-          users.filter(user => user.role === UserRole.MANAGER || (user.role === UserRole.COACH && user.id !== activeUser.id)).forEach(staff =>
-            onSendMessage(`⚠️ למתאמן/ת ${member?.name || memberId} נותרו 2 אימונים בכרטיסייה.`, staff.id)
-          );
-        }
-      });
-      const updatedUsers = users.map(u => {
-        if (cardMembers.includes(u.id)) {
-          const personalRemaining = !ptForm.coTraineeId && u.id === selectedTrainee.id
-            ? Math.max(0, (u.personalTrainingRemaining ?? 1) - 1)
-            : u.personalTrainingRemaining;
-          const duoRemaining = ptForm.coTraineeId
-            ? Math.max(0, (u.duoTrainingRemaining ?? 1) - 1)
-            : u.duoTrainingRemaining;
-          return {
-            ...u,
-            personalTrainingRate: Number(ptForm.rate),
-            personalSessionsCountThisMonth: (u.personalSessionsCountThisMonth || 0) + 1,
-            personalTrainingRemaining: personalRemaining,
-            duoTrainingRemaining: duoRemaining
-          };
-        }
-        return u;
-      });
-      onUpdateUsers(updatedUsers);
-    }
-
-    alert(`האימון האישי נקבע בהצלחה!\nנשלחה הודעת עדכון באפליקציה ל-${selectedTrainee.name} והאימון התווסף ליומן.`);
+    setPersonalBookingBusy(true);
+    try {
+      await savePersonalBooking({ action: 'BOOK', sessionId: ptSession.id, newSession: ptSession,
+        payerId: selectedTrainee.id, partnerId: ptForm.coTraineeId,
+        type: ptForm.coTraineeId ? 'DUO' : 'SOLO', bookingId: crypto.randomUUID() });
+      window.location.reload();
+    } catch (error) { alert(error.message); }
+    finally { setPersonalBookingBusy(false); }
   };
 
   // Load Nutrition into form when trainee changes or editing starts
@@ -2753,6 +2719,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                   <div className="pt-2 flex justify-end">
                     <button
                       type="submit"
+                      disabled={personalBookingBusy}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2.5 px-5 rounded-lg shadow-sm transition flex items-center gap-1.5"
                     >
                       <Calendar size={14} />

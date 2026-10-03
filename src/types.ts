@@ -421,6 +421,17 @@ export interface TrainingSession {
 
   // Personal Training specifics
   isPersonalTraining?: boolean;
+  personalBooking?: {
+    id: string;
+    type: 'SOLO' | 'DUO';
+    payerId: string;
+    participantIds: string[];
+    status: 'BOOKED' | 'CANCELLED';
+    originalTargetTraineeId?: string;
+    originalCapacity: number;
+    refunded?: boolean;
+    cancelledAt?: string;
+  };
   targetTraineeId?: string; // Main trainee for PT
   isDemoSession?: boolean; // Personal demo for a prospect who is not registered yet
   demoTraineeName?: string;

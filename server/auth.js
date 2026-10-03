@@ -170,11 +170,14 @@ const selfEditableFields = new Set([
 ]);
 
 const familyEditableFields = new Set([
-  'membershipType', 'secondaryMemberships', 'personalTrainingCardSize', 'personalTrainingRemaining',
-  'duoTrainingCardSize', 'duoTrainingRemaining', 'nutritionPlanPaid', 'requestedWorkoutPlan'
+  'membershipType', 'secondaryMemberships', 'personalTrainingCardSize',
+  'duoTrainingCardSize', 'nutritionPlanPaid', 'requestedWorkoutPlan'
 ]);
 
 const mergeOwnBooking = (currentItems = [], incomingItems = [], userId) => currentItems.map(current => {
+  // Personal reservations and their debits are one atomic server operation.
+  // Keep legacy bookings cancellable until explicitly migrated by staff.
+  if (current.personalBooking || (current.isPersonalTraining && !current.registeredUsers?.includes(userId))) return current;
   const incoming = incomingItems.find(item => item.id === current.id);
   if (!incoming) return current;
   const mergeList = key => {
