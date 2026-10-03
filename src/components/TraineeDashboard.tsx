@@ -8,6 +8,7 @@ import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { resolveSessionProgram } from '../data/sessionProgram';
 import { nextBookedSession } from '../data/nextBookedSession';
+import { savePersonalBooking } from '../data/clubServer';
 import {
   User,
   TrainingSession,
@@ -185,6 +186,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   // Notification banner for feedback
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [pendingLatePersonalCancellation, setPendingLatePersonalCancellation] = useState<TrainingSession | null>(null);
+  const [personalBookingChoice, setPersonalBookingChoice] = useState<{ session: TrainingSession; id: string } | null>(null);
+  const [personalBookingType, setPersonalBookingType] = useState<'SOLO' | 'DUO'>('SOLO');
+  const [personalPartnerId, setPersonalPartnerId] = useState('');
+  const [personalBookingBusy, setPersonalBookingBusy] = useState(false);
+  const [personalBookingError, setPersonalBookingError] = useState('');
 
   // Chat input
   const [chatInput, setChatInput] = useState('');
@@ -417,6 +423,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     if (isBooked(session) || isWaitlisted(session)) {
       return { eligible: false, reason: 'כבר נרשמת לאימון זה או לרשימת ההמתנה שלו.' };
     }
+    if (session.isPersonalTraining && session.registeredUsers.length) return { eligible: false, reason: 'האימון האישי כבר תפוס. הרשמה נוספת אינה הופכת אותו לזוגי.' };
 
     if (!isHealthDeclarationValid()) {
       return {
@@ -497,13 +504,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
 
     // Personal Training session check
-    if (session.isPersonalTraining && ((isDuoSession && !hasDuoAccess) || (!isDuoSession && !hasPersonalAccess))) {
+    if (session.isPersonalTraining && !hasDuoAccess && !hasPersonalAccess) {
       return {
         eligible: false,
         reason: 'אימון אישי מצריך רכישת מסלול אימון אישי! (ניתן לרכוש אימון אישי במקביל לכל מנוי במערכת).'
       };
     }
-    if (session.isPersonalTraining && ((isDuoSession ? activeUser.duoTrainingRemaining : activeUser.personalTrainingRemaining) ?? 0) <= 0) {
+    if (session.isPersonalTraining && !(hasPersonalAccess && (activeUser.personalTrainingRemaining ?? 0) > 0) && !(hasDuoAccess && (activeUser.duoTrainingRemaining ?? 0) > 0)) {
       return { eligible: false, reason: `אזלה יתרת כרטיסיית האימון ${isDuoSession ? 'הזוגי' : 'האישי'}. יש לרכוש כרטיסייה חדשה.` };
     }
 
@@ -531,7 +538,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
     // 2. Allowed membership types check
     if (
-      session.allowedMemberships &&
+      !session.isPersonalTraining && session.allowedMemberships &&
       session.allowedMemberships.length > 0
     ) {
       const groupEquivalent = [MembershipType.CORE_GROUPS, MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL, MembershipType.FAMILY_MEMBERSHIP];
@@ -788,6 +795,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // BOOK / JOIN WAITLIST (Section 5.1 & 5.2)
   const handleBookSession = (session: TrainingSession) => {
+    if (session.isPersonalTraining) {
+      const check = checkBookingEligibility(session);
+      if (!check.eligible) return showFeedback(check.reason || 'לא ניתן להירשם לאימון.', 'error');
+      if (session.registeredUsers.length) return showFeedback('האימון כבר תפוס. לא ניתן להצטרף ולהפוך אותו לזוגי אוטומטית.', 'error');
+      setPersonalBookingType((activeUser.personalTrainingRemaining ?? 0) > 0 ? 'SOLO' : 'DUO');
+      setPersonalPartnerId('');
+      setPersonalBookingError('');
+      setPersonalBookingChoice({ session, id: crypto.randomUUID() });
+      return;
+    }
     const isDuoSession = Boolean(session.isPersonalTraining && session.coTrainees?.length);
     const requiredTrainingCard = isDuoSession ? MembershipType.DUO_TRAINING : MembershipType.PERSONAL_TRAINING;
     if (session.isPersonalTraining && !activeUser.secondaryMemberships?.includes(requiredTrainingCard) && activeUser.membershipType !== requiredTrainingCard) {
@@ -847,7 +864,20 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   // CANCEL BOOKING / EXIT WAITLIST (Section 5.3)
-  const handleCancelBooking = (session: TrainingSession, latePersonalCancellationAcknowledged = false) => {
+  const handleCancelBooking = async (session: TrainingSession, latePersonalCancellationAcknowledged = false) => {
+    if (session.personalBooking) {
+      if (personalBookingBusy) return;
+      if (session.personalBooking.type === 'DUO' && !latePersonalCancellationAcknowledged && !confirm('ביטול האימון הזוגי יסיר את שני המשתתפים. בביטול בזמן יוחזר קרדיט אחד לכרטיסייה של המשלם בלבד. להמשיך?')) return;
+      setPersonalBookingBusy(true);
+      try {
+        await savePersonalBooking({ action: 'CANCEL', sessionId: session.id, bookingId: session.personalBooking.id, acknowledgeLate: latePersonalCancellationAcknowledged });
+        window.location.reload();
+      } catch (error) {
+        if (error.message === 'LATE_PERSONAL_CANCELLATION') setPendingLatePersonalCancellation(session);
+        else showFeedback(error.message, 'error');
+      } finally { setPersonalBookingBusy(false); }
+      return;
+    }
     let updatedSessions: TrainingSession[];
     
     const wasInWaitlist = session.waitlistUsers.includes(activeUser.id);
@@ -1451,6 +1481,39 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         </div>
       )}
 
+      {personalBookingChoice && (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="personal-booking-title">
+          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl bg-slate-900 text-white p-6 space-y-4" dir="rtl">
+            <h2 id="personal-booking-title" className="text-xl font-bold">רישום לאימון אישי או זוגי</h2>
+            <p>{personalBookingChoice.session.title} · {personalBookingChoice.session.date} · {personalBookingChoice.session.time}</p>
+            <label className="block">סוג הכרטיסייה
+              <select className="w-full p-3 bg-slate-800 text-white rounded-xl" value={personalBookingType} onChange={e => setPersonalBookingType(e.target.value as 'SOLO' | 'DUO')}>
+                <option value="SOLO" disabled={!(activeUser.personalTrainingRemaining > 0)}>יחיד — יתרה {activeUser.personalTrainingRemaining || 0}</option>
+                <option value="DUO" disabled={!(activeUser.duoTrainingRemaining > 0)}>זוגי — יתרה {activeUser.duoTrainingRemaining || 0}</option>
+              </select>
+            </label>
+            {personalBookingType === 'DUO' && <label className="block">בן/בת זוג לאימון
+              <select className="w-full p-3 bg-slate-800 text-white rounded-xl" value={personalPartnerId} onChange={e => setPersonalPartnerId(e.target.value)}>
+                <option value="">בחרו בן משפחה</option>
+                {users.filter(u => u.id !== activeUser.id && u.role === UserRole.TRAINEE && activeUser.familyId && u.familyId === activeUser.familyId).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+              <span className="text-sm">לצירוף מתאמן שאינו בן משפחה, פנו למאמן.</span>
+            </label>}
+            <p className="rounded-xl bg-slate-800 p-3">ינוכה אימון אחד מהכרטיסייה {personalBookingType === 'DUO' ? 'הזוגית' : 'האישית'} של {activeUser.name}.{personalBookingType === 'DUO' && ' בן הזוג יירשם לאותו אימון ללא ניכוי נוסף.'}</p>
+            {personalBookingError && <p role="alert" className="text-rose-300">{personalBookingError}</p>}
+            <button type="button" disabled={personalBookingBusy || (personalBookingType === 'DUO' && !personalPartnerId)} className="w-full rounded-xl bg-amber-400 text-black p-3 font-bold disabled:opacity-50" onClick={async () => {
+              if (personalBookingBusy) return;
+              setPersonalBookingBusy(true); setPersonalBookingError('');
+              try {
+                await savePersonalBooking({ action: 'BOOK', sessionId: personalBookingChoice.session.id, bookingId: personalBookingChoice.id, type: personalBookingType, partnerId: personalPartnerId });
+                window.location.reload();
+              } catch (error) { setPersonalBookingError(error.message); }
+              finally { setPersonalBookingBusy(false); }
+            }}>{personalBookingBusy ? 'שומר הרשמה…' : 'אישור הרשמה וניכוי קרדיט'}</button>
+            <button type="button" disabled={personalBookingBusy} className="w-full p-3" onClick={() => setPersonalBookingChoice(null)}>חזרה ללא הרשמה</button>
+          </div>
+        </div>
+      )}
       {pendingLatePersonalCancellation && (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/80 p-4" role="alertdialog" aria-modal="true" aria-labelledby="late-personal-cancellation-title" aria-describedby="late-personal-cancellation-description">
           <div className="w-full max-w-md rounded-3xl border border-rose-200 bg-white p-6 text-right shadow-2xl" dir="rtl">
@@ -1896,9 +1959,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                             {booked || waitlisted ? (
                               <button type="button" className="cancel" onClick={() => handleCancelBooking(session)}>{waitlisted ? 'בטל המתנה' : 'בטל הרשמה'}</button>
                             ) : (
-                              <button type="button" onClick={() => handleBookSession(session)}>{full ? 'הצטרף להמתנה' : eligibility.eligible ? 'הרשמה' : 'בדיקת זכאות'}</button>
+                              <button type="button" disabled={Boolean(session.isPersonalTraining && full)} onClick={() => handleBookSession(session)}>{full ? session.isPersonalTraining ? 'האימון תפוס' : 'הצטרף להמתנה' : eligibility.eligible ? 'הרשמה' : 'בדיקת זכאות'}</button>
                             )}
                             {booked && <span className="booking-status success">✓ רשום לאימון</span>}
+                            {booked && session.personalBooking?.status === 'BOOKED' && <span className="booking-status">{session.personalBooking.type === 'DUO' ? 'אימון זוגי' : 'אימון יחיד'} · קרדיט אחד מכרטיסיית {users.find(u => u.id === session.personalBooking.payerId)?.name || 'המשלם'}</span>}
                             {waitlisted && <span className="booking-status wait">⏳ מקום {session.waitlistUsers.indexOf(activeUser.id) + 1} בהמתנה</span>}
                             {!booked && !waitlisted && !eligibility.eligible && <span className="booking-reason">{eligibility.reason}</span>}
                             {(booked || waitlisted) && (

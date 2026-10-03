@@ -2,6 +2,7 @@ import { Gender, MembershipStatus, Payment, User, UserRole } from '../types';
 import { isPagesDemoMode } from './appMode';
 import { createDemoPayload } from './demoData';
 import { deleteClubUser, removeDeletedUserData } from '../../shared/user-deletion.js';
+import { changePersonalBooking } from '../../shared/personal-booking.js';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -67,6 +68,20 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
 };
 
 export type ClubStateEnvelope = { payload: Record<string, unknown>; revision: number; updated_at?: string };
+
+export const savePersonalBooking = async (input: {
+  action: 'BOOK' | 'CANCEL'; sessionId: string; bookingId: string;
+  type?: 'SOLO' | 'DUO'; partnerId?: string; payerId?: string;
+  acknowledgeLate?: boolean; newSession?: import('../types').TrainingSession;
+}) => {
+  if (isPagesDemoMode()) {
+    const state = readDemoState();
+    const payload = changePersonalBooking(state.payload, currentDemoUser()?.id, input);
+    writeDemoState({ ...state, payload, revision: state.revision + 1 });
+    return;
+  }
+  await request('/api/bookings/personal', { method: 'POST', body: JSON.stringify(input) });
+};
 
 export const getServerSession = async () => {
   if (isPagesDemoMode()) {
