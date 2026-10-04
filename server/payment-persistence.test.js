@@ -25,7 +25,7 @@ const rivhitFetch = async (url, init) => {
 
 for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER']) {
   test(`family payment persists identity and extra members remain pending payment: ${familyBillingMode}`, async () => {
-    let state = { revision: 1, payload: { users: [{ id: 'payer', name: 'Payer', role: 'TRAINEE', membershipType: 'OPEN_GYM' }], payments: [], messages: [] } };
+    let state = { revision: 1, payload: { users: [{ id: 'payer', name: 'Payer', role: 'TRAINEE', membershipType: 'OPEN_GYM' }], payments: [], messages: [], discountCodes: [{ id: 'discount', code: 'FAMILY10', discountPercent: 10, isSingleUse: false }] } };
     const store = {
       async getSession() { return { club_id: 'test', user_id: 'payer' }; },
       async getAccount() { return { user_id: 'payer', role: 'TRAINEE' }; },
@@ -42,11 +42,16 @@ for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER']) {
     const post = (path, body) => worker.fetch(new Request(`https://balywellness.test${path}`, { method: 'POST', headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
     const response = await post('/api/payments/rivhit/create', {
       userId: 'payer', userName: 'Payer', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyMembersCount: 2, familyName: 'Family', familyBillingMode,
+      discountCode: familyBillingMode === 'ANNUAL_BY_SIZE' ? 'family10' : undefined,
       familyMemberPlans: [{ memberId: 'payer', memberName: 'Payer', membershipType: 'OPEN_GYM' }, { memberName: 'Member', membershipType: 'OPEN_GYM' }],
     });
     assert.equal(response.status, 200);
     const checkout = await response.json();
-    assert.equal((await post('/api/payments/rivhit/verify', { paymentReference: checkout.paymentReference })).status, 200);
+    const verified = await post('/api/payments/rivhit/verify', { paymentReference: checkout.paymentReference });
+    assert.equal(verified.status, 200);
+    const expectedCode = familyBillingMode === 'ANNUAL_BY_SIZE' ? 'FAMILY10' : null;
+    assert.equal((await verified.json()).discountCode, expectedCode);
+    assert.equal(state.payload.payments[0].discountCode, expectedCode);
     const payer = state.payload.users[0];
     assert.equal(payer.isFamilyPayer, true);
     assert.equal(payer.familyId, 'fam-payer');
