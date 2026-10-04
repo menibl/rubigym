@@ -3414,3 +3414,23 @@ option {
 :where(button, [role="button"]):disabled {
   cursor: not-allowed;
 }
+
+/* Trainee management: readable cards on phones, an aligned table on desktop. */
+.trainee-admin-editor { background: #1c2029; color: #fffdf7; border-color: #596171; }
+.trainee-admin-editor input, .trainee-admin-editor select { background: #10141c; color: #fffdf7; border-color: #747b89; min-height: 2.75rem; }
+.trainee-admin-table td { vertical-align: top; }
+.trainee-admin-table td:last-child { min-width: 15rem; }
+#admin-dashboard .trainee-admin-row { color: #f5f3ea; }
+#admin-dashboard .trainee-admin-row td, #admin-dashboard .trainee-admin-row strong { color: inherit; }
+#admin-dashboard .trainee-admin-row summary { min-height: 2.75rem; display: flex; align-items: center; }
+#admin-dashboard .trainee-admin-row button, #admin-dashboard .trainee-admin-row select { min-height: 2.75rem; font-size: .875rem; }
+@media (max-width: 767px) {
+  .trainee-admin-table, .trainee-admin-table tbody { display: block; width: 100%; }
+  .trainee-admin-table thead { display: none; }
+  #admin-dashboard .trainee-admin-row { display: block; margin-bottom: 1rem; padding: .75rem; border: 1px solid #596171; border-radius: 1rem; background: #1c2029; }
+  #admin-dashboard .trainee-admin-row td { display: block; padding: .65rem .25rem; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  #admin-dashboard .trainee-admin-row td::before { content: attr(data-label); display: block; margin-bottom: .35rem; color: #d6b76d; font-size: .875rem; font-weight: 700; }
+  #admin-dashboard .trainee-admin-row td:first-child { display: flex; flex-wrap: wrap; align-items: center; }
+  #admin-dashboard .trainee-admin-row td:first-child::before { width: 100%; }
+  #admin-dashboard .trainee-admin-row .text-\[9px\], #admin-dashboard .trainee-admin-row .text-\[10px\] { font-size: .8125rem; line-height: 1.5; }
+}

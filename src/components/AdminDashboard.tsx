@@ -4,6 +4,8 @@
  */
 
 import React, { useState } from 'react';
+import { AdminTraineeEditor } from './AdminTraineeEditor';
+import { TraineePaymentSummary } from './TraineePaymentSummary';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { addMinutesToTime, CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
@@ -43,7 +45,7 @@ import {
 } from '../types';
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
 import { FamilyCreditRecoveryControl } from './FamilyCreditRecoveryControl';
-import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate } from '../data/membershipPolicy';
+import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate, isMembershipFreezeActive, isMembershipCancellationEffective } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
 import { cancelRivhitRecurring, refundRivhitPayment, updateRivhitRecurringAmount } from '../data/rivhitPayments';
 import { LandingImageManager } from './LandingImageManager';
@@ -157,6 +159,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   activeUser
 }) => {
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'records' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
+  const [editingTraineeId, setEditingTraineeId] = useState<string | null>(null);
+  const currentPlans = (settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS).filter(plan => plan.active && plan.id !== MembershipType.FAMILY_MEMBERSHIP);
   const [programSessionId, setProgramSessionId] = useState('');
   const [billingPaymentId, setBillingPaymentId] = useState('');
   const [billingReason, setBillingReason] = useState('');
@@ -823,6 +827,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="admin-dashboard">
+      {editingTraineeId && users.find(user => user.id === editingTraineeId) && <AdminTraineeEditor key={editingTraineeId} user={users.find(user => user.id === editingTraineeId)!} users={users} onSave={onUpdateUsers} onClose={() => setEditingTraineeId(null)} />}
       {/* Admin Tab Header */}
       <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-2">
@@ -1366,7 +1371,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <Search className="absolute right-3 top-2.5 text-slate-400" size={16} />
                 <input
                   type="text"
-                  placeholder="חיפוש מתאמן לפי שם, טלפון, סטטוס..."
+                  placeholder="חיפוש מתאמן לפי שם, טלפון או דוא״ל"
+                  aria-label="חיפוש מתאמנים"
                   value={userSearch}
                   onChange={(e) => setUserSearch(e.target.value)}
                   className="w-full pr-9 pl-4 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500"
@@ -1398,14 +1404,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </section>
 
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-right text-xs">
+              <table className="trainee-admin-table w-full border-collapse text-right text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                     <th className="p-3">פרטי מתאמן</th>
                     <th className="p-3">פרטים אישיים</th>
                     <th className="p-3">סוג מנוי</th>
                     <th className="p-3">סטטוס מנוי ותשלום</th>
-                    <th className="p-3">עדיפות בתור</th>
                     <th className="p-3">תוקף מנוי</th>
                     <th className="p-3 text-left">שינוי סטטוס תשלום ופעולות</th>
                   </tr>
@@ -1413,10 +1418,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <tbody>
                   {users
                     .filter(u => u.role === UserRole.TRAINEE)
-                    .filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()) || u.phone.includes(userSearch))
+                    .filter(u => [u.name, u.phone, u.email].some(value => String(value || '').toLowerCase().includes(userSearch.toLowerCase())))
                     .map(u => (
-                      <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="p-3 flex items-center gap-3">
+                      <tr key={u.id} className="trainee-admin-row border-b border-slate-100 hover:bg-slate-50">
+                        <td data-label="מתאמן" className="p-3 flex items-center gap-3">
                           <img
                             src={u.imageUrl}
                             alt={u.name}
@@ -1427,20 +1432,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <div className="text-[10px] text-slate-400 font-mono">{u.email}</div>
                           </div>
                         </td>
-                        <td className="p-3 text-slate-600">
-                          <div>טלפון: {u.phone}</div>
+                        <td data-label="פרטים אישיים" className="p-3 text-slate-600">
+                          <div>טלפון: {u.phone || 'לא הוזן'}</div>
                           <div className="text-[10px]">גיל: {u.age || 'לא הוגדר'} | מין: {getGenderLabel(u.gender)}</div>
                         </td>
-                        <td className="p-3 font-medium">
+                        <td data-label="מסלולים ומשפחה" className="p-3 font-medium">
                           <div>
                             {u.membershipType && (
                               <div>
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded border block w-fit ${MEMBERSHIP_TYPE_LABELS[u.membershipType]?.badgeColor || 'bg-slate-100 text-slate-700'}`}>
-                                  {MEMBERSHIP_TYPE_LABELS[u.membershipType]?.label || u.membershipType}
+                                  {settings.membershipPlans?.find(plan => plan.id === u.membershipType)?.label || MEMBERSHIP_TYPE_LABELS[u.membershipType]?.label || u.membershipType}
                                 </span>
-                                {u.membershipType === MembershipType.PERSONAL_TRAINING && (
+                                {(u.membershipType === MembershipType.PERSONAL_TRAINING || u.membershipType === MembershipType.DUO_TRAINING || u.secondaryMemberships?.some(type => [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(type))) && (
                                   <div className="text-[10px] text-slate-500 mt-1">
-                                    תעריף: <strong>₪{u.personalTrainingRate || 150}</strong> / אימון | החודש: {u.personalSessionsCountThisMonth || 0}
+                                    יתרת אישי: {u.personalTrainingRemaining ?? 0} · יתרת זוגי: {u.duoTrainingRemaining ?? 0}
                                   </div>
                                 )}
                                 {u.membershipType === MembershipType.OPEN_PUNCH_CARD && (
@@ -1469,7 +1474,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <div className="flex flex-wrap gap-1 mt-0.5">
                                   {u.secondaryMemberships.map((sec, idx) => (
                                     <span key={idx} className={`text-[9px] font-medium px-1.5 py-0.5 rounded border ${MEMBERSHIP_TYPE_LABELS[sec]?.badgeColor || 'bg-slate-100 text-slate-700'}`}>
-                                      {MEMBERSHIP_TYPE_LABELS[sec]?.label || sec}
+                                      {settings.membershipPlans?.find(plan => plan.id === sec)?.label || MEMBERSHIP_TYPE_LABELS[sec]?.label || sec}
                                     </span>
                                   ))}
                                 </div>
@@ -1477,7 +1482,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             )}
                           </div>
                         </td>
-                        <td className="p-3">
+                        <td data-label="סטטוס ותשלומים" className="p-3">
                           <div className="space-y-1">
                             <span className={`px-2 py-1 rounded-full text-[10px] font-semibold block w-fit ${
                               u.membershipStatus === MembershipStatus.ACTIVE
@@ -1486,7 +1491,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
                                 : 'bg-slate-200 text-slate-700'
                             }`}>
-                              {u.membershipStatus === MembershipStatus.ACTIVE && 'פעיל / שולם'}
+                              {u.membershipStatus === MembershipStatus.ACTIVE && (isMembershipCancellationEffective(u) ? 'המנוי בוטל' : u.membershipExpiry && u.membershipExpiry < toLocalIsoDate(new Date()) ? 'תוקף המנוי פג' : 'מנוי פעיל')}
                               {u.membershipStatus === MembershipStatus.DEBT && 'חוב כספי ❌'}
                               {u.membershipStatus === MembershipStatus.EXPIRED && 'פג תוקף ❌'}
                             </span>
@@ -1496,16 +1501,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 🛡️ אישור חריג מנהל (מזומן/ידני)
                               </span>
                             )}
+                            {u.registrationIncomplete && <span className="block">בתהליך הרשמה — חסרים פרטים</span>}
+                            {(u.registrationPaymentPending || u.familyPaymentPending) && <span className="block">ממתין להשלמת תשלום</span>}
+                            {isMembershipFreezeActive(u) && <span className="block">מוקפא עד {u.membershipFrozenUntil}</span>}
+                            <TraineePaymentSummary user={u} payments={payments} discounts={discountCodes} plans={settings.membershipPlans || DEFAULT_MEMBERSHIP_PLAN_CONFIGS} />
                           </div>
                         </td>
-                        <td className="p-3">
-                          <span className={`font-mono font-bold ${u.priorityScore < 100 ? 'text-rose-500' : 'text-slate-700'}`}>
-                            {u.priorityScore} / 100
-                          </span>
-                        </td>
-                        <td className="p-3 text-slate-500 font-mono">{u.membershipExpiry}</td>
-                        <td className="p-3 text-left">
+                        <td data-label="תוקף מנוי" className="p-3 text-slate-500 font-mono">{u.membershipExpiry || 'לא הוגדר'}</td>
+                        <td data-label="פעולות ניהול" className="p-3 text-left">
                           <div className="flex flex-col gap-1 items-end">
+                            <button type="button" className="w-full rounded-xl bg-amber-400 px-3 py-3 font-bold text-black" onClick={() => setEditingTraineeId(u.id)}>עריכת פרטים ושיוך למשפחה</button>
+                            <details className="w-full rounded-xl border p-3 text-right"><summary className="cursor-pointer font-bold">פעולות מסלול, תשלום ומחיקה</summary><div className="mt-3 flex flex-col gap-2">
                             <DeleteUserControl user={u} users={users} manager={activeUser} />
                             {u.membershipFreezeRequestedAt && <div className="w-full rounded-lg border p-2 text-sm">
                               <p>בקשת הקפאה לחודש — {new Date(u.membershipFreezeRequestedAt).toLocaleDateString('he-IL')}</p>
@@ -1602,76 +1608,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 🎟️ טעינת כרטיסייה ({u.punchCardRemaining ?? 0})
                               </button>
 
-                              {/* Manager Family Link Action */}
-                              <button
-                                onClick={() => {
-                                  const famName = prompt(`הכנס שם משפחה עבור ${u.name} (למשל: משפחת לוי):`, u.familyName || 'משפחת לוי');
-                                  if (famName !== null) {
-                                    const isPayer = confirm(`האם ${u.name} הוא ראש המשפחה המשלם? (אישור = משלם, ביטול = בן משפחה)`);
-                                    const updated = users.map(user => {
-                                      if (user.id === u.id) {
-                                        return {
-                                          ...user,
-                                          membershipType: MembershipType.GROUP_MONTHLY,
-                                          familyId: `family-${famName.trim().toLowerCase()}`,
-                                          familyName: famName.trim(),
-                                          isFamilyPayer: isPayer,
-                                          secondaryMemberships: user.secondaryMemberships?.length ? user.secondaryMemberships : [MembershipType.OPEN_MONTHLY]
-                                        };
-                                      }
-                                      return user;
-                                    });
-                                    onUpdateUsers(updated);
-                                    alert(`עודכן מנוי משפחתי עבור ${u.name} (${famName}) 👨‍👩‍👧‍👦`);
-                                  }
-                                }}
-                                className="text-[9px] text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-300 font-semibold py-0.5 px-2 rounded w-full text-center"
-                                title="הגדר/הצמד למנוי משפחתי"
-                              >
-                                👨‍👩‍👧‍👦 הגדר מנוי משפחתי
-                              </button>
-
-                              {/* Manager Multi-Membership Toggle Action */}
-                              <button
-                                onClick={() => {
-                                  const choice = prompt(
-                                    `בחר מנוי משני להוספה/הסרה עבור ${u.name}:\n1 = אימון אישי (PERSONAL_TRAINING)\n2 = תוכנית תזונה (NUTRITION_PLAN)\n3 = תוכנית אימון (WORKOUT_PLAN)\n4 = פתוח כרטיסייה (OPEN_PUNCH_CARD)\n5 = קבוצתי חודשי (GROUP_MONTHLY)\n6 = פתוח חודשי (OPEN_MONTHLY)`,
-                                    '1'
-                                  );
-                                  let addedType: MembershipType | null = null;
-                                  if (choice === '1') addedType = MembershipType.PERSONAL_TRAINING;
-                                  if (choice === '2') addedType = MembershipType.NUTRITION_PLAN;
-                                  if (choice === '3') addedType = MembershipType.WORKOUT_PLAN;
-                                  if (choice === '4') addedType = MembershipType.OPEN_PUNCH_CARD;
-                                  if (choice === '5') addedType = MembershipType.GROUP_MONTHLY;
-                                  if (choice === '6') addedType = MembershipType.OPEN_MONTHLY;
-
-                                  if (addedType) {
-                                    const currentSec = u.secondaryMemberships || [];
-                                    const exists = currentSec.includes(addedType);
-                                    const nextSec = exists 
-                                      ? currentSec.filter(t => t !== addedType)
-                                      : [...currentSec, addedType];
-
-                                    const updated = users.map(user => {
-                                      if (user.id === u.id) {
-                                        return {
-                                          ...user,
-                                          secondaryMemberships: nextSec,
-                                          punchCardRemaining: addedType === MembershipType.OPEN_PUNCH_CARD && !exists ? 10 : user.punchCardRemaining
-                                        };
-                                      }
-                                      return user;
-                                    });
-                                    onUpdateUsers(updated);
-                                    alert(`עודכן מנוי משולב עבור ${u.name}! 🌟`);
-                                  }
-                                }}
-                                 className="text-[9px] text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 font-semibold py-0.5 px-2 rounded w-full text-center"
-                                title="הוסף או הסר מנוי משני משולב"
-                              >
-                                ➕ מנוי משולב נוסף
-                            </button>
+                              <details className="w-full rounded-xl border p-3 text-right">
+                                <summary className="cursor-pointer font-bold">ניהול מנויים משולבים</summary>
+                                <p className="my-2 text-sm">שינוי הרשאות בלבד, ללא חיוב או יצירת תשלום. המחיר ששולם מוצג מהעסקאות.</p>
+                                {currentPlans.filter(plan => plan.id !== u.membershipType).map(plan => <label key={plan.id} className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(u.secondaryMemberships?.includes(plan.id as MembershipType))} onChange={event => onUpdateUsers(users.map(member => member.id === u.id ? { ...member, secondaryMemberships: event.target.checked ? [...(member.secondaryMemberships || []), plan.id as MembershipType] : (member.secondaryMemberships || []).filter(type => type !== plan.id) } : member))} />{plan.label} · מחירון ₪{plan.price}</label>)}
+                                {(u.secondaryMemberships || []).filter(type => !currentPlans.some(plan => plan.id === type)).map(type => <label key={type} className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked onChange={() => onUpdateUsers(users.map(member => member.id === u.id ? { ...member, secondaryMemberships: member.secondaryMemberships?.filter(existing => existing !== type) } : member))} />{MEMBERSHIP_TYPE_LABELS[type]?.label || type} — מסלול לא פעיל (ניתן להסיר)</label>)}
+                              </details>
 
                             {/* Primary Membership Selector */}
                             <select
@@ -1683,16 +1625,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               }}
                               className="border border-slate-200 rounded p-1 text-[10px] focus:outline-none bg-emerald-50 text-emerald-900 font-bold w-full"
                               title="שינוי סוג מנוי ראשי"
+                              aria-label={`מסלול ראשי של ${u.name}`}
                             >
-                              {CURRENT_MEMBERSHIP_CATALOG.map(typeKey => (
-                                <option key={typeKey} value={typeKey}>
-                                  {MEMBERSHIP_TYPE_LABELS[typeKey].label}
-                                </option>
-                              ))}
+                              {!currentPlans.some(plan => plan.id === u.membershipType) && <option value={u.membershipType || ''}>{u.membershipType ? `${MEMBERSHIP_TYPE_LABELS[u.membershipType]?.label || u.membershipType} — לא פעיל` : 'לא נבחר מסלול'}</option>}
+                              {currentPlans.map(plan => <option key={plan.id} value={plan.id}>{plan.label}</option>)}
                             </select>
 
                             <select
                               value={u.membershipStatus}
+                              aria-label={`סטטוס המנוי של ${u.name}`}
                               onChange={(e) => handleUpdateStatus(u.id, e.target.value as MembershipStatus)}
                               className="border border-slate-200 rounded p-1 text-[10px] focus:outline-none bg-white w-full"
                             >
@@ -1700,6 +1641,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <option value={MembershipStatus.DEBT}>סמן בחוב כספי</option>
                               <option value={MembershipStatus.EXPIRED}>סמן כפג תוקף</option>
                             </select>
+                            </div></details>
                           </div>
                         </td>
                       </tr>

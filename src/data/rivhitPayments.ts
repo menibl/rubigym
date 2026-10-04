@@ -37,6 +37,7 @@ interface CreatePaymentRequest {
 }
 
 export interface VerifiedRivhitPayment {
+  discountCode?: string | null;
   success: true;
   paymentReference: string;
   userId?: string;
