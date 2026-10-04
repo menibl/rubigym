@@ -23,6 +23,43 @@ const rivhitFetch = async (url, init) => {
   return Response.json({}, { status: 404 });
 };
 
+for (const webhookFirst of [true, false]) {
+  test(`webhook SaleId and browser TransactionId persist once (webhook first: ${webhookFirst})`, async () => {
+    let signedOrder;
+    let state = { revision: 1, payload: { users: [{ id: 'payer', name: 'Payer', role: 'TRAINEE', secondaryMemberships: [] }], payments: [], messages: [] } };
+    const store = {
+      async getSession() { return { club_id: 'test', user_id: 'payer' }; },
+      async getAccount() { return { user_id: 'payer', role: 'TRAINEE' }; },
+      async getClubState() { return state; },
+      async putClubState(_id, payload, revision) {
+        if (revision !== state.revision) return { conflict: true };
+        state = { payload, revision: revision + 1 };
+        return { revision: state.revision, conflict: false };
+      }
+    };
+    const env = { STATE_STORE: store, CLUB_ID: 'test', RIVHIT_ENVIRONMENT: 'test', RIVHIT_GROUP_PRIVATE_TOKEN: 'test-group-token', PAYMENT_SIGNING_SECRET: 'dedup-test-secret', PUBLIC_APP_URL: 'https://balywellness.test/',
+      RIVHIT_FETCH: async (url, init) => {
+        if (url.endsWith('/GetUrl')) signedOrder = JSON.parse(init.body).Custom1;
+        return rivhitFetch(url, init);
+      }
+    };
+    const post = (path, body) => worker.fetch(new Request(`https://balywellness.test/api/payments/rivhit/${path}`, { method: 'POST', headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
+    const created = await post('create', { userId: 'payer', userName: 'Payer', membershipType: 'WORKOUT_COACHING', mode: 'ADDON' });
+    assert.equal(created.status, 200);
+    const checkout = await created.json();
+    const webhook = () => post('webhook', { SaleId: 'sale-1', Custom1: signedOrder, TransactionAmount: '1.00' });
+    const verify = () => post('verify', { paymentReference: checkout.paymentReference });
+    for (const call of webhookFirst ? [webhook, verify, webhook, verify] : [verify, webhook, verify, webhook]) {
+      const response = await call();
+      assert.equal(response.status, 200, await response.text());
+    }
+    assert.equal(state.payload.payments.length, 1);
+    assert.equal(state.payload.payments[0].providerTransactionId, 'transaction-1');
+    assert.match(state.payload.payments[0].paymentMethod, /1111$/);
+    assert.deepEqual(state.payload.users[0].secondaryMemberships, ['WORKOUT_COACHING']);
+  });
+}
+
 for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER']) {
   test(`family payment persists identity and extra members remain pending payment: ${familyBillingMode}`, async () => {
     let state = { revision: 1, payload: { users: [{ id: 'payer', name: 'Payer', role: 'TRAINEE', membershipType: 'OPEN_GYM' }], payments: [], messages: [] } };

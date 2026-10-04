@@ -348,6 +348,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       billingTermMonths: verified.termMonths,
       sessionsPurchased: verified.includedSessions,
       paymentMethod: `RIVHIT iCredit${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
+      provider: 'RIVHIT',
+      providerSaleId: verified.saleId,
+      providerTransactionId: verified.transactionId,
       isMock: false
     }, ...payments]);
   };

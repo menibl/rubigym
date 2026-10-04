@@ -48,6 +48,7 @@ export interface VerifiedRivhitPayment {
   recurringMonths?: number;
   includedSessions?: number;
   transactionId: string;
+  saleId?: string;
   last4Digits?: string;
   mode: PendingRivhitPayment['mode'];
   purchaseVariant?: PendingRivhitPayment['purchaseVariant'];
