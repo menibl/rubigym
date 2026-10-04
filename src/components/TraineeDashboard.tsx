@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { resolveSessionProgram } from '../data/sessionProgram';
@@ -625,16 +626,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     if (!effectiveExpiry || effectiveExpiry < toLocalIsoDate(new Date())) return { eligible: false, reason: 'תוקף המנוי פג.' };
 
     const memberships = [activeUser.membershipType, ...(activeUser.secondaryMemberships || [])].filter(Boolean) as MembershipType[];
-    const includedOpenGymAccess = memberships.some(type => [
-      MembershipType.OPEN_GYM,
-      MembershipType.OPEN_GYM_WITH_PLAN,
-      MembershipType.CORE_GROUPS,
-      MembershipType.FAMILY_MEMBERSHIP,
-      MembershipType.GROUP_MONTHLY,
-      MembershipType.GROUP_ANNUAL,
-      MembershipType.OPEN_MONTHLY,
-      MembershipType.OPEN_ANNUAL
-    ].includes(type));
+    const includedOpenGymAccess = hasIncludedOpenGymAccess(memberships);
     const usesPunchCard = !includedOpenGymAccess && memberships.includes(MembershipType.OPEN_PUNCH_CARD);
     if (!includedOpenGymAccess && !usesPunchCard) return { eligible: false, reason: 'המסלול אינו כולל Open Gym.' };
     if (usesPunchCard && (activeUser.punchCardRemaining ?? 0) <= 0) return { eligible: false, reason: 'אזלו הניקובים בכרטיסייה.' };
@@ -653,17 +645,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   const activeMembershipTypes = [activeUser.membershipType, ...(activeUser.secondaryMemberships || [])].filter(Boolean) as MembershipType[];
-  const hasOpenGymMembershipAccess = activeMembershipTypes.some(type => [
-    MembershipType.OPEN_GYM,
-    MembershipType.OPEN_GYM_WITH_PLAN,
-    MembershipType.CORE_GROUPS,
-    MembershipType.FAMILY_MEMBERSHIP,
-    MembershipType.GROUP_MONTHLY,
-    MembershipType.GROUP_ANNUAL,
-    MembershipType.OPEN_MONTHLY,
-    MembershipType.OPEN_ANNUAL,
-    MembershipType.OPEN_PUNCH_CARD
-  ].includes(type));
+  const hasOpenGymMembershipAccess = hasIncludedOpenGymAccess(activeMembershipTypes)
+    || activeMembershipTypes.includes(MembershipType.OPEN_PUNCH_CARD);
   const isSessionRelevantToTrainee = (session: TrainingSession) => {
     if (session.genderRestriction === Gender.FEMALE && activeUser.gender !== Gender.FEMALE) return false;
     if (session.genderRestriction === Gender.MALE && activeUser.gender !== Gender.MALE) return false;
@@ -1109,15 +1092,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       activeUser.membershipType,
       ...(activeUser.secondaryMemberships || [])
     ].filter(Boolean) as MembershipType[];
-    const includedOpenGymAccess = memberships.some(type => [
-      MembershipType.OPEN_GYM,
-      MembershipType.OPEN_GYM_WITH_PLAN,
-      MembershipType.CORE_GROUPS,
-      MembershipType.FAMILY_MEMBERSHIP,
-      MembershipType.GROUP_ANNUAL,
-      MembershipType.OPEN_MONTHLY,
-      MembershipType.OPEN_ANNUAL
-    ].includes(type));
+    const includedOpenGymAccess = hasIncludedOpenGymAccess(memberships);
     const usesPunchCard = !includedOpenGymAccess && memberships.includes(MembershipType.OPEN_PUNCH_CARD);
 
     if (!includedOpenGymAccess && !usesPunchCard) {
@@ -1171,16 +1146,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       activeUser.membershipType,
       ...(activeUser.secondaryMemberships || [])
     ].filter(Boolean) as MembershipType[];
-    const includedOpenGymAccess = memberships.some(type => [
-      MembershipType.OPEN_GYM,
-      MembershipType.OPEN_GYM_WITH_PLAN,
-      MembershipType.CORE_GROUPS,
-      MembershipType.FAMILY_MEMBERSHIP,
-      MembershipType.GROUP_MONTHLY,
-      MembershipType.GROUP_ANNUAL,
-      MembershipType.OPEN_MONTHLY,
-      MembershipType.OPEN_ANNUAL
-    ].includes(type));
+    const includedOpenGymAccess = hasIncludedOpenGymAccess(memberships);
     const usesPunchCard = !includedOpenGymAccess && memberships.includes(MembershipType.OPEN_PUNCH_CARD);
     let updatedOpenGym: OpenGymSession[];
 
