@@ -5,6 +5,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
+import { membershipExpired } from '../../shared/membership-calendar.js';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { resolveSessionProgram } from '../data/sessionProgram';
@@ -289,7 +290,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         );
         if (familyMembersCount && purchasedFamilyBillingMode === 'MONTHLY_PER_MEMBER') {
           membershipTerm.recurringBillingMonths = 0;
-          membershipTerm.monthlyBillingDay = new Date().getDate();
+          membershipTerm.monthlyBillingDay = 1;
         }
         return {
           ...user,
@@ -485,9 +486,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
 
     const payer = activeUser.familyPayerId ? users.find(user => user.id === activeUser.familyPayerId) : undefined;
-    const effectiveExpiry = payer?.membershipExpiry || activeUser.membershipExpiry;
-    const today = new Date().toISOString().split('T')[0];
-    if (!effectiveExpiry || effectiveExpiry < today) {
+    const expiryOwner = activeUser.membershipExpiry ? activeUser : payer;
+    if (membershipExpired(expiryOwner)) {
       return {
         eligible: false,
         reason: 'תוקף המנוי פג. יש לחדש את המנוי לפני הרשמה לאימון.'
@@ -626,8 +626,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved) && !isMembershipCancellationEffective(payer));
     if (!isPaid) return { eligible: false, reason: 'המנוי אינו פעיל או לא שולם.' };
 
-    const effectiveExpiry = payer?.membershipExpiry || activeUser.membershipExpiry;
-    if (!effectiveExpiry || effectiveExpiry < toLocalIsoDate(new Date())) return { eligible: false, reason: 'תוקף המנוי פג.' };
+    const expiryOwner = activeUser.membershipExpiry ? activeUser : payer;
+    if (membershipExpired(expiryOwner)) return { eligible: false, reason: 'תוקף המנוי פג.' };
 
     const memberships = [activeUser.membershipType, ...(activeUser.secondaryMemberships || [])].filter(Boolean) as MembershipType[];
     const includedOpenGymAccess = hasIncludedOpenGymAccess(memberships);
@@ -1065,9 +1065,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       return;
     }
 
-    const effectiveExpiry = payer?.membershipExpiry || activeUser.membershipExpiry;
-    const today = new Date().toISOString().split('T')[0];
-    if (!effectiveExpiry || effectiveExpiry < today) {
+    const expiryOwner = activeUser.membershipExpiry ? activeUser : payer;
+    if (membershipExpired(expiryOwner)) {
       setActiveTab('membership');
       openMembershipCheckout(MembershipType.OPEN_GYM, 'PRIMARY');
       return;

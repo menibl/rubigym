@@ -1,3 +1,4 @@
+import { membershipExpired } from './membership-calendar.js';
 const fail = message => { throw new Error(message); };
 const balanceField = type => type === 'DUO' ? 'duoTrainingRemaining' : 'personalTrainingRemaining';
 const bookingMessages = (payload, session, booking, action, now) => {
@@ -100,7 +101,7 @@ export const changePersonalBooking = (payload, actorId, input, now = Date.now())
   // The partner attends using the payer's duo card; never require/debit a second card.
   const familyPayer = users.find(u => u.id === payer.familyPayerId);
   if (!(payer.membershipStatus === 'ACTIVE' || payer.offlinePaymentApproved || familyPayer?.membershipStatus === 'ACTIVE') ||
-    !(String(familyPayer?.membershipExpiry || payer.membershipExpiry || '') >= today)) fail('יש לחדש את המנוי לפני ההרשמה.');
+    membershipExpired(payer.membershipExpiry ? payer : familyPayer, today)) fail('יש לחדש את המנוי לפני ההרשמה.');
   const participantIds = participants.map(u => u.id);
   const booking = { id: input.bookingId, type: input.type, payerId: payer.id, participantIds,
     status: 'BOOKED', originalTargetTraineeId: session.targetTraineeId, originalCapacity: session.maxParticipants };
