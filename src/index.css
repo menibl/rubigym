@@ -3434,3 +3434,15 @@ option {
   #admin-dashboard .trainee-admin-row td:first-child::before { width: 100%; }
   #admin-dashboard .trainee-admin-row .text-\[9px\], #admin-dashboard .trainee-admin-row .text-\[10px\] { font-size: .8125rem; line-height: 1.5; }
 }
+
+/* Keep dark-table contrast when hovered, touched or navigated by keyboard. */
+#admin-dashboard .admin-readable-row {
+  background-color: #1c2029;
+  color: #f5f3ea;
+}
+#admin-dashboard .admin-readable-row > td { color: inherit; }
+#admin-dashboard .admin-readable-row:hover,
+#admin-dashboard .admin-readable-row:focus-within {
+  background-color: #161b23;
+  color: #fffdf7;
+}

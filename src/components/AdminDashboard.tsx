@@ -1420,7 +1420,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     .filter(u => u.role === UserRole.TRAINEE)
                     .filter(u => [u.name, u.phone, u.email].some(value => String(value || '').toLowerCase().includes(userSearch.toLowerCase())))
                     .map(u => (
-                      <tr key={u.id} className="trainee-admin-row border-b border-slate-100 hover:bg-slate-50">
+                      <tr key={u.id} className="trainee-admin-row admin-readable-row border-b border-slate-100">
                         <td data-label="מתאמן" className="p-3 flex items-center gap-3">
                           <img
                             src={u.imageUrl}
@@ -1858,7 +1858,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </thead>
                   <tbody>
                     {payments.map(p => (
-                      <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <tr key={p.id} className="admin-readable-row border-b border-slate-100">
                         <td className="p-3 text-slate-400 font-mono text-[10px]">{p.id}</td>
                         <td className="p-3 font-semibold text-slate-800">{p.traineeName}</td>
                         <td className="p-3 font-bold font-mono text-emerald-600">₪{p.amount}</td>
