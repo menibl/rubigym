@@ -779,6 +779,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         provider: 'RIVHIT',
         providerSaleId: payment.saleId,
         providerTransactionId: payment.transactionId,
+        discountCode: normalizeDiscountCode(order.c) || null,
         providerRecurringSaleId: payment.recurringSaleId || undefined,
         recurringAmount: order.rr ? Number(order.a) : undefined
       }, ...(state.payload.payments || [])]
@@ -1006,6 +1007,7 @@ const handleVerifyPayment = async (request, env) => {
     includedSessions: order.sc,
     amount: order.a,
     packageAmount: order.fa,
+    discountCode: normalizeDiscountCode(order.c) || null,
     ...providerPayment
   };
   await persistVerifiedPurchase(env, order, payment, identity?.user_id);
@@ -1418,6 +1420,8 @@ const handleApi = async (request, env, url) => {
         if (verified.order.u !== user.id || verified.order.d !== 'REGISTRATION') return json({ message: 'התשלום אינו שייך להרשמה הזו.' }, 400, headers);
         const { paymentReference: _reference, ...receipt } = registrationPayment;
         registrationPayment = { ...receipt, id: `payment-rivhit-${verified.payment.transactionId}`, traineeId: user.id,
+          discountCode: normalizeDiscountCode(verified.order.c) || null,
+          familyMemberPlans: verified.order.fp,
           amount: verified.order.a, status: 'PAID', membershipTypePurchased: verified.order.m,
           provider: 'RIVHIT', providerSaleId: verified.payment.saleId, providerTransactionId: verified.payment.transactionId,
           purchaseMode: 'REGISTRATION', isMock: rivhitEnvironment(env) !== 'production' };

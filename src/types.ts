@@ -770,6 +770,8 @@ export interface Announcement {
 }
 
 export interface Payment {
+  discountCode?: string | null;
+  familyMemberPlans?: FamilyMemberPlanSelection[];
   paymentReference?: string;
   id: string;
   traineeId: string;
