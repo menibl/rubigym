@@ -425,7 +425,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     );
     if (isFamilyPlan && familyBillingMode === 'MONTHLY_PER_MEMBER') {
       membershipTerm.recurringBillingMonths = 0;
-      membershipTerm.monthlyBillingDay = new Date().getDate();
+      membershipTerm.monthlyBillingDay = 1;
     }
     const now = Date.now();
     const familyId = isFamilyPlan ? `fam-${now}` : undefined;
@@ -512,7 +512,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       const memberTerm = createMembershipTerm(familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : membershipType);
       if (familyBillingMode === 'MONTHLY_PER_MEMBER') {
         memberTerm.recurringBillingMonths = 0;
-        memberTerm.monthlyBillingDay = new Date().getDate();
+        memberTerm.monthlyBillingDay = 1;
       }
       return {
         id: `user-family-${now}-${index + 1}`,
