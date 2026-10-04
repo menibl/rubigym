@@ -1,5 +1,6 @@
 import { MembershipPlanConfig, MembershipType, User } from '../types';
 import { billingPeriodForPlan, membershipDurationMonthsForPlan } from './membershipBilling';
+import { calendarTerm } from '../../shared/membership-calendar.js';
 
 export const toLocalIsoDate = (date: Date) => {
   const year = date.getFullYear();
@@ -37,7 +38,10 @@ export const createMembershipTerm = (type: MembershipType, startedAt = new Date(
     membershipExpiry: endDate,
     membershipCommitmentEndsAt: annualMonthlyCommitment ? endDate : undefined,
     recurringBillingMonths: recurringMonthly ? (annualMonthlyCommitment ? 12 : 0) : undefined,
-    monthlyBillingDay: recurringMonthly ? startedAt.getDate() : undefined
+    monthlyBillingDay: recurringMonthly ? startedAt.getDate() : undefined,
+    membershipExpiryManualOverride: false,
+    membershipExpiryExclusive: false,
+    ...calendarTerm(type, startedAt)
   };
 };
 

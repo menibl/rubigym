@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
+import { membershipExpired } from '../../shared/membership-calendar.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
@@ -764,9 +765,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         return {
           ...u,
           membershipStatus: MembershipStatus.ACTIVE,
+          ...term,
           ...(purchasedType === MembershipType.GROUP_ANNUAL && u.membershipCommitmentEndsAt
-            ? { membershipExpiry: u.membershipCommitmentEndsAt }
-            : term)
+            ? { membershipCommitmentEndsAt: u.membershipCommitmentEndsAt } : {})
         };
       }
       return u;
@@ -1491,7 +1492,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
                                 : 'bg-slate-200 text-slate-700'
                             }`}>
-                              {u.membershipStatus === MembershipStatus.ACTIVE && (isMembershipCancellationEffective(u) ? 'המנוי בוטל' : u.membershipExpiry && u.membershipExpiry < toLocalIsoDate(new Date()) ? 'תוקף המנוי פג' : 'מנוי פעיל')}
+                              {u.membershipStatus === MembershipStatus.ACTIVE && (isMembershipCancellationEffective(u) ? 'המנוי בוטל' : membershipExpired(u) ? 'תוקף המנוי פג' : 'מנוי פעיל')}
                               {u.membershipStatus === MembershipStatus.DEBT && 'חוב כספי ❌'}
                               {u.membershipStatus === MembershipStatus.EXPIRED && 'פג תוקף ❌'}
                             </span>

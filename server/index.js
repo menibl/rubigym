@@ -3,6 +3,7 @@ import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validateP
 import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
+import { calendarTerm, repairCalendarMemberships } from '../shared/membership-calendar.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
@@ -637,11 +638,14 @@ const membershipTermFor = (type, order = {}) => {
     membershipExpiry: endDate,
     membershipCommitmentEndsAt: hasAnnualCommitment ? endDate : undefined,
     recurringBillingMonths: hasRecurringBilling ? (Number(order.rm) || (type === 'GROUP_ANNUAL' ? 12 : 0)) : undefined,
-    monthlyBillingDay: hasRecurringBilling ? startedAt.getUTCDate() : undefined
+    monthlyBillingDay: hasRecurringBilling ? startedAt.getUTCDate() : undefined,
+    membershipExpiryManualOverride: false,
+    membershipExpiryExclusive: false,
+    ...calendarTerm(type, startedAt)
   };
 };
 
-const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
+const applyVerifiedPurchaseToUsers = (users, userId, order, amount, catalog = []) => {
   const workoutTypes = ['WORKOUT_COACHING', 'WORKOUT_PLAN', 'OPEN_GYM_WITH_PLAN'];
   const nutritionTypes = ['NUTRITION_COACHING', 'NUTRITION_PLAN'];
   return (users || []).map(candidate => {
@@ -662,7 +666,11 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount) => {
         membershipStatus: 'ACTIVE',
         familyPaymentPending: false,
         registrationPaymentPending: false,
-        ...membershipTermFor(type, order),
+        ...membershipTermFor(type, (() => {
+          const plan = catalog.find(plan => plan.id === type);
+          const bp = plan ? normalizedBillingPeriod(plan) : undefined;
+          return { ...order, tm: bp ? planTermMonths(bp) : undefined, rm: bp === 'MONTHLY_ANNUAL_COMMITMENT' ? 12 : undefined, rr: bp === 'MONTHLY', bp };
+        })()),
         familyBillingMode: 'CUSTOM_COMBINED',
         familyCombinedAmount: amount,
         familyTrackName: 'משפחתי מותאם – תשלום מאוחד',
@@ -734,13 +742,16 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     if (!user) throw new Error('PAYMENT_USER_NOT_FOUND');
     if ((state.payload.payments || []).some(existing => existing.id === paymentId)) return;
 
-    let updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.fa ?? order.a));
+    let updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.fa ?? order.a), state.payload.settings?.membershipPlans || []);
     if (order.cs) {
       // Adding a member does not buy another free month for the existing payer.
       updatedUsers = updatedUsers.map(updated => {
         const previous = state.payload.users.find(item => item.id === updated.id);
         if (!order.fp?.some(plan => plan.memberId === updated.id)) return updated;
-        return { ...updated, membershipExpiry: previous?.familyPaymentPending ? user.membershipExpiry : previous?.membershipExpiry || updated.membershipExpiry };
+        const expirySource = previous?.familyPaymentPending ? user : previous?.membershipExpiry ? previous : updated;
+        return { ...updated, membershipExpiry: expirySource.membershipExpiry,
+          membershipExpiryExclusive: expirySource.membershipExpiryExclusive,
+          membershipExpiryManualOverride: expirySource.membershipExpiryManualOverride };
       });
     }
     const payload = appendUserChangeMessages(state.payload, {
@@ -1120,8 +1131,9 @@ const handleApi = async (request, env, url) => {
           repairedFamily.changed = true;
           return unpaidRegistration(user);
         }) };
-        if (!recovered.recoveredUsers.length && !repairedFamily.changed) return state;
-        const nextPayload = appendUserChangeMessages(state.payload, repairedFamily.payload);
+        const calendarRepair = repairCalendarMemberships(repairedFamily.payload);
+        if (!recovered.recoveredUsers.length && !repairedFamily.changed && !calendarRepair.changed) return state;
+        const nextPayload = appendUserChangeMessages(state.payload, calendarRepair.payload);
         const result = await env.STATE_STORE.putClubState(targetClubId, nextPayload, state.revision);
         if (!result.conflict) {
           console.warn('Recovered trainee profiles from durable login accounts', { count: recovered.recoveredUsers.length });
@@ -1427,7 +1439,8 @@ const handleApi = async (request, env, url) => {
           purchaseMode: 'REGISTRATION', isMock: rivhitEnvironment(env) !== 'production' };
       }
       if (!registrationPayment) safeUser = unpaidRegistration(safeUser);
-      const safeFamilyUsers = familyUsers.map(candidate => registrationPayment ? stripCredentials(candidate) : unpaidRegistration(stripCredentials(candidate)));
+      else safeUser = { ...safeUser, ...calendarTerm(safeUser.membershipType) };
+      const safeFamilyUsers = familyUsers.map(candidate => registrationPayment ? { ...stripCredentials(candidate), ...calendarTerm(candidate.membershipType) } : unpaidRegistration(stripCredentials(candidate)));
       const nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
         users: [safeUser, ...safeFamilyUsers, ...(state.payload.users || []).filter(candidate => !registrations.some(registration => registration.id === candidate.id))],

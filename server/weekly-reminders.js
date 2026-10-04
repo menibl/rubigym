@@ -1,3 +1,4 @@
+import { membershipExpired } from '../shared/membership-calendar.js';
 const groups = new Set(['CORE_GROUPS', 'GROUP_MONTHLY', 'GROUP_ANNUAL', 'DEDICATED_GROUP_HALF_YEAR', 'YOUTH_ONCE_WEEKLY', 'YOUTH_TWICE_WEEKLY']);
 const openGym = new Set(['OPEN_GYM', 'OPEN_GYM_WITH_PLAN']);
 const shiftDate = (date, days) => new Date(Date.parse(`${date}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
@@ -19,7 +20,7 @@ export function weeklyMessages(payload, now) {
   const existing = new Set((payload.messages || []).map(m => m.id));
   return (payload.users || []).flatMap(user => {
     if (user.role !== 'TRAINEE' || user.membershipStatus !== 'ACTIVE' || user.registrationIncomplete || user.registrationPaymentPending || user.familyPaymentPending
-      || !Number.isFinite(Date.parse(user.membershipExpiry || '')) || user.membershipExpiry.slice(0, 10) < slot.date
+      || !Number.isFinite(Date.parse(user.membershipExpiry || '')) || membershipExpired(user, slot.date)
       || (user.isMembershipFrozen && (!user.membershipFrozenUntil || user.membershipFrozenUntil >= slot.date))) return [];
     const plans = [user.membershipType, ...(user.secondaryMemberships || [])];
     const hasGroups = plans.some(p => groups.has(p));
