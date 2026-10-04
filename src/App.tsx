@@ -121,7 +121,8 @@ export default function App() {
 
   // Modals state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<'profile' | 'health' | 'family'>('profile');
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'profile' | 'health' | 'family' | 'family-add'>('profile');
+  const [familyCheckoutRequest, setFamilyCheckoutRequest] = useState(0);
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -938,6 +939,7 @@ export default function App() {
               onHome={navigateHome}
               onLogout={handleLogout}
               initialTab={traineeInitialTab}
+              familyCheckoutRequest={workspaceView === 'MY_MEMBERSHIP' ? familyCheckoutRequest : 0}
             />
           )}
         </div>
@@ -964,7 +966,10 @@ export default function App() {
         onUpdateDiscountCodes={setDiscountCodes}
         isAdminMode={activeUser.role === UserRole.MANAGER && userToEdit?.id !== activeUser.id}
         initialSection={settingsInitialSection}
-        onOpenFamilyPurchase={activeUser.role === UserRole.TRAINEE ? () => navigateToWorkspace('MY_MEMBERSHIP') : undefined}
+        onOpenFamilyPurchase={activeUser.role === UserRole.TRAINEE ? () => {
+          setFamilyCheckoutRequest(request => request + 1);
+          navigateToWorkspace('MY_MEMBERSHIP');
+        } : undefined}
         onMedicalCertificateSubmitted={(fileName) => {
           users.filter(user => user.role === UserRole.MANAGER).forEach(manager => {
             handleSendMessage(

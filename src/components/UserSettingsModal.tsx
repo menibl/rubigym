@@ -47,7 +47,7 @@ interface UserSettingsModalProps {
   discountCodes?: DiscountCode[];
   onUpdateDiscountCodes?: (discountCodes: DiscountCode[]) => void;
   isAdminMode?: boolean; // If opened from admin panel to edit another user
-  initialSection?: 'profile' | 'health' | 'family';
+  initialSection?: 'profile' | 'health' | 'family' | 'family-add';
   onOpenFamilyPurchase?: () => void;
   onMedicalCertificateSubmitted?: (fileName?: string) => void;
 }
@@ -108,7 +108,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialSection === 'family' ? 'family' : 'profile');
+      setActiveTab(initialSection === 'family' || initialSection === 'family-add' ? 'family' : 'profile');
       setShowHealthDeclaration(initialSection === 'health');
       setName(currentUser.name || '');
       setUsername(currentUser.username || currentUser.name || '');
@@ -128,9 +128,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setFamilyName(currentUser.familyName || '');
       setFamilyQuota(currentUser.familyMembersCount || 3);
       setMsg(null);
-      setShowAddSubMember(false);
+      setShowAddSubMember(initialSection === 'family-add' && Boolean(currentUser.familyId) && Boolean(currentUser.isFamilyPayer || isAdminMode));
     }
-  }, [isOpen, currentUser, initialSection]);
+  }, [isOpen, currentUser, initialSection, isAdminMode]);
 
   if (!isOpen) return null;
 
@@ -796,7 +796,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                   {/* Existing Family Members List */}
                   {(currentUser.familyId || showAddSubMember) && (
                     <div className="space-y-3 pt-2">
-                      {currentUser.isFamilyPayer && onOpenFamilyPurchase && <button type="button" onClick={() => { onClose(); onOpenFamilyPurchase(); }} className="rounded-xl bg-indigo-600 px-4 py-2 font-bold text-white">בחירת מסלולים ותשלום עבור בני המשפחה</button>}
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-slate-800">רשימת משתמשי המשפחה:</span>
                         {canManageFamily && familyMembersList.length < 6 && (
@@ -968,6 +967,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       </div>
 
                       <p className="text-sm text-slate-500">בחירת המסלולים וקוד ההנחה מתבצעים בדף התשלום המשפחתי בלבד.</p>
+                      {currentUser.isFamilyPayer && familyMembersList.length > 1 && onOpenFamilyPurchase && <button type="button" disabled={subAccountPending} onClick={() => { onClose(); onOpenFamilyPurchase(); }} className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-bold text-white disabled:opacity-50">חזרה לתשלום</button>}
                     </div>
                   )}
                 </div>

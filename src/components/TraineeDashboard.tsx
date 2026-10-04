@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { resolveSessionProgram } from '../data/sessionProgram';
@@ -113,10 +113,11 @@ interface TraineeDashboardProps {
   onUpdateBlackPoints: (points: BlackPoint[]) => void;
   onUpdatePayments: (payments: Payment[]) => void;
   onSendMessage: (content: string, receiverId: string) => void;
-  onOpenSettings: (section?: 'profile' | 'health' | 'family') => void;
+  onOpenSettings: (section?: 'profile' | 'health' | 'family' | 'family-add') => void;
   onLogout: () => void;
   initialTab?: 'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership';
   onHome?: () => void;
+  familyCheckoutRequest?: number;
 }
 
 export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
@@ -144,7 +145,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   onOpenSettings,
   onLogout,
   initialTab = 'home',
-  onHome
+  onHome,
+  familyCheckoutRequest = 0
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>(initialTab);
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
@@ -155,11 +157,30 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     try { return JSON.parse(sessionStorage.getItem('baly_family_purchase_draft_v1') || 'null'); } catch { return null; }
   })();
   const [familyPurchaseName, setFamilyPurchaseName] = useState(familyDraft?.familyName || activeUser.familyName || `משפחת ${activeUser.name.split(' ')[0]}`);
-  const [familyPurchaseCount, setFamilyPurchaseCount] = useState<number>(familyDraft?.familyQuota || activeUser.familyMembersCount || 2);
+  const [familyPurchaseCount, setFamilyPurchaseCount] = useState<number>(Math.max(2, users.filter(user => activeUser.familyId && user.familyId === activeUser.familyId).length));
   const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>('CUSTOM_COMBINED');
-  const familyUsers = [activeUser, ...users.filter(user => user.id !== activeUser.id && activeUser.familyId && user.familyId === activeUser.familyId)];
+  const familyUsers = useMemo(() => [activeUser, ...users.filter(user => user.id !== activeUser.id && activeUser.familyId && user.familyId === activeUser.familyId)], [activeUser, users]);
+  const familyCheckoutRef = useRef<HTMLElement | null>(null);
   const initialFamilyPlans = activeUser.familyMemberPlans?.length ? activeUser.familyMemberPlans : familyUsers.map(user => ({ memberId: user.id, memberName: user.name, membershipType: user.membershipType || MembershipType.OPEN_GYM }));
   const [familyMemberPlans, setFamilyMemberPlans] = useState<FamilyMemberPlanSelection[]>(() => resizeFamilyPlans(initialFamilyPlans, familyPurchaseCount, activeUser.name, activeUser.id).map((plan, index) => ({ ...plan, ...(index === 0 ? { memberId: activeUser.id, memberName: activeUser.name } : {}), membershipType: plan.membershipType === MembershipType.FAMILY_MEMBERSHIP ? MembershipType.GROUP_ANNUAL : plan.membershipType })));
+  useEffect(() => {
+    setFamilyPurchaseCount(Math.max(2, familyUsers.length));
+    setFamilyMemberPlans(previous => familyUsers.map(member => ({
+      ...(previous.find(plan => plan.memberId === member.id)
+        || activeUser.familyMemberPlans?.find(plan => plan.memberId === member.id)
+        || { membershipType: member.membershipType || MembershipType.OPEN_GYM }),
+      memberId: member.id,
+      memberName: member.name,
+    })));
+  }, [familyUsers, activeUser.familyMemberPlans]);
+
+  useEffect(() => {
+    if (!familyCheckoutRequest) return;
+    setSelectedMembershipPurchase(null);
+    setActiveTab('membership');
+    const timeout = window.setTimeout(() => familyCheckoutRef.current?.scrollIntoView({ block: 'start' }), 0);
+    return () => window.clearTimeout(timeout);
+  }, [familyCheckoutRequest]);
   const [discountInput, setDiscountInput] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -2462,6 +2483,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </div>
             </section>
 
+            <button type="button" className="w-full rounded-2xl border border-amber-500/30 bg-slate-950 p-4 text-right text-white" onClick={() => onOpenSettings('family-add')}>
+              <strong className="block text-base">הוספת בן משפחה</strong>
+              <span className="mt-1 block text-sm text-slate-300">הוסיפו בני משפחה, ואז חזרו לתשלום לבחירת מסלול לכל אחד.</span>
+            </button>
+
             {selectedMembershipPurchase ? (
               <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 shadow-sm max-w-2xl mx-auto">
                 <button className="text-xs text-slate-500 mb-5" onClick={() => setSelectedMembershipPurchase(null)}>חזרה לבחירת מסלול</button>
@@ -2501,12 +2527,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </section>
             ) : (
               <>
-                <section className="space-y-4 rounded-2xl border border-indigo-200 bg-white p-5">
+                {familyUsers.length > 1 && <section ref={familyCheckoutRef} className="space-y-4 rounded-2xl border border-indigo-200 bg-white p-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <span className="text-[11px] font-black text-indigo-700">חשבון משפחתי</span>
-                      <h3 className="mt-1 font-black text-slate-900">מסלול אחד, פרופיל אישי לכל בן משפחה</h3>
-                      <p className="mt-1 text-xs leading-5 text-slate-600">לאחר אישור התשלום ייפתח ניהול המשפחה ותוכל להוסיף משתמשים נפרדים עד למכסת החבילה.</p>
+                      <h3 className="mt-1 font-black text-slate-900">בחירת מסלולים ותשלום עבור בני המשפחה</h3>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">בחרו לכל בן משפחה האם לכלול אותו בתשלום ואת המסלול המתאים לו. להוספת מתאמן נוסף השתמשו בכפתור למעלה.</p>
                     </div>
                     {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
                   </div>
@@ -2519,7 +2545,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
                     </button>
                   </div>
-                </section>
+                </section>}
 
                 <section>
                   <div className="mb-3">
@@ -2571,10 +2597,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 </section>
 
                 <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button className="rounded-2xl border border-slate-200 bg-white p-4 text-right" onClick={() => onOpenSettings('family')}>
-                    <strong className="block text-sm text-slate-900">הוספת בן משפחה</strong>
-                    <span className="text-[11px] text-slate-500 mt-1 block">פתיחת הגדרות המשפחה, הוספת משתמש ובחירת מסלול עבורו.</span>
-                  </button>
                   <button disabled={!freezeAvailable || Boolean(activeUser.membershipFreezeRequestedAt)} className={`rounded-2xl border p-4 text-right ${freezeActive ? 'border-sky-200 bg-sky-50' : freezeAvailable ? 'border-slate-200 bg-white' : 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-70'}`} onClick={handleFreezeMembership}>
                     <strong className="block text-sm text-slate-900">{activeUser.membershipFreezeRequestedAt ? 'בקשת הקפאה ממתינה לאישור מנהל' : freezeActive ? 'המנוי מוקפא' : freezeAvailable ? 'בקשת הקפאת מנוי' : 'הקפאת השנה נוצלה'}</strong>
                     <span className="text-[11px] text-slate-600 mt-1 block">{freezeActive ? `הקפאה רצופה עד ${activeUser.membershipFrozenUntil}; לא ניתן לבטל מוקדם.` : freezeAvailable ? 'חודש אחד רצוף, פעם אחת בכל 12 חודשים.' : 'ניתן להקפיא שוב לאחר שיחלפו 12 חודשים ממועד ההקפאה הקודמת.'}</span>
