@@ -43,6 +43,7 @@ import {
 } from '../types';
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
 import { FamilyCreditRecoveryControl } from './FamilyCreditRecoveryControl';
+import { paymentReport } from '../../shared/payment-ledger.js';
 import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
 import { cancelRivhitRecurring, refundRivhitPayment, updateRivhitRecurringAmount } from '../data/rivhitPayments';
@@ -122,7 +123,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   openGymSessions,
   blackPoints,
   announcements,
-  payments,
+  payments: rawPayments,
   attendanceLogs,
   settings,
   discountCodes = [],
@@ -156,6 +157,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateGroupWorkoutPrograms,
   activeUser
 }) => {
+  const payments: Payment[] = paymentReport(rawPayments);
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'records' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
   const [programSessionId, setProgramSessionId] = useState('');
   const [billingPaymentId, setBillingPaymentId] = useState('');
@@ -751,7 +753,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       isMock: true
     };
 
-    onUpdatePayments([newPayment, ...payments]);
+    onUpdatePayments([newPayment, ...rawPayments]);
 
     // Update status to ACTIVE
     const updatedUsers = users.map(u => {
@@ -771,7 +773,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const applyProviderPayment = (updatedPayment: Payment) => {
-    onUpdatePayments(payments.map(payment => payment.id === updatedPayment.id ? updatedPayment : payment));
+    onUpdatePayments(rawPayments.map(payment => payment.id === updatedPayment.id ? updatedPayment : payment));
   };
 
   const runBillingAction = async (action: 'REFUND' | 'CANCEL_RECURRING' | 'UPDATE_RECURRING') => {
@@ -1866,7 +1868,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div>
                   <div className="text-xs text-emerald-700">סה"כ עסקאות ששולמו</div>
                   <div className="text-2xl font-bold font-mono text-emerald-950 mt-1">
-                    ₪{payments.reduce((acc, curr) => acc + curr.amount, 0)}
+                    ₪{payments.filter(payment => payment.status === 'PAID').reduce((acc, curr) => acc + curr.amount, 0)}
                   </div>
                 </div>
                 <div className="bg-emerald-500/20 text-emerald-800 rounded-full p-2.5">
@@ -1901,6 +1903,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <div>
               <h3 className="text-sm font-semibold text-slate-800 mb-3">יומן עסקאות ותשלומים</h3>
+              {rawPayments.length > payments.length && <p className="mb-3 text-sm text-amber-200">{rawPayments.length - payments.length} רישומים חוזרים של אותן עסקאות אוחדו בתצוגה לפי מזהי הספק. הרישומים המקוריים נשמרים לתיעוד; לא בוצע החזר.</p>}
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-right text-xs">
                   <thead>
