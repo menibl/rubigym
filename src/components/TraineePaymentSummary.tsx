@@ -6,7 +6,7 @@ export function TraineePaymentSummary({ user, payments, discounts, plans }: { us
   const own = traineePayments(payments, user.id).filter(payment => payment.status === 'PAID');
   const family = user.familyPayerId && user.familyPayerId !== user.id
     ? traineePayments(payments, user.familyPayerId).filter(payment => payment.status === 'PAID' && payment.familyMemberPlans?.some(plan => plan.memberId === user.id && (!plan.participation || plan.participation === 'INCLUDED'))) : [];
-  return <div className="mt-2 space-y-2 text-sm">
+  return <div className="mt-2 space-y-2 text-xs leading-5">
     {!own.length && !family.length && <p>אין תשלום פעיל מתועד (שאינו ממתין או מוחזר){user.offlinePaymentApproved ? ' — קיים אישור ידני, ללא סכום מתועד' : ''}.</p>}
     {[...own.map(payment => ({ payment, family: false })), ...family.map(payment => ({ payment, family: true }))].slice(0, 3).map(({ payment, family }) => {
       const code = recordedDiscount(payment, discounts);

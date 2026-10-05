@@ -3436,6 +3436,8 @@ option {
 }
 
 /* Keep dark-table contrast when hovered, touched or navigated by keyboard. */
+#admin-dashboard .trainee-admin-row .trainee-payment-status { font-size: .75rem; line-height: 1.5; }
+#admin-dashboard .trainee-admin-row .trainee-payment-status > span { font-size: .75rem; line-height: 1.5; }
 #admin-dashboard .admin-readable-row {
   background-color: #1c2029;
   color: #f5f3ea;

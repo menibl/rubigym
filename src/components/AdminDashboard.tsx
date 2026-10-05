@@ -1423,11 +1423,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     .map(u => (
                       <tr key={u.id} className="trainee-admin-row admin-readable-row border-b border-slate-100">
                         <td data-label="מתאמן" className="p-3 flex items-center gap-3">
+                          <button type="button" onClick={() => setEditingTraineeId(u.id)} aria-label={`עריכת הפרופיל והתמונה של ${u.name}`} className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-amber-400">
                           <img
                             src={u.imageUrl}
                             alt={u.name}
                             className="w-10 h-10 rounded-full object-cover border border-slate-100"
                           />
+                          </button>
                           <div>
                             <div className="font-semibold text-slate-800 text-sm">{u.name}</div>
                             <div className="text-[10px] text-slate-400 font-mono">{u.email}</div>
@@ -1484,7 +1486,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                         </td>
                         <td data-label="סטטוס ותשלומים" className="p-3">
-                          <div className="space-y-1">
+                          <div className="trainee-payment-status space-y-1">
                             <span className={`px-2 py-1 rounded-full text-[10px] font-semibold block w-fit ${
                               u.membershipStatus === MembershipStatus.ACTIVE
                                 ? 'bg-emerald-100 text-emerald-800'
