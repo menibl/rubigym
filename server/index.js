@@ -8,6 +8,7 @@ import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
+import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
@@ -895,6 +896,11 @@ const handleCreatePayment = async (request, env) => {
     return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env));
   }
   purchase.recurring = false;
+  const repeatWarning = () => {
+    const matches = repeatedMonthlyPayments(checkoutState?.payload, body, purchase);
+    return matches.length && body.repeatPaymentAcknowledged !== true
+      ? json({ code: 'REPEAT_MONTHLY_PAYMENT', message: repeatedPaymentMessage(matches) }, 409, corsHeaders(request, env)) : null;
+  };
   let creditClaim;
   const clubId = env.CLUB_ID || 'baly-wellness';
   if (body.membershipType === 'FAMILY_MEMBERSHIP' && body.mode === 'PRIMARY' && purchase.familyBillingMode === 'CUSTOM_COMBINED') {
@@ -913,6 +919,8 @@ const handleCreatePayment = async (request, env) => {
     const quoteKey = await sign(JSON.stringify({ userId: body.userId, purchase }), env.PAYMENT_SIGNING_SECRET);
     if (body.quoteOnly) return json({ ...quote, quoteKey }, 200, corsHeaders(request, env));
     if (body.quoteKey !== quoteKey) return json({ message: 'פרטי החיוב השתנו. יש לבדוק ולאשר את הסכום מחדש.' }, 409, corsHeaders(request, env));
+    const warning = repeatWarning();
+    if (warning) return warning;
     if (quote.sourcePaymentId) {
       if (!env.STATE_STORE.reserveFamilyCredit) throw new Error('FAMILY_CREDIT_STORAGE_UNAVAILABLE');
       creditClaim = await env.STATE_STORE.reserveFamilyCredit(clubId, quote.sourcePaymentId, crypto.randomUUID(), quoteKey);
@@ -930,6 +938,10 @@ const handleCreatePayment = async (request, env) => {
         return json({ message: 'התשלום הקודם כבר משויך לבקשת תשלום משפחתית. יש להשלים אותה או לפנות למנהל; לא נוצר חיוב נוסף.' }, 409, corsHeaders(request, env));
       }
     }
+  }
+  if (!(body.membershipType === 'FAMILY_MEMBERSHIP' && body.mode === 'PRIMARY' && purchase.familyBillingMode === 'CUSTOM_COMBINED')) {
+    const warning = repeatWarning();
+    if (warning) return warning;
   }
   const { amount } = purchase;
   const providerAmount = rivhitChargeAmount(amount, env);

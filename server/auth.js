@@ -1,5 +1,6 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { fitsSessionAge, isYouthSession } from '../shared/youth-session.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -174,7 +175,7 @@ const familyEditableFields = new Set([
   'duoTrainingCardSize', 'nutritionPlanPaid', 'requestedWorkoutPlan'
 ]);
 
-const mergeOwnBooking = (currentItems = [], incomingItems = [], userId) => currentItems.map(current => {
+const mergeOwnBooking = (currentItems = [], incomingItems = [], userId, user) => currentItems.map(current => {
   // Personal reservations and their debits are one atomic server operation.
   // Keep legacy bookings cancellable until explicitly migrated by staff.
   if (current.personalBooking || (current.isPersonalTraining && !current.registeredUsers?.includes(userId))) return current;
@@ -183,6 +184,7 @@ const mergeOwnBooking = (currentItems = [], incomingItems = [], userId) => curre
   const mergeList = key => {
     const currentList = Array.isArray(current[key]) ? current[key] : [];
     const incomingList = Array.isArray(incoming[key]) ? incoming[key] : [];
+    if (user && isYouthSession(current) && !fitsSessionAge(current, user) && incomingList.includes(userId) && !currentList.includes(userId)) return currentList;
     const withoutSelf = currentList.filter(id => id !== userId);
     return incomingList.includes(userId) ? [...withoutSelf, userId] : withoutSelf;
   };
@@ -293,7 +295,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
   return {
     ...current,
     users: [...nextUsers, ...newFamilyMembers],
-    sessions: unpaid ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId),
+    sessions: unpaid ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId, current.users.find(user => user.id === userId)),
     openGymSessions: unpaid ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId),
     messages: [...messagesWithReadReceipts, ...ownNewMessages.filter(message => !existingMessageIds.has(message.id))],
     attendanceLogs: [...(current.attendanceLogs || []), ...ownNewAttendance.filter(log => !existingAttendanceIds.has(log.id))],

@@ -5,6 +5,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
+import { fitsSessionAge, isYouthSession, sessionAgeMax } from '../../shared/youth-session.js';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
@@ -443,6 +444,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // Check booking eligibility constraints (Section 5.1 & 11)
   const checkBookingEligibility = (session: TrainingSession): { eligible: boolean; reason?: string } => {
+    if (isYouthSession(session) && !fitsSessionAge(session, activeUser)) return { eligible: false, reason: 'אימון הנוער מיועד לטווח הגיל המוגדר ועד גיל 18 כולל. יש לוודא שהגיל בפרופיל מעודכן.' };
     if (activeUser.familyPaymentPending) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
     if (new Date(`${session.date}T${session.time}`).getTime() <= Date.now()) {
       return { eligible: false, reason: 'האימון כבר התחיל. יש לבחור אימון עתידי.' };
@@ -601,8 +603,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     if (session.ageMin && activeUser.age < session.ageMin) {
       return { eligible: false, reason: `מגבלת גיל! אימון זה מיועד לגילאי ${session.ageMin} ומעלה בלבד. (גיל המשתמש: ${activeUser.age})` };
     }
-    if (session.ageMax && activeUser.age > session.ageMax) {
-      return { eligible: false, reason: `מגבלת גיל! אימון זה מיועד לגילאי עד ${session.ageMax} בלבד. (גיל המשתמש: ${activeUser.age})` };
+    if (sessionAgeMax(session) && activeUser.age > sessionAgeMax(session)) {
+      return { eligible: false, reason: `מגבלת גיל! אימון זה מיועד לגילאי עד ${sessionAgeMax(session)} בלבד. (גיל המשתמש: ${activeUser.age})` };
     }
 
     return { eligible: true };
@@ -655,7 +657,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     if (session.genderRestriction === Gender.FEMALE && activeUser.gender !== Gender.FEMALE) return false;
     if (session.genderRestriction === Gender.MALE && activeUser.gender !== Gender.MALE) return false;
     if (session.ageMin && activeUser.age < session.ageMin) return false;
-    if (session.ageMax && activeUser.age > session.ageMax) return false;
+    if (!fitsSessionAge(session, activeUser)) return false;
     if (session.isPersonalTraining) {
       if (session.targetTraineeId) return session.targetTraineeId === activeUser.id || Boolean(session.coTrainees?.includes(activeUser.id));
       return activeMembershipTypes.some(type => [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(type));
@@ -1432,6 +1434,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const nameNeedle = bookingNameFilter.trim().toLocaleLowerCase('he-IL');
     const sessionItems: BookingListItem[] = sessions
       .filter(session => session.date === dateKey)
+      .filter(session => !isYouthSession(session) || fitsSessionAge(session, activeUser))
       .filter(session => new Date(`${session.date}T${session.time}`).getTime() > now.getTime())
       .filter(session => !nameNeedle || session.title.toLocaleLowerCase('he-IL').includes(nameNeedle))
       .filter(session => bookingTypeFilter === 'ALL' || (bookingTypeFilter === 'PERSONAL' ? session.isPersonalTraining : bookingTypeFilter === 'GROUP' ? !session.isPersonalTraining : false))

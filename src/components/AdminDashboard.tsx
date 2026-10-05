@@ -45,6 +45,7 @@ import {
   AttendanceLog
 } from '../types';
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
+import { isYouthSession } from '../../shared/youth-session.js';
 import { FamilyCreditRecoveryControl } from './FamilyCreditRecoveryControl';
 import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate, isMembershipFreezeActive, isMembershipCancellationEffective } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
@@ -472,6 +473,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleSaveEditSession = (updatedSession: TrainingSession, updateSeries: boolean, originalDateKey?: string) => {
+    if (isYouthSession(updatedSession)) updatedSession = { ...updatedSession, ageMax: 18 };
     if (updateSeries) {
       const updated = sessions.map(s => {
         if ((updatedSession.seriesId && s.seriesId === updatedSession.seriesId) || s.id === updatedSession.id) {
@@ -632,7 +634,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         waitlistUsers: []
       };
 
-      onUpdateSessions([session, ...sessions]);
+      onUpdateSessions([isYouthSession(session) ? { ...session, ageMax: 18 } : session, ...sessions]);
     }
 
     setShowSessionForm(false);
