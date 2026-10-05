@@ -397,6 +397,31 @@ journalctl -u gymflow-daily-management.service -n 100 --no-pager
 
 ## תחזוקה ועדכונים
 
+### הגבלת OpenClaw ורענון כלי הניהול
+
+OpenClaw הוא שירות עזר ולא האפליקציה. השירות וכל הילדים שלו מוגבלים יחד לליבת CPU אחת
+(`CPUQuota=100%`), לסף זיכרון רך של 1.5GiB, לתקרה של 2GiB ול־128 tasks.
+עדיפות CPU ו־I/O נמוכה משאירה יותר משאבים לאפליקציה ולמסד הנתונים. אין תוספת הרשאות Docker.
+חריגה מתקרת הזיכרון עשויה להפסיק משימות OpenClaw; זו אינה הבטחה שלא תהיה תקיעה מסיבה אחרת.
+המגבלות מוחלות בזמן ריצה ללא restart של OpenClaw ונשמרות ב־drop-in גם לאחר אתחול.
+
+פריסה מעודכנת מרעננת אוטומטית את כלי הניהול, סקריפט הניטור, יחידות systemd והמגבלות,
+גם כאשר main כבר בגרסה הפעילה. בדיקת עומס שנכשלת אינה יכולה לדווח `healthy`.
+יחידת הפריסה מקבלת גישת כתיבה רק לתיקיות הניהול הנדרשות, ולא לקבצי הסודות.
+הפקודה `refresh-monitor` נשארת ככינוי תואם לאחור ל־`refresh-runtime` ומרעננת גם את המגבלות.
+
+```bash
+sudo /usr/local/sbin/gymflow-ops refresh-runtime
+sudo /usr/local/sbin/gymflow-ops status
+```
+
+**שרת עם כלי פריסה ישנים:** אם `refresh-monitor` אינו מופיע ברשימת הפקודות, גם
+`deploy-main` הישן לא יתקין את כלי הניהול החדשים. לאחר מיזוג ופריסת main יש צורך
+בתיקון חד־פעמי באמצעות `deploy/scripts/repair-host-runtime.sh` מהשחרור הפעיל בשרת.
+הפעלתו היא חריגה זמנית מכלל gymflow-ops ודורשת אישור מפורש של המפעיל לפני כל פקודת root.
+אין להריץ אותו מעותק עבודה לא ממוזג, ואין להפעיל מחדש את PostgreSQL לצורך התיקון.
+לאחר התיקון כל פעולות הניהול חוזרות להתבצע דרך gymflow-ops בלבד.
+
 - עדכן OpenClaw קודם בסביבת בדיקה, הרץ `doctor`, `config validate` ו־`security audit --deep`, ורק אז production.
 - אל תתקין skills או plugins ממקור שאינו מאומת.
 - סובב מיד Telegram token, GitHub token, OAuth, OpenAI key ו־Group Private Token של RIVHIT אם יש חשד לדליפה.

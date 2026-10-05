@@ -52,7 +52,18 @@ load_limit=$(awk -v cpus="${cpu_count}" -v factor="${LOAD_WARN_PER_CPU:-2}" 'BEG
 
 if (( disk_percent >= DISK_WARN_PERCENT )); then issues+=("Root disk usage is ${disk_percent}%"); fi
 if (( memory_percent >= MEMORY_WARN_PERCENT )); then issues+=("Memory usage is ${memory_percent}%"); fi
-if awk -v current_load="${load_1m}" -v limit="${load_limit}" 'BEGIN {exit !(current_load >= limit)}'; then
+load_high=0
+# Distinguish "below threshold" from a broken check. A failed check must never
+# produce a healthy report (the old reserved `load` identifier did exactly that).
+load_high=$(awk -v current_load="${load_1m}" -v limit="${load_limit}" 'BEGIN {print (current_load >= limit) ? 1 : 0}') || {
+  issues+=("CPU load check failed")
+  load_high=0
+}
+if [[ ${load_high} != 0 && ${load_high} != 1 ]]; then
+  issues+=("CPU load check returned an invalid result")
+  load_high=0
+fi
+if [[ ${load_high} == 1 ]]; then
   issues+=("1-minute load ${load_1m} exceeds threshold ${load_limit}")
 fi
 

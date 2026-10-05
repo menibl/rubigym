@@ -41,6 +41,8 @@ case "${command}" in
       "$(systemctl is-active openclaw.service 2>/dev/null || true)" \
       "$(systemctl is-active gymflow-monitor.timer 2>/dev/null || true)" \
       "$(systemctl is-active gymflow-production-deploy.timer 2>/dev/null || true)"
+    systemctl show openclaw.service --property=CPUQuotaPerSecUSec \
+      --property=MemoryCurrent --property=MemoryHigh --property=MemoryMax --property=TasksMax
     ;;
   logs)
     compose_current logs --tail=200 --no-color app caddy postgres
@@ -57,18 +59,14 @@ case "${command}" in
     sleep 5
     curl --fail --silent --show-error --max-time 15 "${PRODUCTION_HEALTH_URL}" >/dev/null
     ;;
-  refresh-monitor)
+  refresh-monitor|refresh-runtime)
     sha=$(current_sha)
     release="${PRODUCTION_RELEASES:-/opt/gymflow/releases}/${sha}"
-    [[ -f ${release}/deploy/scripts/server-monitor.sh && -f ${release}/deploy/systemd/gymflow-monitor.service ]] || {
-      echo "Current release ${sha} is missing monitor files." >&2
+    [[ -f ${release}/deploy/scripts/refresh-server-runtime.sh ]] || {
+      echo "Current release ${sha} is missing the runtime refresh tool." >&2
       exit 1
     }
-    install -m 0755 "${release}/deploy/scripts/server-monitor.sh" /usr/local/lib/gymflow-monitor/server-monitor.sh
-    install -m 0644 "${release}/deploy/systemd/gymflow-monitor.service" /etc/systemd/system/gymflow-monitor.service
-    systemctl daemon-reload
-    systemctl restart gymflow-monitor.timer
-    systemctl start gymflow-monitor.service || true
+    bash "${release}/deploy/scripts/refresh-server-runtime.sh" "${release}/deploy"
     systemctl status gymflow-monitor.timer gymflow-monitor.service --no-pager
     ;;
   security-audit)
@@ -78,7 +76,7 @@ case "${command}" in
     "${DAILY}"
     ;;
   *)
-    echo "Allowed commands: status, logs, deploy-main, rollback, restart-app, refresh-monitor, security-audit, daily" >&2
+    echo "Allowed commands: status, logs, deploy-main, rollback, restart-app, refresh-monitor, refresh-runtime, security-audit, daily" >&2
     exit 2
     ;;
 esac

@@ -144,9 +144,14 @@ install_release_operations() {
     echo "Release ${sha} is missing production operation scripts." >&2
     return 1
   }
-  install -m 0755 "${target}/deploy/scripts/production-deploy.sh" /usr/local/lib/gymflow-deploy/production-deploy.sh
-  install -m 0755 "${target}/deploy/scripts/daily-management.sh" /usr/local/lib/gymflow-deploy/daily-management.sh
-  install -m 0755 "${target}/deploy/scripts/gymflow-ops" /usr/local/sbin/gymflow-ops
+  install -m 0755 "${target}/deploy/scripts/production-deploy.sh" /usr/local/lib/gymflow-deploy/production-deploy.sh || return 1
+  install -m 0755 "${target}/deploy/scripts/daily-management.sh" /usr/local/lib/gymflow-deploy/daily-management.sh || return 1
+  install -m 0755 "${target}/deploy/scripts/gymflow-ops" /usr/local/sbin/gymflow-ops || return 1
+  # Older releases remain deployable on rollback; new releases additionally
+  # repair the host monitor and keep agent resource limits current.
+  if [[ -f ${target}/deploy/scripts/refresh-server-runtime.sh ]]; then
+    bash "${target}/deploy/scripts/refresh-server-runtime.sh" "${target}/deploy" || return 1
+  fi
 }
 
 cleanup_old_releases() {

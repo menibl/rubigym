@@ -41,14 +41,18 @@ jobs:
 
       - name: Validate deployment scripts
         run: |
-          bash -n deploy/scripts/*.sh
-          bash -n deploy/scripts/gymflow-dev.sh deploy/scripts/gymflow-prod deploy/scripts/gymflow-ops
+          for script in deploy/scripts/*.sh deploy/scripts/gymflow-prod deploy/scripts/gymflow-ops; do
+            bash -n "$script"
+          done
 
       - name: Test production deployment strict mode
         run: bash deploy/tests/production-deploy.test.sh
 
       - name: Test server monitor hardening
         run: bash deploy/tests/server-monitor.test.sh
+
+      - name: Test server runtime and OpenClaw resource limits
+        run: bash deploy/tests/server-runtime.test.sh
 
       - name: Test promotion gate
         run: node --test deploy/tests/promotion-gate.test.mjs
