@@ -9,6 +9,7 @@ import {
   HeartPulse
 } from 'lucide-react';
 import { RubisLogo } from './RubisLogo';
+import { RecurringPlanNotice } from './RecurringPlanNotice';
 import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
 import {
   Gender,
@@ -738,10 +739,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                     return Math.max(0, base - discount);
                   })()}</strong>
                 </div>
-                {!isFamilyPlan && billingPeriodForPlan(selectedPlanConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <small className="auth-mock-note">חיוב חודשי קבוע למשך 12 חודשים. בקשת ביטול נכנסת לתוקף בהתאם לתנאי המסלול.</small>}
+                {!isFamilyPlan && <RecurringPlanNotice plan={selectedPlanConfig} />}
+                {!isFamilyPlan && selectedPlanConfig?.paymentMode !== 'RECURRING' && billingPeriodForPlan(selectedPlanConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <small className="auth-mock-note">התשלום הנוכחי חד־פעמי עבור החודש. לא מופעלת הוראת קבע; חידוש התשלום ידני.</small>}
                 <small className="auth-mock-note">פרטי האשראי יוזנו רק בעמוד המאובטח של RIVHIT iCredit ולא יישמרו ב־BALY.</small>
                 {!isRivhitConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}
-                <button className="auth-primary" type="submit" disabled={paymentStarting || !isRivhitConfigured()}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>
+                <button className="auth-primary" type="submit" disabled={paymentStarting || !isRivhitConfigured() || (!isFamilyPlan && selectedPlanConfig?.paymentMode === 'RECURRING')}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>
                 <button className="auth-text-link" type="button" onClick={() => setRegisterStep(3)}>חזרה לפרטים האישיים</button>
               </form>
             )}

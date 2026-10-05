@@ -26,7 +26,9 @@ export const priceUnitForBillingPeriod = (period: MembershipBillingPeriod): Memb
 };
 
 export const billingPeriodLabel = (plan?: MembershipPlanConfig) => {
+  if (plan?.paymentMode === 'RECURRING') return 'לחודש — הוראת קבע מתחדשת (בהכנה)';
   const period = billingPeriodForPlan(plan);
+  if (period === 'MONTHLY_ANNUAL_COMMITMENT') return 'לחודש במסגרת מסלול שנתי — תשלום חד־פעמי';
   if (period === 'SESSION_PACK' && !plan?.supportsTrainingCard) {
     return `${Math.max(1, Number(plan?.includedSessions) || 1)} אימונים`;
   }

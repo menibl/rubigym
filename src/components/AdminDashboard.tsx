@@ -5,6 +5,8 @@
 
 import React, { useState } from 'react';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
+import { RecurringPlanSettings } from './RecurringPlanSettings';
+import { RecurringBillingStatus } from './RecurringBillingStatus';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
 import { getGenderLabel } from '../data/userProfile';
@@ -231,7 +233,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     category: 'PRIMARY' as MembershipPlanConfig['category'],
     billingPeriod: 'MONTHLY' as NonNullable<MembershipPlanConfig['billingPeriod']>,
     includedSessions: 1,
-    supportsTrainingCard: false
+    supportsTrainingCard: false,
+    paymentMode: 'ONE_TIME' as MembershipPlanConfig['paymentMode'],
+    recurringTermMonths: 12,
+    renewalMode: 'AUTO' as MembershipPlanConfig['renewalMode']
   });
   const membershipPlans = settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS;
 
@@ -253,13 +258,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       price: Number(newMembershipPlan.price),
       category: newMembershipPlan.category,
       billingPeriod: newMembershipPlan.billingPeriod,
+      paymentMode: newMembershipPlan.paymentMode,
+      recurringTermMonths: newMembershipPlan.recurringTermMonths,
+      renewalMode: newMembershipPlan.renewalMode,
       priceUnit: priceUnitForBillingPeriod(newMembershipPlan.billingPeriod),
       includedSessions: newMembershipPlan.billingPeriod === 'SESSION_PACK' ? Math.max(1, Number(newMembershipPlan.includedSessions) || 1) : undefined,
       supportsTrainingCard: newMembershipPlan.billingPeriod === 'SESSION_PACK' && newMembershipPlan.supportsTrainingCard,
-      active: true
+      active: newMembershipPlan.paymentMode !== 'RECURRING'
     };
     onUpdateSettings({ ...settings, membershipPlans: [...membershipPlans, created] });
-    setNewMembershipPlan({ label: '', description: '', price: 0, category: 'PRIMARY', billingPeriod: 'MONTHLY', includedSessions: 1, supportsTrainingCard: false });
+    setNewMembershipPlan({ label: '', description: '', price: 0, category: 'PRIMARY', billingPeriod: 'MONTHLY', includedSessions: 1, supportsTrainingCard: false, paymentMode: 'ONE_TIME', recurringTermMonths: 12, renewalMode: 'AUTO' });
   };
 
   const downloadCsv = (fileName: string, headers: string[], rows: Array<Array<string | number | boolean | undefined>>) => {
@@ -1763,6 +1771,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* TAB 4: PAYMENTS LEDGER */}
         {activeTab === 'payments' && (
           <div className="space-y-6">
+            <RecurringBillingStatus />
             <section className="rounded-2xl border border-amber-300/40 bg-slate-950 p-4 text-white shadow-lg" aria-labelledby="billing-management-title">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -2102,6 +2111,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {[MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(plan.id as MembershipType) && <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600"><input type="checkbox" checked={Boolean(plan.supportsTrainingCard)} onChange={event => updateMembershipPlan(plan.id, { supportsTrainingCard: event.target.checked })} /> בחירת 1/4/8/12</label>}
                   </div>}
                   <div className="flex gap-1"><button type="button" onClick={() => updateMembershipPlan(plan.id, { active: !plan.active })} className={`min-h-9 rounded-lg px-2 text-[10px] font-black ${plan.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>{plan.active ? 'פעיל' : 'מוסתר'}</button><button type="button" onClick={() => removeMembershipPlan(plan.id)} className="grid min-h-9 w-9 place-items-center rounded-lg bg-rose-100 text-rose-700" aria-label={`הסרת ${plan.label}`}><Trash2 size={14} /></button></div>
+                  <RecurringPlanSettings plan={plan} onChange={patch => updateMembershipPlan(plan.id, patch)} />
                 </article>)}
               </div>
               <div className="mt-4 rounded-xl border border-dashed border-amber-300 bg-white p-3">
@@ -2114,6 +2124,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <label className="text-[10px] font-bold text-slate-600">תקופת ואופן החיוב<select value={newMembershipPlan.billingPeriod} onChange={event => setNewMembershipPlan(current => ({ ...current, billingPeriod: event.target.value as NonNullable<MembershipPlanConfig['billingPeriod']> }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-900">{BILLING_PERIOD_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                   {newMembershipPlan.billingPeriod === 'SESSION_PACK' && <div className="md:col-start-5 rounded-lg bg-slate-50 p-2"><label className="text-[10px] font-bold text-slate-600">כמות אימונים בחבילה<input type="number" min={1} max={100} value={newMembershipPlan.includedSessions} onChange={event => setNewMembershipPlan(current => ({ ...current, includedSessions: Math.max(1, Number(event.target.value) || 1) }))} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label></div>}
                   <button type="button" onClick={addMembershipPlan} className="min-h-9 rounded-lg bg-amber-500 px-3 text-xs font-black text-slate-950"><Plus size={14} className="inline" /> הוסף</button>
+                  <RecurringPlanSettings plan={newMembershipPlan} onChange={patch => setNewMembershipPlan(current => ({ ...current, ...patch }))} />
                 </div>
               </div>
             </section>

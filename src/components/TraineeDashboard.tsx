@@ -5,6 +5,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
+import { RecurringPlanNotice } from './RecurringPlanNotice';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
@@ -2481,15 +2482,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
                     התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
                   </div>
-                  {billingPeriodForPlan(selectedMembershipConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
-                    חיוב חודשי קבוע בסך ₪{selectedMembershipPrice} למשך 12 חודשים. בקשת ביטול נכנסת לתוקף בהתאם לתנאי המסלול.
+                  <RecurringPlanNotice plan={selectedMembershipConfig} />
+                  {selectedMembershipConfig?.paymentMode !== 'RECURRING' && billingPeriodForPlan(selectedMembershipConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
+                    התשלום הנוכחי חד־פעמי עבור החודש. אין הוראת קבע פעילה; חידוש התשלום ידני.
                   </div>}
                   {!isRivhitConfigured() && (
                     <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
                       שירות התשלומים עדיין אינו מחובר לשרת הציבורי. לא יתבצע חיוב עד להשלמת הגדרת השרת.
                     </p>
                   )}
-                  <button type="submit" disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
+                  <button type="submit" disabled={paymentStarting || !isRivhitConfigured() || selectedMembershipConfig?.paymentMode === 'RECURRING'} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
                     <CreditCard size={17} /> {paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח'}
                   </button>
                 </form>

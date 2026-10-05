@@ -200,6 +200,9 @@ export interface MembershipPlanConfig {
   active: boolean;
   priceUnit?: 'MONTH' | 'SESSION' | 'ONE_TIME';
   billingPeriod?: 'ONE_TIME' | 'MONTHLY' | 'THREE_MONTHS' | 'SIX_MONTHS' | 'ANNUAL' | 'SESSION_PACK' | 'MONTHLY_ANNUAL_COMMITMENT';
+  paymentMode?: 'ONE_TIME' | 'RECURRING';
+  recurringTermMonths?: number;
+  renewalMode?: 'AUTO' | 'CONFIRM';
   includedSessions?: number;
   supportsTrainingCard?: boolean;
 }

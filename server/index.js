@@ -4,6 +4,7 @@ import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
 import { calendarTerm, repairCalendarMemberships } from '../shared/membership-calendar.js';
+import { recurringCapabilities, recurringCheckoutPlans, recurringSummary } from '../shared/recurring-billing.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
@@ -378,6 +379,9 @@ const publicLandingPayload = async (request, env, url, clubId) => {
       active: true,
       priceUnit: plan.priceUnit,
       billingPeriod: plan.billingPeriod,
+      paymentMode: plan.paymentMode || 'ONE_TIME',
+      recurringTermMonths: plan.recurringTermMonths,
+      renewalMode: plan.renewalMode,
       includedSessions: plan.includedSessions,
       supportsTrainingCard: Boolean(plan.supportsTrainingCard)
     }))
@@ -893,6 +897,9 @@ const handleCreatePayment = async (request, env) => {
       return json({ message: 'קוד ההנחה אינו תקין או שכבר נוצל.' }, 400, corsHeaders(request, env));
     }
     return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env));
+  }
+  if (recurringCheckoutPlans(body, checkoutState?.payload?.settings?.membershipPlans).length) {
+    return json({ code: 'RECURRING_NOT_ENABLED', message: 'המסלול מוגדר להוראת קבע. השירות בהכנה ולא בוצע חיוב. יש לבחור מסלול חד־פעמי או לפנות למנהל.', ...recurringCapabilities() }, 503, corsHeaders(request, env));
   }
   purchase.recurring = false;
   let creditClaim;
@@ -1825,6 +1832,25 @@ const handleApi = async (request, env, url) => {
         recurringUpdateReason: reason
       });
       return json({ ok: true, payment: updatedPayment }, 200, headers);
+    }
+    if (request.method === 'GET' && url.pathname === '/api/payments/rivhit/recurring/status') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'גישה למנהל בלבד.' }, 403, headers);
+      const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+      return json({ ...recurringCapabilities(), subscriptions: state?.payload?.recurringSubscriptions || [], notices: state?.payload?.recurringNotices || [] }, 200, { ...headers, 'Cache-Control': 'no-store' });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/recurring/preview') {
+      const body = await request.json();
+      if (body.mode !== 'REGISTRATION') {
+        const identity = await getIdentity({ allowIncomplete: true });
+        if (!identity || identity.session.user_id !== body.userId) return json({ message: 'Unauthorized' }, 401, headers);
+      }
+      const state = await env.STATE_STORE?.getClubState(clubId);
+      const catalog = state?.payload?.settings?.membershipPlans || [];
+      const plan = catalog.find(plan => plan.id === body.membershipType && plan.active !== false);
+      if (!plan) return json({ message: 'המסלול אינו זמין.' }, 404, headers);
+      try { return json({ ...recurringCapabilities(), summary: recurringSummary(plan) }, 200, headers); }
+      catch { return json({ message: 'הגדרות הוראת הקבע אינן תקינות.' }, 422, headers); }
     }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/discount/validate') return await handleValidateDiscount(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/create') return await handleCreatePayment(request, env);
