@@ -10,31 +10,7 @@ import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarat
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
 
-const PROFILE_IMAGE_MAX_SIDE = 512;
-
-const prepareProfileImage = async (file: File) => {
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const nextImage = new Image();
-      nextImage.onload = () => resolve(nextImage);
-      nextImage.onerror = () => reject(new Error('IMAGE_DECODE_FAILED'));
-      nextImage.src = objectUrl;
-    });
-    const scale = Math.min(1, PROFILE_IMAGE_MAX_SIDE / image.naturalWidth, PROFILE_IMAGE_MAX_SIDE / image.naturalHeight);
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('IMAGE_CANVAS_FAILED');
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = 'high';
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.82);
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-};
+import { prepareProfileImage } from '../utils/profileImage';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
