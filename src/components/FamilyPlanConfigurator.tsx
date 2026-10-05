@@ -13,6 +13,7 @@ import {
   resizeFamilyPlans
 } from '../data/familyMembership';
 import { billingPeriodLabel } from '../data/membershipBilling';
+import { RecurringPlanNotice } from './RecurringPlanNotice';
 import { isMembershipFreezeActive } from '../data/membershipPolicy';
 
 interface FamilyPlanConfiguratorProps {
@@ -93,6 +94,7 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
             {catalog.map(config => <option key={config.id} value={config.id}>{config.label} — ₪{config.price} · {billingPeriodLabel(config)}</option>)}
           </select></label>}
           {included && isTrainingCard ? <label className="text-[11px] font-bold text-slate-600">מספר אימונים<input type="number" min={1} max={50} value={plan.trainingSessionsCount || 10} onChange={event => updatePlan(index, { trainingSessionsCount: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label> : <div className="self-end rounded-lg bg-slate-100 px-3 py-2 text-center text-xs font-black text-slate-800">₪{included ? priceFor(plan.membershipType) : 0}</div>}
+          {included && <div className="col-span-full"><RecurringPlanNotice plan={catalog.find(config => config.id === plan.membershipType)} /></div>}
         </article>;
       })}
       <p className="rounded-xl bg-indigo-900 p-3 text-xs text-white">סך הכול לחיוב מאוחד לבעל המשפחה: <b className="text-base">₪{amount.toLocaleString('he-IL')}</b></p>

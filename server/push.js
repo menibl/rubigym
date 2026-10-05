@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import { sendWeeklyReminders } from './weekly-reminders.js';
+import { sendRecurringReminders } from './recurring-reminders.js';
 
 const reminderWindowMs = 10 * 60 * 1000;
 const israelTimeZone = 'Asia/Jerusalem';
@@ -290,7 +291,7 @@ export const startPushReminderScheduler = (store, env) => {
   if (!store) {
     return null;
   }
-  const run = () => Promise.all([sendUpcomingWorkoutReminders(store, env), sendWeeklyReminders(store, env, dispatchStateChangePushes)]).catch(error => {
+  const run = () => Promise.all([sendUpcomingWorkoutReminders(store, env), sendWeeklyReminders(store, env, dispatchStateChangePushes), sendRecurringReminders(store, env, dispatchStateChangePushes)]).catch(error => {
     console.error('Push reminder scheduler failed', error?.message || error);
   });
   void run();

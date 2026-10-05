@@ -124,7 +124,8 @@ const publicStaff = user => ({
 
 export const payloadForUser = (payload, userId, role) => {
   const safe = sanitizePayload(payload);
-  if (role === 'MANAGER' || role === 'COACH') return safe;
+  if (role === 'MANAGER') return safe;
+  if (role === 'COACH') return { ...safe, recurringSubscriptions: [], recurringNotices: [] };
   const currentUser = safe.users.find(user => user.id === userId);
   const familyId = currentUser?.familyId;
   const registeredSessions = (safe.sessions || []).filter(session =>
@@ -147,6 +148,8 @@ export const payloadForUser = (payload, userId, role) => {
     nutritionPlans: (safe.nutritionPlans || []).filter(plan => plan.traineeId === userId),
     blackPoints: (safe.blackPoints || []).filter(point => point.traineeId === userId),
     payments: (safe.payments || []).filter(payment => payment.traineeId === userId),
+    recurringSubscriptions: (safe.recurringSubscriptions || []).filter(subscription => subscription.userId === userId),
+    recurringNotices: (safe.recurringNotices || []).filter(notice => notice.userId === userId),
     messages: (safe.messages || []).filter(message => message.senderId === userId || message.receiverId === userId),
     attendanceLogs: (safe.attendanceLogs || []).filter(log => log.traineeId === userId),
     discountCodes: [],
@@ -228,7 +231,8 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     const requestedIds = new Set(requested.map(message => message.id));
     return [...requested, ...(current.messages || []).filter(message => message.systemGenerated && !requestedIds.has(message.id))];
   };
-  if (role === 'MANAGER') return { ...incoming, messages: preserveSystemMessages(incoming.messages) };
+  if (role === 'MANAGER') return { ...incoming, messages: preserveSystemMessages(incoming.messages),
+    recurringSubscriptions: current.recurringSubscriptions || [], recurringNotices: current.recurringNotices || [] };
   if (role === 'COACH') {
     const allowed = new Set([
       'sessions', 'openGymSessions', 'workoutPlans', 'nutritionPlans', 'blackPoints', 'announcements',
