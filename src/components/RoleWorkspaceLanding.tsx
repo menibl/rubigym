@@ -248,7 +248,9 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
             <span>{roleLabel}</span>
             <h2>שלום {activeUser.name}</h2>
           </div>
-          <img src={activeUser.imageUrl} alt={activeUser.name} />
+          <button type="button" onClick={onOpenProfile} aria-label="עריכת הפרופיל ושינוי תמונת הפרופיל" className="rounded-full focus-visible:outline-2 focus-visible:outline-amber-400">
+            <img src={activeUser.imageUrl} alt={activeUser.name} />
+          </button>
         </div>
         <div className="role-home-next">
           <CalendarClock size={20} />
@@ -295,6 +297,13 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
         )}
       </section>
 
+      {isTrainee && (
+        <button type="button" className="check-in-home-strip" onClick={() => onSelect('CHECK_IN')}>
+          <span><QrCode size={23} /></span>
+          <span><strong>סריקת ברקוד לכניסה למועדון</strong><small>פתיחת מצלמה ורישום הגעה לאימון</small></span>
+          <ChevronLeft size={18} />
+        </button>
+      )}
       <section className="role-home-actions" aria-label="פעולות מהירות">
         {actions.map(action => {
           const Icon = action.icon;
@@ -314,13 +323,6 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
         })}
       </section>
 
-      {isTrainee && (
-        <button type="button" className="check-in-home-strip" onClick={() => onSelect('CHECK_IN')}>
-          <span><QrCode size={23} /></span>
-          <span><strong>סריקת ברקוד לכניסה למועדון</strong><small>פתיחת המצלמה ואישור כניסה לפי האימון והלו״ז שלך</small></span>
-          <ChevronLeft size={18} />
-        </button>
-      )}
 
       <section className="role-home-communications">
         {isTrainee ? (

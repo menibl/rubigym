@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Download, Printer, QrCode } from 'lucide-react';
 
-export const CLUB_CHECK_IN_CODE = 'BALY-CLUB-CHECKIN-V1';
+import { CLUB_CHECK_IN_CODE } from '../../shared/club-check-in.js';
+export { CLUB_CHECK_IN_CODE };
 
 interface ClubCheckInBarcodeProps {
   compact?: boolean;

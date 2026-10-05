@@ -3,6 +3,7 @@ import { isPagesDemoMode } from './appMode';
 import { createDemoPayload } from './demoData';
 import { deleteClubUser, removeDeletedUserData } from '../../shared/user-deletion.js';
 import { changePersonalBooking } from '../../shared/personal-booking.js';
+import { clubArrivalChoices, recordClubArrival } from '../../shared/club-check-in.js';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -68,6 +69,25 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
 };
 
 export type ClubStateEnvelope = { payload: Record<string, unknown>; revision: number; updated_at?: string };
+
+export type ArrivalChoice = {
+  key: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; title: string; time: string;
+  trainingType: 'SOLO' | 'DUO' | 'GROUP' | 'OPEN_GYM'; registered: boolean; checkedIn: boolean;
+  partners?: Array<{ id: string; name: string }>;
+};
+export async function getArrivalChoices(): Promise<{ choices: ArrivalChoice[] }> {
+  if (isPagesDemoMode()) return { choices: clubArrivalChoices(readDemoState().payload, currentDemoUser()?.id) as ArrivalChoice[] };
+  return request('/api/attendance/arrival');
+}
+export async function saveClubArrival(input: { code: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; trainingType: string; partnerId?: string }) {
+  if (isPagesDemoMode()) {
+    const state = readDemoState();
+    const payload = recordClubArrival(state.payload, currentDemoUser()?.id, input);
+    writeDemoState({ ...state, payload, revision: state.revision + 1 });
+    return;
+  }
+  await request('/api/attendance/arrival', { method: 'POST', body: JSON.stringify(input) });
+}
 
 export const savePersonalBooking = async (input: {
   action: 'BOOK' | 'CANCEL'; sessionId: string; bookingId: string;
