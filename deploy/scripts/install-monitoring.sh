@@ -30,6 +30,8 @@ install -m 0644 "${DEPLOY_DIR}/systemd/gymflow-monitor.service" /etc/systemd/sys
 install -m 0644 "${DEPLOY_DIR}/systemd/gymflow-monitor.timer" /etc/systemd/system/
 install -m 0644 "${DEPLOY_DIR}/systemd/gymflow-security-audit.service" /etc/systemd/system/
 install -m 0644 "${DEPLOY_DIR}/systemd/gymflow-security-audit.timer" /etc/systemd/system/
+install -d -m 0755 /etc/systemd/system/openclaw.service.d
+install -m 0644 "${DEPLOY_DIR}/systemd/openclaw-resource-limits.conf" /etc/systemd/system/openclaw.service.d/40-gymflow-resources.conf
 
 systemctl daemon-reload
 systemctl enable --now gymflow-monitor.timer gymflow-security-audit.timer

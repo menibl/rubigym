@@ -13,3 +13,5 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/gymflow /var/lib/gymflow-deploy /var/backups/gymflow /var/log/gymflow /run/lock
+# Only host runtime files maintained by approved release operations are writable.
+ReadWritePaths=/usr/local/lib/gymflow-deploy /usr/local/lib/gymflow-monitor /usr/local/sbin /etc/systemd/system /var/lib/gymflow-monitor
