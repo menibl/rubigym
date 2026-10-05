@@ -768,11 +768,17 @@ export default function App() {
           <div className="flex flex-wrap items-center gap-2">
             {/* Active user badge */}
             <div className="flex items-center gap-2 bg-zinc-900/90 border border-zinc-800 p-1.5 pr-3 rounded-xl">
+              <button type="button" aria-label="עריכת הפרופיל ושינוי תמונת הפרופיל" onClick={() => {
+                setUserToEdit(activeUser);
+                setSettingsInitialSection('profile');
+                setIsSettingsOpen(true);
+              }} className="flex min-h-11 min-w-11 items-center justify-center rounded-full hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-amber-400">
               <img
                 src={activeUser.imageUrl}
                 alt={activeUser.name}
                 className="w-7 h-7 rounded-full object-cover border border-amber-500/40"
               />
+              </button>
               <div className="text-right">
                 <div className="text-xs font-bold text-amber-400 flex items-center gap-1">
                   {activeUser.name}
