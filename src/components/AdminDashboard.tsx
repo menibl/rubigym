@@ -17,6 +17,7 @@ import { EditSessionModal } from './EditSessionModal';
 import { copyGroupProgramToSessions, copyPersonalPlanToSessions } from '../data/workoutAssignment';
 import { CoachDashboard } from './CoachDashboard';
 import { CoachExceptionArrivalPanel } from './CoachExceptionArrivalPanel';
+import { InvoiceDescriptionSettings } from './InvoiceDescriptionSettings';
 import {
   User,
   TrainingSession,
@@ -2060,6 +2061,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div><h4 className="font-black text-slate-900">מסלולים ומחירים</h4><p className="mt-1 text-[11px] text-slate-600">השינויים נשמרים ומופיעים מיד בהרשמה ובדף רכישת מסלול. הסרת מסלול אינה משנה מנויים קיימים.</p></div>
                 <span className="rounded-full bg-slate-900 px-3 py-1 text-[10px] font-black text-white">{membershipPlans.length} מסלולים</span>
               </div>
+              <InvoiceDescriptionSettings settings={settings} onChange={onUpdateSettings} />
               <div className="space-y-3">
                 {membershipPlans.map(plan => <article key={plan.id} className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[150px_minmax(220px,1fr)_110px_190px_auto] md:items-end">
                   <label className="text-[10px] font-bold text-slate-600">שם המסלול<input value={plan.label} onChange={event => updateMembershipPlan(plan.id, { label: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>

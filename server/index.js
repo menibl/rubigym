@@ -35,6 +35,7 @@ import {
   stripCredentials,
   verifyPassword
 } from './auth.js';
+import { invoiceDescription } from '../shared/invoice-description.js';
 
 const RIVHIT_TEST_BASE_URL = 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc';
 const RIVHIT_PRODUCTION_BASE_URL = 'https://icredit.rivhit.co.il/API/PaymentPageRequest.svc';
@@ -969,7 +970,7 @@ const handleCreatePayment = async (request, env) => {
   const customer = splitCustomerName(body.userName);
   const createResult = await rivhitPost('/GetUrl', {
     GroupPrivateToken: env.RIVHIT_GROUP_PRIVATE_TOKEN,
-    Items: [{ UnitPrice: providerAmount, Quantity: 1, Description: purchase.label }],
+    Items: [{ UnitPrice: providerAmount, Quantity: 1, Description: invoiceDescription(checkoutState?.payload?.settings, purchase.label) }],
     CustomerFirstName: customer.firstName,
     CustomerLastName: customer.lastName,
     EmailAddress: body.email ? String(body.email).slice(0, 50) : undefined,
@@ -1884,7 +1885,9 @@ const handleApi = async (request, env, url) => {
       if (!Number.isFinite(amount) || amount <= 0 || reason.length < 3) return json({ message: 'יש להזין סכום תקין וסיבת שינוי.' }, 400, headers);
       const result = await rivhitPost('/RecurringSaleUpdateItems', {
         RecurringSaleId: payment.providerRecurringSaleId,
-        items: [{ Name: `BALY WELLNESS - ${payment.membershipTypePurchased}`, Quantity: 1, UnitPrice: amount }]
+        items: [{ Name: invoiceDescription(state?.payload?.settings,
+          state?.payload?.settings?.membershipPlans?.find(plan => plan.id === payment.membershipTypePurchased)?.label
+            || membershipLabels[payment.membershipTypePurchased] || payment.membershipTypePurchased), Quantity: 1, UnitPrice: amount }]
       }, env);
       if (!providerSucceeded(result)) return json({ message: rivhitValue(result, 'ClientMessage', 'DebugMessage') || 'רווחית דחתה את שינוי החיוב.' }, 422, headers);
       const updatedPayment = await updatePersistedPayment(env, identity.session.club_id, payment.id, {
