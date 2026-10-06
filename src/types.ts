@@ -845,6 +845,8 @@ export interface SystemSettings {
   blackPointExpiryMonths: number; // default: 1 month
   openGymMaxParticipants: number; // default: 15
   membershipPlans?: MembershipPlanConfig[];
+  invoiceDescriptionMode?: 'FIXED' | 'PLAN_NAME';
+  invoiceDescriptionText?: string;
   businessDetails?: {
     legalName?: string;
     registrationNumber?: string;

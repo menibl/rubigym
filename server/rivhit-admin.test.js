@@ -61,5 +61,6 @@ test('manager can update a recurring amount only when a provider recurring id ex
   assert.equal(response.status, 200);
   assert.equal(requestBody.RecurringSaleId, 'recurring-1');
   assert.equal(requestBody.items[0].UnitPrice, 600);
+  assert.equal(requestBody.items[0].Name, 'ייעוץ ואימון');
   assert.equal(fixture.state().payload.payments[0].recurringAmount, 600);
 });
