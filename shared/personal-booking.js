@@ -25,7 +25,7 @@ export const personalStart = session => {
   return guess - (Date.parse(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:00Z`) - guess);
 };
 
-export const changePersonalBooking = (payload, actorId, input, now = Date.now()) => {
+export const changePersonalBooking = (payload, actorId, input, now = Date.now(), options = {}) => {
   const users = payload.users || [];
   const actor = users.find(u => u.id === actorId);
   const staff = ['MANAGER', 'COACH'].includes(actor?.role);
@@ -68,7 +68,8 @@ export const changePersonalBooking = (payload, actorId, input, now = Date.now())
   if (previous?.status === 'BOOKED' && previous.id === input.bookingId && previous.payerId === payerId) return payload;
   if (previous?.id === input.bookingId) fail('בקשת הרשמה זו כבר בוטלה. יש לפתוח הרשמה חדשה.');
   if (!input.bookingId || typeof input.bookingId !== 'string' || input.bookingId.length > 100) fail('מזהה הרשמה חסר.');
-  if (start <= now || session.coachApprovalStatus === 'DECLINED') fail('האימון אינו זמין להרשמה.');
+  const arrivalWindow = options.arrival === true && now >= start - 30 * 60000 && now < start + session.durationMinutes * 60000;
+  if ((start <= now && !arrivalWindow) || session.coachApprovalStatus === 'DECLINED') fail('האימון אינו זמין להרשמה.');
   if (session.registeredUsers?.length || previous?.status === 'BOOKED') fail('האימון כבר תפוס. אימון אישי אינו הופך לזוגי אוטומטית.');
   if (session.targetTraineeId && session.targetTraineeId !== payerId) fail('האימון משויך למתאמן אחר.');
   const payer = users.find(u => u.id === payerId && u.role === 'TRAINEE');
