@@ -10,6 +10,7 @@ import { familyPlanAmount } from '../shared/family-pricing.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../shared/club-check-in.js';
+import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoachArrival, recordCoachExceptionScan, redeemCoachArrivalApproval, coachArrivalResult } from '../shared/coach-exception-arrival.js';
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
@@ -1663,6 +1664,31 @@ const handleApi = async (request, env, url) => {
       if (env.STATE_STORE) await env.STATE_STORE.setStatus(programId, status); else liveDisplayState.statuses.set(programId, status);
       return json({ ok: true }, 200, headers);
     }
+    if (url.pathname === '/api/attendance/coach-exception' && request.method === 'POST') {
+      const identity = await getIdentity();
+      if (!identity) return json({ message: 'יש להתחבר מחדש.' }, 401, headers);
+      if (!['MANAGER', 'COACH'].includes(identity.account.role)) return json({ message: 'אישור חריג מותר למאמן או למנהל בלבד.' }, 403, headers);
+      const body = await request.json(), token = crypto.randomUUID();
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const state = await loadClubState(identity.session.club_id);
+        if (!state) return json({ message: 'נתוני המועדון אינם זמינים.' }, 503, headers);
+        let payload, approval;
+        try {
+          if (body.action === 'CREATE') { approval = createCoachArrivalApproval(state.payload, identity.account.user_id, body, token); payload = approval.payload; }
+          else if (body.action === 'HISTORICAL') payload = recordHistoricalCoachArrival(state.payload, identity.account.user_id, body);
+          else return json({ message: 'פעולת אישור אינה תקינה.' }, 400, headers);
+        } catch (error) { return json({ message: error.message }, 400, headers); }
+        if (payload === state.payload) return json(coachArrivalResult(payload, body.traineeId, body, true), 200, headers);
+        const saved = await env.STATE_STORE.putClubState(identity.session.club_id, payload, state.revision);
+        if (saved.conflict) continue;
+        for (const user of payload.users || []) {
+          if (state.payload.users.find(u => u.id === user.id) !== user) await env.STATE_STORE.updateAccountIdentity?.(identity.session.club_id, stripCredentials(user));
+        }
+        await notifyStateChange(state.payload, payload, identity.session.club_id);
+        return json(approval ? { code: approval.code, expiresAt: approval.expiresAt } : coachArrivalResult(payload, body.traineeId, body), 200, headers);
+      }
+      return json({ message: 'הנתונים השתנו במקביל. יש לנסות שוב.' }, 409, headers);
+    }
     if (url.pathname === '/api/attendance/arrival' && ['GET', 'POST'].includes(request.method)) {
       const identity = await getIdentity();
       if (!identity) return json({ message: 'יש להתחבר מחדש.' }, 401, headers);
@@ -1675,11 +1701,12 @@ const handleApi = async (request, env, url) => {
         try {
           if (!body) return json({ choices: clubArrivalChoices(state.payload, identity.account.user_id) }, 200, headers);
           if (body.action === 'SCAN') {
-            scan = recordClubScan(state.payload, identity.account.user_id, body);
+            scan = String(body.code).startsWith(COACH_EXCEPTION_PREFIX) ? recordCoachExceptionScan(state.payload, identity.account.user_id, body) : recordClubScan(state.payload, identity.account.user_id, body);
             payload = scan.payload;
-          } else payload = recordClubArrival(state.payload, identity.account.user_id, body);
+          } else payload = String(body.code).startsWith(COACH_EXCEPTION_PREFIX) ? redeemCoachArrivalApproval(state.payload, identity.account.user_id, body) : recordClubArrival(state.payload, identity.account.user_id, body);
         } catch (error) { return json({ message: error.message }, 400, headers); }
-        if (payload === state.payload) return json(scan ? { choices: scan.choices, error: scan.error } : clubArrivalResult(payload, identity.account.user_id, body, true), 200, headers);
+        const arrivalResult = String(body.code).startsWith(COACH_EXCEPTION_PREFIX) ? coachArrivalResult : clubArrivalResult;
+        if (payload === state.payload) return json(scan ? { choices: scan.choices, error: scan.error } : arrivalResult(payload, identity.account.user_id, body, true), 200, headers);
         const saved = await env.STATE_STORE.putClubState(identity.session.club_id, payload, state.revision);
         if (saved.conflict) continue;
         if (env.STATE_STORE.updateAccountIdentity) {
@@ -1688,7 +1715,7 @@ const handleApi = async (request, env, url) => {
           }
         }
         await notifyStateChange(state.payload, payload, identity.session.club_id);
-        return json(scan ? { choices: scan.choices, error: scan.error } : clubArrivalResult(payload, identity.account.user_id, body), 200, headers);
+        return json(scan ? { choices: scan.choices, error: scan.error } : arrivalResult(payload, identity.account.user_id, body), 200, headers);
       }
       return json({ message: 'היומן השתנה במקביל. יש לנסות שוב.' }, 409, headers);
     }

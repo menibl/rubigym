@@ -4,6 +4,7 @@ import { createDemoPayload } from './demoData';
 import { deleteClubUser, removeDeletedUserData } from '../../shared/user-deletion.js';
 import { changePersonalBooking } from '../../shared/personal-booking.js';
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../../shared/club-check-in.js';
+import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoachArrival, recordCoachExceptionScan, redeemCoachArrivalApproval, coachArrivalResult, preserveCoachArrivalAudit } from '../../shared/coach-exception-arrival.js';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -75,15 +76,16 @@ export type ArrivalChoice = {
   trainingType: 'SOLO' | 'DUO' | 'GROUP' | 'OPEN_GYM'; registered: boolean; checkedIn: boolean;
   partners?: Array<{ id: string; name: string }>;
   unscheduled?: boolean;
+  exception?: boolean;
   usesPunchCard?: boolean;
 };
-export async function getArrivalChoices(scanId?: string): Promise<{ choices: ArrivalChoice[] }> {
+export async function getArrivalChoices(scanId?: string, code = 'BALY-CLUB-CHECKIN-V1'): Promise<{ choices: ArrivalChoice[] }> {
   if (scanId) {
-    const input = { action: 'SCAN', code: 'BALY-CLUB-CHECKIN-V1', scanId };
+    const input = { action: 'SCAN', code, scanId };
     let result: { choices: ArrivalChoice[]; error?: string };
     if (isPagesDemoMode()) {
       const state = readDemoState();
-      const scanned = recordClubScan(state.payload, currentDemoUser()?.id, input);
+      const scanned = code.startsWith(COACH_EXCEPTION_PREFIX) ? recordCoachExceptionScan(state.payload, currentDemoUser()?.id, input) : recordClubScan(state.payload, currentDemoUser()?.id, input);
       writeDemoState({ ...state, payload: scanned.payload, revision: state.revision + 1 });
       result = scanned;
     } else result = await request('/api/attendance/arrival', { method: 'POST', body: JSON.stringify(input) });
@@ -97,11 +99,32 @@ export type ArrivalResult = { ok: boolean; message: string; alreadyRecorded: boo
 export async function saveClubArrival(input: { code: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; trainingType: string; partnerId?: string; confirmUnscheduled?: boolean }): Promise<ArrivalResult> {
   if (isPagesDemoMode()) {
     const state = readDemoState();
-    const payload = recordClubArrival(state.payload, currentDemoUser()?.id, input);
+    const exception = input.code.startsWith(COACH_EXCEPTION_PREFIX);
+    const payload = exception ? redeemCoachArrivalApproval(state.payload, currentDemoUser()?.id, input) : recordClubArrival(state.payload, currentDemoUser()?.id, input);
     writeDemoState({ ...state, payload, revision: state.revision + 1 });
-    return clubArrivalResult(payload, currentDemoUser()?.id, input, payload === state.payload);
+    return (exception ? coachArrivalResult : clubArrivalResult)(payload, currentDemoUser()?.id, input, payload === state.payload);
   }
   return request<ArrivalResult>('/api/attendance/arrival', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function createCoachException(input: { traineeId: string; reason: string }): Promise<{ code: string; expiresAt: string }> {
+  if (isPagesDemoMode()) {
+    const state = readDemoState();
+    const result = createCoachArrivalApproval(state.payload, currentDemoUser()?.id, input, crypto.randomUUID());
+    writeDemoState({ ...state, payload: result.payload, revision: state.revision + 1 });
+    return { code: result.code, expiresAt: result.expiresAt };
+  }
+  return request('/api/attendance/coach-exception', { method: 'POST', body: JSON.stringify({ ...input, action: 'CREATE' }) });
+}
+
+export async function saveHistoricalCoachArrival(input: { traineeId: string; trainingType: 'SOLO' | 'DUO'; date: string; reason: string; eventId: string; confirmDebit: boolean }): Promise<ArrivalResult> {
+  if (isPagesDemoMode()) {
+    const state = readDemoState();
+    const payload = recordHistoricalCoachArrival(state.payload, currentDemoUser()?.id, input);
+    writeDemoState({ ...state, payload, revision: state.revision + 1 });
+    return coachArrivalResult(payload, input.traineeId, input, payload === state.payload);
+  }
+  return request('/api/attendance/coach-exception', { method: 'POST', body: JSON.stringify({ ...input, action: 'HISTORICAL' }) });
 }
 
 export const savePersonalBooking = async (input: {
@@ -389,7 +412,7 @@ export const saveClubState = async (payload: Record<string, unknown>, expectedRe
       error.status = 409;
       throw error;
     }
-    const next = writeDemoState({ payload: removeDeletedUserData(payload, current.payload.deletedUserIds || []), revision: current.revision + 1 });
+    const next = writeDemoState({ payload: removeDeletedUserData(preserveCoachArrivalAudit(current.payload, payload), current.payload.deletedUserIds || []), revision: current.revision + 1 });
     return { revision: next.revision };
   }
   return request<{ revision: number; generatedMessages?: import('../types').Message[] }>('/api/state', { method: 'PUT', body: JSON.stringify({ payload, expectedRevision }) });

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import { Camera } from 'lucide-react';
 import { CLUB_CHECK_IN_CODE } from '../../shared/club-check-in.js';
+import { COACH_EXCEPTION_PREFIX } from '../../shared/coach-exception-arrival.js';
 import { ArrivalChoice, getArrivalChoices, saveClubArrival } from '../data/clubServer';
 import { AttendanceLog } from '../types';
 
@@ -12,6 +13,7 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
   const generation = useRef(0);
   const mounted = useRef(true);
   const busyRef = useRef(false);
+  const scannedCode = useRef(CLUB_CHECK_IN_CODE);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
   const [choices, setChoices] = useState<ArrivalChoice[] | null>(null);
@@ -32,7 +34,7 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setError('');
     try {
-      const result = await saveClubArrival({ code: CLUB_CHECK_IN_CODE, type: choice.type, targetId: choice.targetId, trainingType: choice.trainingType, partnerId: partner, confirmUnscheduled: confirmed });
+      const result = await saveClubArrival({ code: scannedCode.current, type: choice.type, targetId: choice.targetId, trainingType: choice.trainingType, partnerId: partner, confirmUnscheduled: confirmed });
       if (mounted.current) {
         setChoices(null); setSelected(null); setConfirmation(null);
         setSuccess(result.message);
@@ -40,11 +42,12 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
     } catch (e) { if (mounted.current) setError(e.message); }
     finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   };
-  const scanned = async () => {
+  const scanned = async (code: string) => {
+    scannedCode.current = code;
     stop(); setError(''); setBusy(true);
     try {
       const scanId = crypto.randomUUID();
-      const { choices: available } = await getArrivalChoices(scanId);
+      const { choices: available } = await getArrivalChoices(scanId, code);
       if (!mounted.current) return;
       const pending = available.filter(c => !c.checkedIn);
       if (!pending.length) { setError(available.length ? 'ההגעה לאימונים הזמינים כבר תועדה.' : 'אין כעת אימון פנוי שמתאים למנוי שלך. יש לפנות למאמן.'); return; }
@@ -74,7 +77,7 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
           context.drawImage(element, 0, 0, canvas.width, canvas.height);
           const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
           const code = jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'dontInvert' });
-          if (code?.data === CLUB_CHECK_IN_CODE) { void scanned(); return; }
+          if (code?.data === CLUB_CHECK_IN_CODE || code?.data.startsWith(COACH_EXCEPTION_PREFIX)) { void scanned(code.data); return; }
           if (code) setError('זה אינו קוד המועדון. כוונו אל קוד הכניסה של BALY WELLNESS.');
         }
         frame.current = requestAnimationFrame(scan);
@@ -97,7 +100,7 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
     {error && <p role="alert" className="text-rose-300">{error}</p>}
     {success && <p role="status" className="rounded-xl bg-emerald-950 p-4 text-emerald-200">{success}</p>}
     {confirmation && <div role="alertdialog" aria-modal="false" aria-labelledby="arrival-confirm-title" aria-describedby="arrival-confirm-description" className="space-y-3 rounded-xl border border-amber-400 bg-slate-800 p-4">
-      <h4 id="arrival-confirm-title" className="text-lg font-bold">אין אימון פעיל ביומן</h4>
+      <h4 id="arrival-confirm-title" className="text-lg font-bold">{confirmation.exception ? 'אישור חריג של המאמן' : 'אין אימון פעיל ביומן'}</h4>
       <p id="arrival-confirm-description">האם להמשיך ולרשום אותך ל{label(confirmation)}? {confirmation.type === 'SESSION' ? 'באישור ינוכה קרדיט אחד מהכרטיסייה המתאימה.' : confirmation.usesPunchCard ? 'באישור ינוכה ניקוב אחד מכרטיסיית Open Gym.' : 'ההגעה תתועד ללא ניכוי קרדיט.'}</p>
       <button type="button" autoFocus disabled={busy} onClick={() => void arrive(confirmation, partnerId || undefined, true)} className="w-full rounded-xl bg-amber-400 p-3 font-bold text-black disabled:opacity-50">כן, רשמו אותי לאימון</button>
       <button type="button" disabled={busy} onClick={() => { setConfirmation(null); setChoices(null); setSelected(null); setSuccess('הרישום בוטל. לא נוכה אימון. הודעת הסריקה נשלחה למאמן.'); }} className="w-full rounded-xl border border-slate-500 p-3">לא, ביטול ללא ניכוי</button>
