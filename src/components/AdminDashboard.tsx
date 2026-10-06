@@ -5,6 +5,8 @@
 
 import React, { useState } from 'react';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
+import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
+import { updateTrainingCard } from '../../shared/training-card.js';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
 import { getGenderLabel } from '../data/userProfile';
@@ -1584,34 +1586,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </button>
                               )}
 
-                              {/* Manager Punch Card Reload Action */}
-                              <button
-                                onClick={() => {
-                                  const newPunchesStr = prompt(`הכנס מספר ניקובים לכרטיסייה עבור ${u.name}:`, String(u.punchCardRemaining || 10));
-                                  if (newPunchesStr !== null) {
-                                    const count = parseInt(newPunchesStr, 10);
-                                    if (!isNaN(count) && count >= 0) {
-                                      const updated = users.map(user => {
-                                        if (user.id === u.id) {
-                                          return {
-                                            ...user,
-                                            membershipType: MembershipType.OPEN_PUNCH_CARD,
-                                            membershipStatus: MembershipStatus.ACTIVE,
-                                            punchCardRemaining: count
-                                          };
-                                        }
-                                        return user;
-                                      });
-                                      onUpdateUsers(updated);
-                                      alert(`עודכנה כרטיסייה עבור ${u.name}: ${count} ניקובים 🎟️`);
-                                    }
-                                  }
-                                }}
-                                className="text-[9px] text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 font-semibold py-0.5 px-2 rounded w-full text-center"
-                                title="הגדר/הטען ניקובים בכרטיסייה"
-                              >
-                                🎟️ טעינת כרטיסייה ({u.punchCardRemaining ?? 0})
-                              </button>
+                              <AdminTrainingCardEditor user={u} onChange={(type, quantity, mode) => onUpdateUsers(users.map(member => member.id === u.id ? updateTrainingCard(member, type, quantity, mode) : member))} />
 
                               <details className="w-full rounded-xl border p-3 text-right">
                                 <summary className="cursor-pointer font-bold">ניהול מנויים משולבים</summary>

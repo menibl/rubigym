@@ -99,7 +99,7 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
         setSelected(c); setPartnerId('');
         if (c.trainingType !== 'DUO' || c.registered) void arrive(c);
       }} className="block w-full rounded-xl border border-slate-600 bg-slate-800 p-4 text-right disabled:opacity-50">
-        <strong>{label(c)} — {c.title}</strong><div className="text-sm text-slate-300">{c.time} · {c.registered ? 'רשום מראש — ללא חיוב נוסף' : c.type === 'OPEN_GYM' ? 'רישום ותיעוד הגעה בלבד' : 'רישום וניכוי קרדיט אחד'}</div>
+        <strong>{label(c)} — {c.title}</strong><div className="text-sm text-slate-300">{c.time} · {c.registered ? 'רשום מראש — ללא חיוב נוסף' : c.usesPunchCard ? 'רישום וניכוי ניקוב אחד מכרטיסיית Open Gym' : c.type === 'OPEN_GYM' ? 'רישום ותיעוד הגעה בלבד' : 'רישום וניכוי קרדיט אחד'}</div>
       </button>)}
       {selected?.trainingType === 'DUO' && !selected.registered && <div className="space-y-3">
         <label className="block">בן/בת זוג לאימון<select value={partnerId} onChange={e => setPartnerId(e.target.value)} className="mt-2 w-full rounded-xl bg-slate-800 p-3"><option value="">בחירת בן משפחה</option>{selected.partners?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>

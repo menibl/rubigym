@@ -75,6 +75,7 @@ export type ArrivalChoice = {
   trainingType: 'SOLO' | 'DUO' | 'GROUP' | 'OPEN_GYM'; registered: boolean; checkedIn: boolean;
   partners?: Array<{ id: string; name: string }>;
   unscheduled?: boolean;
+  usesPunchCard?: boolean;
 };
 export async function getArrivalChoices(): Promise<{ choices: ArrivalChoice[] }> {
   if (isPagesDemoMode()) return { choices: clubArrivalChoices(readDemoState().payload, currentDemoUser()?.id) as ArrivalChoice[] };
