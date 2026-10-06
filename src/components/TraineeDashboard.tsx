@@ -69,7 +69,7 @@ import {
 } from 'lucide-react';
 import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
 import { ExerciseMedia } from './ExerciseMedia';
-import { CLUB_CHECK_IN_CODE } from './ClubCheckInBarcode';
+import { ClubArrivalScanner } from './ClubArrivalScanner';
 import {
   clearRivhitReturnParams,
   clearPendingRivhitPayment,
@@ -186,10 +186,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   }, [familyCheckoutRequest]);
   const [discountInput, setDiscountInput] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const [scannerError, setScannerError] = useState('');
-  const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
-  const scannerStreamRef = useRef<MediaStream | null>(null);
   const [selectedWorkoutDay, setSelectedWorkoutDay] = useState(1);
   const [demoExercise, setDemoExercise] = useState<Exercise | null>(null);
   const membershipPlanConfigs = (settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS).filter(plan => plan.active);
@@ -1197,138 +1193,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     onUpdateOpenGym(updatedOpenGym);
   };
 
-  const getCheckInEligibility = (requestedType?: 'SESSION' | 'OPEN_GYM', requestedId?: string) => {
-    if (!isHealthDeclarationValid()) return { allowed: false, reason: 'הצהרת הבריאות חסרה או אינה בתוקף. יש לחתום עליה לפני הכניסה למועדון.' };
-    const payer = activeUser.familyPayerId ? users.find(user => user.id === activeUser.familyPayerId) : undefined;
-    const isPaid = (activeUser.membershipStatus === MembershipStatus.ACTIVE && !cancellationEffective) || activeUser.offlinePaymentApproved
-      || Boolean(payer && (payer.membershipStatus === MembershipStatus.ACTIVE || payer.offlinePaymentApproved) && !isMembershipCancellationEffective(payer));
-    if (!isPaid) return { allowed: false, reason: 'המנוי אינו פעיל או לא שולם. יש להסדיר מסלול לפני הכניסה.' };
-    if (freezeActive) return { allowed: false, reason: `המנוי מוקפא עד ${activeUser.membershipFrozenUntil} ולכן הכניסה למועדון חסומה.` };
-
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const eligibleSession = sessions.find(session => {
-      if (requestedType && (requestedType !== 'SESSION' || requestedId !== session.id)) return false;
-      if (session.date !== today || !session.registeredUsers.includes(activeUser.id)) return false;
-      const start = timeToMinutes(session.time);
-      return nowMinutes >= start - 30 && nowMinutes <= start + session.durationMinutes;
-    });
-    if (eligibleSession) {
-      const alreadyCheckedIn = attendanceLogs.some(log => log.traineeId === activeUser.id && log.type === 'SESSION' && log.targetId === eligibleSession.id && log.date === today);
-      return alreadyCheckedIn
-        ? { allowed: false, reason: `הכניסה עבור ${eligibleSession.title} כבר אושרה היום.` }
-        : { allowed: true, type: 'SESSION' as const, id: eligibleSession.id, title: eligibleSession.title };
-    }
-
-    const eligibleOpenGym = openGymSessions.find(session => {
-      if (requestedType && (requestedType !== 'OPEN_GYM' || requestedId !== session.id)) return false;
-      if (session.date !== today || !session.registeredUsers.includes(activeUser.id)) return false;
-      const [start, end] = session.timeSlot.split('-').map(timeToMinutes);
-      return nowMinutes >= start && nowMinutes <= end;
-    });
-    if (eligibleOpenGym) {
-      const alreadyCheckedIn = attendanceLogs.some(log => log.traineeId === activeUser.id && log.type === 'OPEN_GYM' && log.targetId === eligibleOpenGym.id && log.date === today);
-      return alreadyCheckedIn
-        ? { allowed: false, reason: 'הכניסה למשבצת Open Gym זו כבר אושרה היום.' }
-        : { allowed: true, type: 'OPEN_GYM' as const, id: eligibleOpenGym.id, title: `Open Gym ${eligibleOpenGym.timeSlot}` };
-    }
-
-    return { allowed: false, reason: 'אין כרגע אימון פעיל שאליו נרשמת. הכניסה נפתחת 30 דקות לפני אימון קבוצתי, או בשעות משבצת ה־Open Gym שנקבעה.' };
-  };
-
-  const stopScanner = () => {
-    scannerStreamRef.current?.getTracks().forEach(track => track.stop());
-    scannerStreamRef.current = null;
-    setScannerOpen(false);
-  };
-
-  useEffect(() => () => scannerStreamRef.current?.getTracks().forEach(track => track.stop()), []);
-
-  const completeClubScan = (scannedCode?: string) => {
-    if (scannedCode && scannedCode !== CLUB_CHECK_IN_CODE) {
-      setScannerError('הקוד שנסרק אינו קוד הכניסה של BALY WELLNESS. יש לסרוק את הקוד המוצג במועדון.');
-      return;
-    }
-    const eligibility = getCheckInEligibility();
-    if (!eligibility.allowed || !eligibility.type || !eligibility.id || !eligibility.title) {
-      setScannerError(eligibility.reason || 'הכניסה אינה זמינה כעת.');
-      return;
-    }
-    handleSimulateCheckIn(eligibility.type, eligibility.id, eligibility.title);
-    stopScanner();
-  };
-
-  const startClubScanner = async () => {
-    setScannerError('');
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setScannerOpen(true);
-      setScannerError('המצלמה אינה זמינה בדפדפן זה. ניתן להשתמש בכפתור בדיקת הסריקה.');
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-      scannerStreamRef.current = stream;
-      setScannerOpen(true);
-      window.setTimeout(async () => {
-        const video = scannerVideoRef.current;
-        if (!video) return;
-        video.srcObject = stream;
-        await video.play().catch(() => undefined);
-        const Detector = (window as unknown as { BarcodeDetector?: new (options: { formats: string[] }) => { detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>> } }).BarcodeDetector;
-        if (!Detector) {
-          setScannerError('סריקה אוטומטית אינה נתמכת בדפדפן זה. כוון את המצלמה ולחץ על “אישור סריקת בדיקה”.');
-          return;
-        }
-        const detector = new Detector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13'] });
-        const scanFrame = async () => {
-          if (!scannerStreamRef.current || !scannerVideoRef.current) return;
-          try {
-            const codes = await detector.detect(scannerVideoRef.current);
-            if (codes.length) {
-              completeClubScan(codes[0].rawValue);
-              return;
-            }
-          } catch { /* keep scanning */ }
-          window.requestAnimationFrame(scanFrame);
-        };
-        window.requestAnimationFrame(scanFrame);
-      }, 0);
-    } catch {
-      setScannerOpen(true);
-      setScannerError('לא התקבל אישור למצלמה. יש לאפשר מצלמה בהגדרות האתר ולנסות שוב.');
-    }
-  };
-
-  // CHECK-IN / SCANNER (Section 9)
-  const handleSimulateCheckIn = (targetType: 'SESSION' | 'OPEN_GYM', targetId: string, title: string) => {
-    const eligibility = getCheckInEligibility(targetType, targetId);
-    if (!eligibility.allowed) {
-      if (!isHealthDeclarationValid()) onOpenSettings('health');
-      else if (/מנוי|שולם|מסלול/.test(eligibility.reason || '')) {
-        setActiveTab('membership');
-        openMembershipCheckout(MembershipType.OPEN_GYM, 'PRIMARY');
-      }
-      showFeedback(eligibility.reason || 'הכניסה אינה מאושרת כעת.', 'error');
-      return;
-    }
-    // 1. Record Attendance Log
-    const now = new Date();
-    const log: AttendanceLog = {
-      id: `att-${Date.now()}`,
-      traineeId: activeUser.id,
-      traineeName: activeUser.name,
-      type: targetType,
-      targetId: targetId,
-      targetTitle: title,
-      timestamp: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      date: now.toISOString().split('T')[0]
-    };
-
-    onUpdateAttendance([log, ...attendanceLogs]);
-
-    showFeedback(`🎉 צ'ק-אין בוצע בהצלחה עבור המועדון! הגעתך ל-${title} תועדה ברשומות.`);
-  };
 
   // SEND CHAT TO SELECTED COACH (Section 13)
   const handleSendChat = (e: React.FormEvent) => {
@@ -1729,7 +1593,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <span>שלום, טוב לראות אותך</span>
                 <h2>{activeUser.name} 👋</h2>
               </div>
-              <img src={activeUser.imageUrl} alt={activeUser.name} />
+              <button type="button" onClick={() => onOpenSettings('profile')} aria-label="שינוי תמונת הפרופיל" className="rounded-full focus-visible:outline-2 focus-visible:outline-amber-400"><img src={activeUser.imageUrl} alt={activeUser.name} /></button>
             </section>
 
             <section className="next-session-card">
@@ -2637,130 +2501,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           </div>
         )}
 
-        {/* TAB 7: DIGITAL CARD & BARCODE (Section 9) */}
         {activeTab === 'card' && (
-          <div className="space-y-6 flex flex-col items-center justify-center py-6 text-center">
-            <div>
-              <h3 className="text-base font-black text-slate-900">סריקת ברקוד וכניסה למועדון</h3>
-              <p className="mt-1 text-xs text-slate-500">הכניסה תאושר רק בזמן אימון פעיל שאליו נרשמת ובהתקיים מנוי והצהרת בריאות תקינים.</p>
-            </div>
-
-            <div className={`check-in-status ${getCheckInEligibility().allowed ? 'allowed' : 'blocked'}`}>
-              {getCheckInEligibility().allowed ? `ניתן להיכנס כעת עבור ${getCheckInEligibility().title}.` : getCheckInEligibility().reason}
-            </div>
-
-            {!scannerOpen ? (
-              <button type="button" onClick={() => void startClubScanner()} className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 text-sm font-black text-slate-950">
-                <Camera size={18} /> פתיחת מצלמה וסריקת ברקוד המועדון
-              </button>
-            ) : (
-              <div className="club-barcode-scanner">
-                <div className="scanner-frame"><video ref={scannerVideoRef} muted playsInline /></div>
-                {scannerError && <p className="mt-3 text-xs leading-5 text-amber-200">{scannerError}</p>}
-                <div className="scanner-actions">
-                  <button type="button" onClick={() => completeClubScan()}>אישור סריקת בדיקה</button>
-                  <button type="button" className="secondary" onClick={stopScanner}>סגירה</button>
-                </div>
-              </div>
-            )}
-            
-            {/* Simulation card layout */}
-            <div className="w-72 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-xl p-6 border border-slate-700 relative overflow-hidden" id="digital-pwa-card">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl -z-1" />
-              
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h4 className="font-bold text-md tracking-tight font-sans text-emerald-400">BALLYWELLNESS</h4>
-                  <span className="text-[8px] text-slate-400 font-mono uppercase">MOBILE MEMBERSHIP</span>
-                </div>
-                <span className="bg-emerald-500 text-slate-900 font-mono font-bold text-[8px] px-2 py-0.5 rounded-full">
-                  {activeUser.membershipType}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3 mb-6">
-                <img
-                  src={activeUser.imageUrl}
-                  alt={activeUser.name}
-                  className="w-12 h-12 rounded-full object-cover border border-slate-600"
-                />
-                <div className="text-right">
-                  <div className="font-bold text-xs text-white">{activeUser.name}</div>
-                  <div className="text-[9px] text-slate-400 font-mono">ID: {activeUser.id}</div>
-                </div>
-              </div>
-
-              {/* simulated barcode scanner */}
-              <div className="bg-white rounded-lg p-3 flex flex-col items-center justify-center mb-4">
-                <div className="w-full flex items-center justify-between font-mono tracking-widest text-slate-900 select-none">
-                  <span>||| | |||| || | |||| || |||</span>
-                  <span className="text-[9px] font-bold">SCAN ME</span>
-                </div>
-                <div className="text-[9px] text-slate-400 font-mono mt-1">BALLYWELLNESS-{activeUser.id}</div>
-              </div>
-
-              <div className="text-[8px] text-slate-400">
-                הצמד את הקוד לקורא הברקודים בכניסה למועדון לרישום נוכחות
-              </div>
-            </div>
-
-            {/* Registered bookings are also available for controlled demo checks. */}
-            <div className="w-full max-w-sm bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-3">
-              <span className="text-xs font-bold text-slate-700 block">בדיקת כניסה לפי אימון רשום</span>
-              <p className="text-[10px] text-slate-400">
-                סמל סריקה דיגיטלית של המנוי שלך בקבלה. לחיצה על הכפתורים מטה מדמה סריקת כרטיס עבור אימון שרשום אליו:
-              </p>
-
-              <div className="space-y-2">
-                {/* Booked Classes Checkins */}
-                {sessions.filter(isBooked).map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => handleSimulateCheckIn('SESSION', s.id, s.title)}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold py-1.5 px-3 rounded-lg transition flex items-center justify-between"
-                  >
-                    <span>סרוק והצהר נוכחות ב-{s.title}</span>
-                    <span className="font-mono text-[9px] opacity-80">{s.time}</span>
-                  </button>
-                ))}
-
-                {/* Booked Open Gym Checkins */}
-                {openGymSessions.filter(isOpenGymBooked).map(og => (
-                  <button
-                    key={og.id}
-                    onClick={() => handleSimulateCheckIn('OPEN_GYM', og.id, `Open Gym ${og.timeSlot}`)}
-                    className="w-full bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-semibold py-1.5 px-3 rounded-lg transition flex items-center justify-between"
-                  >
-                    <span>סרוק והצהר נוכחות ב-Open Gym</span>
-                    <span className="font-mono text-[9px] opacity-80">{og.timeSlot.split(' ')[0]}</span>
-                  </button>
-                ))}
-
-                {sessions.filter(isBooked).length === 0 && openGymSessions.filter(isOpenGymBooked).length === 0 && (
-                  <div className="text-center p-3 text-slate-400 text-[10px] border border-dashed border-slate-200 rounded-lg">
-                    עליך להירשם לאימון או ל-Open Gym תחילה כדי להצהיר הגעה.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Logs view */}
-            <div className="w-full max-w-md text-right">
-              <h4 className="text-xs font-bold text-slate-700 mb-2">היסטוריית כניסות וצ'ק-אין במועדון</h4>
-              <div className="border border-slate-150 rounded-xl p-3 bg-slate-50 space-y-2 max-h-40 overflow-y-auto">
-                {attendanceLogs
-                  .filter(log => log.traineeId === activeUser.id)
-                  .map(log => (
-                    <div key={log.id} className="bg-white rounded p-2 text-[10px] border border-slate-100 flex justify-between items-center font-mono">
-                      <span className="text-slate-500 font-semibold">{log.date} - {log.timestamp}</span>
-                      <span className="text-slate-800 font-sans">{log.targetTitle} ({log.type})</span>
-                    </div>
-                  ))}
-                {attendanceLogs.filter(log => log.traineeId === activeUser.id).length === 0 && (
-                  <div className="text-center text-slate-400 text-[10px] py-4">אין רישומי נוכחות קודמים בדפדפן זה.</div>
-                )}
-              </div>
-            </div>
+          <div className="flex justify-center py-4">
+            <ClubArrivalScanner logs={attendanceLogs.filter(log => log.traineeId === activeUser.id)} />
           </div>
         )}
 

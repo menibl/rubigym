@@ -9,6 +9,7 @@ import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
+import { clubArrivalChoices, recordClubArrival } from '../shared/club-check-in.js';
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
@@ -1661,6 +1662,31 @@ const handleApi = async (request, env, url) => {
       const programId = decodeURIComponent(statusMatch[1]);
       if (env.STATE_STORE) await env.STATE_STORE.setStatus(programId, status); else liveDisplayState.statuses.set(programId, status);
       return json({ ok: true }, 200, headers);
+    }
+    if (url.pathname === '/api/attendance/arrival' && ['GET', 'POST'].includes(request.method)) {
+      const identity = await getIdentity();
+      if (!identity) return json({ message: 'יש להתחבר מחדש.' }, 401, headers);
+      const body = request.method === 'POST' ? await request.json() : null;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const state = await loadClubState(identity.session.club_id);
+        if (!state) return json({ message: 'נתוני המועדון אינם זמינים.' }, 503, headers);
+        let payload;
+        try {
+          if (!body) return json({ choices: clubArrivalChoices(state.payload, identity.account.user_id) }, 200, headers);
+          payload = recordClubArrival(state.payload, identity.account.user_id, body);
+        } catch (error) { return json({ message: error.message }, 400, headers); }
+        if (payload === state.payload) return json({ ok: true }, 200, headers);
+        const saved = await env.STATE_STORE.putClubState(identity.session.club_id, payload, state.revision);
+        if (saved.conflict) continue;
+        if (env.STATE_STORE.updateAccountIdentity) {
+          for (const user of payload.users) {
+            if (state.payload.users.find(u => u.id === user.id) !== user) await env.STATE_STORE.updateAccountIdentity(identity.session.club_id, stripCredentials(user));
+          }
+        }
+        await notifyStateChange(state.payload, payload, identity.session.club_id);
+        return json({ ok: true }, 200, headers);
+      }
+      return json({ message: 'היומן השתנה במקביל. יש לנסות שוב.' }, 409, headers);
     }
     if (url.pathname === '/api/bookings/personal' && request.method === 'POST') {
       const identity = await getIdentity();
