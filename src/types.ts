@@ -381,6 +381,7 @@ export interface User {
   allowMultipleTraineesInPT?: boolean; // Coach approval for >1 trainee in PT session
   openGymMonthlyLimit?: number; // Registration limit for Open Gym defined by coach/manager
   offlinePaymentApproved?: boolean; // Exception override by manager for manual payment
+  offlinePaymentPendingSnapshot?: { registrationPaymentPending: boolean; familyPaymentPending: boolean; membershipStatus?: MembershipStatus };
   offlinePaymentNote?: string;
 
   // Workout & Nutrition requests

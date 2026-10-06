@@ -1,6 +1,7 @@
 import { clubDate, membershipExpired } from './membership-calendar.js';
 import { changePersonalBooking, personalStart } from './personal-booking.js';
 import { hasIncludedOpenGymAccess } from './open-gym-access.js';
+import { paymentPending } from './registration-status.js';
 
 export const CLUB_CHECK_IN_CODE = 'BALY-CLUB-CHECKIN-V1';
 const fail = message => { throw new Error(message); };
@@ -14,7 +15,7 @@ const validateUser = (payload, id, now) => {
   if (!user) fail('יש להתחבר כמתאמן.');
   const today = clubDate(new Date(now));
   const payer = payload.users.find(u => u.id === user.familyPayerId);
-  if (user.registrationIncomplete || user.registrationPaymentPending || user.familyPaymentPending) fail('יש להשלים רישום ותשלום לפני הכניסה.');
+  if (user.registrationIncomplete || paymentPending(user)) fail('יש להשלים רישום ותשלום לפני הכניסה.');
   if (!(user.membershipStatus === 'ACTIVE' || user.offlinePaymentApproved || payer?.membershipStatus === 'ACTIVE') || membershipExpired(user.membershipExpiry ? user : payer, today)) fail('יש להסדיר מנוי בתוקף לפני הכניסה.');
   if (user.isMembershipFrozen && (!user.membershipFrozenUntil || user.membershipFrozenUntil >= today)) fail('המנוי מוקפא.');
   if (user.cancellationEffectiveDate && user.cancellationEffectiveDate <= today) fail('המנוי בוטל.');

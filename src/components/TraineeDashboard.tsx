@@ -441,7 +441,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   // Check booking eligibility constraints (Section 5.1 & 11)
   const checkBookingEligibility = (session: TrainingSession): { eligible: boolean; reason?: string } => {
     if (isYouthSession(session) && !fitsSessionAge(session, activeUser)) return { eligible: false, reason: 'אימון הנוער מיועד לטווח הגיל המוגדר ועד גיל 18 כולל. יש לוודא שהגיל בפרופיל מעודכן.' };
-    if (activeUser.familyPaymentPending) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
+    if (activeUser.familyPaymentPending && !activeUser.offlinePaymentApproved) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
     if (new Date(`${session.date}T${session.time}`).getTime() <= Date.now()) {
       return { eligible: false, reason: 'האימון כבר התחיל. יש לבחור אימון עתידי.' };
     }
@@ -607,7 +607,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   const checkOpenGymBookingEligibility = (og: OpenGymSession): { eligible: boolean; reason?: string } => {
-    if (activeUser.familyPaymentPending) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
+    if (activeUser.familyPaymentPending && !activeUser.offlinePaymentApproved) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
     if (new Date(`${og.date}T${og.timeSlot.split('-')[0].trim()}`).getTime() <= Date.now()) return { eligible: false, reason: 'המשבצת כבר התחילה. יש לבחור אימון עתידי.' };
     if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) return { eligible: false, reason: 'כבר נרשמת למשבצת זו.' };
     const dailyOpenGymBookings = openGymSessions.filter(session =>

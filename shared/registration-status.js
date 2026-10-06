@@ -1,4 +1,20 @@
 // Profile completion is independent of paid access. Never grant entitlements here.
+export const paymentPending = user => Boolean(!user.offlinePaymentApproved && (user.registrationPaymentPending || user.familyPaymentPending));
+
+// Only staff payment actions may clear these flags; never clear profile/health flags.
+export const clearManualPaymentPending = user => ({ ...user, registrationPaymentPending: false, familyPaymentPending: false,
+  offlinePaymentPendingSnapshot: undefined });
+
+export const approveOfflinePayment = user => ({ ...clearManualPaymentPending(user),
+  offlinePaymentPendingSnapshot: user.offlinePaymentPendingSnapshot || {
+    registrationPaymentPending: Boolean(user.registrationPaymentPending), familyPaymentPending: Boolean(user.familyPaymentPending), membershipStatus: user.membershipStatus
+  },
+  offlinePaymentApproved: true, membershipStatus: 'ACTIVE',
+  offlinePaymentNote: 'אושר ידנית במזומן/העברה ע"י המנהל' });
+
+export const revokeOfflinePayment = user => ({ ...user, ...(user.offlinePaymentPendingSnapshot || {}),
+  offlinePaymentApproved: false, offlinePaymentNote: undefined, offlinePaymentPendingSnapshot: undefined });
+
 export const unpaidRegistration = user => ({
   ...user,
   registrationIncomplete: false,

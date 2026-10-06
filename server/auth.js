@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { fitsSessionAge, isYouthSession } from '../shared/youth-session.js';
+import { paymentPending } from '../shared/registration-status.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -253,7 +254,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
 
   const actor = current.users.find(user => user.id === userId);
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
-  const unpaid = actor?.registrationPaymentPending || actor?.familyPaymentPending || actor?.membershipStatus === 'DEBT'
+  const unpaid = (actor && paymentPending(actor)) || (actor?.membershipStatus === 'DEBT' && !actor?.offlinePaymentApproved)
     || (actor?.isMembershipFrozen && (!actor.membershipFrozenUntil || actor.membershipFrozenUntil >= today));
   const mergeFreezeRequest = (user, requested) => {
     const timestamp = Date.parse(requested.membershipFreezeRequestedAt || '');

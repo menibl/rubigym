@@ -1,4 +1,5 @@
 import { membershipExpired } from './membership-calendar.js';
+import { paymentPending } from './registration-status.js';
 const fail = message => { throw new Error(message); };
 const balanceField = type => type === 'DUO' ? 'duoTrainingRemaining' : 'personalTrainingRemaining';
 const bookingMessages = (payload, session, booking, action, now) => {
@@ -83,7 +84,7 @@ export const changePersonalBooking = (payload, actorId, input, now = Date.now(),
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date(now));
   const participants = partner ? [payer, partner] : [payer];
   for (const user of participants) {
-    if (user.registrationIncomplete || user.registrationPaymentPending || user.familyPaymentPending) fail(`${user.name}: יש להשלים את הרישום והתשלום.`);
+    if (user.registrationIncomplete || paymentPending(user)) fail(`${user.name}: יש להשלים את הרישום והתשלום.`);
     if (user.isMembershipFrozen && (!user.membershipFrozenUntil || user.membershipFrozenUntil >= today)) fail(`${user.name}: המנוי מוקפא.`);
     if (user.cancellationEffectiveDate && user.cancellationEffectiveDate <= today) fail(`${user.name}: המנוי בוטל.`);
     const signed = Date.parse(user.healthDeclarationDate || '');
