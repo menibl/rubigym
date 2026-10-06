@@ -7,6 +7,7 @@ import { clubDate } from '../shared/membership-calendar.js';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { readFileSync } from 'node:fs';
+import { mergePayloadForUser } from './auth.js';
 
 const now = Date.parse('2026-10-05T09:15:00Z'); // 12:15 at the club
 const fixture = () => ({
@@ -90,12 +91,96 @@ test('invalid code, no balance, wrong partner, expired/frozen/unpaid/health-inva
   }
 });
 test('no future/past/full/other trainee sessions or open third booking', () => {
-  assert.deepEqual(clubArrivalChoices(fixture(), 'u', now + 3 * 3600000), []);
+  const after = clubArrivalChoices(fixture(), 'u', now + 3 * 3600000);
+  assert.ok(after.every(c => c.unscheduled));
   const state = fixture(); state.sessions[0].registeredUsers = ['partner'];
   state.openGymSessions[0].maxParticipants = 0;
   assert.deepEqual(clubArrivalChoices(state, 'u', now), []);
   const third = fixture(); third.openGymSessions.push(...['a', 'b'].map(id => ({ id, date: '2026-10-05', timeSlot: '06:00-07:00', registeredUsers: ['u'] })));
   assert.ok(!clubArrivalChoices(third, 'u', now).some(c => c.type === 'OPEN_GYM'));
+});
+
+test('without calendar slots, membership choices register and debit personal exactly once', () => {
+  const state = fixture(); state.sessions = []; state.openGymSessions = [];
+  const choices = clubArrivalChoices(state, 'u', now);
+  assert.deepEqual(choices.map(c => c.trainingType), ['SOLO', 'DUO', 'OPEN_GYM']);
+  const solo = choices[0];
+  const request = { ...solo, code: CLUB_CHECK_IN_CODE, remaining: 999 };
+  const next = recordClubArrival(state, 'u', request, now);
+  assert.equal(next.users[0].personalTrainingRemaining, 1);
+  assert.equal(next.users[0].duoTrainingRemaining, 3);
+  assert.deepEqual(next.sessions, []);
+  assert.equal(next.attendanceLogs[0].unscheduled, true);
+  assert.equal(clubArrivalResult(next, 'u', request).remaining, 1);
+  assert.equal(recordClubArrival(next, 'u', request, now + 60000), next);
+  assert.equal(clubArrivalChoices(next, 'u', now + 60000).find(c => c.trainingType === 'SOLO').checkedIn, true);
+});
+
+test('single personal membership provides one automatic choice; zero balance provides none', () => {
+  const state = fixture(); state.sessions = []; state.openGymSessions = [];
+  Object.assign(state.users[0], { membershipType: 'PERSONAL_TRAINING', secondaryMemberships: [] });
+  assert.deepEqual(clubArrivalChoices(state, 'u', now).map(c => c.trainingType), ['SOLO']);
+  state.users[0].personalTrainingRemaining = 0;
+  assert.deepEqual(clubArrivalChoices(state, 'u', now), []);
+});
+
+test('unscheduled duo records both participants and charges payer only; partner cannot debit again', () => {
+  const state = fixture(); state.sessions = []; state.openGymSessions = [];
+  const choice = clubArrivalChoices(state, 'u', now).find(c => c.trainingType === 'DUO');
+  const request = { ...choice, code: CLUB_CHECK_IN_CODE, partnerId: 'partner' };
+  assert.throws(() => recordClubArrival(state, 'u', { ...request, partnerId: 'other' }, now));
+  const next = recordClubArrival(state, 'u', request, now);
+  assert.equal(next.users[0].duoTrainingRemaining, 2);
+  assert.equal(next.attendanceLogs.length, 2);
+  assert.equal(next.attendanceLogs[1].traineeId, 'partner');
+  assert.equal(clubArrivalResult(next, 'partner', request).remaining, 2);
+  assert.equal(recordClubArrival(next, 'partner', request, now), next);
+  assert.deepEqual(next.sessions, []);
+});
+
+test('unscheduled open documents only, respects daily cap, and cannot bypass full scheduled slot', () => {
+  const state = fixture(); state.sessions = []; state.openGymSessions = [];
+  const choice = clubArrivalChoices(state, 'u', now).find(c => c.trainingType === 'OPEN_GYM');
+  const request = { ...choice, code: CLUB_CHECK_IN_CODE };
+  const next = recordClubArrival(state, 'u', request, now);
+  assert.equal(next.users[0].personalTrainingRemaining, 2);
+  assert.deepEqual(next.openGymSessions, []);
+  assert.equal(recordClubArrival(next, 'u', request, now), next);
+  state.openGymSessions = ['a', 'b'].map(id => ({ id, date: '2026-10-05', timeSlot: '06:00-07:00', registeredUsers: ['u'] }));
+  assert.ok(!clubArrivalChoices(state, 'u', now).some(c => c.trainingType === 'OPEN_GYM'));
+  const full = fixture(); full.sessions = []; full.openGymSessions[0].maxParticipants = 0;
+  assert.ok(!clubArrivalChoices(full, 'u', now).some(c => c.trainingType === 'OPEN_GYM'));
+});
+
+test('drop-in cannot bypass health/payment/freeze checks or an overlapping booking', () => {
+  for (const update of [{ registrationPaymentPending: true }, { isMembershipFrozen: true }, { healthDeclarationSigned: false }, { membershipExpiry: '2026-10-01' }]) {
+    const state = fixture(); state.sessions = []; state.openGymSessions = []; Object.assign(state.users[0], update);
+    assert.throws(() => clubArrivalChoices(state, 'u', now));
+  }
+  const state = fixture(); state.sessions[0].isPersonalTraining = false; state.sessions[0].registeredUsers = ['u']; state.openGymSessions = [];
+  assert.deepEqual(clubArrivalChoices(state, 'u', now).map(c => c.trainingType), ['GROUP']);
+});
+
+test('client state cannot forge drop-in attendance to avoid debit; persisted attendance survives sync', () => {
+  const state = fixture(); state.sessions = []; state.openGymSessions = [];
+  const choice = clubArrivalChoices(state, 'u', now).find(c => c.trainingType === 'SOLO');
+  const fake = { traineeId: 'u', id: 'forged', type: 'SESSION', targetId: choice.targetId, date: '2026-10-05', unscheduled: true };
+  const merged = mergePayloadForUser(state, { ...state, attendanceLogs: [fake, { ...fake, id: 'arrival-forged', unscheduled: false, targetId: 's' }] }, 'u', 'TRAINEE');
+  assert.deepEqual(merged.attendanceLogs, []);
+  const next = recordClubArrival(merged, 'u', { ...choice, code: CLUB_CHECK_IN_CODE }, now);
+  const synced = mergePayloadForUser(next, state, 'u', 'TRAINEE');
+  assert.equal(synced.attendanceLogs.length, 1);
+  assert.equal(synced.users[0].personalTrainingRemaining, 1);
+});
+
+test('calendar registrations include unscheduled open attendance in daily limit', () => {
+  const state = fixture(); state.sessions = []; state.openGymSessions = [];
+  const choice = clubArrivalChoices(state, 'u', now).find(c => c.trainingType === 'OPEN_GYM');
+  const next = recordClubArrival(state, 'u', { ...choice, code: CLUB_CHECK_IN_CODE }, now);
+  next.openGymSessions = ['a', 'b'].map(id => ({ id, date: '2026-10-05', timeSlot: '18:00-19:00', registeredUsers: [], waitlistUsers: [], maxParticipants: 10 }));
+  const incoming = { ...next, openGymSessions: next.openGymSessions.map(s => ({ ...s, registeredUsers: ['u'] })) };
+  const merged = mergePayloadForUser(next, incoming, 'u', 'TRAINEE');
+  assert.equal(merged.openGymSessions.filter(s => s.registeredUsers.includes('u')).length, 1);
 });
 test('normal booking still rejects a started session; only arrival path enables it', () => {
   assert.throws(() => changePersonalBooking(fixture(), 'u', { action: 'BOOK', type: 'SOLO', sessionId: 's', bookingId: 'id', arrival: true }, now));
@@ -135,8 +220,8 @@ test('arrival API authenticates and retries revision conflict without double deb
       state = { payload, revision: state.revision + 1 }; return { conflict: false };
     }
   } };
-  const post = authenticated => worker.fetch(new Request('https://club.test/api/attendance/arrival', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', ...(authenticated ? { Cookie: 'baly_session=test' } : {}) }, body: JSON.stringify(input())
+  const post = (authenticated, body = input()) => worker.fetch(new Request('https://club.test/api/attendance/arrival', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(authenticated ? { Cookie: 'baly_session=test' } : {}) }, body: JSON.stringify(body)
   }), env);
   assert.equal((await post(false)).status, 401);
   const response = await post(true); assert.equal(response.status, 200);
@@ -145,4 +230,13 @@ test('arrival API authenticates and retries revision conflict without double deb
   const repeatedResult = await repeat.json(); assert.equal(repeatedResult.remaining, 1); assert.equal(repeatedResult.alreadyRecorded, true);
   assert.equal(state.payload.users[0].personalTrainingRemaining, 1);
   assert.equal(state.payload.attendanceLogs.length, 1);
+  state.payload.sessions = []; state.payload.openGymSessions = []; conflict = true;
+  const choice = clubArrivalChoices(state.payload, 'u').find(c => c.trainingType === 'SOLO');
+  const body = { ...choice, code: CLUB_CHECK_IN_CODE };
+  const dropIn = await post(true, body); assert.equal(dropIn.status, 200);
+  assert.equal((await dropIn.json()).remaining, 0);
+  assert.equal((await post(true, body)).status, 200);
+  assert.equal(state.payload.users[0].personalTrainingRemaining, 0);
+  assert.deepEqual(state.payload.sessions, []);
+  assert.equal(state.payload.attendanceLogs.length, 2);
 });

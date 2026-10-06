@@ -89,7 +89,7 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
   const label = (c: ArrivalChoice) => c.trainingType === 'DUO' ? 'אימון זוגי' : c.trainingType === 'SOLO' ? 'אימון אישי' : c.trainingType === 'GROUP' ? 'אימון קבוצתי' : 'Open Gym';
   return <section className="w-full max-w-lg space-y-4 rounded-2xl bg-slate-900 p-5 text-white text-right" dir="rtl" aria-label="סריקת כניסה למועדון">
     <h3 className="text-xl font-bold">סריקת קוד המועדון</h3>
-    <p className="text-sm text-slate-300">אין צורך להירשם מראש. הסריקה רושמת לאימון זמין ביומן בהתאם למנוי. אישי או זוגי מנכה קרדיט אחד בלבד; הרשמה קיימת לא תחויב שוב.</p>
+    <p className="text-sm text-slate-300">אין צורך להירשם מראש. הסריקה רושמת בהתאם למנוי, גם ללא אימון ביומן. אישי או זוגי מנכה קרדיט אחד בלבד; הרשמה קיימת או סריקה חוזרת לא יחויבו שוב.</p>
     {scanning && <><video ref={video} autoPlay muted playsInline className="w-full rounded-xl bg-black" /><button type="button" onClick={stop} className="p-3">סגירת מצלמה</button></>}
     {error && <p role="alert" className="text-rose-300">{error}</p>}
     {success && <p role="status" className="rounded-xl bg-emerald-950 p-4 text-emerald-200">{success}</p>}
