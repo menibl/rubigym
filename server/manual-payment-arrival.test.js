@@ -16,9 +16,9 @@ test('manual approval clears only payment flags and scanner debits once without 
   assert.equal(approved.registrationPaymentPending, false); assert.equal(approved.familyPaymentPending, false);
   assert.equal(approved.membershipExpiry, '2026-11-01');
   const choice = clubArrivalChoices(state, 'u', now)[0];
-  const next = recordClubArrival(state, 'u', { ...choice, code: CLUB_CHECK_IN_CODE }, now);
+  const next = recordClubArrival(state, 'u', { ...choice, code: CLUB_CHECK_IN_CODE, confirmUnscheduled: true }, now);
   assert.equal(next.users[0].personalTrainingRemaining, 4);
-  assert.equal(recordClubArrival(next, 'u', { ...choice, code: CLUB_CHECK_IN_CODE }, now), next);
+  assert.equal(recordClubArrival(next, 'u', { ...choice, code: CLUB_CHECK_IN_CODE, confirmUnscheduled: true }, now), next);
 });
 
 test('legacy approval with stale pending flags is honored but ordinary ACTIVE is not payment approval', () => {

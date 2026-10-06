@@ -19,6 +19,7 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
   const [partnerId, setPartnerId] = useState('');
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState('');
+  const [confirmation, setConfirmation] = useState<ArrivalChoice | null>(null);
   const stop = () => {
     generation.current++;
     cancelAnimationFrame(frame.current);
@@ -26,13 +27,14 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
     if (video.current) video.current.srcObject = null;
     if (mounted.current) setScanning(false);
   };
-  const arrive = async (choice: ArrivalChoice, partner?: string) => {
+  const arrive = async (choice: ArrivalChoice, partner?: string, confirmed = false) => {
+    if (choice.unscheduled && !choice.registered && !confirmed) { setConfirmation(choice); return; }
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setError('');
     try {
-      const result = await saveClubArrival({ code: CLUB_CHECK_IN_CODE, type: choice.type, targetId: choice.targetId, trainingType: choice.trainingType, partnerId: partner });
+      const result = await saveClubArrival({ code: CLUB_CHECK_IN_CODE, type: choice.type, targetId: choice.targetId, trainingType: choice.trainingType, partnerId: partner, confirmUnscheduled: confirmed });
       if (mounted.current) {
-        setChoices(null); setSelected(null);
+        setChoices(null); setSelected(null); setConfirmation(null);
         setSuccess(result.message);
       }
     } catch (e) { if (mounted.current) setError(e.message); }
@@ -41,7 +43,8 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
   const scanned = async () => {
     stop(); setError(''); setBusy(true);
     try {
-      const { choices: available } = await getArrivalChoices();
+      const scanId = crypto.randomUUID();
+      const { choices: available } = await getArrivalChoices(scanId);
       if (!mounted.current) return;
       const pending = available.filter(c => !c.checkedIn);
       if (!pending.length) { setError(available.length ? 'ההגעה לאימונים הזמינים כבר תועדה.' : 'אין כעת אימון פנוי שמתאים למנוי שלך. יש לפנות למאמן.'); return; }
@@ -51,7 +54,7 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
     finally { if (mounted.current) setBusy(false); }
   };
   const start = async () => {
-    stop(); setError(''); setSuccess(''); setChoices(null); setSelected(null);
+    stop(); setError(''); setSuccess(''); setChoices(null); setSelected(null); setConfirmation(null); setPartnerId('');
     const attempt = generation.current;
     if (!navigator.mediaDevices?.getUserMedia) { setError('המצלמה אינה זמינה. יש לפתוח את האתר בדפדפן עם חיבור מאובטח.'); return; }
     try {
@@ -93,7 +96,13 @@ export function ClubArrivalScanner({ logs }: { logs: AttendanceLog[] }) {
     {scanning && <><video ref={video} autoPlay muted playsInline className="w-full rounded-xl bg-black" /><button type="button" onClick={stop} className="p-3">סגירת מצלמה</button></>}
     {error && <p role="alert" className="text-rose-300">{error}</p>}
     {success && <p role="status" className="rounded-xl bg-emerald-950 p-4 text-emerald-200">{success}</p>}
-    {choices && <div className="space-y-3" aria-busy={busy}>
+    {confirmation && <div role="alertdialog" aria-modal="false" aria-labelledby="arrival-confirm-title" aria-describedby="arrival-confirm-description" className="space-y-3 rounded-xl border border-amber-400 bg-slate-800 p-4">
+      <h4 id="arrival-confirm-title" className="text-lg font-bold">אין אימון פעיל ביומן</h4>
+      <p id="arrival-confirm-description">האם להמשיך ולרשום אותך ל{label(confirmation)}? {confirmation.type === 'SESSION' ? 'באישור ינוכה קרדיט אחד מהכרטיסייה המתאימה.' : confirmation.usesPunchCard ? 'באישור ינוכה ניקוב אחד מכרטיסיית Open Gym.' : 'ההגעה תתועד ללא ניכוי קרדיט.'}</p>
+      <button type="button" autoFocus disabled={busy} onClick={() => void arrive(confirmation, partnerId || undefined, true)} className="w-full rounded-xl bg-amber-400 p-3 font-bold text-black disabled:opacity-50">כן, רשמו אותי לאימון</button>
+      <button type="button" disabled={busy} onClick={() => { setConfirmation(null); setChoices(null); setSelected(null); setSuccess('הרישום בוטל. לא נוכה אימון. הודעת הסריקה נשלחה למאמן.'); }} className="w-full rounded-xl border border-slate-500 p-3">לא, ביטול ללא ניכוי</button>
+    </div>}
+    {choices && !confirmation && <div className="space-y-3" aria-busy={busy}>
       <h4 className="text-lg font-bold">לאיזה אימון הגעת?</h4>
       {choices.map(c => <button type="button" disabled={busy} key={c.key} onClick={() => {
         setSelected(c); setPartnerId('');
