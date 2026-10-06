@@ -172,7 +172,11 @@ test('unstarted dependent has no charge and receives no paid rights after verifi
   const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
   assert.equal(quote.amountDue, 280);
   assert.equal(quote.creditAmount, 0);
-  const checkout = await (await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).json();
+  const warning = await f.post('create', { ...f.request, quoteKey: quote.quoteKey });
+  assert.equal(warning.status, 409);
+  assert.equal((await warning.json()).code, 'REPEAT_MONTHLY_PAYMENT');
+  assert.equal(f.calls(), 0);
+  const checkout = await (await f.post('create', { ...f.request, quoteKey: quote.quoteKey, repeatPaymentAcknowledged: true })).json();
   assert.equal((await f.post('verify', { paymentReference: checkout.paymentReference })).status, 200);
   assert.deepEqual(f.state().payload.users[1], before);
 });
@@ -210,7 +214,10 @@ test('frozen dependent cannot be charged or reactivated; excluded frozen data is
   f.request.familyMemberPlans[1].participation = 'FROZEN';
   const before = structuredClone(f.state().payload.users[1]);
   const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
-  const checkout = await (await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).json();
+  const warning = await f.post('create', { ...f.request, quoteKey: quote.quoteKey });
+  assert.equal(warning.status, 409);
+  assert.equal((await warning.json()).code, 'REPEAT_MONTHLY_PAYMENT');
+  const checkout = await (await f.post('create', { ...f.request, quoteKey: quote.quoteKey, repeatPaymentAcknowledged: true })).json();
   assert.equal((await f.post('verify', { paymentReference: checkout.paymentReference })).status, 200);
   assert.deepEqual(f.state().payload.users[1], before);
 });

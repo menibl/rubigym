@@ -91,12 +91,13 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
     if (!window.confirm(`מחיר המסלולים: ₪${quote.packageAmount}\nקיזוז תשלום קודם: ₪${quote.creditAmount}\nלתשלום חד־פעמי עכשיו: ₪${quote.amountDue}\nבחידוש הבא נדרש תשלום ידני. להמשיך?`)) throw new Error('המעבר לתשלום בוטל. לא בוצע חיוב.');
     quoteKey = quote.quoteKey;
   }
-  const response = await fetch(`${apiBase}/api/payments/rivhit/create`, {
+  const create = (repeatPaymentAcknowledged = false) => fetch(`${apiBase}/api/payments/rivhit/create`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       userId: request.userId,
+      repeatPaymentAcknowledged,
       quoteKey,
       userName: request.userName,
       email: request.email,
@@ -113,7 +114,13 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
       planLabel: request.planLabel
     })
   });
-  const result = await response.json().catch(() => ({}));
+  let response = await create();
+  let result = await response.json().catch(() => ({}));
+  if (response.status === 409 && result.code === 'REPEAT_MONTHLY_PAYMENT') {
+    if (!window.confirm(result.message)) throw new Error('התשלום הנוסף בוטל. לא בוצע חיוב.');
+    response = await create(true);
+    result = await response.json().catch(() => ({}));
+  }
   if (response.ok && result.completed) { window.location.reload(); return; }
   if (!response.ok || !result.url || !result.paymentReference) {
     throw new Error(result.message || 'לא ניתן לפתוח את דף התשלום של RIVHIT.');
