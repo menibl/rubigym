@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
 import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
+import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
 import { getGenderLabel } from '../data/userProfile';
@@ -767,7 +768,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (u.id === trainee.id) {
         const term = createMembershipTerm(purchasedType, new Date(), purchasedPlan);
         return {
-          ...u,
+          ...clearManualPaymentPending(u),
           membershipStatus: MembershipStatus.ACTIVE,
           ...term,
           ...(purchasedType === MembershipType.GROUP_ANNUAL && u.membershipCommitmentEndsAt
@@ -1547,12 +1548,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 const isApproved = !u.offlinePaymentApproved;
                                 const updated = users.map(user => {
                                   if (user.id === u.id) {
-                                    return {
-                                      ...user,
-                                      offlinePaymentApproved: isApproved,
-                                      membershipStatus: isApproved ? MembershipStatus.ACTIVE : user.membershipStatus,
-                                      offlinePaymentNote: isApproved ? 'אושר ידנית במזומן/העברה ע"י המנהל' : undefined
-                                    };
+                                    return isApproved ? approveOfflinePayment(user) : revokeOfflinePayment(user);
                                   }
                                   return user;
                                 });
