@@ -45,7 +45,6 @@ import { NutritionAssistantPanel } from './NutritionAssistantPanel';
 import { NutritionPlanningNavigator } from './NutritionPlanningNavigator';
 import { GroupWorkoutProgramManager } from './GroupWorkoutProgramManager';
 import { CoachTrainingMode } from './CoachTrainingMode';
-import { CoachExceptionArrivalPanel } from './CoachExceptionArrivalPanel';
 import { WorkoutPlanningNavigator, WorkoutPlanningRoute } from './WorkoutPlanningNavigator';
 import { ExerciseMedia } from './ExerciseMedia';
 import { ProgramBriefPanel, ProgramSetupWizard, WizardAnswers, WizardQuestion } from './ProgramSetupWizard';
@@ -1252,7 +1251,6 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   if (coachMode === 'TRAINING') {
     return <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-md" id="coach-dashboard">
       {modeSwitcher}
-      {activeUser.role === UserRole.COACH && <CoachExceptionArrivalPanel users={users} />}
       <CoachTrainingMode
         activeUser={activeUser}
         users={users}
@@ -1468,7 +1466,6 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="coach-dashboard">
       {modeSwitcher}
-      {activeUser.role === UserRole.COACH && <CoachExceptionArrivalPanel users={users} />}
       {/* Tab Header */}
       {(guidedWorkoutPlanning || initialPlanningTab === 'nutrition') && <div className="planning-builder-context" dir="rtl">
         {initialPlanningTab === 'nutrition' ? <button type="button" onClick={() => setNutritionPlanningSelecting(true)}>
