@@ -16,6 +16,7 @@ import { addMinutesToTime, CreateSessionModal, CreateSessionData, createSessions
 import { EditSessionModal } from './EditSessionModal';
 import { copyGroupProgramToSessions, copyPersonalPlanToSessions } from '../data/workoutAssignment';
 import { CoachDashboard } from './CoachDashboard';
+import { CoachExceptionArrivalPanel } from './CoachExceptionArrivalPanel';
 import {
   User,
   TrainingSession,
@@ -833,6 +834,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="admin-dashboard">
+      <CoachExceptionArrivalPanel users={users} />
       {editingTraineeId && users.find(user => user.id === editingTraineeId) && <AdminTraineeEditor key={editingTraineeId} user={users.find(user => user.id === editingTraineeId)!} users={users} onSave={onUpdateUsers} onClose={() => setEditingTraineeId(null)} />}
       {/* Admin Tab Header */}
       <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-wrap justify-between items-center gap-3">

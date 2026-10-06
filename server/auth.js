@@ -137,6 +137,7 @@ export const payloadForUser = (payload, userId, role) => {
   const assignedGroupProgramIds = new Set(registeredSessions.map(session => session.assignedGroupWorkoutProgramId).filter(Boolean));
   return {
     ...safe,
+    coachArrivalApprovals: [],
     users: safe.users
       .filter(user => user.id === userId || user.role === 'MANAGER' || user.role === 'COACH' || (familyId && user.familyId === familyId))
       .map(user => user.id === userId || (familyId && user.familyId === familyId) ? user : publicStaff(user)),
@@ -229,6 +230,11 @@ const mergeOwnOpenGymBooking = (currentItems = [], incomingItems = [], userId, a
 export const mergePayloadForUser = (currentPayload, incomingPayload, userId, role) => {
   const current = sanitizePayload(currentPayload);
   const incoming = sanitizePayload(incomingPayload);
+  // Approval tokens and consumed audit logs are only created by authenticated
+  // exception endpoints, never by generic client state synchronization.
+  incoming.coachArrivalApprovals = current.coachArrivalApprovals || [];
+  const protectedLogs = (current.attendanceLogs || []).filter(log => log.coachException);
+  incoming.attendanceLogs = [...(incoming.attendanceLogs || []).filter(log => !log.coachException && !String(log.id).startsWith('arrival-exception-')), ...protectedLogs];
   const preserveSystemMessages = requestedMessages => {
     const requested = Array.isArray(requestedMessages) ? requestedMessages : [];
     const requestedIds = new Set(requested.map(message => message.id));
