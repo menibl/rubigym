@@ -3,6 +3,7 @@ import { isPagesDemoMode } from './appMode';
 import { createDemoPayload } from './demoData';
 import { deleteClubUser, removeDeletedUserData } from '../../shared/user-deletion.js';
 import { changePersonalBooking } from '../../shared/personal-booking.js';
+import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../../shared/club-check-in.js';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -68,6 +69,40 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
 };
 
 export type ClubStateEnvelope = { payload: Record<string, unknown>; revision: number; updated_at?: string };
+
+export type ArrivalChoice = {
+  key: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; title: string; time: string;
+  trainingType: 'SOLO' | 'DUO' | 'GROUP' | 'OPEN_GYM'; registered: boolean; checkedIn: boolean;
+  partners?: Array<{ id: string; name: string }>;
+  unscheduled?: boolean;
+  usesPunchCard?: boolean;
+};
+export async function getArrivalChoices(scanId?: string): Promise<{ choices: ArrivalChoice[] }> {
+  if (scanId) {
+    const input = { action: 'SCAN', code: 'BALY-CLUB-CHECKIN-V1', scanId };
+    let result: { choices: ArrivalChoice[]; error?: string };
+    if (isPagesDemoMode()) {
+      const state = readDemoState();
+      const scanned = recordClubScan(state.payload, currentDemoUser()?.id, input);
+      writeDemoState({ ...state, payload: scanned.payload, revision: state.revision + 1 });
+      result = scanned;
+    } else result = await request('/api/attendance/arrival', { method: 'POST', body: JSON.stringify(input) });
+    if (result.error) throw new Error(result.error);
+    return result;
+  }
+  if (isPagesDemoMode()) return { choices: clubArrivalChoices(readDemoState().payload, currentDemoUser()?.id) as ArrivalChoice[] };
+  return request('/api/attendance/arrival');
+}
+export type ArrivalResult = { ok: boolean; message: string; alreadyRecorded: boolean; remaining?: number; cardSize?: number | null };
+export async function saveClubArrival(input: { code: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; trainingType: string; partnerId?: string; confirmUnscheduled?: boolean }): Promise<ArrivalResult> {
+  if (isPagesDemoMode()) {
+    const state = readDemoState();
+    const payload = recordClubArrival(state.payload, currentDemoUser()?.id, input);
+    writeDemoState({ ...state, payload, revision: state.revision + 1 });
+    return clubArrivalResult(payload, currentDemoUser()?.id, input, payload === state.payload);
+  }
+  return request<ArrivalResult>('/api/attendance/arrival', { method: 'POST', body: JSON.stringify(input) });
+}
 
 export const savePersonalBooking = async (input: {
   action: 'BOOK' | 'CANCEL'; sessionId: string; bookingId: string;

@@ -1,5 +1,7 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { fitsSessionAge, isYouthSession } from '../shared/youth-session.js';
+import { paymentPending } from '../shared/registration-status.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -174,7 +176,7 @@ const familyEditableFields = new Set([
   'duoTrainingCardSize', 'nutritionPlanPaid', 'requestedWorkoutPlan'
 ]);
 
-const mergeOwnBooking = (currentItems = [], incomingItems = [], userId) => currentItems.map(current => {
+const mergeOwnBooking = (currentItems = [], incomingItems = [], userId, user) => currentItems.map(current => {
   // Personal reservations and their debits are one atomic server operation.
   // Keep legacy bookings cancellable until explicitly migrated by staff.
   if (current.personalBooking || (current.isPersonalTraining && !current.registeredUsers?.includes(userId))) return current;
@@ -183,18 +185,22 @@ const mergeOwnBooking = (currentItems = [], incomingItems = [], userId) => curre
   const mergeList = key => {
     const currentList = Array.isArray(current[key]) ? current[key] : [];
     const incomingList = Array.isArray(incoming[key]) ? incoming[key] : [];
+    if (user && isYouthSession(current) && !fitsSessionAge(current, user) && incomingList.includes(userId) && !currentList.includes(userId)) return currentList;
     const withoutSelf = currentList.filter(id => id !== userId);
     return incomingList.includes(userId) ? [...withoutSelf, userId] : withoutSelf;
   };
   return { ...current, registeredUsers: mergeList('registeredUsers'), waitlistUsers: mergeList('waitlistUsers') };
 });
 
-const mergeOwnOpenGymBooking = (currentItems = [], incomingItems = [], userId) => {
+const mergeOwnOpenGymBooking = (currentItems = [], incomingItems = [], userId, attendance = []) => {
   const merged = mergeOwnBooking(currentItems, incomingItems, userId);
   const currentParticipationIds = new Set(currentItems
     .filter(item => (item.registeredUsers || []).includes(userId) || (item.waitlistUsers || []).includes(userId))
     .map(item => item.id));
   const dailyCounts = new Map();
+  for (const log of attendance) {
+    if (log.traineeId === userId && log.type === 'OPEN_GYM' && log.unscheduled) dailyCounts.set(log.date, (dailyCounts.get(log.date) || 0) + 1);
+  }
 
   // Existing bookings that were not cancelled are kept first, so a save never removes
   // a reservation that the server had already accepted.
@@ -248,7 +254,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
 
   const actor = current.users.find(user => user.id === userId);
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
-  const unpaid = actor?.registrationPaymentPending || actor?.familyPaymentPending || actor?.membershipStatus === 'DEBT'
+  const unpaid = (actor && paymentPending(actor)) || (actor?.membershipStatus === 'DEBT' && !actor?.offlinePaymentApproved)
     || (actor?.isMembershipFrozen && (!actor.membershipFrozenUntil || actor.membershipFrozenUntil >= today));
   const mergeFreezeRequest = (user, requested) => {
     const timestamp = Date.parse(requested.membershipFreezeRequestedAt || '');
@@ -288,13 +294,15 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     message.receiverId === userId && readIncomingMessageIds.has(message.id)
       ? { ...message, read: true }
       : message);
-  const ownNewAttendance = unpaid ? [] : (incoming.attendanceLogs || []).filter(log => log.traineeId === userId);
+  // QR arrivals are server-authoritative: a forged log must not skip card debit.
+  const ownNewAttendance = unpaid ? [] : (incoming.attendanceLogs || []).filter(log => log.traineeId === userId
+    && !log.unscheduled && !String(log.id || '').startsWith('arrival-') && !String(log.targetId || '').startsWith('drop-in-'));
   const existingAttendanceIds = new Set((current.attendanceLogs || []).map(log => log.id));
   return {
     ...current,
     users: [...nextUsers, ...newFamilyMembers],
-    sessions: unpaid ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId),
-    openGymSessions: unpaid ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId),
+    sessions: unpaid ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId, current.users.find(user => user.id === userId)),
+    openGymSessions: unpaid ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId, current.attendanceLogs),
     messages: [...messagesWithReadReceipts, ...ownNewMessages.filter(message => !existingMessageIds.has(message.id))],
     attendanceLogs: [...(current.attendanceLogs || []), ...ownNewAttendance.filter(log => !existingAttendanceIds.has(log.id))],
     traineeProfiles: [

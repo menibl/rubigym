@@ -8,6 +8,8 @@ import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
+import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
+import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../shared/club-check-in.js';
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
@@ -895,6 +897,11 @@ const handleCreatePayment = async (request, env) => {
     return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env));
   }
   purchase.recurring = false;
+  const repeatWarning = () => {
+    const matches = repeatedMonthlyPayments(checkoutState?.payload, body, purchase);
+    return matches.length && body.repeatPaymentAcknowledged !== true
+      ? json({ code: 'REPEAT_MONTHLY_PAYMENT', message: repeatedPaymentMessage(matches) }, 409, corsHeaders(request, env)) : null;
+  };
   let creditClaim;
   const clubId = env.CLUB_ID || 'baly-wellness';
   if (body.membershipType === 'FAMILY_MEMBERSHIP' && body.mode === 'PRIMARY' && purchase.familyBillingMode === 'CUSTOM_COMBINED') {
@@ -913,6 +920,8 @@ const handleCreatePayment = async (request, env) => {
     const quoteKey = await sign(JSON.stringify({ userId: body.userId, purchase }), env.PAYMENT_SIGNING_SECRET);
     if (body.quoteOnly) return json({ ...quote, quoteKey }, 200, corsHeaders(request, env));
     if (body.quoteKey !== quoteKey) return json({ message: 'פרטי החיוב השתנו. יש לבדוק ולאשר את הסכום מחדש.' }, 409, corsHeaders(request, env));
+    const warning = repeatWarning();
+    if (warning) return warning;
     if (quote.sourcePaymentId) {
       if (!env.STATE_STORE.reserveFamilyCredit) throw new Error('FAMILY_CREDIT_STORAGE_UNAVAILABLE');
       creditClaim = await env.STATE_STORE.reserveFamilyCredit(clubId, quote.sourcePaymentId, crypto.randomUUID(), quoteKey);
@@ -930,6 +939,10 @@ const handleCreatePayment = async (request, env) => {
         return json({ message: 'התשלום הקודם כבר משויך לבקשת תשלום משפחתית. יש להשלים אותה או לפנות למנהל; לא נוצר חיוב נוסף.' }, 409, corsHeaders(request, env));
       }
     }
+  }
+  if (!(body.membershipType === 'FAMILY_MEMBERSHIP' && body.mode === 'PRIMARY' && purchase.familyBillingMode === 'CUSTOM_COMBINED')) {
+    const warning = repeatWarning();
+    if (warning) return warning;
   }
   const { amount } = purchase;
   const providerAmount = rivhitChargeAmount(amount, env);
@@ -1649,6 +1662,35 @@ const handleApi = async (request, env, url) => {
       const programId = decodeURIComponent(statusMatch[1]);
       if (env.STATE_STORE) await env.STATE_STORE.setStatus(programId, status); else liveDisplayState.statuses.set(programId, status);
       return json({ ok: true }, 200, headers);
+    }
+    if (url.pathname === '/api/attendance/arrival' && ['GET', 'POST'].includes(request.method)) {
+      const identity = await getIdentity();
+      if (!identity) return json({ message: 'יש להתחבר מחדש.' }, 401, headers);
+      const body = request.method === 'POST' ? await request.json() : null;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const state = await loadClubState(identity.session.club_id);
+        if (!state) return json({ message: 'נתוני המועדון אינם זמינים.' }, 503, headers);
+        let payload;
+        let scan;
+        try {
+          if (!body) return json({ choices: clubArrivalChoices(state.payload, identity.account.user_id) }, 200, headers);
+          if (body.action === 'SCAN') {
+            scan = recordClubScan(state.payload, identity.account.user_id, body);
+            payload = scan.payload;
+          } else payload = recordClubArrival(state.payload, identity.account.user_id, body);
+        } catch (error) { return json({ message: error.message }, 400, headers); }
+        if (payload === state.payload) return json(scan ? { choices: scan.choices, error: scan.error } : clubArrivalResult(payload, identity.account.user_id, body, true), 200, headers);
+        const saved = await env.STATE_STORE.putClubState(identity.session.club_id, payload, state.revision);
+        if (saved.conflict) continue;
+        if (env.STATE_STORE.updateAccountIdentity) {
+          for (const user of payload.users) {
+            if (state.payload.users.find(u => u.id === user.id) !== user) await env.STATE_STORE.updateAccountIdentity(identity.session.club_id, stripCredentials(user));
+          }
+        }
+        await notifyStateChange(state.payload, payload, identity.session.club_id);
+        return json(scan ? { choices: scan.choices, error: scan.error } : clubArrivalResult(payload, identity.account.user_id, body), 200, headers);
+      }
+      return json({ message: 'היומן השתנה במקביל. יש לנסות שוב.' }, 409, headers);
     }
     if (url.pathname === '/api/bookings/personal' && request.method === 'POST') {
       const identity = await getIdentity();

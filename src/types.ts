@@ -381,6 +381,7 @@ export interface User {
   allowMultipleTraineesInPT?: boolean; // Coach approval for >1 trainee in PT session
   openGymMonthlyLimit?: number; // Registration limit for Open Gym defined by coach/manager
   offlinePaymentApproved?: boolean; // Exception override by manager for manual payment
+  offlinePaymentPendingSnapshot?: { registrationPaymentPending: boolean; familyPaymentPending: boolean; membershipStatus?: MembershipStatus };
   offlinePaymentNote?: string;
 
   // Workout & Nutrition requests
@@ -828,6 +829,10 @@ export interface AttendanceLog {
   targetTitle: string; // "אינטרוולים פונקציונליים" or "Open Gym 12:00"
   timestamp: string; // ISO string or HH:MM
   date: string; // YYYY-MM-DD
+  unscheduled?: boolean;
+  punchCardDebited?: boolean;
+  trainingType?: 'SOLO' | 'DUO' | 'GROUP' | 'OPEN_GYM';
+  payerId?: string;
 }
 
 export interface SystemSettings {

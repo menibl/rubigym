@@ -5,6 +5,9 @@
 
 import React, { useState } from 'react';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
+import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
+import { updateTrainingCard } from '../../shared/training-card.js';
+import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
 import { getGenderLabel } from '../data/userProfile';
@@ -45,6 +48,7 @@ import {
   AttendanceLog
 } from '../types';
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
+import { isYouthSession } from '../../shared/youth-session.js';
 import { FamilyCreditRecoveryControl } from './FamilyCreditRecoveryControl';
 import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate, isMembershipFreezeActive, isMembershipCancellationEffective } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
@@ -472,6 +476,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleSaveEditSession = (updatedSession: TrainingSession, updateSeries: boolean, originalDateKey?: string) => {
+    if (isYouthSession(updatedSession)) updatedSession = { ...updatedSession, ageMax: 18 };
     if (updateSeries) {
       const updated = sessions.map(s => {
         if ((updatedSession.seriesId && s.seriesId === updatedSession.seriesId) || s.id === updatedSession.id) {
@@ -632,7 +637,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         waitlistUsers: []
       };
 
-      onUpdateSessions([session, ...sessions]);
+      onUpdateSessions([isYouthSession(session) ? { ...session, ageMax: 18 } : session, ...sessions]);
     }
 
     setShowSessionForm(false);
@@ -763,7 +768,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (u.id === trainee.id) {
         const term = createMembershipTerm(purchasedType, new Date(), purchasedPlan);
         return {
-          ...u,
+          ...clearManualPaymentPending(u),
           membershipStatus: MembershipStatus.ACTIVE,
           ...term,
           ...(purchasedType === MembershipType.GROUP_ANNUAL && u.membershipCommitmentEndsAt
@@ -1543,12 +1548,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 const isApproved = !u.offlinePaymentApproved;
                                 const updated = users.map(user => {
                                   if (user.id === u.id) {
-                                    return {
-                                      ...user,
-                                      offlinePaymentApproved: isApproved,
-                                      membershipStatus: isApproved ? MembershipStatus.ACTIVE : user.membershipStatus,
-                                      offlinePaymentNote: isApproved ? 'אושר ידנית במזומן/העברה ע"י המנהל' : undefined
-                                    };
+                                    return isApproved ? approveOfflinePayment(user) : revokeOfflinePayment(user);
                                   }
                                   return user;
                                 });
@@ -1582,34 +1582,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </button>
                               )}
 
-                              {/* Manager Punch Card Reload Action */}
-                              <button
-                                onClick={() => {
-                                  const newPunchesStr = prompt(`הכנס מספר ניקובים לכרטיסייה עבור ${u.name}:`, String(u.punchCardRemaining || 10));
-                                  if (newPunchesStr !== null) {
-                                    const count = parseInt(newPunchesStr, 10);
-                                    if (!isNaN(count) && count >= 0) {
-                                      const updated = users.map(user => {
-                                        if (user.id === u.id) {
-                                          return {
-                                            ...user,
-                                            membershipType: MembershipType.OPEN_PUNCH_CARD,
-                                            membershipStatus: MembershipStatus.ACTIVE,
-                                            punchCardRemaining: count
-                                          };
-                                        }
-                                        return user;
-                                      });
-                                      onUpdateUsers(updated);
-                                      alert(`עודכנה כרטיסייה עבור ${u.name}: ${count} ניקובים 🎟️`);
-                                    }
-                                  }
-                                }}
-                                className="text-[9px] text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 font-semibold py-0.5 px-2 rounded w-full text-center"
-                                title="הגדר/הטען ניקובים בכרטיסייה"
-                              >
-                                🎟️ טעינת כרטיסייה ({u.punchCardRemaining ?? 0})
-                              </button>
+                              <AdminTrainingCardEditor user={u} onChange={(type, quantity, mode) => onUpdateUsers(users.map(member => member.id === u.id ? updateTrainingCard(member, type, quantity, mode) : member))} />
 
                               <details className="w-full rounded-xl border p-3 text-right">
                                 <summary className="cursor-pointer font-bold">ניהול מנויים משולבים</summary>
