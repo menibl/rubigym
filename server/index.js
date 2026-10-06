@@ -9,7 +9,7 @@ import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
-import { clubArrivalChoices, recordClubArrival } from '../shared/club-check-in.js';
+import { clubArrivalChoices, recordClubArrival, clubArrivalResult } from '../shared/club-check-in.js';
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
@@ -1675,7 +1675,7 @@ const handleApi = async (request, env, url) => {
           if (!body) return json({ choices: clubArrivalChoices(state.payload, identity.account.user_id) }, 200, headers);
           payload = recordClubArrival(state.payload, identity.account.user_id, body);
         } catch (error) { return json({ message: error.message }, 400, headers); }
-        if (payload === state.payload) return json({ ok: true }, 200, headers);
+        if (payload === state.payload) return json(clubArrivalResult(payload, identity.account.user_id, body, true), 200, headers);
         const saved = await env.STATE_STORE.putClubState(identity.session.club_id, payload, state.revision);
         if (saved.conflict) continue;
         if (env.STATE_STORE.updateAccountIdentity) {
@@ -1684,7 +1684,7 @@ const handleApi = async (request, env, url) => {
           }
         }
         await notifyStateChange(state.payload, payload, identity.session.club_id);
-        return json({ ok: true }, 200, headers);
+        return json(clubArrivalResult(payload, identity.account.user_id, body), 200, headers);
       }
       return json({ message: 'היומן השתנה במקביל. יש לנסות שוב.' }, 409, headers);
     }

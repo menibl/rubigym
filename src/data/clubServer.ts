@@ -3,7 +3,7 @@ import { isPagesDemoMode } from './appMode';
 import { createDemoPayload } from './demoData';
 import { deleteClubUser, removeDeletedUserData } from '../../shared/user-deletion.js';
 import { changePersonalBooking } from '../../shared/personal-booking.js';
-import { clubArrivalChoices, recordClubArrival } from '../../shared/club-check-in.js';
+import { clubArrivalChoices, recordClubArrival, clubArrivalResult } from '../../shared/club-check-in.js';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -74,19 +74,21 @@ export type ArrivalChoice = {
   key: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; title: string; time: string;
   trainingType: 'SOLO' | 'DUO' | 'GROUP' | 'OPEN_GYM'; registered: boolean; checkedIn: boolean;
   partners?: Array<{ id: string; name: string }>;
+  unscheduled?: boolean;
 };
 export async function getArrivalChoices(): Promise<{ choices: ArrivalChoice[] }> {
   if (isPagesDemoMode()) return { choices: clubArrivalChoices(readDemoState().payload, currentDemoUser()?.id) as ArrivalChoice[] };
   return request('/api/attendance/arrival');
 }
-export async function saveClubArrival(input: { code: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; trainingType: string; partnerId?: string }) {
+export type ArrivalResult = { ok: boolean; message: string; alreadyRecorded: boolean; remaining?: number; cardSize?: number | null };
+export async function saveClubArrival(input: { code: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; trainingType: string; partnerId?: string }): Promise<ArrivalResult> {
   if (isPagesDemoMode()) {
     const state = readDemoState();
     const payload = recordClubArrival(state.payload, currentDemoUser()?.id, input);
     writeDemoState({ ...state, payload, revision: state.revision + 1 });
-    return;
+    return clubArrivalResult(payload, currentDemoUser()?.id, input, payload === state.payload);
   }
-  await request('/api/attendance/arrival', { method: 'POST', body: JSON.stringify(input) });
+  return request<ArrivalResult>('/api/attendance/arrival', { method: 'POST', body: JSON.stringify(input) });
 }
 
 export const savePersonalBooking = async (input: {
