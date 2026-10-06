@@ -19,7 +19,8 @@ import {
   UserPlus,
   UserRound
 } from 'lucide-react';
-import { Announcement, Gender, MEMBERSHIP_TYPE_LABELS, MembershipType, Message, OpenGymSession, Payment, TrainingSession, User, UserRole } from '../types';
+import { Announcement, Gender, MEMBERSHIP_TYPE_LABELS, MembershipType, MembershipPlanConfig, Message, OpenGymSession, Payment, TrainingSession, User, UserRole } from '../types';
+import { HomeMembershipSummary } from './HomeMembershipSummary';
 import { nextBookedSession } from '../data/nextBookedSession';
 
 export type WorkspaceView =
@@ -45,6 +46,7 @@ interface RoleWorkspaceLandingProps {
   announcements?: Announcement[];
   messages?: Message[];
   payments?: Payment[];
+  membershipPlans?: MembershipPlanConfig[];
   onUpdateAnnouncements?: (announcements: Announcement[]) => void;
   onAcknowledgeStaffAlerts?: (alertIds: string[]) => void;
 }
@@ -69,6 +71,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   announcements = [],
   messages = [],
   payments = [],
+  membershipPlans = [],
   onUpdateAnnouncements,
   onAcknowledgeStaffAlerts
 }) => {
@@ -315,7 +318,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
             >
               <span className="role-home-action-icon"><Icon size={25} /></span>
               <strong>{action.title}</strong>
-              <small>{action.description}</small>
+              {action.key === 'membership' ? <HomeMembershipSummary user={activeUser} payments={payments} plans={membershipPlans} /> : <small>{action.description}</small>}
               <ChevronLeft size={17} className="role-home-action-arrow" />
               {action.badge ? <b className="absolute left-3 top-3 grid h-6 min-w-6 place-items-center rounded-full bg-red-500 px-1 text-[11px] text-white shadow-lg">{action.badge}</b> : null}
             </button>

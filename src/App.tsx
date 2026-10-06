@@ -835,6 +835,7 @@ export default function App() {
               announcements={announcements}
               messages={messages}
               payments={payments}
+              membershipPlans={settings.membershipPlans}
               onUpdateAnnouncements={setAnnouncements}
               onAcknowledgeStaffAlerts={handleAcknowledgeStaffAlerts}
             />
