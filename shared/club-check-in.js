@@ -44,10 +44,13 @@ const personalDropIn = (payload, actorId, type, partnerId, now) => {
 };
 const openCount = (payload, id, date) => (payload.openGymSessions || []).filter(s => s.date === date && s.registeredUsers?.includes(id)).length
   + (payload.attendanceLogs || []).filter(l => l.traineeId === id && l.date === date && l.type === 'OPEN_GYM' && l.unscheduled).length;
+const usesOpenCard = user => !hasIncludedOpenGymAccess([user.membershipType, ...(user.secondaryMemberships || [])])
+  && [user.membershipType, ...(user.secondaryMemberships || [])].includes('OPEN_PUNCH_CARD');
 const canOpen = (payload, user, s, now) => {
   const memberships = [user.membershipType, ...(user.secondaryMemberships || [])];
-  if (!hasIncludedOpenGymAccess(memberships)) return false;
+  if (!hasIncludedOpenGymAccess(memberships) && !memberships.includes('OPEN_PUNCH_CARD')) return false;
   if (s.registeredUsers?.includes(user.id)) return true;
+  if (usesOpenCard(user) && !(Number(user.punchCardRemaining) >= 1)) return false;
   if ((s.registeredUsers || []).length >= s.maxParticipants) return false;
   if (openCount(payload, user.id, s.date) >= 2) return false;
   if (s.genderRestriction && s.genderRestriction !== 'ALL' && s.genderRestriction !== user.gender) return false;
@@ -82,7 +85,7 @@ export function clubArrivalChoices(payload, actorId, now = Date.now()) {
   for (const s of payload.openGymSessions || []) {
     if (s.date !== date || !inWindow(openSession(s), now) || !canOpen(payload, user, s, now)) continue;
     choices.push({ key: `OPEN_GYM:${s.id}`, type: 'OPEN_GYM', targetId: s.id, title: 'Open Gym', time: s.timeSlot,
-      trainingType: 'OPEN_GYM', registered: Boolean(s.registeredUsers?.includes(actorId)), checkedIn: checked(payload, actorId, 'OPEN_GYM', s.id, date) });
+      trainingType: 'OPEN_GYM', usesPunchCard: usesOpenCard(user), registered: Boolean(s.registeredUsers?.includes(actorId)), checkedIn: checked(payload, actorId, 'OPEN_GYM', s.id, date) });
   }
   // Existing unscheduled attendance remains visible even with an exhausted card.
   for (const log of payload.attendanceLogs || []) {
@@ -106,9 +109,9 @@ export function clubArrivalChoices(payload, actorId, now = Date.now()) {
   const openWindow = (payload.openGymSessions || []).some(s => s.date === date && inWindow(openSession(s), now));
   const overlapping = [...(payload.sessions || []), ...(payload.openGymSessions || []).map(openSession)].some(s => s.registeredUsers?.includes(actorId) && inWindow(s, now));
   if (!openWindow && !overlapping && !choices.some(c => c.trainingType === 'OPEN_GYM') && openCount(payload, actorId, date) < 2
-    && hasIncludedOpenGymAccess([user.membershipType, ...(user.secondaryMemberships || [])])) choices.push({
+    && (hasIncludedOpenGymAccess([user.membershipType, ...(user.secondaryMemberships || [])]) || (usesOpenCard(user) && Number(user.punchCardRemaining) >= 1))) choices.push({
       key: 'DROP_IN:OPEN_GYM', type: 'OPEN_GYM', targetId: dropInTarget(actorId, 'OPEN_GYM', date), title: 'Open Gym',
-      time: 'כניסה ללא משבצת ביומן', trainingType: 'OPEN_GYM', registered: false, checkedIn: false, unscheduled: true });
+      time: 'כניסה ללא משבצת ביומן', trainingType: 'OPEN_GYM', usesPunchCard: usesOpenCard(user), registered: false, checkedIn: false, unscheduled: true });
   return choices;
 }
 
@@ -128,10 +131,13 @@ export function recordClubArrival(payload, actorId, input, now = Date.now()) {
       action: 'BOOK', sessionId: choice.targetId, bookingId: logId(actorId, choice.type, choice.targetId, date), type: choice.trainingType, partnerId: input.partnerId
     }, now, { arrival: true });
     else next = { ...payload, openGymSessions: payload.openGymSessions.map(s => s.id === choice.targetId ? { ...s, registeredUsers: [...s.registeredUsers, actorId], waitlistUsers: (s.waitlistUsers || []).filter(id => id !== actorId) } : s) };
+    if (choice.type === 'OPEN_GYM' && usesOpenCard(user)) next = { ...next,
+      users: next.users.map(u => u.id === actorId ? { ...u, punchCardRemaining: Number(u.punchCardRemaining) - 1 } : u) };
   }
   const log = { id: logId(actorId, choice.type, choice.targetId, date), traineeId: actorId, traineeName: user.name,
     type: choice.type, targetId: choice.targetId, targetTitle: choice.title, date,
     timestamp: arrivalTime(now), trainingType: choice.trainingType,
+    ...(choice.type === 'OPEN_GYM' && !choice.registered && usesOpenCard(user) ? { punchCardDebited: true } : {}),
     ...(choice.unscheduled ? { unscheduled: true, payerId: actorId } : {}) };
   const partner = choice.unscheduled && choice.trainingType === 'DUO' ? payload.users.find(u => u.id === input.partnerId) : null;
   const partnerLogs = partner ? [{ ...log, id: logId(partner.id, choice.type, choice.targetId, date), traineeId: partner.id, traineeName: partner.name }] : [];
@@ -140,7 +146,13 @@ export function recordClubArrival(payload, actorId, input, now = Date.now()) {
 
 // Only call after arrival validation/persistence; never use client-supplied balances.
 export function clubArrivalResult(payload, actorId, input, alreadyRecorded = false) {
-  if (input.type === 'OPEN_GYM') return { ok: true, alreadyRecorded, message: 'ברוך הבא למועדון, אימון נעים! הגעתך תועדה.' };
+  if (input.type === 'OPEN_GYM') {
+    const user = payload.users.find(u => u.id === actorId);
+    const card = usesOpenCard(user);
+    const remaining = Number(user.punchCardRemaining || 0);
+    return { ok: true, alreadyRecorded, ...(card ? { remaining, cardSize: null } : {}),
+      message: `ברוך הבא למועדון, אימון נעים! הגעתך תועדה.${card ? ` יתרת כרטיסיית Open Gym: ${remaining} ניקובים.` : ''}` };
+  }
   const session = payload.sessions.find(s => s.id === input.targetId);
   const log = (payload.attendanceLogs || []).find(l => l.traineeId === actorId && l.type === input.type && l.targetId === input.targetId);
   if (!session?.isPersonalTraining && !log?.unscheduled) return { ok: true, alreadyRecorded, message: `הגעתך לאימון${session?.title ? `: ${session.title}` : ''} תועדה.` };

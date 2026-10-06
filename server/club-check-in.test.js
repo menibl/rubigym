@@ -182,6 +182,38 @@ test('calendar registrations include unscheduled open attendance in daily limit'
   const merged = mergePayloadForUser(next, incoming, 'u', 'TRAINEE');
   assert.equal(merged.openGymSessions.filter(s => s.registeredUsers.includes('u')).length, 1);
 });
+
+test('open punch card debits once for unscheduled and scheduled arrival, never personal or duo', () => {
+  for (const scheduled of [false, true]) {
+    const state = fixture(); state.sessions = []; if (!scheduled) state.openGymSessions = [];
+    Object.assign(state.users[0], { membershipType: 'OPEN_PUNCH_CARD', secondaryMemberships: [], punchCardRemaining: 3 });
+    const choices = clubArrivalChoices(state, 'u', now);
+    assert.deepEqual(choices.map(c => c.trainingType), ['OPEN_GYM']);
+    const request = { ...choices[0], code: CLUB_CHECK_IN_CODE };
+    const next = recordClubArrival(state, 'u', request, now);
+    assert.equal(next.users[0].punchCardRemaining, 2);
+    assert.equal(next.users[0].personalTrainingRemaining, 2); assert.equal(next.users[0].duoTrainingRemaining, 3);
+    assert.equal(next.attendanceLogs[0].punchCardDebited, true);
+    assert.match(clubArrivalResult(next, 'u', request).message, /יתרת כרטיסיית Open Gym: 2/);
+    assert.equal(recordClubArrival(next, 'u', request, now), next);
+    state.users[0].punchCardRemaining = 0;
+    assert.deepEqual(clubArrivalChoices(state, 'u', now), []);
+  }
+});
+
+test('included Open Gym takes precedence over punch card; preregistered open never debits again', () => {
+  const state = fixture(); state.sessions = [];
+  Object.assign(state.users[0], { membershipType: 'GROUP_MONTHLY', secondaryMemberships: ['OPEN_PUNCH_CARD'], punchCardRemaining: 3 });
+  const choice = clubArrivalChoices(state, 'u', now)[0];
+  const request = { ...choice, code: CLUB_CHECK_IN_CODE };
+  assert.equal(recordClubArrival(state, 'u', request, now).users[0].punchCardRemaining, 3);
+  state.users[0].membershipType = 'OPEN_PUNCH_CARD'; state.users[0].secondaryMemberships = []; state.users[0].punchCardRemaining = 0;
+  state.openGymSessions[0].registeredUsers = ['u'];
+  assert.equal(clubArrivalChoices(state, 'u', now)[0].registered, true);
+  assert.equal(recordClubArrival(state, 'u', request, now).users[0].punchCardRemaining, 0);
+  state.openGymSessions[0].registeredUsers = []; state.users[0].membershipType = undefined; state.users[0].punchCardRemaining = 3;
+  assert.deepEqual(clubArrivalChoices(state, 'u', now), []);
+});
 test('normal booking still rejects a started session; only arrival path enables it', () => {
   assert.throws(() => changePersonalBooking(fixture(), 'u', { action: 'BOOK', type: 'SOLO', sessionId: 's', bookingId: 'id', arrival: true }, now));
 });
@@ -239,4 +271,12 @@ test('arrival API authenticates and retries revision conflict without double deb
   assert.equal(state.payload.users[0].personalTrainingRemaining, 0);
   assert.deepEqual(state.payload.sessions, []);
   assert.equal(state.payload.attendanceLogs.length, 2);
+  Object.assign(state.payload.users[0], { membershipType: 'OPEN_PUNCH_CARD', secondaryMemberships: [], punchCardRemaining: 3 });
+  conflict = true;
+  const open = clubArrivalChoices(state.payload, 'u').find(c => c.trainingType === 'OPEN_GYM');
+  const openBody = { ...open, code: CLUB_CHECK_IN_CODE };
+  const openResponse = await post(true, openBody); assert.equal(openResponse.status, 200);
+  assert.equal((await openResponse.json()).remaining, 2);
+  assert.equal((await post(true, openBody)).status, 200);
+  assert.equal(state.payload.users[0].punchCardRemaining, 2);
 });

@@ -829,6 +829,7 @@ export interface AttendanceLog {
   timestamp: string; // ISO string or HH:MM
   date: string; // YYYY-MM-DD
   unscheduled?: boolean;
+  punchCardDebited?: boolean;
   trainingType?: 'SOLO' | 'DUO' | 'GROUP' | 'OPEN_GYM';
   payerId?: string;
 }
