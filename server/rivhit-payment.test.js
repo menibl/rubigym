@@ -57,6 +57,7 @@ test('RIVHIT TEST checkout uses hosted GetUrl and never exposes the private toke
   assert.equal(providerRequest.url, 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc/GetUrl');
   assert.equal(providerRequest.body.GroupPrivateToken, 'test-group-private-token');
   assert.equal(providerRequest.body.Items[0].UnitPrice, 1);
+  assert.equal(providerRequest.body.Items[0].Description, 'ייעוץ ואימון');
   assert.equal(providerRequest.body.CustomerFirstName, 'מני');
   assert.equal(providerRequest.body.CustomerLastName, 'בללי');
   assert.match(providerRequest.body.IPNURL, /\/api\/payments\/rivhit\/webhook$/);
@@ -255,7 +256,7 @@ test('checkout uses the manager configured plan price and fixed period', async (
   }), env);
   assert.equal(response.status, 200);
   assert.equal(providerRequest.Items[0].UnitPrice, 777);
-  assert.equal(providerRequest.Items[0].Description, 'Open Gym מעודכן');
+  assert.equal(providerRequest.Items[0].Description, 'ייעוץ ואימון');
   assert.equal(providerRequest.CreateRecurringSale, false);
 });
 
