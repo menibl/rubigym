@@ -10,7 +10,7 @@ const openSession = s => {
   const minutes = value => value?.split(':').reduce((n, v) => n * 60 + Number(v), 0);
   return { ...s, time, durationMinutes: minutes(end) - minutes(time) };
 };
-const validateUser = (payload, id, now) => {
+export const validateArrivalUser = (payload, id, now) => {
   const user = payload.users?.find(u => u.id === id && u.role === 'TRAINEE');
   if (!user) fail('יש להתחבר כמתאמן.');
   const today = clubDate(new Date(now));
@@ -24,6 +24,7 @@ const validateUser = (payload, id, now) => {
   if (!user.healthDeclarationSigned || !Number.isFinite(signed) || now > expires.getTime() || (user.healthDeclarationRequiresMedicalCertificate && !user.healthDeclarationMedicalCertificateApproved)) fail('נדרשת הצהרת בריאות בתוקף.');
   return user;
 };
+const validateUser = validateArrivalUser;
 const logId = (id, type, targetId, date) => `arrival-${id}-${type}-${targetId}-${date}`;
 const checked = (payload, id, type, targetId, date) => (payload.attendanceLogs || []).some(l => l.traineeId === id && l.type === type && l.targetId === targetId && l.date === date);
 const inWindow = (s, now, early = 0) => {
@@ -148,7 +149,7 @@ export function recordClubArrival(payload, actorId, input, now = Date.now()) {
   return appendArrivalNotice(next, actorId, log.id, `ההגעה אושרה: ${choice.title}${choice.unscheduled ? ' — ללא אימון ביומן' : ''}. ${clubArrivalResult(next, actorId, input).message}`, now);
 }
 
-function appendArrivalNotice(payload, actorId, eventId, content, now) {
+export function appendArrivalNotice(payload, actorId, eventId, content, now) {
   const actor = payload.users?.find(u => u.id === actorId && u.role === 'TRAINEE');
   if (!actor) fail('יש להתחבר כמתאמן.');
   const existing = new Set((payload.messages || []).map(m => m.id));
