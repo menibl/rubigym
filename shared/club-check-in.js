@@ -92,3 +92,18 @@ export function recordClubArrival(payload, actorId, input, now = Date.now()) {
     timestamp: new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit' }).format(new Date(now)), trainingType: choice.trainingType };
   return { ...next, attendanceLogs: [log, ...(next.attendanceLogs || [])] };
 }
+
+// Only call after arrival validation/persistence; never use client-supplied balances.
+export function clubArrivalResult(payload, actorId, input, alreadyRecorded = false) {
+  if (input.type === 'OPEN_GYM') return { ok: true, alreadyRecorded, message: 'ברוך הבא למועדון, אימון נעים! הגעתך תועדה.' };
+  const session = payload.sessions.find(s => s.id === input.targetId);
+  if (!session?.isPersonalTraining) return { ok: true, alreadyRecorded, message: `הגעתך לאימון${session?.title ? `: ${session.title}` : ''} תועדה.` };
+  const duo = session.personalBooking?.type === 'DUO';
+  const payer = payload.users.find(u => u.id === (session.personalBooking?.payerId || actorId));
+  const remaining = Number(payer?.[duo ? 'duoTrainingRemaining' : 'personalTrainingRemaining'] || 0);
+  const size = Number(payer?.[duo ? 'duoTrainingCardSize' : 'personalTrainingCardSize'] || 0);
+  const balance = size > 0 ? `${remaining}/${size}` : String(remaining);
+  const payerLabel = payer?.id !== actorId && payer?.name ? ` בכרטיסייה של ${payer.name}` : '';
+  return { ok: true, alreadyRecorded, remaining, cardSize: size > 0 ? size : null,
+    message: `נרשמת לאימון ${duo ? 'זוגי' : 'אישי'}. יתרה${payerLabel}: ${balance}. הגעתך תועדה.` };
+}

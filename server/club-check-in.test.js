@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { clubArrivalChoices, recordClubArrival, CLUB_CHECK_IN_CODE } from '../shared/club-check-in.js';
+import { clubArrivalChoices, recordClubArrival, clubArrivalResult, CLUB_CHECK_IN_CODE } from '../shared/club-check-in.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import worker from './index.js';
 import { clubDate } from '../shared/membership-calendar.js';
@@ -20,6 +20,29 @@ const fixture = () => ({
   openGymSessions: [{ id: 'o', date: '2026-10-05', timeSlot: '12:00-13:00', registeredUsers: [], waitlistUsers: [], maxParticipants: 10 }]
 });
 const input = (type = 'SOLO') => ({ code: CLUB_CHECK_IN_CODE, type: 'SESSION', targetId: 's', trainingType: type, partnerId: 'partner' });
+
+test('success reports the saved solo balance and actual card size, without inventing missing size', () => {
+  const state = fixture(); Object.assign(state.users[0], { personalTrainingRemaining: 6, personalTrainingCardSize: 10 });
+  const next = recordClubArrival(state, 'u', input(), now);
+  const result = clubArrivalResult(next, 'u', input());
+  assert.equal(result.remaining, 5); assert.equal(result.cardSize, 10);
+  assert.match(result.message, /נרשמת לאימון אישי.*5\/10/);
+  assert.equal(clubArrivalResult(next, 'u', input(), true).remaining, 5);
+  delete next.users[0].personalTrainingCardSize;
+  assert.equal(clubArrivalResult(next, 'u', input()).cardSize, null);
+});
+
+test('duo partner sees payer balance and open welcomes without a card debit message', () => {
+  const state = fixture(); state.users[0].duoTrainingCardSize = 10;
+  let next = recordClubArrival(state, 'u', input('DUO'), now);
+  next = recordClubArrival(next, 'partner', input('DUO'), now);
+  const result = clubArrivalResult(next, 'partner', input('DUO'));
+  assert.equal(result.remaining, 2); assert.equal(result.cardSize, 10);
+  assert.match(result.message, /אימון זוגי.*בכרטיסייה של מתאמן.*2\/10/);
+  const open = clubArrivalResult(state, 'u', { type: 'OPEN_GYM' });
+  assert.match(open.message, /ברוך הבא למועדון, אימון נעים/);
+  assert.equal(open.remaining, undefined);
+});
 
 test('multiple entitlements show open, solo and duo choices, including unbooked current sessions', () => {
   const choices = clubArrivalChoices(fixture(), 'u', now);
@@ -116,8 +139,10 @@ test('arrival API authenticates and retries revision conflict without double deb
     method: 'POST', headers: { 'Content-Type': 'application/json', ...(authenticated ? { Cookie: 'baly_session=test' } : {}) }, body: JSON.stringify(input())
   }), env);
   assert.equal((await post(false)).status, 401);
-  const response = await post(true); assert.equal(response.status, 200, await response.text());
-  assert.equal((await post(true)).status, 200);
+  const response = await post(true); assert.equal(response.status, 200);
+  const result = await response.json(); assert.equal(result.remaining, 1); assert.match(result.message, /אימון אישי/);
+  const repeat = await post(true); assert.equal(repeat.status, 200);
+  const repeatedResult = await repeat.json(); assert.equal(repeatedResult.remaining, 1); assert.equal(repeatedResult.alreadyRecorded, true);
   assert.equal(state.payload.users[0].personalTrainingRemaining, 1);
   assert.equal(state.payload.attendanceLogs.length, 1);
 });
