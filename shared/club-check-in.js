@@ -40,7 +40,7 @@ const personalDropIn = (payload, actorId, type, partnerId, now) => {
     date, time: arrivalTime(now), durationMinutes: 1, isPersonalTraining: true,
     registeredUsers: [], waitlistUsers: [], maxParticipants: 1, genderRestriction: 'ALL' };
   const booked = changePersonalBooking({ ...payload, sessions: [...(payload.sessions || []), session] }, actorId,
-    { action: 'BOOK', sessionId: id, bookingId: logId(actorId, 'SESSION', id, date), type, partnerId }, now, { arrival: true });
+    { action: 'BOOK', sessionId: id, bookingId: `drop-in-booking-${actorId}-${type}-${date}`, type, partnerId }, now, { arrival: true });
   return { ...booked, sessions: payload.sessions || [] };
 };
 const openCount = (payload, id, date) => (payload.openGymSessions || []).filter(s => s.date === date && s.registeredUsers?.includes(id)).length
@@ -166,9 +166,35 @@ export function recordClubScan(payload, actorId, input, now = Date.now()) {
   if (!/^[a-zA-Z0-9_-]{8,80}$/.test(input.scanId || '')) fail('מזהה סריקה אינו תקין.');
   let choices = [], error = '';
   try { choices = clubArrivalChoices(payload, actorId, now); } catch (e) { error = e.message; }
+  if (!error && !choices.length) error = arrivalUnavailableReason(payload, actorId, now);
   const pending = choices.filter(c => !c.checkedIn);
   const outcome = error || (pending.length ? 'ממתין לרישום או לאישור כניסה.' : choices.length ? 'ההגעה כבר תועדה — ללא ניכוי נוסף.' : 'לא נמצא אימון זמין המתאים למנוי.');
   return { payload: appendArrivalNotice(payload, actorId, input.scanId, `סרק/ה את קוד המועדון. ${outcome}`, now), choices, error };
+}
+
+function arrivalUnavailableReason(payload, actorId, now) {
+  const user = payload.users.find(u => u.id === actorId);
+  const types = [user.membershipType, ...(user.secondaryMemberships || [])];
+  const reasons = [];
+  for (const [type, membership, field, label] of [
+    ['SOLO', 'PERSONAL_TRAINING', 'personalTrainingRemaining', 'אימון אישי'],
+    ['DUO', 'DUO_TRAINING', 'duoTrainingRemaining', 'אימון זוגי']
+  ]) {
+    if (!types.includes(membership)) continue;
+    if (!(Number(user[field]) >= 1)) { reasons.push(`אין יתרת אימונים בכרטיסיית ${label}.`); continue; }
+    const partners = type === 'DUO' ? payload.users.filter(u => u.id !== actorId && user.familyId && u.familyId === user.familyId) : [null];
+    if (!partners.length) { reasons.push('לאימון זוגי יש לשייך בן או בת זוג למשפחה לפני הרישום.'); continue; }
+    for (const partner of partners) {
+      try { personalDropIn(payload, actorId, type, partner?.id, now); }
+      catch (e) { reasons.push(e.message); }
+    }
+  }
+  if (usesOpenCard(user) && !(Number(user.punchCardRemaining) >= 1)) reasons.push('אין יתרת אימונים בכרטיסיית Open Gym.');
+  if (hasIncludedOpenGymAccess(types) || usesOpenCard(user)) {
+    const date = clubDate(new Date(now));
+    if (openCount(payload, actorId, date) >= 2) reasons.push('ניתן להירשם ל־Open Gym עד פעמיים ביום.');
+  }
+  return [...new Set(reasons)].join(' ') || 'אין כעת אימון פנוי שמתאים למנוי שלך. יש לפנות למאמן.';
 }
 
 // Only call after arrival validation/persistence; never use client-supplied balances.

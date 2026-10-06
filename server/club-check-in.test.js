@@ -137,6 +137,47 @@ test('unscheduled entry requires explicit confirmation and rechecks credit on co
   assert.throws(() => recordClubArrival(state, 'u', { ...request, confirmUnscheduled: true }, now));
 });
 
+test('real UUID identities can confirm personal and duo drop-in without oversized booking ids', () => {
+  for (const type of ['SOLO', 'DUO']) {
+    const state = fixture(); state.sessions = []; state.openGymSessions = [];
+    const actorId = '2d2e8f20-42a1-4e48-a9bc-e617af237c45';
+    state.users[0].id = actorId; state.users[0].personalTrainingRemaining = 6;
+    state.users[1].familyPayerId = actorId;
+    state.users.push({ id: 'manager', role: 'MANAGER' });
+    const scan = recordClubScan(state, actorId, { code: CLUB_CHECK_IN_CODE, scanId: 'uuid-scan-0001' }, now);
+    assert.equal(scan.error, '');
+    const choice = scan.choices.find(c => c.trainingType === type);
+    assert.equal(choice.unscheduled, true);
+    const request = { ...choice, code: CLUB_CHECK_IN_CODE, partnerId: 'partner' };
+    assert.throws(() => recordClubArrival(scan.payload, actorId, request, now), /יש לאשר/);
+    const next = recordClubArrival(scan.payload, actorId, { ...request, confirmUnscheduled: true }, now);
+    assert.equal(next.users[0][type === 'SOLO' ? 'personalTrainingRemaining' : 'duoTrainingRemaining'], type === 'SOLO' ? 5 : 2);
+    assert.equal(recordClubArrival(next, actorId, { ...request, confirmUnscheduled: true }, now), next);
+    assert.deepEqual(next.sessions, []);
+  }
+});
+
+test('empty cards report no remaining workouts, not no available calendar workout, and notify staff', () => {
+  for (const [membership, field] of [['PERSONAL_TRAINING', 'personalTrainingRemaining'], ['DUO_TRAINING', 'duoTrainingRemaining'], ['OPEN_PUNCH_CARD', 'punchCardRemaining']]) {
+    const state = fixture(); state.sessions = []; state.openGymSessions = [];
+    Object.assign(state.users[0], { membershipType: membership, secondaryMemberships: [], [field]: 0 });
+    state.users.push({ id: 'manager', role: 'MANAGER' });
+    const scanned = recordClubScan(state, 'u', { code: CLUB_CHECK_IN_CODE, scanId: 'empty-card-0001' }, now);
+    assert.match(scanned.error, /אין יתרת אימונים/);
+    assert.deepEqual(scanned.choices, []);
+    assert.match(scanned.payload.messages[0].content, /אין יתרת אימונים/);
+    assert.equal(scanned.payload.users[0][field], 0);
+  }
+});
+
+test('positive duo credit without a linked partner explains the real blockage', () => {
+  const state = fixture(); state.sessions = []; state.openGymSessions = [];
+  Object.assign(state.users[0], { membershipType: 'DUO_TRAINING', secondaryMemberships: [], duoTrainingRemaining: 6, familyId: undefined });
+  const scan = recordClubScan(state, 'u', { code: CLUB_CHECK_IN_CODE, scanId: 'duo-no-partner-1' }, now);
+  assert.match(scan.error, /לשייך בן או בת זוג/);
+  assert.equal(scan.payload.users[0].duoTrainingRemaining, 6);
+});
+
 test('every valid scan notifies all staff including rejected and repeated scans, without debit', () => {
   const state = fixture(); state.users.push({ id: 'manager', role: 'MANAGER' }, { id: 'coach', role: 'COACH' });
   const input = { code: CLUB_CHECK_IN_CODE, scanId: 'scan-event-0001' };
