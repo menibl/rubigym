@@ -27,3 +27,16 @@ test('home changes when an Open Gym registration is added or cancelled', () => {
 test('coach home does not show a trainee Open Gym booking as a coaching assignment', () => {
   assert.match(render({ ...trainee, role: UserRole.COACH }, [openGym]), /אין כרגע אימון משובץ/);
 });
+
+test('membership tile contains every assigned plan and personal/duo balances on home', () => {
+  const html = render({ ...trainee, membershipStatus: 'ACTIVE', membershipExpiry: '2099-11-01', secondaryMemberships: [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING], personalTrainingRemaining: 5, personalTrainingCardSize: 10, duoTrainingRemaining: 2, duoTrainingCardSize: 3 } as User, []);
+  assert.match(html, /המנוי והתשלומים שלי/);
+  assert.match(html, /סיכום המנויים, התשלומים ויתרות האימונים/);
+  assert.match(html, /1\/11\/2099/);
+  assert.match(html, /5\/10/); assert.match(html, /2\/3/);
+  assert.match(html, /תוקף לא תועד/);
+});
+
+test('membership summary is not displayed on staff home', () => {
+  assert.doesNotMatch(render({ ...trainee, role: UserRole.COACH }, []), /סיכום המנויים, התשלומים ויתרות האימונים/);
+});
