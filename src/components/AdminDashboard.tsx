@@ -834,7 +834,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="admin-dashboard">
-      <CoachExceptionArrivalPanel users={users} />
       {editingTraineeId && users.find(user => user.id === editingTraineeId) && <AdminTraineeEditor key={editingTraineeId} user={users.find(user => user.id === editingTraineeId)!} users={users} onSave={onUpdateUsers} onClose={() => setEditingTraineeId(null)} />}
       {/* Admin Tab Header */}
       <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-wrap justify-between items-center gap-3">
@@ -975,6 +974,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {activeTab === 'records' && (
           <div className="space-y-6" dir="rtl">
+            <CoachExceptionArrivalPanel users={users} />
             <section className="grid gap-4 md:grid-cols-3">
               <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><HeartPulse size={22} className="text-emerald-700" /><strong className="mt-3 block text-2xl text-emerald-950">{healthRecords.length}</strong><span className="text-xs text-emerald-800">הצהרות בריאות מתועדות</span></article>
               <article className="rounded-2xl border border-sky-200 bg-sky-50 p-4"><ClipboardCheck size={22} className="text-sky-700" /><strong className="mt-3 block text-2xl text-sky-950">{attendanceLogs.length}</strong><span className="text-xs text-sky-800">כניסות וצ׳ק־אין מתועדים</span></article>

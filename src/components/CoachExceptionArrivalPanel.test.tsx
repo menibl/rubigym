@@ -1,10 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CoachExceptionArrivalPanel } from './CoachExceptionArrivalPanel';
 import { ClubArrivalScanner } from './ClubArrivalScanner';
 import { User, UserRole } from '../types';
+
+test('exception approval is placed only in the declarations and entry records tab, not training or planning', () => {
+  const admin = readFileSync(new URL('./AdminDashboard.tsx', import.meta.url), 'utf8');
+  const coach = readFileSync(new URL('./CoachDashboard.tsx', import.meta.url), 'utf8');
+  assert.equal((admin.match(/<CoachExceptionArrivalPanel\b/g) || []).length, 1);
+  assert.match(admin, /activeTab === 'records'[\s\S]*?<div className="space-y-6" dir="rtl">\s*<CoachExceptionArrivalPanel users=\{users\} \/>/);
+  assert.doesNotMatch(coach, /CoachExceptionArrivalPanel/);
+});
 
 test('coach panel includes QR approval and a separate explicitly confirmed historical correction, only trainees are selectable', () => {
   const users = [{ id: 't', name: 'מתאמן לבדיקה', role: UserRole.TRAINEE }, { id: 'c', name: 'מאמן לבדיקה', role: UserRole.COACH }] as User[];
