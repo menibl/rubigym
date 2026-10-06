@@ -3,7 +3,7 @@ import { isPagesDemoMode } from './appMode';
 import { createDemoPayload } from './demoData';
 import { deleteClubUser, removeDeletedUserData } from '../../shared/user-deletion.js';
 import { changePersonalBooking } from '../../shared/personal-booking.js';
-import { clubArrivalChoices, recordClubArrival, clubArrivalResult } from '../../shared/club-check-in.js';
+import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../../shared/club-check-in.js';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -77,12 +77,24 @@ export type ArrivalChoice = {
   unscheduled?: boolean;
   usesPunchCard?: boolean;
 };
-export async function getArrivalChoices(): Promise<{ choices: ArrivalChoice[] }> {
+export async function getArrivalChoices(scanId?: string): Promise<{ choices: ArrivalChoice[] }> {
+  if (scanId) {
+    const input = { action: 'SCAN', code: 'BALY-CLUB-CHECKIN-V1', scanId };
+    let result: { choices: ArrivalChoice[]; error?: string };
+    if (isPagesDemoMode()) {
+      const state = readDemoState();
+      const scanned = recordClubScan(state.payload, currentDemoUser()?.id, input);
+      writeDemoState({ ...state, payload: scanned.payload, revision: state.revision + 1 });
+      result = scanned;
+    } else result = await request('/api/attendance/arrival', { method: 'POST', body: JSON.stringify(input) });
+    if (result.error) throw new Error(result.error);
+    return result;
+  }
   if (isPagesDemoMode()) return { choices: clubArrivalChoices(readDemoState().payload, currentDemoUser()?.id) as ArrivalChoice[] };
   return request('/api/attendance/arrival');
 }
 export type ArrivalResult = { ok: boolean; message: string; alreadyRecorded: boolean; remaining?: number; cardSize?: number | null };
-export async function saveClubArrival(input: { code: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; trainingType: string; partnerId?: string }): Promise<ArrivalResult> {
+export async function saveClubArrival(input: { code: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; trainingType: string; partnerId?: string; confirmUnscheduled?: boolean }): Promise<ArrivalResult> {
   if (isPagesDemoMode()) {
     const state = readDemoState();
     const payload = recordClubArrival(state.payload, currentDemoUser()?.id, input);

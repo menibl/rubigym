@@ -95,9 +95,10 @@ export function clubArrivalChoices(payload, actorId, now = Date.now()) {
       time: log.timestamp, trainingType: log.trainingType, registered: true, checkedIn: true, unscheduled: true
     });
   }
-  // Do not bypass a full/restricted calendar slot or debit for an existing booking.
-  const personalWindow = (payload.sessions || []).some(s => s.date === date && s.isPersonalTraining && inWindow(s, now, 30));
-  if (!personalWindow) for (const type of ['SOLO', 'DUO']) {
+  // A different trainee's appointment does not prevent an independent drop-in.
+  // Never debit again for the actor's existing appointment (including a duo booking).
+  const personalBooking = choices.some(c => c.type === 'SESSION' && c.registered && ['SOLO', 'DUO'].includes(c.trainingType));
+  if (!personalBooking) for (const type of ['SOLO', 'DUO']) {
     if (choices.some(c => c.trainingType === type)) continue;
     const partners = type === 'DUO' ? (payload.users || []).filter(u => u.id !== actorId && user.familyId && u.familyId === user.familyId) : [null];
     const eligible = partners.filter(p => {
@@ -124,6 +125,7 @@ export function recordClubArrival(payload, actorId, input, now = Date.now()) {
   if (existing) return payload;
   const choice = clubArrivalChoices(payload, actorId, now).find(c => c.type === input.type && c.targetId === input.targetId && (c.registered || c.trainingType === input.trainingType));
   if (!choice) fail('האימון אינו זמין לכניסה כעת. יש לבחור אימון פנוי המתאים למנוי.');
+  if (choice.unscheduled && !choice.registered && input.confirmUnscheduled !== true) fail('אין אימון פעיל ביומן. יש לאשר רישום לפני ניכוי אימון.');
   let next = payload;
   if (!choice.registered) {
     if (choice.unscheduled) {
@@ -142,7 +144,31 @@ export function recordClubArrival(payload, actorId, input, now = Date.now()) {
     ...(choice.unscheduled ? { unscheduled: true, payerId: actorId } : {}) };
   const partner = choice.unscheduled && choice.trainingType === 'DUO' ? payload.users.find(u => u.id === input.partnerId) : null;
   const partnerLogs = partner ? [{ ...log, id: logId(partner.id, choice.type, choice.targetId, date), traineeId: partner.id, traineeName: partner.name }] : [];
-  return { ...next, attendanceLogs: [log, ...partnerLogs, ...(next.attendanceLogs || [])] };
+  next = { ...next, attendanceLogs: [log, ...partnerLogs, ...(next.attendanceLogs || [])] };
+  return appendArrivalNotice(next, actorId, log.id, `ההגעה אושרה: ${choice.title}${choice.unscheduled ? ' — ללא אימון ביומן' : ''}. ${clubArrivalResult(next, actorId, input).message}`, now);
+}
+
+function appendArrivalNotice(payload, actorId, eventId, content, now) {
+  const actor = payload.users?.find(u => u.id === actorId && u.role === 'TRAINEE');
+  if (!actor) fail('יש להתחבר כמתאמן.');
+  const existing = new Set((payload.messages || []).map(m => m.id));
+  const messages = (payload.users || []).filter(u => ['MANAGER', 'COACH'].includes(u.role)).map(u => ({
+    id: `club-scan-${actorId}-${eventId}-${u.id}`, senderId: actorId, senderName: actor.name, senderRole: actor.role, receiverId: u.id,
+    content: `${actor.name}: ${content}`, timestamp: new Date(now).toISOString(), read: false, systemGenerated: true
+  })).filter(m => !existing.has(m.id));
+  return messages.length ? { ...payload, messages: [...(payload.messages || []), ...messages] } : payload;
+}
+
+// A scan is a separate audited action: even rejected/repeated scans notify staff,
+// but a retry of the same event cannot duplicate notifications or debit credits.
+export function recordClubScan(payload, actorId, input, now = Date.now()) {
+  if (input.code !== CLUB_CHECK_IN_CODE) fail('יש לסרוק את קוד המועדון.');
+  if (!/^[a-zA-Z0-9_-]{8,80}$/.test(input.scanId || '')) fail('מזהה סריקה אינו תקין.');
+  let choices = [], error = '';
+  try { choices = clubArrivalChoices(payload, actorId, now); } catch (e) { error = e.message; }
+  const pending = choices.filter(c => !c.checkedIn);
+  const outcome = error || (pending.length ? 'ממתין לרישום או לאישור כניסה.' : choices.length ? 'ההגעה כבר תועדה — ללא ניכוי נוסף.' : 'לא נמצא אימון זמין המתאים למנוי.');
+  return { payload: appendArrivalNotice(payload, actorId, input.scanId, `סרק/ה את קוד המועדון. ${outcome}`, now), choices, error };
 }
 
 // Only call after arrival validation/persistence; never use client-supplied balances.

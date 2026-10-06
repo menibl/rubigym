@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { clubArrivalChoices, recordClubArrival, clubArrivalResult, CLUB_CHECK_IN_CODE } from '../shared/club-check-in.js';
+import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan, CLUB_CHECK_IN_CODE } from '../shared/club-check-in.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import worker from './index.js';
 import { clubDate } from '../shared/membership-calendar.js';
@@ -95,7 +95,7 @@ test('no future/past/full/other trainee sessions or open third booking', () => {
   assert.ok(after.every(c => c.unscheduled));
   const state = fixture(); state.sessions[0].registeredUsers = ['partner'];
   state.openGymSessions[0].maxParticipants = 0;
-  assert.deepEqual(clubArrivalChoices(state, 'u', now), []);
+  assert.ok(clubArrivalChoices(state, 'u', now).every(c => c.unscheduled && c.type === 'SESSION'));
   const third = fixture(); third.openGymSessions.push(...['a', 'b'].map(id => ({ id, date: '2026-10-05', timeSlot: '06:00-07:00', registeredUsers: ['u'] })));
   assert.ok(!clubArrivalChoices(third, 'u', now).some(c => c.type === 'OPEN_GYM'));
 });
@@ -105,7 +105,7 @@ test('without calendar slots, membership choices register and debit personal exa
   const choices = clubArrivalChoices(state, 'u', now);
   assert.deepEqual(choices.map(c => c.trainingType), ['SOLO', 'DUO', 'OPEN_GYM']);
   const solo = choices[0];
-  const request = { ...solo, code: CLUB_CHECK_IN_CODE, remaining: 999 };
+  const request = { ...solo, code: CLUB_CHECK_IN_CODE, remaining: 999, confirmUnscheduled: true };
   const next = recordClubArrival(state, 'u', request, now);
   assert.equal(next.users[0].personalTrainingRemaining, 1);
   assert.equal(next.users[0].duoTrainingRemaining, 3);
@@ -124,10 +124,55 @@ test('single personal membership provides one automatic choice; zero balance pro
   assert.deepEqual(clubArrivalChoices(state, 'u', now), []);
 });
 
+test('unscheduled entry requires explicit confirmation and rechecks credit on confirmation', () => {
+  const state = fixture(); state.sessions = []; state.openGymSessions = [];
+  const solo = clubArrivalChoices(state, 'u', now).find(c => c.trainingType === 'SOLO');
+  const request = { ...solo, code: CLUB_CHECK_IN_CODE };
+  assert.throws(() => recordClubArrival(state, 'u', request, now), /יש לאשר/);
+  assert.throws(() => recordClubArrival(state, 'u', { ...request, confirmUnscheduled: 'true' }, now), /יש לאשר/);
+  assert.equal(state.users[0].personalTrainingRemaining, 2); assert.equal(state.attendanceLogs.length, 0);
+  const saved = recordClubArrival(state, 'u', { ...request, confirmUnscheduled: true }, now);
+  assert.equal(saved.users[0].personalTrainingRemaining, 1);
+  state.users[0].personalTrainingRemaining = 0;
+  assert.throws(() => recordClubArrival(state, 'u', { ...request, confirmUnscheduled: true }, now));
+});
+
+test('every valid scan notifies all staff including rejected and repeated scans, without debit', () => {
+  const state = fixture(); state.users.push({ id: 'manager', role: 'MANAGER' }, { id: 'coach', role: 'COACH' });
+  const input = { code: CLUB_CHECK_IN_CODE, scanId: 'scan-event-0001' };
+  let result = recordClubScan(state, 'u', input, now);
+  assert.equal(result.payload.messages.length, 2);
+  assert.deepEqual(result.payload.messages.map(m => m.receiverId), ['manager', 'coach']);
+  assert.equal(result.payload.messages[0].senderName, 'מתאמן');
+  assert.equal(result.payload.users[0].personalTrainingRemaining, 2);
+  assert.equal(result.payload.attendanceLogs.length, 0);
+  assert.equal(recordClubScan(result.payload, 'u', input, now).payload, result.payload);
+  result = recordClubScan(result.payload, 'u', { ...input, scanId: 'scan-event-0002' }, now);
+  assert.equal(result.payload.messages.length, 4);
+  result.payload.users[0].registrationPaymentPending = true;
+  result = recordClubScan(result.payload, 'u', { ...input, scanId: 'scan-event-0003' }, now);
+  assert.match(result.error, /תשלום/); assert.equal(result.payload.messages.length, 6);
+  assert.match(result.payload.messages.at(-1).content, /תשלום/);
+  assert.equal(result.payload.users[0].personalTrainingRemaining, 2);
+  assert.throws(() => recordClubScan(state, 'u', { ...input, code: 'other' }, now));
+  assert.throws(() => recordClubScan(state, 'missing', input, now));
+});
+
+test('occupied appointment does not hide drop-in, but own appointment cannot cause another debit', () => {
+  const state = fixture(); state.sessions[0].registeredUsers = ['partner'];
+  const solo = clubArrivalChoices(state, 'u', now).find(c => c.trainingType === 'SOLO');
+  assert.equal(solo.unscheduled, true);
+  const next = recordClubArrival(state, 'u', { ...solo, code: CLUB_CHECK_IN_CODE, confirmUnscheduled: true }, now);
+  assert.deepEqual(next.sessions[0].registeredUsers, ['partner']);
+  assert.equal(next.users[0].personalTrainingRemaining, 1);
+  state.sessions[0].registeredUsers = ['u'];
+  assert.ok(!clubArrivalChoices(state, 'u', now).some(c => c.unscheduled && c.type === 'SESSION'));
+});
+
 test('unscheduled duo records both participants and charges payer only; partner cannot debit again', () => {
   const state = fixture(); state.sessions = []; state.openGymSessions = [];
   const choice = clubArrivalChoices(state, 'u', now).find(c => c.trainingType === 'DUO');
-  const request = { ...choice, code: CLUB_CHECK_IN_CODE, partnerId: 'partner' };
+  const request = { ...choice, code: CLUB_CHECK_IN_CODE, partnerId: 'partner', confirmUnscheduled: true };
   assert.throws(() => recordClubArrival(state, 'u', { ...request, partnerId: 'other' }, now));
   const next = recordClubArrival(state, 'u', request, now);
   assert.equal(next.users[0].duoTrainingRemaining, 2);
@@ -141,7 +186,7 @@ test('unscheduled duo records both participants and charges payer only; partner 
 test('unscheduled open documents only, respects daily cap, and cannot bypass full scheduled slot', () => {
   const state = fixture(); state.sessions = []; state.openGymSessions = [];
   const choice = clubArrivalChoices(state, 'u', now).find(c => c.trainingType === 'OPEN_GYM');
-  const request = { ...choice, code: CLUB_CHECK_IN_CODE };
+  const request = { ...choice, code: CLUB_CHECK_IN_CODE, confirmUnscheduled: true };
   const next = recordClubArrival(state, 'u', request, now);
   assert.equal(next.users[0].personalTrainingRemaining, 2);
   assert.deepEqual(next.openGymSessions, []);
@@ -167,7 +212,7 @@ test('client state cannot forge drop-in attendance to avoid debit; persisted att
   const fake = { traineeId: 'u', id: 'forged', type: 'SESSION', targetId: choice.targetId, date: '2026-10-05', unscheduled: true };
   const merged = mergePayloadForUser(state, { ...state, attendanceLogs: [fake, { ...fake, id: 'arrival-forged', unscheduled: false, targetId: 's' }] }, 'u', 'TRAINEE');
   assert.deepEqual(merged.attendanceLogs, []);
-  const next = recordClubArrival(merged, 'u', { ...choice, code: CLUB_CHECK_IN_CODE }, now);
+  const next = recordClubArrival(merged, 'u', { ...choice, code: CLUB_CHECK_IN_CODE, confirmUnscheduled: true }, now);
   const synced = mergePayloadForUser(next, state, 'u', 'TRAINEE');
   assert.equal(synced.attendanceLogs.length, 1);
   assert.equal(synced.users[0].personalTrainingRemaining, 1);
@@ -176,7 +221,7 @@ test('client state cannot forge drop-in attendance to avoid debit; persisted att
 test('calendar registrations include unscheduled open attendance in daily limit', () => {
   const state = fixture(); state.sessions = []; state.openGymSessions = [];
   const choice = clubArrivalChoices(state, 'u', now).find(c => c.trainingType === 'OPEN_GYM');
-  const next = recordClubArrival(state, 'u', { ...choice, code: CLUB_CHECK_IN_CODE }, now);
+  const next = recordClubArrival(state, 'u', { ...choice, code: CLUB_CHECK_IN_CODE, confirmUnscheduled: true }, now);
   next.openGymSessions = ['a', 'b'].map(id => ({ id, date: '2026-10-05', timeSlot: '18:00-19:00', registeredUsers: [], waitlistUsers: [], maxParticipants: 10 }));
   const incoming = { ...next, openGymSessions: next.openGymSessions.map(s => ({ ...s, registeredUsers: ['u'] })) };
   const merged = mergePayloadForUser(next, incoming, 'u', 'TRAINEE');
@@ -189,7 +234,7 @@ test('open punch card debits once for unscheduled and scheduled arrival, never p
     Object.assign(state.users[0], { membershipType: 'OPEN_PUNCH_CARD', secondaryMemberships: [], punchCardRemaining: 3 });
     const choices = clubArrivalChoices(state, 'u', now);
     assert.deepEqual(choices.map(c => c.trainingType), ['OPEN_GYM']);
-    const request = { ...choices[0], code: CLUB_CHECK_IN_CODE };
+    const request = { ...choices[0], code: CLUB_CHECK_IN_CODE, confirmUnscheduled: true };
     const next = recordClubArrival(state, 'u', request, now);
     assert.equal(next.users[0].punchCardRemaining, 2);
     assert.equal(next.users[0].personalTrainingRemaining, 2); assert.equal(next.users[0].duoTrainingRemaining, 3);
@@ -239,6 +284,7 @@ test('home avatar opens profile and scan shortcut precedes action tiles; no simu
 });
 test('arrival API authenticates and retries revision conflict without double debit', async () => {
   let state = { payload: fixture(), revision: 1 };
+  state.payload.users.push({ id: 'manager', role: 'MANAGER' }, { id: 'coach', role: 'COACH' });
   const realNow = new Date();
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(realNow).map(p => [p.type, p.value]));
   state.payload.sessions[0].date = clubDate(realNow); state.payload.sessions[0].time = `${parts.hour}:${parts.minute}`;
@@ -256,6 +302,13 @@ test('arrival API authenticates and retries revision conflict without double deb
     method: 'POST', headers: { 'Content-Type': 'application/json', ...(authenticated ? { Cookie: 'baly_session=test' } : {}) }, body: JSON.stringify(body)
   }), env);
   assert.equal((await post(false)).status, 401);
+  const scanBody = { action: 'SCAN', scanId: 'api-scan-event-1', code: CLUB_CHECK_IN_CODE };
+  assert.equal((await post(false, scanBody)).status, 401);
+  const scanResponse = await post(true, scanBody);
+  assert.equal(scanResponse.status, 200); assert.ok((await scanResponse.json()).choices.length);
+  assert.equal(state.payload.messages.length, 2); assert.equal(state.payload.users[0].personalTrainingRemaining, 2);
+  assert.equal((await post(true, scanBody)).status, 200); assert.equal(state.payload.messages.length, 2);
+  conflict = true;
   const response = await post(true); assert.equal(response.status, 200);
   const result = await response.json(); assert.equal(result.remaining, 1); assert.match(result.message, /אימון אישי/);
   const repeat = await post(true); assert.equal(repeat.status, 200);
@@ -264,7 +317,7 @@ test('arrival API authenticates and retries revision conflict without double deb
   assert.equal(state.payload.attendanceLogs.length, 1);
   state.payload.sessions = []; state.payload.openGymSessions = []; conflict = true;
   const choice = clubArrivalChoices(state.payload, 'u').find(c => c.trainingType === 'SOLO');
-  const body = { ...choice, code: CLUB_CHECK_IN_CODE };
+  const body = { ...choice, code: CLUB_CHECK_IN_CODE, confirmUnscheduled: true };
   const dropIn = await post(true, body); assert.equal(dropIn.status, 200);
   assert.equal((await dropIn.json()).remaining, 0);
   assert.equal((await post(true, body)).status, 200);
@@ -274,9 +327,16 @@ test('arrival API authenticates and retries revision conflict without double deb
   Object.assign(state.payload.users[0], { membershipType: 'OPEN_PUNCH_CARD', secondaryMemberships: [], punchCardRemaining: 3 });
   conflict = true;
   const open = clubArrivalChoices(state.payload, 'u').find(c => c.trainingType === 'OPEN_GYM');
-  const openBody = { ...open, code: CLUB_CHECK_IN_CODE };
+  const openBody = { ...open, code: CLUB_CHECK_IN_CODE, confirmUnscheduled: true };
   const openResponse = await post(true, openBody); assert.equal(openResponse.status, 200);
   assert.equal((await openResponse.json()).remaining, 2);
   assert.equal((await post(true, openBody)).status, 200);
+  assert.equal(state.payload.users[0].punchCardRemaining, 2);
+  state.payload.users[0].registrationPaymentPending = true;
+  const messageCount = state.payload.messages.length;
+  conflict = true;
+  const deniedScan = await post(true, { ...scanBody, scanId: 'api-scan-event-2' });
+  assert.equal(deniedScan.status, 200); assert.match((await deniedScan.json()).error, /תשלום/);
+  assert.equal(state.payload.messages.length, messageCount + 2);
   assert.equal(state.payload.users[0].punchCardRemaining, 2);
 });
