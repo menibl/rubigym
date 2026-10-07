@@ -200,6 +200,7 @@ export interface MembershipPlanConfig {
   active: boolean;
   priceUnit?: 'MONTH' | 'SESSION' | 'ONE_TIME';
   billingPeriod?: 'ONE_TIME' | 'MONTHLY' | 'THREE_MONTHS' | 'SIX_MONTHS' | 'ANNUAL' | 'SESSION_PACK' | 'MONTHLY_ANNUAL_COMMITMENT';
+  paymentMode?: 'ONE_TIME' | 'RECURRING';
   includedSessions?: number;
   supportsTrainingCard?: boolean;
 }
@@ -795,6 +796,7 @@ export interface Payment {
   providerTransactionId?: string;
   providerDetailsVerifiedAt?: string;
   providerRecurringSaleId?: string;
+  recurringChargeNumber?: number;
   refundedAt?: string;
   refundedBy?: string;
   refundReason?: string;

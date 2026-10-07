@@ -290,6 +290,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           membershipTerm.recurringBillingMonths = 0;
           membershipTerm.monthlyBillingDay = 1;
         }
+        if (verified.recurringContractEndsAt && verified.membershipExpiry) {
+          membershipTerm.membershipCommitmentEndsAt = verified.recurringContractEndsAt;
+          membershipTerm.membershipExpiry = verified.membershipExpiry;
+          membershipTerm.membershipExpiryExclusive = true;
+          membershipTerm.recurringBillingMonths = 12;
+          membershipTerm.monthlyBillingDay = 1;
+        }
         return {
           ...user,
           membershipType: purchasedType,
@@ -354,7 +361,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       billingTermMonths: verified.termMonths,
       sessionsPurchased: verified.includedSessions,
       paymentMethod: `RIVHIT iCredit${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
-      isMock: Boolean(verified.isMock)
+      isMock: Boolean(verified.isMock),
+      providerRecurringSaleId: verified.recurringSaleId,
+      recurringChargeNumber: verified.recurringChargeNumber
     }, ...payments]) as Payment[]);
   };
 
@@ -388,7 +397,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         showFeedback(`${purchasedLabel} נרכש והופעל בהצלחה.`);
       })
       .catch(error => {
-        clearRivhitReturnParams();
+        if (error?.code !== 'RIVHIT_RECURRING_PENDING') clearRivhitReturnParams();
         setActiveTab('membership');
         showFeedback(error instanceof Error ? error.message : 'לא ניתן לאמת את התשלום.', 'error');
       })
@@ -2352,7 +2361,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
                   </div>
                   {billingPeriodForPlan(selectedMembershipConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
-                    חיוב חודשי קבוע בסך ₪{selectedMembershipPrice} למשך 12 חודשים. בקשת ביטול נכנסת לתוקף בהתאם לתנאי המסלול.
+                    הוראת קבע בסך ₪{selectedMembershipPrice} לחודש: חיוב ראשון עבור החודש הנוכחי, ולאחריו בכל 1 בחודש. 12 חיובים בסך הכול. אין חידוש אוטומטי; חידוש דורש את אישורכם. לפני המעבר לתשלום יוצגו תנאי החיוב לאישור.
                   </div>}
                   {!isRivhitConfigured() && (
                     <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
