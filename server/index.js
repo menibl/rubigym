@@ -575,13 +575,13 @@ const verifiedRivhitPayment = async (paymentReference, env, allowExpired = false
   const providerAmount = signedOrderChargeAmount(order);
   if (amount !== providerAmount) throw new Error('AMOUNT_MISMATCH');
   await verifyRivhitSale(saleId, providerAmount, env);
-  const cardNumber = String(rivhitValue(sale, 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
+  const cardNumber = String(rivhitValue(sale, 'TransactionCardNum', 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
   return {
     order,
     payment: {
       paymentReference,
       saleId,
-      transactionId: String(rivhitValue(sale, 'TransactionId', 'transactionId', 'SaleId', 'saleId') || saleId),
+      transactionId: String(rivhitValue(sale, 'CustomerTransactionId', 'TransactionId', 'transactionId', 'SaleId', 'saleId') || saleId),
       recurringSaleId: String(rivhitValue(sale, 'RecurringSaleId', 'recurringSaleId') || ''),
       last4Digits: (cardNumber.match(/(\d{4})\D*$/) || [])[1]
     }
@@ -615,11 +615,11 @@ const verifyWebhookSale = async (payload, order, env) => {
   const providerAmount = signedOrderChargeAmount(order);
   if (!saleId || !Number.isFinite(amount) || amount !== providerAmount) throw new Error('INVALID_RIVHIT_WEBHOOK');
   await verifyRivhitSale(saleId, providerAmount, env);
-  const cardNumber = String(rivhitValue(payload, 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
+  const cardNumber = String(rivhitValue(payload, 'TransactionCardNum', 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
   return {
     paymentReference: saleId,
     saleId,
-    transactionId: String(rivhitValue(payload, 'TransactionId', 'transactionId') || saleId),
+    transactionId: String(rivhitValue(payload, 'CustomerTransactionId', 'TransactionId', 'transactionId') || saleId),
     recurringSaleId: String(rivhitValue(payload, 'RecurringSaleId', 'recurringSaleId') || ''),
     last4Digits: (cardNumber.match(/(\d{4})\D*$/) || [])[1]
   };
@@ -745,10 +745,20 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     if (!state) throw new Error('CLUB_STATE_MISSING');
     const user = (state.payload.users || []).find(candidate => candidate.id === userId);
     if (!user) throw new Error('PAYMENT_USER_NOT_FOUND');
-    if ((state.payload.payments || []).some(existing => sameProviderPayment(existing, {
+    const matching = (state.payload.payments || []).filter(existing => sameProviderPayment(existing, {
       id: paymentId, provider: 'RIVHIT', isMock: rivhitEnvironment(env) !== 'production',
       providerSaleId: payment.saleId, providerTransactionId: payment.transactionId
-    }))) return;
+    }));
+    if (matching.length) {
+      const enrich = existing => ({ ...existing, provider: 'RIVHIT', providerSaleId: payment.saleId,
+        providerTransactionId: payment.transactionId,
+        paymentMethod: payment.last4Digits ? `RIVHIT iCredit •••• ${payment.last4Digits}` : existing.paymentMethod });
+      const enriched = (state.payload.payments || []).map(existing => matching.includes(existing) ? enrich(existing) : existing);
+      if (JSON.stringify(enriched) === JSON.stringify(state.payload.payments)) return;
+      const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', { ...state.payload, payments: enriched }, state.revision);
+      if (!saved.conflict) return;
+      continue;
+    }
 
     let updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.fa ?? order.a), state.payload.settings?.membershipPlans || []);
     if (order.cs) {
@@ -1024,6 +1034,7 @@ const handleVerifyPayment = async (request, env) => {
   }
   const payment = {
     success: true,
+    isMock: rivhitEnvironment(env) !== 'production',
     userId: order.u || identity?.user_id,
     membershipType: order.m,
     mode: order.d,
@@ -1831,6 +1842,39 @@ const handleApi = async (request, env, url) => {
         }
       });
       return json(result, 200, headers);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/reconcile') {
+      requirePaymentEnv(env);
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
+      const body = await request.json();
+      const state = await loadClubState(identity.session.club_id);
+      const payment = state?.payload?.payments?.find(candidate => candidate.id === body.paymentId);
+      if (!payment || !String(payment.id).startsWith('payment-rivhit-')) return json({ message: 'יש לבחור עסקת רווחית קיימת.' }, 400, headers);
+      if (Boolean(payment.isMock) !== (rivhitEnvironment(env) !== 'production')) return json({ message: 'סביבת העסקה אינה תואמת לסביבת הסליקה הנוכחית.' }, 422, headers);
+      let verified;
+      try {
+        if (payment.paymentReference?.includes('.')) verified = await verifiedRivhitPayment(payment.paymentReference, env, true);
+        else {
+          const candidateId = payment.providerSaleId || payment.providerTransactionId || String(payment.id).replace(/^payment-rivhit-/, '');
+          const details = await rivhitPost('/SaleDetails', { SaleId: candidateId }, env);
+          const sale = Array.isArray(details.data) ? details.data[0] : details.data || details.Data?.[0] || details;
+          if (Number(details.Status) !== 0) throw new Error('SALE_NOT_FOUND');
+          const order = await verifySignedOrder(String(rivhitValue(sale, 'Custom1', 'custom1') || ''), env, true);
+          const receipt = await verifyWebhookSale({ ...sale, TransactionAmount: rivhitValue(sale, 'TransactionAmount', 'Amount', 'TotalAmount') }, order, env);
+          verified = { order, payment: receipt };
+        }
+        if (verified.order.u !== payment.traineeId || Number(verified.order.a) !== Number(payment.amount)) throw new Error('RECEIPT_MISMATCH');
+      } catch {
+        return json({ message: 'לא ניתן להתאים בבטחה את הרשומה לעסקה ברווחית. לא שונה דבר; אין לאחד לפי סכום ותאריך בלבד.' }, 422, headers);
+      }
+      const receipt = verified.payment;
+      const updatedPayment = await updatePersistedPayment(env, identity.session.club_id, payment.id, {
+        provider: 'RIVHIT', providerSaleId: receipt.saleId, providerTransactionId: receipt.transactionId,
+        paymentMethod: receipt.last4Digits ? `RIVHIT iCredit •••• ${receipt.last4Digits}` : payment.paymentMethod,
+        providerDetailsVerifiedAt: new Date().toISOString()
+      });
+      return json({ payment: updatedPayment }, 200, headers);
     }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/refund') {
       requirePaymentEnv(env);

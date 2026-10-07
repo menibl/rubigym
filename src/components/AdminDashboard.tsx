@@ -55,7 +55,7 @@ import { isYouthSession } from '../../shared/youth-session.js';
 import { FamilyCreditRecoveryControl } from './FamilyCreditRecoveryControl';
 import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate, isMembershipFreezeActive, isMembershipCancellationEffective } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
-import { cancelRivhitRecurring, refundRivhitPayment, updateRivhitRecurringAmount } from '../data/rivhitPayments';
+import { cancelRivhitRecurring, refundRivhitPayment, updateRivhitRecurringAmount, reconcileRivhitPayment } from '../data/rivhitPayments';
 import { LandingImageManager } from './LandingImageManager';
 import { SessionMembershipSelector } from './SessionMembershipSelector';
 import {
@@ -177,6 +177,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [billingPending, setBillingPending] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
   const [billingError, setBillingError] = useState('');
+  const reconcileSelectedPayment = async () => {
+    if (billingPending || !billingPaymentId) return;
+    setBillingPending(true); setBillingError(''); setBillingNotice('');
+    try {
+      const updated = await reconcileRivhitPayment(billingPaymentId);
+      onUpdatePayments(payments.map(payment => payment.id === updated.id ? updated : payment));
+      setBillingNotice('פרטי העסקה הושלמו מול רווחית. כפילויות עם מזהה סליקה משותף יוצגו פעם אחת. לא בוצע חיוב או החזר.');
+    } catch (error) { setBillingError(error instanceof Error ? error.message : 'לא ניתן להשלים פרטי עסקה.'); }
+    finally { setBillingPending(false); }
+  };
 
   // Discount Codes form state
   const [newDiscountCode, setNewDiscountCode] = useState({
@@ -1785,6 +1795,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {billingError && <p role="alert" className="mt-3 rounded-lg bg-rose-950 p-3 text-xs font-bold text-rose-200">{billingError}</p>}
             </section>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-3 rounded-xl border border-slate-600 bg-slate-900 p-4 text-white">
+                <button type="button" disabled={billingPending || !billingPaymentId} onClick={reconcileSelectedPayment} className="min-h-11 rounded-xl bg-amber-300 px-4 text-sm font-black text-slate-950 disabled:opacity-40">השלמת פרטי העסקה שנבחרה מול רווחית</button>
+                <p className="mt-2 text-xs text-slate-300">לרשומות ישנות: בחרו עסקה למעלה ובדקו את מזהי הסליקה וספרות הכרטיס. אין חיוב או החזר ואין מחיקת היסטוריה.</p>
+              </div>
               <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-4 flex items-center justify-between">
                 <div>
                   <div className="text-xs text-emerald-700">סה"כ עסקאות ששולמו</div>
