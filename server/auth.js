@@ -2,6 +2,7 @@ import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from 'node:util';
 import { fitsSessionAge, isYouthSession } from '../shared/youth-session.js';
 import { paymentPending } from '../shared/registration-status.js';
+import { homeGroupSessions } from '../shared/group-program-access.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -135,6 +136,12 @@ export const payloadForUser = (payload, userId, role) => {
   const registeredSessionIds = new Set(registeredSessions.map(session => session.id));
   const assignedPersonalPlanIds = new Set(registeredSessions.map(session => session.assignedWorkoutPlanId).filter(Boolean));
   const assignedGroupProgramIds = new Set(registeredSessions.map(session => session.assignedGroupWorkoutProgramId).filter(Boolean));
+  const groupAccess = homeGroupSessions(currentUser, safe.sessions || []);
+  const homeGroups = [groupAccess.next, groupAccess.previous].filter(Boolean);
+  const visibleGroupSessionIds = new Set(homeGroups.map(session => session.id));
+  homeGroups.forEach(session => {
+    if (session.assignedGroupWorkoutProgramId) assignedGroupProgramIds.add(session.assignedGroupWorkoutProgramId);
+  });
   return {
     ...safe,
     coachArrivalApprovals: [],
@@ -145,7 +152,7 @@ export const payloadForUser = (payload, userId, role) => {
       plan.traineeId === userId || assignedPersonalPlanIds.has(plan.id) || registeredSessionIds.has(plan.sessionId)
     ),
     groupWorkoutPrograms: (safe.groupWorkoutPrograms || []).filter(program =>
-      assignedGroupProgramIds.has(program.id) || registeredSessionIds.has(program.sessionId)
+      assignedGroupProgramIds.has(program.id) || registeredSessionIds.has(program.sessionId) || visibleGroupSessionIds.has(program.sessionId)
     ),
     nutritionPlans: (safe.nutritionPlans || []).filter(plan => plan.traineeId === userId),
     blackPoints: (safe.blackPoints || []).filter(point => point.traineeId === userId),
