@@ -49,6 +49,8 @@ export interface VerifiedRivhitPayment {
   recurringMonths?: number;
   includedSessions?: number;
   transactionId: string;
+  saleId?: string;
+  isMock?: boolean;
   last4Digits?: string;
   mode: PendingRivhitPayment['mode'];
   purchaseVariant?: PendingRivhitPayment['purchaseVariant'];
@@ -212,6 +214,8 @@ const runAdminPaymentAction = async (path: string, body: Record<string, unknown>
 
 export const refundRivhitPayment = (paymentId: string, reason: string) =>
   runAdminPaymentAction('refund', { paymentId, reason });
+export const reconcileRivhitPayment = (paymentId: string) =>
+  runAdminPaymentAction('reconcile', { paymentId });
 
 export interface FamilyCreditRecoveryResult {
   diagnostic?: { code: string; stage: string };

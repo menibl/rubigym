@@ -793,6 +793,7 @@ export interface Payment {
   provider?: 'RIVHIT' | 'MANUAL';
   providerSaleId?: string;
   providerTransactionId?: string;
+  providerDetailsVerifiedAt?: string;
   providerRecurringSaleId?: string;
   refundedAt?: string;
   refundedBy?: string;
