@@ -18,6 +18,7 @@ import { copyGroupProgramToSessions, copyPersonalPlanToSessions } from '../data/
 import { CoachDashboard } from './CoachDashboard';
 import { CoachExceptionArrivalPanel } from './CoachExceptionArrivalPanel';
 import { InvoiceDescriptionSettings } from './InvoiceDescriptionSettings';
+import { uniquePayments } from '../../shared/payment-ledger.js';
 import {
   User,
   TrainingSession,
@@ -165,6 +166,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateGroupWorkoutPrograms,
   activeUser
 }) => {
+  const displayedPayments = uniquePayments(payments) as Payment[];
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'records' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
   const [editingTraineeId, setEditingTraineeId] = useState<string | null>(null);
   const currentPlans = (settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS).filter(plan => plan.active && plan.id !== MembershipType.FAMILY_MEMBERSHIP);
@@ -1755,7 +1757,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <label className="grid gap-1 text-xs font-bold text-slate-200 md:col-span-2">עסקה
                   <select value={billingPaymentId} onChange={event => { setBillingPaymentId(event.target.value); setBillingNotice(''); setBillingError(''); }} className="min-h-11 rounded-xl border border-slate-600 bg-slate-900 px-3 text-white">
                     <option value="">בחר עסקה</option>
-                    {payments.map(payment => <option key={payment.id} value={payment.id}>{payment.date} · {payment.traineeName} · ₪{payment.amount} · {payment.status}</option>)}
+                    {displayedPayments.map(payment => <option key={payment.id} value={payment.id}>{payment.date} · {payment.traineeName} · ₪{payment.amount} · {payment.status}</option>)}
                   </select>
                 </label>
                 <label className="grid gap-1 text-xs font-bold text-slate-200">סכום חודשי חדש
@@ -1787,7 +1789,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div>
                   <div className="text-xs text-emerald-700">סה"כ עסקאות ששולמו</div>
                   <div className="text-2xl font-bold font-mono text-emerald-950 mt-1">
-                    ₪{payments.reduce((acc, curr) => acc + curr.amount, 0)}
+                    ₪{displayedPayments.filter(payment => payment.status === 'PAID').reduce((acc, curr) => acc + curr.amount, 0)}
                   </div>
                 </div>
                 <div className="bg-emerald-500/20 text-emerald-800 rounded-full p-2.5">
@@ -1811,7 +1813,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div>
                   <div className="text-xs text-slate-700">סה"כ עסקאות מתועדות</div>
                   <div className="text-2xl font-bold font-mono text-slate-950 mt-1">
-                    {payments.length}
+                    {displayedPayments.length}
                   </div>
                 </div>
                 <div className="bg-slate-500/20 text-slate-800 rounded-full p-2.5">
@@ -1836,7 +1838,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {payments.map(p => (
+                    {displayedPayments.map(p => (
                       <tr key={p.id} className="admin-readable-row border-b border-slate-100">
                         <td className="p-3 text-slate-400 font-mono text-[10px]">{p.id}</td>
                         <td className="p-3 font-semibold text-slate-800">{p.traineeName}</td>

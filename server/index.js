@@ -36,6 +36,7 @@ import {
   verifyPassword
 } from './auth.js';
 import { invoiceDescription } from '../shared/invoice-description.js';
+import { sameProviderPayment } from '../shared/payment-ledger.js';
 
 const RIVHIT_TEST_BASE_URL = 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc';
 const RIVHIT_PRODUCTION_BASE_URL = 'https://icredit.rivhit.co.il/API/PaymentPageRequest.svc';
@@ -744,7 +745,10 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     if (!state) throw new Error('CLUB_STATE_MISSING');
     const user = (state.payload.users || []).find(candidate => candidate.id === userId);
     if (!user) throw new Error('PAYMENT_USER_NOT_FOUND');
-    if ((state.payload.payments || []).some(existing => existing.id === paymentId)) return;
+    if ((state.payload.payments || []).some(existing => sameProviderPayment(existing, {
+      id: paymentId, provider: 'RIVHIT', isMock: rivhitEnvironment(env) !== 'production',
+      providerSaleId: payment.saleId, providerTransactionId: payment.transactionId
+    }))) return;
 
     let updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.fa ?? order.a), state.payload.settings?.membershipPlans || []);
     if (order.cs) {

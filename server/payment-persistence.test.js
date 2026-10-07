@@ -121,6 +121,9 @@ test('verified nutrition payment unlocks the purchased service and is idempotent
   assert.equal(state.payload.payments.length, 1);
   assert.equal(state.payload.payments[0].amount, 350);
 
+  // Webhook may have recorded SaleId before SaleDetails supplies TransactionId.
+  state.payload.payments[0] = { ...state.payload.payments[0], id: 'payment-rivhit-sale-1', providerTransactionId: 'sale-1' };
+
   const repeatedResponse = await worker.fetch(verifyRequest(), env);
   assert.equal(repeatedResponse.status, 200);
   assert.equal(state.payload.payments.length, 1);

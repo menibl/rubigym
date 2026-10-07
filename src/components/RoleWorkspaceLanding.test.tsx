@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RoleWorkspaceLanding } from './RoleWorkspaceLanding';
-import { MembershipType, UserRole, type User, type OpenGymSession, type TrainingSession } from '../types';
+import { Gender, MembershipType, UserRole, type User, type OpenGymSession, type TrainingSession } from '../types';
 
 const trainee = { id: 'trainee', name: 'Test', role: UserRole.TRAINEE, membershipType: MembershipType.OPEN_GYM } as User;
 const openGym = { id: 'open', date: '2099-10-02', timeSlot: '10:15-11:00', registeredUsers: ['trainee'], maxParticipants: 10 } as OpenGymSession;
@@ -39,4 +39,13 @@ test('membership tile contains every assigned plan and personal/duo balances on 
 
 test('membership summary is not displayed on staff home', () => {
   assert.doesNotMatch(render({ ...trainee, role: UserRole.COACH }, []), /סיכום המנויים, התשלומים ויתרות האימונים/);
+});
+
+test('group home provides previous and upcoming mobile program buttons without requiring attendance registration', () => {
+  const groupUser = { ...trainee, membershipType: MembershipType.GROUP_MONTHLY, gender: Gender.MALE, age: 30 };
+  const group = (id: string, date: string) => ({ id, date, time: '19:00', title: 'קבוצת בנים', genderRestriction: Gender.MALE, allowedMemberships: [MembershipType.CORE_GROUPS], registeredUsers: [] } as TrainingSession);
+  const html = renderToStaticMarkup(<RoleWorkspaceLanding activeUser={groupUser} sessions={[group('previous', '2020-01-01'), group('next', '2099-01-01')]} openGymSessions={[]} availableGroupSessionIds={['previous']} onOpenSessionProgram={() => {}} onSelect={() => {}} onOpenProfile={() => {}} />);
+  assert.match(html, /תוכנית האימון הקודמת של הקבוצה/);
+  assert.match(html, /עדיין לא שובצה תוכנית/);
+  assert.match(html, /2020-01-01/); assert.match(html, /2099-01-01/);
 });

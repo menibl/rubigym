@@ -22,6 +22,7 @@ import {
 import { Announcement, Gender, MEMBERSHIP_TYPE_LABELS, MembershipType, MembershipPlanConfig, Message, OpenGymSession, Payment, TrainingSession, User, UserRole } from '../types';
 import { HomeMembershipSummary } from './HomeMembershipSummary';
 import { nextBookedSession } from '../data/nextBookedSession';
+import { homeGroupSessions } from '../../shared/group-program-access.js';
 
 export type WorkspaceView =
   | 'CLUB_MANAGEMENT'
@@ -40,6 +41,8 @@ interface RoleWorkspaceLandingProps {
   activeUser: User;
   onSelect: (view: WorkspaceView, contactId?: string) => void;
   onOpenProfile: () => void;
+  onOpenSessionProgram?: (session: TrainingSession) => void;
+  availableGroupSessionIds?: string[];
   users?: User[];
   sessions?: TrainingSession[];
   openGymSessions: OpenGymSession[];
@@ -65,6 +68,8 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   activeUser,
   onSelect,
   onOpenProfile,
+  onOpenSessionProgram,
+  availableGroupSessionIds = [],
   users = [],
   sessions = [],
   openGymSessions,
@@ -86,6 +91,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
       ? 'מאמן'
       : 'מתאמן';
   const unreadChatCount = messages.filter(message => message.receiverId === activeUser.id && !message.read).length;
+  const groupSessions = homeGroupSessions(activeUser, sessions);
   const openChat = (contactId = '') => {
     onSelect('CHAT', contactId);
   };
@@ -264,6 +270,15 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
               : <strong>אין כרגע אימון משובץ</strong>}
           </div>
         </div>
+        {isTrainee && (groupSessions.next || groupSessions.previous) && <div className="flex flex-wrap gap-2" dir="rtl" aria-label="תוכניות אימוני הקבוצה">
+          {([{ session: groupSessions.next, label: 'תוכנית האימון' }, { session: groupSessions.previous, label: 'תוכנית האימון הקודמת של הקבוצה' }]).map(({ session, label }) => {
+            const available = session && availableGroupSessionIds.includes(session.id);
+            return <button key={label} type="button" disabled={!available} onClick={() => session && onOpenSessionProgram?.(session)} className="min-h-11 rounded-xl border border-amber-400/50 bg-zinc-900 px-4 py-3 text-sm font-bold text-amber-200 disabled:border-zinc-700 disabled:text-zinc-400">
+              <span className="block">{label}</span>
+              <span className="block text-xs">{session ? `${session.title} · ${session.date} ${session.time}${available ? '' : ' · עדיין לא שובצה תוכנית'}` : 'אין עדיין אימון קודם'}</span>
+            </button>;
+          })}
+        </div>}
         {!isTrainee && (
           <section className="role-home-alert-center" aria-label="הודעות חדשות למאמן ולמנהל">
             <header>
