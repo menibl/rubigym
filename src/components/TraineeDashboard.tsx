@@ -5,6 +5,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
+import { uniquePayments } from '../../shared/payment-ledger.js';
 import { fitsSessionAge, isYouthSession, sessionAgeMax } from '../../shared/youth-session.js';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { getGenderLabel } from '../data/userProfile';
@@ -334,7 +335,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       };
     }));
 
-    onUpdatePayments([{
+    onUpdatePayments(uniquePayments([{
       id: `payment-rivhit-${verified.transactionId || verified.paymentReference}`,
       traineeId: activeUser.id,
       traineeName: activeUser.name,
@@ -342,6 +343,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       discountCode: verified.discountCode,
       paymentReference: verified.paymentReference,
       providerTransactionId: verified.transactionId,
+      providerSaleId: verified.saleId,
+      provider: 'RIVHIT',
       familyMemberPlans: verified.familyMemberPlans,
       date: new Date().toISOString().split('T')[0],
       timestamp: new Date().toISOString(),
@@ -351,8 +354,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       billingTermMonths: verified.termMonths,
       sessionsPurchased: verified.includedSessions,
       paymentMethod: `RIVHIT iCredit${verified.last4Digits ? ` •••• ${verified.last4Digits}` : ''}`,
-      isMock: false
-    }, ...payments]);
+      isMock: Boolean(verified.isMock)
+    }, ...payments]) as Payment[]);
   };
 
   useEffect(() => {

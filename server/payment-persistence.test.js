@@ -127,6 +127,8 @@ test('verified nutrition payment unlocks the purchased service and is idempotent
   const repeatedResponse = await worker.fetch(verifyRequest(), env);
   assert.equal(repeatedResponse.status, 200);
   assert.equal(state.payload.payments.length, 1);
+  assert.equal(state.payload.payments[0].providerTransactionId, 'transaction-1');
+  assert.match(state.payload.payments[0].paymentMethod, /1111/);
 });
 
 test('verified non-nutrition purchase is persisted for staff alerts', async () => {
