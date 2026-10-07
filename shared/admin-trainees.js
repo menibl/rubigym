@@ -1,14 +1,7 @@
+import { uniquePayments } from './payment-ledger.js';
 /** @param {any[]} payments @param {string} userId */
 export function traineePayments(payments, userId) {
-  const seen = new Set();
-  return payments.filter(payment => payment.traineeId === userId)
-    .sort((a, b) => String(b.timestamp || b.date).localeCompare(String(a.timestamp || a.date)))
-    .filter(payment => {
-      const key = payment.providerTransactionId || payment.paymentReference || payment.id;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+  return uniquePayments(payments.filter(payment => payment.traineeId === userId));
 }
 
 /** @param {any} payment @param {any[]} discounts */

@@ -47,6 +47,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { CoachDashboard } from './components/CoachDashboard';
 import { TraineeDashboard } from './components/TraineeDashboard';
 import { resolveSessionProgram } from './data/sessionProgram';
+import { homeGroupSessions } from '../shared/group-program-access.js';
 import { AuthGateway } from './components/AuthGateway';
 import { PublicLandingPage } from './components/PublicLandingPage';
 import { RubisLogo } from './components/RubisLogo';
@@ -658,7 +659,9 @@ export default function App() {
     const displayProgram = session?.isPersonalTraining
       ? (session && personalPlan ? personalPlanToDisplayProgram(personalPlan, activeUser.name, session) : undefined)
       : groupProgram;
-    if (session && isRegistered && displayProgram) {
+    const homeGroups = homeGroupSessions(activeUser, sessions);
+    const hasHomeGroupAccess = !session?.isPersonalTraining && [homeGroups.next?.id, homeGroups.previous?.id].includes(session?.id);
+    if (session && (isRegistered || hasHomeGroupAccess) && displayProgram) {
       return <TraineeSessionWorkoutView session={session} program={displayProgram} />;
     }
     return (
@@ -833,6 +836,8 @@ export default function App() {
               users={users}
               sessions={sessions}
               announcements={announcements}
+              availableGroupSessionIds={sessions.filter(session => !session.isPersonalTraining && resolveSessionProgram(session, workoutPlans, groupWorkoutPrograms).group).map(session => session.id)}
+              onOpenSessionProgram={session => window.open(`${window.location.origin}${window.location.pathname}#trainee-session-workout=${encodeURIComponent(session.id)}`, '_blank', 'noopener,noreferrer')}
               messages={messages}
               payments={payments}
               membershipPlans={settings.membershipPlans}
