@@ -9,7 +9,7 @@ export const BILLING_PERIOD_OPTIONS: Array<{ value: MembershipBillingPeriod; lab
   { value: 'SIX_MONTHS', label: 'לחצי שנה' },
   { value: 'ANNUAL', label: 'לשנה — תשלום חד־פעמי' },
   { value: 'SESSION_PACK', label: 'לפי כמות אימונים' },
-  { value: 'MONTHLY_ANNUAL_COMMITMENT', label: 'חיוב חודשי בהתחייבות לשנה' }
+  { value: 'MONTHLY_ANNUAL_COMMITMENT', label: 'הוראת קבע — 12 חיובים חודשיים' }
 ];
 
 export const billingPeriodForPlan = (plan?: MembershipPlanConfig): MembershipBillingPeriod => {

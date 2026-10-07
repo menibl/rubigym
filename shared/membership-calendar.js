@@ -29,6 +29,9 @@ export function repairCalendarMemberships(payload, now = new Date()) {
       || user.registrationPaymentPending || user.familyPaymentPending) return user;
     const paid = (payload.payments || []).some(payment => {
       if (payment.status !== 'PAID' || payment.purchaseMode === 'ADDON') return false;
+      // Recurring access is derived from the verified charge number, not the
+      // IPN arrival date. A delayed notification must not buy a free month.
+      if (payment.recurringChargeNumber !== undefined) return false;
       const when = payment.timestamp ? new Date(payment.timestamp) : null;
       const date = when && Number.isFinite(when.getTime()) ? clubDate(when) : String(payment.date || '');
       if (date.slice(0, 7) !== today.slice(0, 7) || date > today) return false;

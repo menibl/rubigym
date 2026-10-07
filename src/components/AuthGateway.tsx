@@ -738,7 +738,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                     return Math.max(0, base - discount);
                   })()}</strong>
                 </div>
-                {!isFamilyPlan && billingPeriodForPlan(selectedPlanConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <small className="auth-mock-note">חיוב חודשי קבוע למשך 12 חודשים. בקשת ביטול נכנסת לתוקף בהתאם לתנאי המסלול.</small>}
+                {!isFamilyPlan && billingPeriodForPlan(selectedPlanConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <small className="auth-mock-note">הוראת קבע: חיוב ראשון עבור החודש הנוכחי, והבאים בכל 1 בחודש. 12 חיובים בסך הכול; חידוש רק באישורכם. תנאי החיוב יוצגו לאישור לפני המעבר לתשלום.</small>}
                 <small className="auth-mock-note">פרטי האשראי יוזנו רק בעמוד המאובטח של RIVHIT iCredit ולא יישמרו ב־BALY.</small>
                 {!isRivhitConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}
                 <button className="auth-primary" type="submit" disabled={paymentStarting || !isRivhitConfigured()}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>

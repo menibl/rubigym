@@ -260,7 +260,7 @@ test('checkout uses the manager configured plan price and fixed period', async (
   assert.equal(providerRequest.CreateRecurringSale, false);
 });
 
-test('annual commitment checkout stays one-off even with the legacy recurring flag', async () => {
+test('annual recurring checkout requires the separate page and calendar verification, not only the legacy flag', async () => {
   let providerRequest;
   const env = {
     RIVHIT_ENVIRONMENT: 'production',
@@ -283,11 +283,9 @@ test('annual commitment checkout stays one-off even with the legacy recurring fl
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'GROUP_ANNUAL', mode: 'REGISTRATION' })
   }), env);
-  assert.equal(response.status, 200);
-  assert.equal(providerRequest.Items[0].UnitPrice, 525);
-  assert.equal(providerRequest.SaleType, 1);
-  assert.equal(providerRequest.CreateRecurringSale, false);
-  assert.equal(providerRequest.RecurringSaleCount, undefined);
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, 'RECURRING_NOT_READY');
+  assert.equal(providerRequest, undefined);
 });
 
 test('monthly plan remains one-off even when the legacy recurring ENV is enabled', async () => {
