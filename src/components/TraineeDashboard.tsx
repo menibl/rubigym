@@ -10,6 +10,8 @@ import { fitsSessionAge, isYouthSession, sessionAgeMax } from '../../shared/yout
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
+import { BookingCategoryPicker } from './BookingCategoryPicker';
+import { BookingFilter, matchesBookingCategory, traineeBookingCategories } from '../data/traineeBookingFilter';
 import { resolveSessionProgram } from '../data/sessionProgram';
 import { nextBookedSession } from '../data/nextBookedSession';
 import { savePersonalBooking } from '../data/clubServer';
@@ -203,8 +205,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [selectedBookingDate, setSelectedBookingDate] = useState(() => toLocalIsoDate(new Date()));
   const [bookingView, setBookingView] = useState<'DAY' | 'WEEK'>('DAY');
   const [bookingNameFilter, setBookingNameFilter] = useState('');
-  const [bookingTypeFilter, setBookingTypeFilter] = useState<'ALL' | 'GROUP' | 'PERSONAL' | 'OPEN_GYM'>('ALL');
+  const [bookingTypeFilter, setBookingTypeFilter] = useState<BookingFilter>('PRIMARY');
   const [showAllBookingOptions, setShowAllBookingOptions] = useState(false);
+  const [showAdditionalBookingOptions, setShowAdditionalBookingOptions] = useState(false);
+  const bookingCategories = traineeBookingCategories(activeUser);
+  useEffect(() => {
+    setBookingTypeFilter('PRIMARY');
+    setShowAllBookingOptions(false);
+    setShowAdditionalBookingOptions(false);
+  }, [activeUser.id]);
   // Notification banner for feedback
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [pendingLatePersonalCancellation, setPendingLatePersonalCancellation] = useState<TrainingSession | null>(null);
@@ -1306,13 +1315,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       .filter(session => !isYouthSession(session) || fitsSessionAge(session, activeUser))
       .filter(session => new Date(`${session.date}T${session.time}`).getTime() > now.getTime())
       .filter(session => !nameNeedle || session.title.toLocaleLowerCase('he-IL').includes(nameNeedle))
-      .filter(session => bookingTypeFilter === 'ALL' || (bookingTypeFilter === 'PERSONAL' ? session.isPersonalTraining : bookingTypeFilter === 'GROUP' ? !session.isPersonalTraining : false))
+      .filter(session => matchesBookingCategory(bookingTypeFilter, bookingCategories.primary, session.isPersonalTraining ? 'PERSONAL' : 'GROUP'))
       .filter(session => showAllBookingOptions || isBooked(session) || isWaitlisted(session) || (isSessionRelevantToTrainee(session) && checkBookingEligibility(session).eligible))
       .map(session => ({ kind: 'SESSION', startTime: session.time, session }));
     const openGymItems: BookingListItem[] = openGymSessions
       .filter(openGym => openGym.date === dateKey)
       .filter(openGym => new Date(`${openGym.date}T${openGym.timeSlot.split('-')[0].trim()}`).getTime() > now.getTime())
-      .filter(() => bookingTypeFilter === 'ALL' || bookingTypeFilter === 'OPEN_GYM')
+      .filter(() => matchesBookingCategory(bookingTypeFilter, bookingCategories.primary, 'OPEN_GYM'))
       .filter(() => !nameNeedle || 'open gym אימון חופשי'.includes(nameNeedle))
       .filter(openGym => showAllBookingOptions || isOpenGymBooked(openGym) || isOpenGymWaitlisted(openGym) || (hasOpenGymMembershipAccess && checkOpenGymBookingEligibility(openGym).eligible))
       .map(openGym => ({ kind: 'OPEN_GYM', startTime: openGym.timeSlot.split('-')[0].trim(), openGym }));
@@ -1615,7 +1624,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                         setSelectedBookingDate(nextSession.date);
                         setBookingView('DAY');
                         setBookingNameFilter('');
-                        setBookingTypeFilter(nextSession.kind === 'OPEN_GYM' ? 'OPEN_GYM' : 'ALL');
+                        setBookingTypeFilter(nextSession.kind === 'OPEN_GYM' ? 'OPEN_GYM' : nextSession.isPersonalTraining ? 'PERSONAL' : 'GROUP');
+                        setShowAllBookingOptions(false);
+                        setShowAdditionalBookingOptions(true);
                         setActiveTab('classes');
                       }}>לצפייה באימון</button>
                     <div className="capacity-block">
@@ -1682,6 +1693,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {/* TAB 1: CLASSES BOOKING */}
         {activeTab === 'classes' && (
           <div className="space-y-5 booking-flow">
+            <BookingCategoryPicker primary={bookingCategories.primary} additional={bookingCategories.additional}
+              filter={bookingTypeFilter} allClub={showAllBookingOptions} expanded={showAdditionalBookingOptions}
+              onExpand={() => setShowAdditionalBookingOptions(value => !value)}
+              onChoose={(filter, allClub) => { setBookingTypeFilter(filter); setShowAllBookingOptions(allClub); }} />
             <div className="booking-view-toggle" dir="rtl">
               <button type="button" className={bookingView === 'DAY' ? 'active' : ''} onClick={() => setBookingView('DAY')}>רשימה יומית</button>
               <button type="button" className={bookingView === 'WEEK' ? 'active' : ''} onClick={() => setBookingView('WEEK')}>לוח שבועי</button>
@@ -1710,20 +1725,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   placeholder="לדוגמה: כוח"
                 />
               </label>
-              <label>
-                <span>סוג האימון</span>
-                <select value={bookingTypeFilter} onChange={event => setBookingTypeFilter(event.target.value as 'ALL' | 'GROUP' | 'PERSONAL' | 'OPEN_GYM')}>
-                  <option value="ALL">כל הסוגים</option>
-                  <option value="GROUP">אימון קבוצתי</option>
-                  <option value="PERSONAL">אימון אישי</option>
-                  <option value="OPEN_GYM">Open Gym</option>
-                </select>
-              </label>
               <div className="booking-filter-actions">
                 <button type="button" onClick={() => setSelectedBookingDate(toLocalIsoDate(new Date()))}>חזרה להיום</button>
-                <button type="button" className={showAllBookingOptions ? 'active' : ''} onClick={() => setShowAllBookingOptions(value => !value)}>
-                  {showAllBookingOptions ? 'הצג רק אימונים שמתאימים לי' : 'צפה בכל אימוני המועדון'}
-                </button>
               </div>
             </div>
             </>}
@@ -1757,7 +1760,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
             {bookingView === 'DAY' && <>
             <div className="booking-list-notice">
-              <span>{showAllBookingOptions ? 'מוצגים כל אימוני המועדון, כולל אימונים שאינם כלולים במסלול שלך.' : 'מוצגים אימונים שמתאימים למסלול ולנתונים שלך, לצד ההרשמות הקיימות.'}</span>
+              <span>{showAllBookingOptions ? 'מוצגים כל אימוני המועדון, כולל אימונים שאינם כלולים במסלול שלך.' : bookingTypeFilter === 'PRIMARY' ? 'מוצגים רק אימוני המסלול הראשי שמתאימים לך, לצד ההרשמות הקיימות באותו סוג אימון.' : 'מוצגים אימונים בסוג שנבחר שמתאימים לך, לצד ההרשמות הקיימות.'}</span>
               {activePenaltiesCount > 0 && (
                 <span className="bg-rose-100 text-rose-800 font-semibold text-[10px] px-2 py-1 rounded-full border border-rose-200">
                   ⚠️ יש לך {activePenaltiesCount} נקודות שחורות פעילות לחובתך!
