@@ -40,6 +40,72 @@ function fixture(paid = 280) {
   return { post, request, store, claims, state: () => state, calls: () => providerCalls, amount: () => amount, asManager: () => { role = 'MANAGER'; } };
 }
 
+test('family checkout charges all selected programs for their real members and activates them once', async () => {
+  const f = fixture();
+  f.state().payload.nutritionPlans = [{ id: 'nutrition-child', traineeId: 'child', isPaid: false }, { id: 'nutrition-other', traineeId: 'other', isPaid: false }];
+  f.request.familyMemberPlans[0].additionalPlans = [{ membershipType: 'WORKOUT_COACHING' }];
+  f.request.familyMemberPlans[1].additionalPlans = [{ membershipType: 'NUTRITION_COACHING' }, { membershipType: 'PERSONAL_TRAINING', trainingSessionsCount: 2 }, { membershipType: 'DUO_TRAINING', trainingSessionsCount: 3 }];
+  f.state().payload.users[1].personalTrainingRemaining = 4;
+  f.state().payload.users[1].duoTrainingRemaining = 5;
+  const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+  assert.equal(quote.packageAmount, 2710); // 2*280 + 350 + 350 + 2*200 + 3*350
+  assert.equal(quote.creditAmount, 280); assert.equal(quote.amountDue, 2430);
+  const response = await f.post('create', { ...f.request, quoteKey: quote.quoteKey }); assert.equal(response.status, 200);
+  const checkout = await response.json(); assert.equal(f.amount(), 2430);
+  assert.equal(f.state().payload.users[0].requestedWorkoutPlan, undefined);
+  for (let i = 0; i < 2; i++) assert.equal((await f.post('verify', { paymentReference: checkout.paymentReference })).status, 200);
+  const [payer, child] = f.state().payload.users;
+  assert.equal(payer.membershipType, 'OPEN_GYM'); assert.equal(payer.requestedWorkoutPlan, true);
+  assert.deepEqual(payer.secondaryMemberships, ['WORKOUT_COACHING']);
+  assert.equal(child.nutritionPlanPaid, true);
+  assert.deepEqual(child.secondaryMemberships, ['NUTRITION_COACHING', 'PERSONAL_TRAINING', 'DUO_TRAINING']);
+  assert.equal(child.personalTrainingRemaining, 6); assert.equal(child.duoTrainingRemaining, 8);
+  assert.equal(f.state().payload.nutritionPlans[0].isPaid, true);
+  assert.equal(f.state().payload.nutritionPlans[1].isPaid, false);
+  assert.deepEqual(payer.familyMemberPlans[1].additionalPlans, f.request.familyMemberPlans[1].additionalPlans);
+  assert.equal(f.state().payload.payments.length, 2);
+});
+
+test('family additions use trusted active catalog prices, not client supplied amounts', async () => {
+  const f = fixture();
+  f.state().payload.settings = { membershipPlans: [
+    { id: 'OPEN_GYM', price: 290, active: true, category: 'PRIMARY' },
+    { id: 'NUTRITION_PLAN', price: 410, active: true, category: 'ADD_ON' }
+  ] };
+  f.request.familyMemberPlans[1].additionalPlans = [{ membershipType: 'NUTRITION_PLAN', price: 1 }];
+  const quote = await (await f.post('create', { ...f.request, amount: 1, quoteOnly: true })).json();
+  assert.equal(quote.packageAmount, 990);
+  assert.equal(quote.amountDue, 710);
+  f.state().payload.settings.membershipPlans[1].active = false;
+  assert.equal((await f.post('create', { ...f.request, quoteOnly: true })).status, 400);
+  assert.equal(f.calls(), 0);
+});
+
+test('skipped family member extras are neither charged nor activated', async () => {
+  const f = fixture();
+  f.request.familyMemberPlans[0].participation = 'SKIP';
+  f.request.familyMemberPlans[0].additionalPlans = [{ membershipType: 'NUTRITION_COACHING' }];
+  f.request.familyMemberPlans[1].additionalPlans = [{ membershipType: 'WORKOUT_COACHING' }];
+  const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+  assert.equal(quote.packageAmount, 630); assert.equal(quote.creditAmount, 0);
+  const checkout = await (await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).json();
+  assert.equal((await f.post('verify', { paymentReference: checkout.paymentReference })).status, 200);
+  assert.equal(f.state().payload.users[0].nutritionPlanPaid, undefined);
+  assert.equal(f.state().payload.users[1].requestedWorkoutPlan, true);
+});
+
+for (const extras of [
+  [{ membershipType: 'OPEN_GYM' }],
+  [{ membershipType: 'WORKOUT_COACHING' }, { membershipType: 'WORKOUT_COACHING' }],
+  [{ membershipType: 'PERSONAL_TRAINING', trainingSessionsCount: -1 }],
+  [{ membershipType: 'DUO_TRAINING', trainingSessionsCount: 1.5 }],
+  [{ membershipType: 'NOT_A_PLAN' }]
+]) test(`rejects invalid family extras before provider dispatch: ${JSON.stringify(extras)}`, async () => {
+  const f = fixture(); f.request.familyMemberPlans[1].additionalPlans = extras;
+  assert.equal((await f.post('create', { ...f.request, quoteOnly: true })).status, 400);
+  assert.equal(f.calls(), 0);
+});
+
 test('stale undispatched claim can retry, but dispatched or unknown claims cannot', async () => {
   for (const stage of ['RESERVED', 'DISPATCHED', null]) {
     const f = fixture();
