@@ -7,6 +7,7 @@ import { calendarTerm, repairCalendarMemberships } from '../shared/membership-ca
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
+import { familySelectedPlans, familyPurchaseBenefits } from '../shared/family-multiple-plans.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../shared/club-check-in.js';
@@ -291,12 +292,23 @@ const normalizeFamilyPlans = (plans, catalog) => {
     }
     const isTraining = membershipType === 'PERSONAL_TRAINING' || membershipType === 'DUO_TRAINING';
     const trainingSessionsCount = isTraining ? Math.max(1, Math.min(50, Math.round(Number(plan?.trainingSessionsCount || 1)))) : undefined;
+    if (plan.additionalPlans !== undefined && (!Array.isArray(plan.additionalPlans) || plan.additionalPlans.length > 20)) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+    const additionalPlans = participation === 'INCLUDED' ? (plan.additionalPlans || []).map(item => {
+      const type = String(item?.membershipType || '');
+      const configured = planPrice(type, catalog).plan;
+      if (configured ? configured.category !== 'ADD_ON' : !['WORKOUT_COACHING', 'WORKOUT_PLAN', 'NUTRITION_COACHING', 'NUTRITION_PLAN', 'PERSONAL_TRAINING', 'DUO_TRAINING'].includes(type)) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+      const count = ['PERSONAL_TRAINING', 'DUO_TRAINING'].includes(type) ? Number(item.trainingSessionsCount || 1) : undefined;
+      if (count !== undefined && (!Number.isInteger(count) || count < 1 || count > 50)) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+      return { membershipType: type, trainingSessionsCount: count };
+    }) : [];
+    if (new Set([membershipType, ...additionalPlans.map(item => item.membershipType)]).size !== additionalPlans.length + 1) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
     return {
       memberId: plan?.memberId ? String(plan.memberId).slice(0, 100) : undefined,
       memberName: String(plan?.memberName || `בן משפחה ${index + 1}`).slice(0, 100),
       membershipType,
       participation,
-      trainingSessionsCount
+      trainingSessionsCount,
+      ...(additionalPlans.length ? { additionalPlans } : {})
     };
   });
 };
@@ -320,7 +332,8 @@ const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
       if (body.mode !== 'PRIMARY' && familyMemberPlans.some(plan => plan.participation !== 'INCLUDED')) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
       if (familyMemberPlans.length !== count) throw new Error('INVALID_FAMILY_MEMBER_COUNT');
       if (!familyMemberPlans.some(plan => plan.participation === 'INCLUDED')) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
-      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + (plan.participation !== 'INCLUDED' ? 0 : familyPlanAmount(plan.membershipType, planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1))), 0);
+      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + (plan.participation !== 'INCLUDED' ? 0 : familySelectedPlans(plan).reduce((memberSum, item) =>
+        memberSum + familyPlanAmount(item.membershipType, planPrice(item.membershipType, catalog).price * (item.trainingSessionsCount || 1)), 0)), 0);
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
     return { amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: mode !== 'CUSTOM_COMBINED', recurringMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 0 };
@@ -683,7 +696,8 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount, catalog = []
         personalTrainingRemaining: type === 'PERSONAL_TRAINING' ? customPlan.trainingSessionsCount : candidate.personalTrainingRemaining,
         duoTrainingRemaining: type === 'DUO_TRAINING' ? customPlan.trainingSessionsCount : candidate.duoTrainingRemaining,
         nutritionPlanPaid: nutritionTypes.includes(type) ? true : candidate.nutritionPlanPaid,
-        requestedWorkoutPlan: workoutTypes.includes(type) ? true : candidate.requestedWorkoutPlan
+        requestedWorkoutPlan: workoutTypes.includes(type) ? true : candidate.requestedWorkoutPlan,
+        ...familyPurchaseBenefits(candidate, customPlan)
       };
     }
 
@@ -775,14 +789,18 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     const payload = appendUserChangeMessages(state.payload, {
       ...state.payload,
       users: updatedUsers,
-      nutritionPlans: ['NUTRITION_COACHING', 'NUTRITION_PLAN'].includes(order.m)
-        ? (state.payload.nutritionPlans || []).map(plan => plan.traineeId === userId ? {
+      nutritionPlans: (state.payload.nutritionPlans || []).map(plan => {
+        const familySelection = order.m === 'FAMILY_MEMBERSHIP' && order.fm === 'CUSTOM_COMBINED'
+          ? order.fp?.find(item => item.memberId === plan.traineeId && item.participation === 'INCLUDED') : undefined;
+        const nutrition = familySelection ? familySelectedPlans(familySelection).find(item => ['NUTRITION_COACHING', 'NUTRITION_PLAN'].includes(item.membershipType)) : undefined;
+        if ((['NUTRITION_COACHING', 'NUTRITION_PLAN'].includes(order.m) && plan.traineeId === userId) || nutrition) return {
             ...plan,
             isPaid: true,
-            price: Number(order.a),
+            price: nutrition ? plan.price : Number(order.a),
             paymentStatus: 'PAID'
-          } : plan)
-        : state.payload.nutritionPlans,
+          };
+        return plan;
+      }),
       payments: [{
         id: paymentId,
         traineeId: userId,

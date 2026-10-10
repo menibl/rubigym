@@ -93,6 +93,7 @@ import {
 import { DiscountCodeField } from './DiscountCodeField';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
+import { familyPurchaseBenefits } from '../../shared/family-multiple-plans.js';
 import { billingPeriodForPlan, billingPeriodLabel, isSelectableTrainingCard, membershipCheckoutAmount } from '../data/membershipBilling';
 
 interface TraineeDashboardProps {
@@ -274,7 +275,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             duoTrainingCardSize: plan.membershipType === MembershipType.DUO_TRAINING ? undefined : user.duoTrainingCardSize,
             duoTrainingRemaining: plan.membershipType === MembershipType.DUO_TRAINING ? plan.trainingSessionsCount : user.duoTrainingRemaining,
             nutritionPlanPaid: plan.membershipType === MembershipType.NUTRITION_COACHING ? true : user.nutritionPlanPaid,
-            requestedWorkoutPlan: [MembershipType.WORKOUT_COACHING, MembershipType.OPEN_GYM_WITH_PLAN].includes(plan.membershipType) ? true : user.requestedWorkoutPlan
+            requestedWorkoutPlan: [MembershipType.WORKOUT_COACHING, MembershipType.OPEN_GYM_WITH_PLAN].includes(plan.membershipType) ? true : user.requestedWorkoutPlan,
+            ...familyPurchaseBenefits(user, plan)
           };
         }
       }
