@@ -9,6 +9,7 @@ import {
 } from '../types';
 import {
   familyPlanCatalog,
+  familyMemberPlanPrice,
   familyPurchaseAmount,
   resizeFamilyPlans
 } from '../data/familyMembership';
@@ -41,11 +42,10 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
     resizeFamilyPlans(plans, count, payerName, payerId).map((plan, planIndex) => planIndex === index ? { ...plan, ...patch } : plan)
   );
   const amount = familyPurchaseAmount('CUSTOM_COMBINED', count, normalizedPlans, membershipPlans);
-  const priceFor = (membershipType: MembershipType) => catalog.find(plan => plan.id === membershipType)?.price ?? 0;
 
   return <section className="space-y-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4" dir="rtl">
     <div className="flex items-center gap-2"><Users size={18} className="text-indigo-700" /><strong className="text-sm text-slate-950">בחירת מבנה המנוי המשפחתי</strong></div>
-    <p className="rounded-xl bg-indigo-900 p-3 text-sm text-white"><strong>משפחתי מותאם</strong> — מסלול נפרד לכל בן משפחה ותשלום מאוחד.</p>
+    <p className="rounded-xl bg-indigo-900 p-3 text-sm text-white"><strong>משפחתי מותאם</strong> — מסלול ראשי ותוספות לכל בן משפחה, בתשלום מאוחד.</p>
 
     <label className="block text-xs font-bold text-slate-700">מספר בני משפחה
       <select value={count} onChange={event => changeCount(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5">
@@ -87,12 +87,36 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
           {included && <label className="text-[11px] font-bold text-slate-600">מסלול<select value={plan.membershipType} onChange={event => {
             const membershipType = event.target.value as MembershipType;
             const usesCard = membershipType === MembershipType.PERSONAL_TRAINING || membershipType === MembershipType.DUO_TRAINING;
-            updatePlan(index, { membershipType, trainingSessionsCount: usesCard ? 10 : undefined });
+            updatePlan(index, { membershipType, trainingSessionsCount: usesCard ? 10 : undefined,
+              additionalPlans: (plan.additionalPlans || []).filter(item => item.membershipType !== membershipType) });
           }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
             {!catalog.some(config => config.id === plan.membershipType) && <option value={plan.membershipType} disabled>המסלול אינו זמין — יש לבחור מסלול פעיל</option>}
             {catalog.map(config => <option key={config.id} value={config.id}>{config.label} — ₪{config.price} · {billingPeriodLabel(config)}</option>)}
           </select></label>}
-          {included && isTrainingCard ? <label className="text-[11px] font-bold text-slate-600">מספר אימונים<input type="number" min={1} max={50} value={plan.trainingSessionsCount || 10} onChange={event => updatePlan(index, { trainingSessionsCount: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label> : <div className="self-end rounded-lg bg-slate-100 px-3 py-2 text-center text-xs font-black text-slate-800">₪{included ? priceFor(plan.membershipType) : 0}</div>}
+          {included && isTrainingCard && <label className="text-[11px] font-bold text-slate-600">מספר אימונים<input type="number" min={1} max={50} value={plan.trainingSessionsCount || 1} onChange={event => updatePlan(index, { trainingSessionsCount: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label>}
+          {included && <fieldset className="sm:col-span-3 rounded-xl bg-slate-950 p-3 text-slate-100">
+            <legend className="rounded-lg bg-slate-950 px-2 text-sm font-bold">מסלולים נוספים — {plan.memberName}</legend>
+            <p className="mb-2 text-xs text-slate-300">אפשר לסמן כמה תוספות, כגון תוכנית אימון ותוכנית תזונה.</p>
+            {(plan.additionalPlans || []).filter(item => !catalog.some(config => config.id === item.membershipType && config.category === 'ADD_ON')).map(item => <div key={item.membershipType} role="alert" className="mb-2 rounded-lg border border-amber-400 p-2 text-sm">
+              המסלול {membershipPlans.find(config => config.id === item.membershipType)?.label || item.membershipType} אינו זמין לרכישה.
+              <button type="button" className="mr-2 min-h-11 underline" onClick={() => updatePlan(index, { additionalPlans: (plan.additionalPlans || []).filter(other => other.membershipType !== item.membershipType) })}>הסר תוספת</button>
+            </div>)}
+            <div className="space-y-2">{catalog.filter(config => config.category === 'ADD_ON' && config.id !== plan.membershipType).map(config => {
+              const selected = plan.additionalPlans?.find(item => item.membershipType === config.id);
+              const training = [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(config.id as MembershipType);
+              return <div key={config.id} className="rounded-lg border border-slate-700 p-2">
+                <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
+                  <input type="checkbox" className="h-5 w-5 shrink-0" checked={Boolean(selected)} onChange={event => updatePlan(index, { additionalPlans: event.target.checked
+                    ? [...(plan.additionalPlans || []), { membershipType: config.id as MembershipType, trainingSessionsCount: training ? 1 : undefined }]
+                    : (plan.additionalPlans || []).filter(item => item.membershipType !== config.id) })} />
+                  <span>{config.label} — ₪{config.price} · {billingPeriodLabel(config)}</span>
+                </label>
+                {selected && training && <label className="block text-xs">מספר אימונים — {config.label}<input type="number" min={1} max={50} value={selected.trainingSessionsCount || 1} onChange={event => updatePlan(index, { additionalPlans: (plan.additionalPlans || []).map(item => item.membershipType === config.id
+                  ? { ...item, trainingSessionsCount: Math.max(1, Math.min(50, Math.round(Number(event.target.value) || 1))) } : item) })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white" /></label>}
+              </div>;
+            })}</div>
+          </fieldset>}
+          <div className="sm:col-span-3 rounded-lg bg-slate-100 px-3 py-2 text-center text-sm font-black text-slate-800">סך הכול עבור {plan.memberName}: ₪{familyMemberPlanPrice(plan, membershipPlans).toLocaleString('he-IL')}</div>
         </article>;
       })}
       <p className="rounded-xl bg-indigo-900 p-3 text-xs text-white">סך הכול לחיוב מאוחד לבעל המשפחה: <b className="text-base">₪{amount.toLocaleString('he-IL')}</b></p>

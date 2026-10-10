@@ -43,6 +43,7 @@ import { createMembershipTerm } from '../data/membershipPolicy';
 import { billingPeriodForPlan, billingPeriodLabel, isSelectableTrainingCard, membershipCheckoutAmount } from '../data/membershipBilling';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
+import { familyPurchaseBenefits } from '../../shared/family-multiple-plans.js';
 import { isPagesDemoMode } from '../data/appMode';
 import type { PasswordLoginResult, PhoneCodeRequestResult } from '../data/clubServer';
 import { CookieConsentBanner, LegalLinks } from './LegalCenter';
@@ -501,6 +502,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       familyTrackName: isFamilyPlan ? familyBillingMode === 'ANNUAL_BY_SIZE' ? `משפחתי שנתי (${familyMembersCount} מתאמנים)` : familyBillingMode === 'MONTHLY_PER_MEMBER' ? `משפחתי חודשי (${familyMembersCount} מתאמנים)` : 'משפחתי מותאם – תשלום מאוחד' : undefined,
       registrationIncomplete: false,
       registrationCompletedAt: new Date().toISOString(),
+      ...(isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED' ? familyPurchaseBenefits({}, normalizedFamilyPlans[0]) : {}),
       imageUrl: registerGender === Gender.FEMALE
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
@@ -535,6 +537,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         duoTrainingRemaining: membershipType === MembershipType.DUO_TRAINING ? plan.trainingSessionsCount : undefined,
         nutritionPlanPaid: membershipType === MembershipType.NUTRITION_COACHING,
         requestedWorkoutPlan: membershipType === MembershipType.WORKOUT_COACHING,
+        ...familyPurchaseBenefits({}, plan),
         priorityScore: 100,
         familyId,
         familyName: newUser.familyName,

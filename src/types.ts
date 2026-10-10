@@ -251,6 +251,7 @@ export interface FamilyMemberPlanSelection {
   memberName: string;
   membershipType: MembershipType;
   trainingSessionsCount?: number;
+  additionalPlans?: Array<{ membershipType: MembershipType; trainingSessionsCount?: number }>;
 }
 
 export const TRAINING_CARD_SIZES = [1, 4, 8, 12] as const;
