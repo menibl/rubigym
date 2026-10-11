@@ -109,15 +109,23 @@ test('family registration creates separate login accounts without storing plaint
     async createSession() {}
   };
   const payer = {
-    id: 'payer-1', name: 'Parent', username: 'parent', email: 'parent@example.com', phone: '0500000001',
+    id: 'payer-1', name: 'Parent Example', username: 'parent', email: 'parent@example.com', phone: '0500000001',
     password: 'parent-password', role: 'TRAINEE', isFamilyPayer: true, familyId: 'family-1', familyMembersCount: 2
   };
   const member = {
-    id: 'member-1', name: 'Child', username: 'child', email: 'parent@example.com', phone: '',
+    id: 'member-1', name: 'Child Example', username: 'child', email: 'parent@example.com', phone: '',
     password: 'child-password', role: 'TRAINEE', familyPayerId: payer.id, familyId: payer.familyId
   };
   const env = { SMS_OTP_SIGNING_SECRET: 'family-registration-test-signing-secret-value', CLUB_ID: 'test-club' };
   const phoneVerificationToken = await createPhoneVerificationToken({ env, clubId: env.CLUB_ID, phone: payer.phone });
+
+  const invalidFamilyResponse = await worker.fetch(new Request('https://balywellness.test/api/auth/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user: payer, familyUsers: [{ ...member, name: 'Child' }], phoneVerificationToken })
+  }), { STATE_STORE: store, ...env });
+  assert.equal(invalidFamilyResponse.status, 400);
+  assert.equal(state.payload.users.length, 0);
+  assert.equal(accounts.length, 0);
 
   const response = await worker.fetch(new Request('https://balywellness.test/api/auth/register', {
     method: 'POST',
@@ -131,6 +139,6 @@ test('family registration creates separate login accounts without storing plaint
   assert.equal(state.payload.users.some(user => 'password' in user), false);
   assert.equal(accounts.every(account => account.passwordHash && !account.passwordHash.includes('password')), true);
   assert.equal(accounts.every(account => account.profile && !('password' in account.profile)), true);
-  assert.deepEqual(accounts.map(account => account.profile.name), ['Parent', 'Child']);
+  assert.deepEqual(accounts.map(account => account.profile.name), ['Parent Example', 'Child Example']);
   assert.deepEqual(accounts.map(account => account.profile.email), ['parent@example.com', 'parent@example.com']);
 });

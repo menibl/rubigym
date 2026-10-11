@@ -8,6 +8,7 @@ import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { familySelectedPlans, familyPurchaseBenefits } from '../shared/family-multiple-plans.js';
+import { splitPersonName, hasFullPersonName } from '../shared/person-name.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../shared/club-check-in.js';
@@ -607,8 +608,8 @@ const recurringFieldsFor = () => {
 };
 
 const splitCustomerName = value => {
-  const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
-  return { firstName: (parts.shift() || 'לקוח').slice(0, 20), lastName: (parts.join(' ') || 'BALY').slice(0, 30) };
+  const { firstName, lastName } = splitPersonName(value);
+  return { firstName: firstName.slice(0, 20), lastName: lastName.slice(0, 30) };
 };
 
 const paymentReturnUrl = (request, env) => {
@@ -1432,6 +1433,7 @@ const handleApi = async (request, env, url) => {
       if (!user?.id || typeof user?.password !== 'string' || user.password.length < 8 || !user?.email || !isValidEmail(user.email) || user.role !== 'TRAINEE') {
         return json({ message: 'פרטי ההרשמה או כתובת האימייל אינם תקינים.' }, 400, headers);
       }
+      if (!hasFullPersonName(user.name)) return json({ message: 'יש להזין שם פרטי ושם משפחה.' }, 400, headers);
       const identity = await getIdentity({ allowIncomplete: true });
       const state = await loadClubState(clubId);
       if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
@@ -1452,6 +1454,7 @@ const handleApi = async (request, env, url) => {
       const registrations = [user, ...familyUsers];
       for (const candidate of registrations) {
         const isFamilyMember = candidate.id !== user.id;
+        if (!hasFullPersonName(candidate?.name)) return json({ message: 'יש להזין שם פרטי ושם משפחה לכל בן משפחה.' }, 400, headers);
         if (!candidate?.id || !candidate?.name || !candidate?.username || !candidate?.email || !isValidEmail(candidate.email)
           || typeof candidate.password !== 'string' || candidate.password.length < 8 || candidate.role !== 'TRAINEE'
           || (isFamilyMember && (candidate.familyPayerId !== user.id || candidate.familyId !== user.familyId))) {
@@ -1511,6 +1514,7 @@ const handleApi = async (request, env, url) => {
       if (!identity || identity.account.role !== 'TRAINEE') return json({ message: 'Unauthorized' }, 401, headers);
       const body = await request.json();
       const candidate = body.user;
+      if (!hasFullPersonName(candidate?.name)) return json({ message: 'יש להזין שם פרטי ושם משפחה עבור בן המשפחה.' }, 400, headers);
       const state = await loadClubState(identity.session.club_id);
       const payer = state?.payload?.users?.find(userItem => userItem.id === identity.account.user_id);
       const familyMembers = state?.payload?.users?.filter(userItem => userItem.familyId && userItem.familyId === payer?.familyId) || [];
