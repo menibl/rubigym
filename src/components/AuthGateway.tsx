@@ -44,6 +44,7 @@ import { billingPeriodForPlan, billingPeriodLabel, isSelectableTrainingCard, mem
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 import { familyPurchaseBenefits } from '../../shared/family-multiple-plans.js';
+import { splitPersonName, hasFullPersonName } from '../../shared/person-name.js';
 import { isPagesDemoMode } from '../data/appMode';
 import type { PasswordLoginResult, PhoneCodeRequestResult } from '../data/clubServer';
 import { CookieConsentBanner, LegalLinks } from './LegalCenter';
@@ -101,7 +102,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [registerOtp, setRegisterOtp] = useState('');
   const [phoneVerificationToken, setPhoneVerificationToken] = useState('');
   const [registrationUserId, setRegistrationUserId] = useState(resumeUser?.id || '');
-  const [registerName, setRegisterName] = useState(resumeUser?.name === 'הרשמה בתהליך' ? '' : resumeUser?.name || '');
+  const existingName = splitPersonName(resumeUser?.name === 'הרשמה בתהליך' ? '' : resumeUser?.name || '');
+  const [registerFirstName, setRegisterFirstName] = useState(existingName.firstName);
+  const [registerLastName, setRegisterLastName] = useState(existingName.lastName);
+  const registerName = `${registerFirstName.trim()} ${registerLastName.trim()}`.trim();
   const [registerUsername, setRegisterUsername] = useState(resumeUser?.username?.startsWith('registration-') ? '' : resumeUser?.username || '');
   const [registerEmail, setRegisterEmail] = useState(resumeUser?.email || '');
   const [registerPassword, setRegisterPassword] = useState('');
@@ -145,7 +149,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       ? Math.max(1, Number(selectedPlanConfig?.includedSessions) || 1)
       : undefined;
   const familyAccountAt = (index: number): FamilyAccountDraft => familyAccountDrafts[index] || {
-    name: resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי')[index + 1]?.memberName || `בן/בת משפחה ${index + 2}`,
+    name: '',
     username: '',
     email: registerEmail.trim().toLowerCase(),
     phone: '',
@@ -357,6 +361,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     event.preventDefault();
     resetMessages();
     const normalizedEmail = registerEmail.trim().toLowerCase();
+    if (!registerFirstName.trim() || !registerLastName.trim() || !hasFullPersonName(registerName)) {
+      setError('יש להזין שם פרטי ושם משפחה.');
+      return;
+    }
     if (!registerName.trim() || !registerUsername.trim() || !normalizedEmail || !registerPassword || !registerBirthDate) {
       setError('יש להשלים את כל השדות.');
       return;
@@ -433,8 +441,8 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     const familyAccounts = isFamilyPlan
       ? Array.from({ length: familyMembersCount - 1 }, (_, index) => familyAccountAt(index))
       : [];
-    if (familyAccounts.some(account => !account.name.trim() || !account.username.trim() || !EMAIL_PATTERN.test(account.email.trim().toLowerCase()) || account.password.length < 8 || !account.birthDate)) {
-      setError('יש להשלים שם, שם משתמש, אימייל תקין, סיסמה בת 8 תווים ותאריך לידה עבור כל בן משפחה.');
+    if (familyAccounts.some(account => !hasFullPersonName(account.name) || !account.username.trim() || !EMAIL_PATTERN.test(account.email.trim().toLowerCase()) || account.password.length < 8 || !account.birthDate)) {
+      setError('יש להשלים שם פרטי ושם משפחה, שם משתמש, אימייל תקין, סיסמה בת 8 תווים ותאריך לידה עבור כל בן משפחה.');
       return;
     }
     const familyUsernames = [registerUsername, ...familyAccounts.map(account => account.username)].map(value => value.trim().toLowerCase());
@@ -616,7 +624,8 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
             )}
             {registerStep === 3 && (
               <form onSubmit={handleRegistrationDetails} className="auth-form">
-                <label>שם מלא<input value={registerName} onChange={event => setRegisterName(event.target.value)} /></label>
+                <label>שם פרטי *<input required autoComplete="given-name" value={registerFirstName} onChange={event => setRegisterFirstName(event.target.value)} /></label>
+                <label>שם משפחה *<input required autoComplete="family-name" value={registerLastName} onChange={event => setRegisterLastName(event.target.value)} /></label>
                 <label>שם משתמש<input value={registerUsername} onChange={event => setRegisterUsername(event.target.value)} autoComplete="username" /></label>
                 <label>כתובת אימייל<input required type="email" value={registerEmail} onChange={event => {
                   const previousEmail = registerEmail.trim().toLowerCase();
@@ -712,7 +721,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                       const account = familyAccountAt(index);
                       return <article key={index} className="grid gap-2 rounded-xl border border-zinc-700 bg-zinc-900 p-3 sm:grid-cols-2">
                         <strong className="sm:col-span-2 text-xs text-white">בן/בת משפחה {index + 2}</strong>
-                        <label>שם מלא<input required value={account.name} onChange={event => updateFamilyAccount(index, { name: event.target.value })} /></label>
+                        <label>שם פרטי ושם משפחה *<input required autoComplete="name" value={account.name} onChange={event => updateFamilyAccount(index, { name: event.target.value })} /></label>
                         <label>שם משתמש<input required value={account.username} onChange={event => updateFamilyAccount(index, { username: event.target.value })} autoComplete="off" /></label>
                         <label>אימייל<input required type="email" value={account.email} onChange={event => updateFamilyAccount(index, { email: event.target.value })} autoComplete="off" /></label>
                         <label>טלפון אישי — לא חובה<input inputMode="tel" value={account.phone} onChange={event => updateFamilyAccount(index, { phone: event.target.value })} /></label>

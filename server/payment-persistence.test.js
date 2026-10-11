@@ -56,7 +56,7 @@ for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER']) {
     assert.equal(payer.isFamilyPayer, true);
     assert.equal(payer.familyId, 'fam-payer');
     assert.equal(payer.familyMembersCount, 2);
-    const candidate = { id: 'member', name: 'Member', username: 'member', email: 'member@example.com', password: 'test-password', role: 'TRAINEE', familyId: payer.familyId, familyPayerId: payer.id };
+    const candidate = { id: 'member', name: 'Member Example', username: 'member', email: 'member@example.com', password: 'test-password', role: 'TRAINEE', familyId: payer.familyId, familyPayerId: payer.id };
     assert.equal((await post('/api/auth/family-members', { user: candidate })).status, 201);
     assert.equal(state.payload.users.length, 2);
     assert.equal((await post('/api/auth/family-members', { user: { ...candidate, id: 'third', username: 'third' } })).status, 201);
