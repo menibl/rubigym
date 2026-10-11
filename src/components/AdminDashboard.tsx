@@ -2087,11 +2087,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     const billingPeriod = event.target.value as NonNullable<MembershipPlanConfig['billingPeriod']>;
                     updateMembershipPlan(plan.id, {
                       billingPeriod,
+                      paymentMode: billingPeriod === 'MONTHLY_ANNUAL_COMMITMENT' ? 'RECURRING' : 'ONE_TIME',
                       priceUnit: priceUnitForBillingPeriod(billingPeriod),
                       includedSessions: billingPeriod === 'SESSION_PACK' ? Math.max(1, Number(plan.includedSessions) || 1) : undefined,
                       supportsTrainingCard: billingPeriod === 'SESSION_PACK' ? Boolean(plan.supportsTrainingCard) : false
                     });
                   }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-900">{BILLING_PERIOD_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                  {['MONTHLY', 'MONTHLY_ANNUAL_COMMITMENT'].includes(billingPeriodForPlan(plan)) && <label className="text-[10px] font-bold text-slate-600">אופן התשלום
+                    <select value={plan.paymentMode || (billingPeriodForPlan(plan) === 'MONTHLY_ANNUAL_COMMITMENT' ? 'RECURRING' : 'ONE_TIME')} onChange={event => updateMembershipPlan(plan.id, { paymentMode: event.target.value as 'ONE_TIME' | 'RECURRING', billingPeriod: event.target.value === 'RECURRING' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY' })} className="mt-1 w-full rounded-lg bg-white px-2 py-2 text-xs text-slate-900">
+                      <option value="ONE_TIME">תשלום חד־פעמי לחודש</option><option value="RECURRING">הוראת קבע — 12 חיובים חודשיים</option>
+                    </select>
+                    <small className="block mt-1">בהוראת קבע המחיר הוא לחודש: חיוב ראשון כעת, הבאים ב־1 בחודש. חידוש רק באישור המשתמש.</small>
+                  </label>}
                   {billingPeriodForPlan(plan) === 'SESSION_PACK' && <div className="md:col-start-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2">
                     <label className="text-[10px] font-bold text-slate-600">כמות אימונים<input type="number" min={1} max={100} value={plan.includedSessions || 1} onChange={event => updateMembershipPlan(plan.id, { includedSessions: Math.max(1, Number(event.target.value) || 1) })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>
                     {[MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(plan.id as MembershipType) && <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600"><input type="checkbox" checked={Boolean(plan.supportsTrainingCard)} onChange={event => updateMembershipPlan(plan.id, { supportsTrainingCard: event.target.checked })} /> בחירת 1/4/8/12</label>}

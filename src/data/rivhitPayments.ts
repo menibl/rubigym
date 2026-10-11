@@ -47,6 +47,10 @@ export interface VerifiedRivhitPayment {
   billingPeriod?: import('../types').MembershipPlanConfig['billingPeriod'];
   termMonths?: number;
   recurringMonths?: number;
+  recurringContractEndsAt?: string;
+  membershipExpiry?: string;
+  recurringSaleId?: string;
+  recurringChargeNumber?: number;
   includedSessions?: number;
   transactionId: string;
   saleId?: string;
@@ -93,6 +97,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
     if (!window.confirm(`מחיר המסלולים: ₪${quote.packageAmount}\nקיזוז תשלום קודם: ₪${quote.creditAmount}\nלתשלום חד־פעמי עכשיו: ₪${quote.amountDue}\nבחידוש הבא נדרש תשלום ידני. להמשיך?`)) throw new Error('המעבר לתשלום בוטל. לא בוצע חיוב.');
     quoteKey = quote.quoteKey;
   }
+  let recurringAcknowledged = false;
   const create = (repeatPaymentAcknowledged = false) => fetch(`${apiBase}/api/payments/rivhit/create`, {
     method: 'POST',
     credentials: 'include',
@@ -100,6 +105,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
     body: JSON.stringify({
       userId: request.userId,
       repeatPaymentAcknowledged,
+      recurringAcknowledged,
       quoteKey,
       userName: request.userName,
       email: request.email,
@@ -118,6 +124,12 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   });
   let response = await create();
   let result = await response.json().catch(() => ({}));
+  if (response.status === 409 && result.code === 'RECURRING_CONSENT_REQUIRED') {
+    if (!window.confirm(result.message)) throw new Error('המעבר להוראת קבע בוטל. לא נוצר חיוב.');
+    recurringAcknowledged = true;
+    response = await create();
+    result = await response.json().catch(() => ({}));
+  }
   if (response.status === 409 && result.code === 'REPEAT_MONTHLY_PAYMENT') {
     if (!window.confirm(result.message)) throw new Error('התשלום הנוסף בוטל. לא בוצע חיוב.');
     response = await create(true);
@@ -166,7 +178,7 @@ export const verifyPendingRivhitPayment = async (pending: PendingRivhitPayment):
     body: JSON.stringify({ paymentReference: pending.paymentReference })
   });
   const result = await response.json().catch(() => ({}));
-  if (!response.ok || !result.success) throw new Error(result.message || 'לא ניתן לאמת את העסקה מול RIVHIT.');
+  if (!response.ok || !result.success) throw Object.assign(new Error(result.message || 'לא ניתן לאמת את העסקה מול RIVHIT.'), { code: result.code });
   if (result.userId && result.userId !== pending.userId) throw new Error('התשלום אינו משויך למשתמש המחובר.');
   if (result.membershipType !== pending.membershipType) throw new Error('פרטי העסקה אינם תואמים למסלול שנבחר.');
   if (result.mode !== pending.mode) throw new Error('סוג העסקה אינו תואם לפעולה שנבחרה.');
