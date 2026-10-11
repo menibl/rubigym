@@ -15,6 +15,7 @@ import {
 } from '../data/familyMembership';
 import { billingPeriodLabel } from '../data/membershipBilling';
 import { isMembershipFreezeActive } from '../data/membershipPolicy';
+import { familyRecurringSelections } from '../../shared/recurring-billing.js';
 
 interface FamilyPlanConfiguratorProps {
   mode: FamilyBillingMode;
@@ -42,6 +43,7 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
     resizeFamilyPlans(plans, count, payerName, payerId).map((plan, planIndex) => planIndex === index ? { ...plan, ...patch } : plan)
   );
   const amount = familyPurchaseAmount('CUSTOM_COMBINED', count, normalizedPlans, membershipPlans);
+  const recurringSelections = familyRecurringSelections(normalizedPlans, catalog);
 
   return <section className="space-y-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4" dir="rtl">
     <div className="flex items-center gap-2"><Users size={18} className="text-indigo-700" /><strong className="text-sm text-slate-950">בחירת מבנה המנוי המשפחתי</strong></div>
@@ -119,8 +121,12 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
           <div className="sm:col-span-3 rounded-lg bg-slate-100 px-3 py-2 text-center text-sm font-black text-slate-800">סך הכול עבור {plan.memberName}: ₪{familyMemberPlanPrice(plan, membershipPlans).toLocaleString('he-IL')}</div>
         </article>;
       })}
-      <p className="rounded-xl bg-indigo-900 p-3 text-xs text-white">סך הכול לחיוב מאוחד לבעל המשפחה: <b className="text-base">₪{amount.toLocaleString('he-IL')}</b></p>
-      <p className="text-xs text-slate-700">הסכום מחושב לפי מחירי מסלולי המועדון, ללא הנחה משפחתית אוטומטית. לפני התשלום יוצגו הקיזוז והיתרה המחושבים בשרת. התשלום חד־פעמי, ללא הוראת קבע.</p>
+      <p className="rounded-xl bg-indigo-900 p-3 text-xs text-white">{recurringSelections.length ? 'סכום המסלולים לתצוגה בלבד — אינו חיוב מאוחד:' : 'סך הכול לחיוב מאוחד לבעל המשפחה:'} <b className="text-base">₪{amount.toLocaleString('he-IL')}</b></p>
+      {recurringSelections.length > 0 ? <div role="alert" className="rounded-xl border-2 border-amber-500 bg-slate-950 p-4 text-base font-bold text-amber-100">
+        <p>החבילה כוללת הוראת קבע — לא תשלום חד־פעמי.</p>
+        <ul className="mt-2 list-inside list-disc">{recurringSelections.map((selection, index) => <li key={index}>{selection.memberName}: {selection.plan.label} — ₪{selection.plan.price} בכל חודש, 12 חיובים.</li>)}</ul>
+        <p className="mt-2">חיוב משפחתי משולב בהוראת קבע ובתשלום ידני אינו נתמך עדיין. המעבר לסליקה ייחסם ולא ניצור חיוב משותף. בן משפחה שכבר משולם בהוראת קבע אינו צריך להיכלל שוב בתשלום הידני; בחרו עבורו ״לא לחדש כעת / כבר שולם״ כדי לשלם רק עבור בני המשפחה האחרים. פעולה זו אינה מבטלת את הוראת הקבע.</p>
+      </div> : <p className="text-xs text-slate-700">הסכום מחושב לפי מחירי מסלולי המועדון, ללא הנחה משפחתית אוטומטית. לפני התשלום יוצגו הקיזוז והיתרה המחושבים בשרת. התשלום חד־פעמי למסלולים הכלולים בלבד, ללא יצירה או ביטול של הוראת קבע.</p>}
       {normalizedPlans.some(plan => plan.participation && plan.participation !== 'INCLUDED') && <p className="text-sm">ברכישה חלקית נגבה רק מחיר המסלולים שנבחרו. לא מקוזז שוב תשלום של מי שלא נכלל ברכישה. אם כבר שילמתם עבור עצמכם, בחרו עבורכם ״כבר שולם״ וכללו רק את בן המשפחה החדש.</p>}
     </div>
   </section>;

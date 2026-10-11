@@ -61,6 +61,22 @@ test('each family member can select multiple additions with catalog prices and s
   assert.match(html, /type="number"[^>]*value="3"/);
 });
 
+test('mixed annual and manual family plans show a prominent recurring warning, not a one-off promise', () => {
+  const catalog: MembershipPlanConfig[] = [
+    { id: MembershipType.GROUP_ANNUAL, label: 'שנתי בהוראת קבע', description: '', price: 500, category: 'PRIMARY', active: true, billingPeriod: 'MONTHLY_ANNUAL_COMMITMENT', paymentMode: 'RECURRING' },
+    { id: MembershipType.OPEN_GYM, label: 'חודשי ידני', description: '', price: 280, category: 'PRIMARY', active: true, billingPeriod: 'MONTHLY', paymentMode: 'ONE_TIME' }
+  ];
+  const plans = [{ memberId: 'p', memberName: 'Annual', membershipType: MembershipType.GROUP_ANNUAL }, { memberId: 'c', memberName: 'Monthly', membershipType: MembershipType.OPEN_GYM }];
+  const render = () => renderToStaticMarkup(<FamilyPlanConfigurator mode="CUSTOM_COMBINED" onModeChange={() => {}} count={2} onCountChange={() => {}} payerName="Annual" payerId="p" plans={plans} onPlansChange={() => {}} membershipPlans={catalog} familyMembers={[{ id: 'p', name: 'Annual' }, { id: 'c', name: 'Monthly' }]} />);
+  assert.match(render(), /role="alert"/);
+  assert.match(render(), /₪500 בכל חודש, 12 חיובים/);
+  assert.match(render(), /המעבר לסליקה ייחסם/);
+  assert.doesNotMatch(render(), /התשלום חד־פעמי למסלולים הכלולים/);
+  Object.assign(plans[0], { participation: 'SKIP' });
+  assert.doesNotMatch(render(), /המעבר לסליקה ייחסם/);
+  assert.match(render(), /התשלום חד־פעמי למסלולים הכלולים/);
+});
+
 test('retired additions are visible and removable instead of silently disappearing', () => {
   const catalog: MembershipPlanConfig[] = [
     { id: MembershipType.OPEN_GYM, label: 'כניסה למועדון', description: '', price: 280, category: 'PRIMARY', active: true },
