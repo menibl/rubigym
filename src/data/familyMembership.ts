@@ -10,6 +10,7 @@ import {
   MEMBERSHIP_PRICES
 } from '../types';
 import { familyPlanAmount } from '../../shared/family-pricing.js';
+import { familySelectedPlans } from '../../shared/family-multiple-plans.js';
 
 export const FAMILY_MONTHLY_PRICE_PER_MEMBER = 550;
 
@@ -35,11 +36,12 @@ export const resizeFamilyPlans = (
 
 export const familyMemberPlanPrice = (plan: FamilyMemberPlanSelection, planConfigs: MembershipPlanConfig[] = []) => {
   if (plan.participation && plan.participation !== 'INCLUDED') return 0;
-  const unitPrice = planConfigs.find(config => config.id === plan.membershipType && config.active)?.price ?? MEMBERSHIP_PRICES[plan.membershipType] ?? 0;
-  if (plan.membershipType === MembershipType.PERSONAL_TRAINING || plan.membershipType === MembershipType.DUO_TRAINING) {
-    return unitPrice * Math.max(1, Math.min(50, Math.round(plan.trainingSessionsCount || 1)));
-  }
-  return familyPlanAmount(plan.membershipType, unitPrice);
+  return familySelectedPlans(plan).reduce((sum, item) => {
+    const unitPrice = planConfigs.find(config => config.id === item.membershipType && config.active)?.price ?? MEMBERSHIP_PRICES[item.membershipType as MembershipType] ?? 0;
+    const count = [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(item.membershipType as MembershipType)
+      ? Math.max(1, Math.min(50, Math.round(item.trainingSessionsCount || 1))) : 1;
+    return sum + familyPlanAmount(item.membershipType, unitPrice * count);
+  }, 0);
 };
 
 export const familyPurchaseAmount = (

@@ -35,6 +35,39 @@ test('family checkout offers only custom pricing and linked member selectors', (
   assert.match(html, /משפחתי מותאם/);
   assert.doesNotMatch(html, /משפחתי חודשי|משפחתי שנתי/);
   assert.match(html, /value="c"/);
-  assert.doesNotMatch(html, /<input/);
+  assert.doesNotMatch(html, /<input[^>]*type="text"/);
   assert.match(html, /560/);
+});
+
+test('each family member can select multiple additions with catalog prices and separate quantities', () => {
+  const catalog: MembershipPlanConfig[] = [
+    { id: MembershipType.OPEN_GYM, label: 'כניסה למועדון', description: '', price: 280, category: 'PRIMARY', active: true },
+    { id: MembershipType.WORKOUT_PLAN, label: 'תוכנית אימון', description: '', price: 310, category: 'ADD_ON', active: true },
+    { id: MembershipType.NUTRITION_PLAN, label: 'תוכנית תזונה', description: '', price: 420, category: 'ADD_ON', active: true },
+    { id: MembershipType.PERSONAL_TRAINING, label: 'אימון אישי', description: '', price: 190, category: 'ADD_ON', active: true }
+  ];
+  const plans = [
+    { memberId: 'p', memberName: 'Parent', membershipType: MembershipType.OPEN_GYM, additionalPlans: [{ membershipType: MembershipType.WORKOUT_PLAN }, { membershipType: MembershipType.NUTRITION_PLAN }] },
+    { memberId: 'c', memberName: 'Child', membershipType: MembershipType.OPEN_GYM, additionalPlans: [{ membershipType: MembershipType.PERSONAL_TRAINING, trainingSessionsCount: 3 }] }
+  ];
+  assert.equal(familyPurchaseAmount('CUSTOM_COMBINED', 2, plans, catalog), 1860);
+  const html = renderToStaticMarkup(<FamilyPlanConfigurator mode="CUSTOM_COMBINED" onModeChange={() => {}} count={2} onCountChange={() => {}} payerName="Parent" payerId="p" plans={plans} onPlansChange={() => {}} membershipPlans={catalog} familyMembers={[{ id: 'p', name: 'Parent' }, { id: 'c', name: 'Child' }]} />);
+  assert.equal((html.match(/type="checkbox"[^>]*checked=""/g) || []).length, 3);
+  assert.match(html, /מסלולים נוספים — Parent/);
+  assert.match(html, /מסלולים נוספים — Child/);
+  assert.match(html, /1,010/);
+  assert.match(html, /850/);
+  assert.match(html, /1,860/);
+  assert.match(html, /type="number"[^>]*value="3"/);
+});
+
+test('retired additions are visible and removable instead of silently disappearing', () => {
+  const catalog: MembershipPlanConfig[] = [
+    { id: MembershipType.OPEN_GYM, label: 'כניסה למועדון', description: '', price: 280, category: 'PRIMARY', active: true },
+    { id: MembershipType.NUTRITION_PLAN, label: 'תזונה ישנה', description: '', price: 350, category: 'ADD_ON', active: false }
+  ];
+  const html = renderToStaticMarkup(<FamilyPlanConfigurator mode="CUSTOM_COMBINED" onModeChange={() => {}} count={2} onCountChange={() => {}} payerName="Parent" payerId="p" plans={[{ memberId: 'p', memberName: 'Parent', membershipType: MembershipType.OPEN_GYM, additionalPlans: [{ membershipType: MembershipType.NUTRITION_PLAN }] }, { memberId: 'c', memberName: 'Child', membershipType: MembershipType.OPEN_GYM }]} onPlansChange={() => {}} membershipPlans={catalog} familyMembers={[{ id: 'p', name: 'Parent' }, { id: 'c', name: 'Child' }]} />);
+  assert.match(html, /תזונה ישנה/);
+  assert.match(html, /אינו זמין לרכישה/);
+  assert.match(html, /הסר תוספת/);
 });

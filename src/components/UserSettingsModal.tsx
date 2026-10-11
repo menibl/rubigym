@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { hasFullPersonName } from '../../shared/person-name.js';
 import { User, UserRole, MembershipType, MembershipStatus, Gender, DiscountCode } from '../types';
 import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
 import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
@@ -335,8 +336,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const handleAddFamilyMember = async (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedEmail = subEmail.trim().toLowerCase();
-    if (!subName.trim() || !subUsername.trim() || !normalizedEmail || !subPassword.trim()) {
-      setMsg({ type: 'error', text: 'אנא מלא שם מלא, שם משתמש, אימייל וסיסמה עבור בן המשפחה' });
+    if (!hasFullPersonName(subName) || !subUsername.trim() || !normalizedEmail || !subPassword.trim()) {
+      setMsg({ type: 'error', text: 'יש למלא שם פרטי ושם משפחה, שם משתמש, אימייל וסיסמה עבור בן המשפחה' });
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
@@ -797,7 +798,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                             <input
                               type="text"
                               required
-                              placeholder="שם מלא *"
+                              placeholder="שם פרטי ושם משפחה *"
+                              aria-label="שם פרטי ושם משפחה של בן המשפחה"
                               value={subName}
                               onChange={(e) => setSubName(e.target.value)}
                               className="p-2 border rounded-lg text-xs"

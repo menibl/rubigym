@@ -8,6 +8,8 @@ import { recurringPlan, recurringSchedule, recurringReceipt } from '../shared/re
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
+import { familySelectedPlans, familyPurchaseBenefits } from '../shared/family-multiple-plans.js';
+import { splitPersonName, hasFullPersonName } from '../shared/person-name.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../shared/club-check-in.js';
@@ -292,12 +294,23 @@ const normalizeFamilyPlans = (plans, catalog) => {
     }
     const isTraining = membershipType === 'PERSONAL_TRAINING' || membershipType === 'DUO_TRAINING';
     const trainingSessionsCount = isTraining ? Math.max(1, Math.min(50, Math.round(Number(plan?.trainingSessionsCount || 1)))) : undefined;
+    if (plan.additionalPlans !== undefined && (!Array.isArray(plan.additionalPlans) || plan.additionalPlans.length > 20)) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+    const additionalPlans = participation === 'INCLUDED' ? (plan.additionalPlans || []).map(item => {
+      const type = String(item?.membershipType || '');
+      const configured = planPrice(type, catalog).plan;
+      if (configured ? configured.category !== 'ADD_ON' : !['WORKOUT_COACHING', 'WORKOUT_PLAN', 'NUTRITION_COACHING', 'NUTRITION_PLAN', 'PERSONAL_TRAINING', 'DUO_TRAINING'].includes(type)) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+      const count = ['PERSONAL_TRAINING', 'DUO_TRAINING'].includes(type) ? Number(item.trainingSessionsCount || 1) : undefined;
+      if (count !== undefined && (!Number.isInteger(count) || count < 1 || count > 50)) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
+      return { membershipType: type, trainingSessionsCount: count };
+    }) : [];
+    if (new Set([membershipType, ...additionalPlans.map(item => item.membershipType)]).size !== additionalPlans.length + 1) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
     return {
       memberId: plan?.memberId ? String(plan.memberId).slice(0, 100) : undefined,
       memberName: String(plan?.memberName || `בן משפחה ${index + 1}`).slice(0, 100),
       membershipType,
       participation,
-      trainingSessionsCount
+      trainingSessionsCount,
+      ...(additionalPlans.length ? { additionalPlans } : {})
     };
   });
 };
@@ -321,7 +334,8 @@ const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
       if (body.mode !== 'PRIMARY' && familyMemberPlans.some(plan => plan.participation !== 'INCLUDED')) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
       if (familyMemberPlans.length !== count) throw new Error('INVALID_FAMILY_MEMBER_COUNT');
       if (!familyMemberPlans.some(plan => plan.participation === 'INCLUDED')) throw new Error('INVALID_FAMILY_MEMBER_PLAN');
-      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + (plan.participation !== 'INCLUDED' ? 0 : familyPlanAmount(plan.membershipType, planPrice(plan.membershipType, catalog).price * (plan.trainingSessionsCount || 1))), 0);
+      baseAmount = familyMemberPlans.reduce((sum, plan) => sum + (plan.participation !== 'INCLUDED' ? 0 : familySelectedPlans(plan).reduce((memberSum, item) =>
+        memberSum + familyPlanAmount(item.membershipType, planPrice(item.membershipType, catalog).price * (item.trainingSessionsCount || 1)), 0)), 0);
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
     return { amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: mode !== 'CUSTOM_COMBINED', recurringMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 0 };
@@ -630,8 +644,8 @@ const reserveRecurringCheckout = async (env, order) => {
 };
 
 const splitCustomerName = value => {
-  const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
-  return { firstName: (parts.shift() || 'לקוח').slice(0, 20), lastName: (parts.join(' ') || 'BALY').slice(0, 30) };
+  const { firstName, lastName } = splitPersonName(value);
+  return { firstName: firstName.slice(0, 20), lastName: lastName.slice(0, 30) };
 };
 
 const paymentReturnUrl = (request, env) => {
@@ -732,7 +746,8 @@ const applyVerifiedPurchaseToUsers = (users, userId, order, amount, catalog = []
         personalTrainingRemaining: type === 'PERSONAL_TRAINING' ? customPlan.trainingSessionsCount : candidate.personalTrainingRemaining,
         duoTrainingRemaining: type === 'DUO_TRAINING' ? customPlan.trainingSessionsCount : candidate.duoTrainingRemaining,
         nutritionPlanPaid: nutritionTypes.includes(type) ? true : candidate.nutritionPlanPaid,
-        requestedWorkoutPlan: workoutTypes.includes(type) ? true : candidate.requestedWorkoutPlan
+        requestedWorkoutPlan: workoutTypes.includes(type) ? true : candidate.requestedWorkoutPlan,
+        ...familyPurchaseBenefits(candidate, customPlan)
       };
     }
 
@@ -839,14 +854,18 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
       recurringCheckouts: order.rc === 1 ? (state.payload.recurringCheckouts || []).map(item => item.orderId === order.o
         ? { ...item, recurringSaleId: payment.recurringSaleId } : item) : state.payload.recurringCheckouts,
       users: updatedUsers,
-      nutritionPlans: ['NUTRITION_COACHING', 'NUTRITION_PLAN'].includes(order.m)
-        ? (state.payload.nutritionPlans || []).map(plan => plan.traineeId === userId ? {
+      nutritionPlans: (state.payload.nutritionPlans || []).map(plan => {
+        const familySelection = order.m === 'FAMILY_MEMBERSHIP' && order.fm === 'CUSTOM_COMBINED'
+          ? order.fp?.find(item => item.memberId === plan.traineeId && item.participation === 'INCLUDED') : undefined;
+        const nutrition = familySelection ? familySelectedPlans(familySelection).find(item => ['NUTRITION_COACHING', 'NUTRITION_PLAN'].includes(item.membershipType)) : undefined;
+        if ((['NUTRITION_COACHING', 'NUTRITION_PLAN'].includes(order.m) && plan.traineeId === userId) || nutrition) return {
             ...plan,
             isPaid: true,
-            price: Number(order.a),
+            price: nutrition ? plan.price : Number(order.a),
             paymentStatus: 'PAID'
-          } : plan)
-        : state.payload.nutritionPlans,
+          };
+        return plan;
+      }),
       payments: [{
         id: paymentId,
         traineeId: userId,
@@ -1515,6 +1534,7 @@ const handleApi = async (request, env, url) => {
       if (!user?.id || typeof user?.password !== 'string' || user.password.length < 8 || !user?.email || !isValidEmail(user.email) || user.role !== 'TRAINEE') {
         return json({ message: 'פרטי ההרשמה או כתובת האימייל אינם תקינים.' }, 400, headers);
       }
+      if (!hasFullPersonName(user.name)) return json({ message: 'יש להזין שם פרטי ושם משפחה.' }, 400, headers);
       const identity = await getIdentity({ allowIncomplete: true });
       const state = await loadClubState(clubId);
       if (!state) return json({ message: 'נתוני המועדון אינם מאותחלים.' }, 503, headers);
@@ -1535,6 +1555,7 @@ const handleApi = async (request, env, url) => {
       const registrations = [user, ...familyUsers];
       for (const candidate of registrations) {
         const isFamilyMember = candidate.id !== user.id;
+        if (!hasFullPersonName(candidate?.name)) return json({ message: 'יש להזין שם פרטי ושם משפחה לכל בן משפחה.' }, 400, headers);
         if (!candidate?.id || !candidate?.name || !candidate?.username || !candidate?.email || !isValidEmail(candidate.email)
           || typeof candidate.password !== 'string' || candidate.password.length < 8 || candidate.role !== 'TRAINEE'
           || (isFamilyMember && (candidate.familyPayerId !== user.id || candidate.familyId !== user.familyId))) {
@@ -1596,6 +1617,7 @@ const handleApi = async (request, env, url) => {
       if (!identity || identity.account.role !== 'TRAINEE') return json({ message: 'Unauthorized' }, 401, headers);
       const body = await request.json();
       const candidate = body.user;
+      if (!hasFullPersonName(candidate?.name)) return json({ message: 'יש להזין שם פרטי ושם משפחה עבור בן המשפחה.' }, 400, headers);
       const state = await loadClubState(identity.session.club_id);
       const payer = state?.payload?.users?.find(userItem => userItem.id === identity.account.user_id);
       const familyMembers = state?.payload?.users?.filter(userItem => userItem.familyId && userItem.familyId === payer?.familyId) || [];

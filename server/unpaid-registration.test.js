@@ -19,7 +19,7 @@ test('unpaid profile can register, log in with password and load the app without
     async getSession(token) { return sessions.get(token); }
   };
   const env = { STATE_STORE: store, CLUB_ID: 'test', SMS_OTP_SIGNING_SECRET: 'unpaid-registration-test-secret-long-enough' };
-  const user = { id: 'trainee', name: 'Test', username: 'test-user', password: 'password-123', email: 'test@example.com', phone: '0541234567', role: 'TRAINEE', membershipStatus: 'ACTIVE', nutritionPlanPaid: true, personalTrainingRemaining: 12 };
+  const user = { id: 'trainee', name: 'Test Trainee', username: 'test-user', password: 'password-123', email: 'test@example.com', phone: '0541234567', role: 'TRAINEE', membershipStatus: 'ACTIVE', nutritionPlanPaid: true, personalTrainingRemaining: 12 };
   const token = await createPhoneVerificationToken({ env, clubId: 'test', phone: user.phone });
   const post = (path, body) => worker.fetch(new Request(`https://club.test/api/auth/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
   const response = await post('register', { user, phoneVerificationToken: token });
