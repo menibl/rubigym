@@ -95,3 +95,11 @@ CREATE TABLE IF NOT EXISTS landing_media (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (club_id, slot)
 );
+CREATE TABLE IF NOT EXISTS family_split_checkouts (
+  club_id text NOT NULL,
+  payer_id text NOT NULL,
+  revision bigint NOT NULL DEFAULT 1,
+  payload jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (club_id, payer_id)
+);
