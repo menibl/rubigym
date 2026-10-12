@@ -40,6 +40,35 @@ function fixture(paid = 280) {
   return { post, request, store, claims, state: () => state, calls: () => providerCalls, amount: () => amount, asManager: () => { role = 'MANAGER'; } };
 }
 
+test('family manual checkout cannot charge an existing recurring member again', async () => {
+  const f = fixture();
+  f.state().payload.payments[0].providerRecurringSaleId = 'active-series';
+  const before = JSON.stringify(f.state());
+  for (const quoteOnly of [true, false]) {
+    const response = await f.post('create', { ...f.request, quoteOnly });
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, 'FAMILY_RECURRING_ALREADY_ACTIVE');
+  }
+  assert.equal(f.calls(), 0);
+  assert.equal(f.claims.size, 0);
+  assert.equal(JSON.stringify(f.state()), before);
+  f.request.familyMemberPlans[0].participation = 'SKIP';
+  const quote = await (await f.post('create', { ...f.request, quoteOnly: true })).json();
+  assert.equal(quote.packageAmount, 280);
+  assert.equal(quote.creditAmount, 0);
+  assert.equal(quote.amountDue, 280);
+  assert.equal((await f.post('create', { ...f.request, quoteKey: quote.quoteKey })).status, 200);
+  assert.equal(f.amount(), 280);
+  assert.equal(f.state().payload.payments[0].providerRecurringSaleId, 'active-series');
+});
+
+test('cancelled recurring series does not block manual family renewal', async () => {
+  const f = fixture();
+  f.state().payload.payments[0].providerRecurringSaleId = 'cancelled-series';
+  f.state().payload.payments[0].recurringCancelledAt = new Date().toISOString();
+  assert.equal((await f.post('create', { ...f.request, quoteOnly: true })).status, 200);
+});
+
 test('family checkout charges all selected programs for their real members and activates them once', async () => {
   const f = fixture();
   f.state().payload.nutritionPlans = [{ id: 'nutrition-child', traineeId: 'child', isPaid: false }, { id: 'nutrition-other', traineeId: 'other', isPaid: false }];
