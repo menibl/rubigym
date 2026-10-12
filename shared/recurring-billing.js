@@ -1,3 +1,14 @@
+import { familySelectedPlans } from './family-multiple-plans.js';
+
+// Only included members can be charged; inspect primary AND additional plans.
+export function familyRecurringSelections(plans, catalog) {
+  return (plans || []).filter(member => !member.participation || member.participation === 'INCLUDED')
+    .flatMap(member => familySelectedPlans(member).map(selection => ({
+      memberName: member.memberName,
+      plan: (catalog || []).find(config => config.id === selection.membershipType && config.active !== false)
+    })).filter(selection => recurringPlan(selection.plan)));
+}
+
 // A recurring contract is deliberately separate from the price's time unit.
 // Old MONTHLY plans stay one-off; choosing an annual monthly commitment opts in.
 export function recurringPlan(plan) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from './index.js';
-import { recurringPlan, recurringSchedule, recurringReceipt } from '../shared/recurring-billing.js';
+import { recurringPlan, recurringSchedule, recurringReceipt, familyRecurringSelections } from '../shared/recurring-billing.js';
 
 test('one-off monthly prices never imply a recurring contract', () => {
   assert.equal(recurringPlan({ billingPeriod: 'MONTHLY' }), false);
@@ -111,4 +111,44 @@ test('concurrent checkout requests reserve one contract before provider dispatch
   assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
   assert.equal(f.requests.filter(request => request.url.endsWith('/GetUrl')).length, 1);
   assert.equal(f.state().payload.recurringCheckouts.length, 1);
+});
+
+test('mixed family recurring checkout is blocked before quote, reservation or provider call', async () => {
+  for (const enabled of ['false', 'true']) {
+    for (const quoteOnly of [true, false]) {
+      for (const additional of [false, true]) {
+        const f = fixture({ RIVHIT_ENABLE_RECURRING: enabled });
+        if (additional) f.state().payload.settings.membershipPlans[0].category = 'ADD_ON';
+        f.state().payload.settings.membershipPlans.push({ id: 'OPEN_GYM', price: 280, active: true, billingPeriod: 'MONTHLY', paymentMode: 'ONE_TIME' });
+        const before = JSON.stringify(f.state());
+        const recurringMember = { memberId: 'trainee', memberName: 'Trainee', membershipType: additional ? 'OPEN_GYM' : 'GROUP_MONTHLY',
+          ...(additional ? { additionalPlans: [{ membershipType: 'GROUP_MONTHLY' }] } : {}) };
+        const response = await f.create({ membershipType: 'FAMILY_MEMBERSHIP', familyMembersCount: 2, familyBillingMode: 'CUSTOM_COMBINED',
+          familyMemberPlans: [recurringMember, { memberId: 'child', memberName: 'Child', membershipType: 'OPEN_GYM' }], quoteOnly, recurringAcknowledged: true });
+        assert.equal(response.status, enabled === 'false' ? 503 : 422);
+        assert.equal((await response.json()).code, enabled === 'false' ? 'RECURRING_DISABLED' : 'FAMILY_RECURRING_UNSUPPORTED');
+        assert.equal(f.requests.length, 0);
+        assert.equal(JSON.stringify(f.state()), before);
+      }
+    }
+  }
+});
+
+test('family detection excludes already paid, not-started and frozen members, including their add-ons', () => {
+  const catalog = [{ id: 'annual', billingPeriod: 'MONTHLY_ANNUAL_COMMITMENT' }, { id: 'monthly', billingPeriod: 'MONTHLY' }];
+  for (const participation of ['SKIP', 'NOT_STARTED', 'FROZEN']) {
+    assert.deepEqual(familyRecurringSelections([
+      { memberName: 'Annual', membershipType: 'monthly', additionalPlans: [{ membershipType: 'annual' }], participation },
+      { memberName: 'Monthly', membershipType: 'monthly', participation: 'INCLUDED' }
+    ], catalog), []);
+  }
+  assert.equal(familyRecurringSelections([{ memberName: 'Annual', membershipType: 'annual' }], catalog).length, 1);
+});
+
+test('legacy annual family mode cannot fall back to one-off when recurring is disabled', async () => {
+  const f = fixture({ RIVHIT_ENABLE_RECURRING: 'false' });
+  const response = await f.create({ membershipType: 'FAMILY_MEMBERSHIP', familyMembersCount: 2, familyBillingMode: 'ANNUAL_BY_SIZE', quoteOnly: true });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, 'RECURRING_DISABLED');
+  assert.equal(f.requests.length, 0);
 });

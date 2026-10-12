@@ -45,6 +45,13 @@ for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER']) {
       discountCode: familyBillingMode === 'ANNUAL_BY_SIZE' ? 'family10' : undefined,
       familyMemberPlans: [{ memberId: 'payer', memberName: 'Payer', membershipType: 'OPEN_GYM' }, { memberName: 'Member', membershipType: 'OPEN_GYM' }],
     });
+    if (familyBillingMode === 'ANNUAL_BY_SIZE') {
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).code, 'RECURRING_DISABLED');
+      assert.equal(state.payload.payments.length, 0);
+      assert.equal(state.revision, 1);
+      return;
+    }
     assert.equal(response.status, 200);
     const checkout = await response.json();
     const verified = await post('/api/payments/rivhit/verify', { paymentReference: checkout.paymentReference });

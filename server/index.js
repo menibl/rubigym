@@ -4,7 +4,7 @@ import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
 import { calendarTerm, repairCalendarMemberships } from '../shared/membership-calendar.js';
-import { recurringPlan, recurringSchedule, recurringReceipt } from '../shared/recurring-billing.js';
+import { recurringPlan, recurringSchedule, recurringReceipt, familyRecurringSelections } from '../shared/recurring-billing.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
@@ -338,7 +338,8 @@ const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
         memberSum + familyPlanAmount(item.membershipType, planPrice(item.membershipType, catalog).price * (item.trainingSessionsCount || 1)), 0)), 0);
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
-    return { amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: mode !== 'CUSTOM_COMBINED', recurringMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 0 };
+    const familyRecurring = mode === 'ANNUAL_BY_SIZE' || familyRecurringSelections(familyMemberPlans, catalog).length > 0;
+    return { amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: familyRecurring, recurringRequired: familyRecurring, recurringMonths: familyRecurring ? 12 : 0 };
   }
   if (body.purchaseVariant) {
     const variant = trainingCardVariants[body.purchaseVariant];
@@ -998,9 +999,23 @@ const handleCreatePayment = async (request, env) => {
     return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env));
   }
   // Keep legacy one-off behaviour while operators test and enable the service.
+  if (body.membershipType === 'FAMILY_MEMBERSHIP' && purchase.familyMemberPlans) {
+    const payments = checkoutState?.payload?.payments || [];
+    const cancelled = new Set(payments.filter(payment => payment.recurringCancelledAt).map(payment => payment.providerRecurringSaleId));
+    const duplicate = purchase.familyMemberPlans.filter(member => member.participation === 'INCLUDED')
+      .some(member => payments.some(payment => payment.traineeId === member.memberId
+        && payment.status === 'PAID' && payment.providerRecurringSaleId
+        && !cancelled.has(payment.providerRecurringSaleId)
+        && new Date(payment.timestamp || payment.date).getTime() > Date.now() - 366 * 24 * 60 * 60 * 1000
+        && familySelectedPlans(member).some(selection => selection.membershipType === payment.membershipTypePurchased)));
+    if (duplicate) return json({ code: 'FAMILY_RECURRING_ALREADY_ACTIVE', message: 'לבן משפחה שנכלל בתשלום כבר קיימת הוראת קבע למסלול שנבחר. לא ניצור חיוב ידני נוסף. בחרו עבורו ״לא לחדש כעת / כבר שולם״ או פנו למנהל לבדיקת הוראת הקבע; היא אינה מתבטלת בעקבות שינוי הבחירה.' }, 409, corsHeaders(request, env));
+  }
   const wantsRecurring = purchase.recurring;
   purchase.recurring = wantsRecurring && String(env.RIVHIT_ENABLE_RECURRING).toLowerCase() === 'true';
-  if ((purchase.recurringRequired || (wantsRecurring && body.membershipType !== 'FAMILY_MEMBERSHIP')) && !purchase.recurring) return json({ code: 'RECURRING_DISABLED', message: 'הוראות הקבע עדיין לא הופעלו בשרת. לא נוצר חיוב חד־פעמי במקום הוראת הקבע.' }, 503, corsHeaders(request, env));
+  if ((purchase.recurringRequired || wantsRecurring) && !purchase.recurring) return json({ code: 'RECURRING_DISABLED', message: 'הוראות הקבע עדיין לא הופעלו בשרת. לא נוצר חיוב חד־פעמי במקום הוראת הקבע.' }, 503, corsHeaders(request, env));
+  if (wantsRecurring && body.membershipType === 'FAMILY_MEMBERSHIP') {
+    return json({ code: 'FAMILY_RECURRING_UNSUPPORTED', message: 'החבילה כוללת מסלול בהוראת קבע. שילוב הוראת קבע ותשלום ידני דורש חיובים נפרדים לכל מסלול ואינו נתמך עדיין. לא נפתחה סליקה ולא נוצר חיוב; מסלול שכבר משולם בהוראת קבע לא ייגבה שוב במסגרת תשלום משפחתי. יש לפנות למנהל.' }, 422, corsHeaders(request, env));
+  }
   if (purchase.recurring) {
     if (!env.RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN
       || String(env.RIVHIT_RECURRING_CALENDAR_VERIFIED).toLowerCase() !== 'true') {
