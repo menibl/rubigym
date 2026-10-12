@@ -95,6 +95,7 @@ import {
 } from '../data/membershipPolicy';
 import { DiscountCodeField } from './DiscountCodeField';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
+import { ProgramCheckoutButton } from './ProgramCheckoutButton';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 import { familyPurchaseBenefits } from '../../shared/family-multiple-plans.js';
 import { billingPeriodForPlan, billingPeriodLabel, isSelectableTrainingCard, membershipCheckoutAmount } from '../data/membershipBilling';
@@ -161,6 +162,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
   const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [paymentStarting, setPaymentStarting] = useState(false);
+  useEffect(() => {
+    if (activeTab !== 'membership' || !selectedMembershipPurchase) return;
+    const timeout = window.setTimeout(() => {
+      const checkout = document.getElementById('membership-checkout');
+      checkout?.focus({ preventScroll: true });
+      checkout?.scrollIntoView({ block: 'start' });
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [activeTab, selectedMembershipPurchase]);
   const familyDraft = (() => {
     try { return JSON.parse(sessionStorage.getItem('baly_family_purchase_draft_v1') || 'null'); } catch { return null; }
   })();
@@ -824,7 +834,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     openMembershipCheckout(MembershipType.WORKOUT_COACHING, 'ADDON');
   };
 
-  // PAY FOR NUTRITION COACHING (350 ILS)
+  // Prices are shown only in membership checkout, from the club catalog.
   const handlePayNutritionPlan = () => {
     setActiveTab('membership');
     openMembershipCheckout(MembershipType.NUTRITION_COACHING, 'ADDON');
@@ -1542,7 +1552,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <div>
                       <span className="font-bold text-xs text-emerald-900 block">👥 קבוצתי חודשי – ללא התחייבות</span>
                       <p className="text-[10px] text-emerald-800 mt-0.5">
-                        ₪600 לחודש. מנוי חודשי מתחדש לאימונים קבוצתיים, כולל כניסה ל־Open Gym.
+                        מנוי לאימונים קבוצתיים, כולל כניסה ל־Open Gym. המחיר ואופן החיוב מוצגים במסך התשלום.
                       </p>
                     </div>
                     <button
@@ -1562,7 +1572,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <div>
                       <span className="font-bold text-xs text-sky-900 block">⭐ קבוצתי שנתי – התחייבות לשנה</span>
                       <p className="text-[10px] text-sky-800 mt-0.5">
-                        ₪500 בכל חודש בהוראת קבע למשך 12 חודשים. כולל Open Gym והקפאה אחת של חודש רצוף בשנה.
+                        כולל Open Gym והקפאה אחת של חודש רצוף בשנה. המחיר ותנאי החיוב מוצגים במסך התשלום.
                       </p>
                     </div>
                     <button
@@ -2006,12 +2016,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <div className="text-2xl">🏋️</div>
                 <h4 className="text-sm font-bold text-amber-900">תוכנית אימון אישית בתשלום</h4>
                 <p className="text-xs text-amber-800">לאחר התשלום המאמן או המנהל יוכלו לבנות עבורך תוכנית. התוכנית תוצג כאן רק לאחר שהגישה שולמה ואושרה.</p>
-                <button
-                  onClick={handlePayWorkoutPlan}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 px-6 rounded-lg shadow-sm transition"
-                >
-                  תשלום עבור תוכנית אימון ({MEMBERSHIP_PRICES[MembershipType.WORKOUT_PLAN]} ₪)
-                </button>
+                <ProgramCheckoutButton kind="workout" onCheckout={handlePayWorkoutPlan} />
               </div>
             ) : traineeWorkout && traineeWorkout.exercises.length > 0 ? (
               <div className="space-y-6">
@@ -2134,11 +2139,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
               {(activeUser.nutritionPlanPaid || traineeNutrition?.isPaid) ? (
                 <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold px-3 py-1 rounded-lg">
-                  ✅ שולם (350 ₪) - תוכנית תזונה מורשית
+                  ✅ שולם — תוכנית תזונה מורשית
                 </span>
               ) : (
                 <span className="bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold px-3 py-1 rounded-lg">
-                  🔒 בתשלום נוסף פרטני (350 ₪)
+                  🔒 תוכנית תזונה בתשלום
                 </span>
               )}
             </div>
@@ -2151,12 +2156,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <p className="text-xs text-amber-800 max-w-lg mx-auto leading-relaxed">
                   התוכנית נבנית ע"י המאמן המקצועי בהתאמה מדויקת ליעדי הגוף, הגובה, המשקל והתזונה שלך. התוכנית כוללת יעד קלוריות יומי, פירוט חלבון, פחמימות ושומנים, והנחיות ארוחות מפורטות.
                 </p>
-                <button
-                  onClick={handlePayNutritionPlan}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 px-6 rounded-lg shadow-sm transition inline-flex items-center gap-2 cursor-pointer"
-                >
-                  💳 בצע תשלום עבור תוכנית תזונה (350 ₪)
-                </button>
+                <ProgramCheckoutButton kind="nutrition" onCheckout={handlePayNutritionPlan} />
               </div>
             ) : traineeNutrition ? (
               <div className="space-y-6">
@@ -2350,7 +2350,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             </button>
 
             {selectedMembershipPurchase ? (
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 shadow-sm max-w-2xl mx-auto">
+              <section id="membership-checkout" tabIndex={-1} aria-label="תשלום והפעלת מסלול" className="scroll-mt-32 rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 shadow-sm max-w-2xl mx-auto">
                 <button className="text-xs text-slate-500 mb-5" onClick={() => setSelectedMembershipPurchase(null)}>חזרה לבחירת מסלול</button>
                 <h3 className="text-xl font-black text-slate-900">תשלום והפעלת מסלול</h3>
                 <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4 flex justify-between items-center gap-4">
