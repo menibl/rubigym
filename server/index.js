@@ -7,6 +7,7 @@ import { calendarTerm, repairCalendarMemberships } from '../shared/membership-ca
 import { recurringPlan, recurringSchedule, recurringReceipt, familyRecurringSelections } from '../shared/recurring-billing.js';
 import { familySplitLines, publicFamilySplit, changeFamilySplit } from './family-split.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
+import { openGroupUpgradeQuote } from './open-group-upgrade.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { familySelectedPlans, familyPurchaseBenefits } from '../shared/family-multiple-plans.js';
@@ -466,6 +467,7 @@ const createSignedOrder = async (body, env, purchase) => {
     fa: purchase.packageAmount,
     ca: purchase.creditAmount,
     cs: purchase.sourcePaymentId,
+    ug: purchase.upgrade,
     pa: rivhitChargeAmount(amount, env),
     bp: purchase.billingPeriod,
     tm: purchase.termMonths,
@@ -859,6 +861,11 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
           membershipExpiryManualOverride: expirySource.membershipExpiryManualOverride };
       });
     }
+    if (order.ug) updatedUsers = updatedUsers.map(updated => updated.id === userId ? {
+      ...updated, membershipExpiry: order.ug.expiry, membershipExpiryExclusive: true, monthlyBillingDay: 1,
+      membershipExpiryManualOverride: true, membershipExpiryFromUpgrade: true,
+      secondaryMemberships: (updated.secondaryMemberships || []).filter(type => type !== order.ug.from)
+    } : updated);
     const payload = appendUserChangeMessages(state.payload, {
       ...state.payload,
       recurringCheckouts: order.rc === 1 ? (state.payload.recurringCheckouts || []).map(item => item.orderId === order.o
@@ -884,8 +891,10 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         familyPackageAmount: order.fa,
         familyPartialPurchase: Boolean(order.fp?.some(plan => plan.participation && plan.participation !== 'INCLUDED')),
         familyMemberPlans: order.fp,
-        familyCreditAmount: order.ca,
+        familyCreditAmount: order.ug ? undefined : order.ca,
         familyCreditSourcePaymentId: order.cs,
+        upgradeCreditAmount: order.ug ? order.ca : undefined,
+        upgradeFrom: order.ug?.from,
         purchaseMode: order.d,
         date: new Date().toISOString().slice(0, 10),
         timestamp: new Date().toISOString(),
@@ -1181,6 +1190,29 @@ const handleCreatePayment = async (request, env, splitLine) => {
   };
   let creditClaim;
   const clubId = env.CLUB_ID || 'baly-wellness';
+  if (!splitLine) {
+    let quote;
+    try { quote = openGroupUpgradeQuote(checkoutState?.payload, body, purchase); }
+    catch {
+      return json({ code: 'UPGRADE_REVIEW_REQUIRED', message: 'שדרוג זה דורש בדיקת מנהל: הוראת קבע, חיוב משפחתי או תוקף מיוחד. לא נוצר חיוב נוסף.' }, 409, corsHeaders(request, env));
+    }
+    if (body.upgradeQuoteKey && !quote) return json({ code: 'UPGRADE_QUOTE_CHANGED',
+      message: 'נתוני התשלום או המנוי השתנו מאז אישור הקיזוז. יש לבדוק את המחיר מחדש; לא נוצר חיוב.' }, 409, corsHeaders(request, env));
+    if (quote) {
+      purchase = { ...purchase, ...quote, amount: quote.amountDue };
+      const upgradeQuoteKey = await sign(JSON.stringify({ userId: body.userId, purchase }), env.PAYMENT_SIGNING_SECRET);
+      if (body.upgradeQuoteKey !== upgradeQuoteKey) return json({ code: 'OPEN_GROUP_UPGRADE_CONFIRMATION',
+        upgradeQuoteKey, ...quote, message: `שדרוג מ־Open Gym לקבוצתי: מחיר המסלול ₪${quote.packageAmount}, קיזוז תשלום Open ששולם החודש ₪${quote.creditAmount}. לתשלום עכשיו ₪${quote.amountDue}. התוקף עד ${quote.upgrade.expiry}, ללא חודש נוסף. להמשיך?` }, 409, corsHeaders(request, env));
+      if (!env.STATE_STORE?.reserveFamilyCredit) throw new Error('FAMILY_CREDIT_STORAGE_UNAVAILABLE');
+      // Share the durable source-receipt lock with family credit: the same
+      // receipt cannot fund both an upgrade and a family checkout.
+      creditClaim = await env.STATE_STORE.reserveFamilyCredit(clubId, quote.sourcePaymentId, crypto.randomUUID(), upgradeQuoteKey);
+      if (!creditClaim.created) {
+        if (creditClaim.fingerprint === upgradeQuoteKey && creditClaim.checkout) return json(creditClaim.checkout, 200, corsHeaders(request, env));
+        return json({ code: 'UPGRADE_CHECKOUT_EXISTS', message: 'התשלום הקודם כבר משויך לבקשת קיזוז. יש להשלים את הבקשה הקיימת או לפנות למנהל; לא נפתח חיוב נוסף.' }, 409, corsHeaders(request, env));
+      }
+    }
+  }
   if (body.membershipType === 'FAMILY_MEMBERSHIP' && body.mode === 'PRIMARY' && purchase.familyBillingMode === 'CUSTOM_COMBINED') {
     try {
       purchase.familyMemberPlans = validateFamilySelection(checkoutState?.payload || {}, body.userId, purchase.familyMemberPlans);
@@ -1332,9 +1364,10 @@ const handleVerifyPayment = async (request, env) => {
     ...providerPayment
   };
   await persistVerifiedPurchase(env, order, payment, identity?.user_id);
-  if (order.rc === 1 && env.STATE_STORE) {
+  if ((order.rc === 1 || order.ug) && env.STATE_STORE) {
     const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
     payment.membershipExpiry = state?.payload?.users?.find(user => user.id === order.u)?.membershipExpiry;
+    payment.openGroupUpgrade = Boolean(order.ug);
   }
   await persistVerifiedDiscountUsage(env, order, payment);
   return json(payment, 200, corsHeaders(request, env));
