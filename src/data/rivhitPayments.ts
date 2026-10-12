@@ -39,6 +39,7 @@ interface CreatePaymentRequest {
 }
 
 export interface VerifiedRivhitPayment {
+  openGroupUpgrade?: boolean;
   discountCode?: string | null;
   success: true;
   paymentReference: string;
@@ -89,6 +90,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות התשלום עדיין לא הוגדר בשרת.');
   let quoteKey: string | undefined;
+  let upgradeQuoteKey: string | undefined;
   if (request.membershipType === 'FAMILY_MEMBERSHIP' && request.mode === 'PRIMARY') {
     const quoteResponse = await fetch(`${apiBase}/api/payments/rivhit/create`, {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
@@ -113,6 +115,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
       repeatPaymentAcknowledged,
       recurringAcknowledged,
       quoteKey,
+      upgradeQuoteKey,
       userName: request.userName,
       email: request.email,
       phone: request.phone,
@@ -130,6 +133,12 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   });
   let response = await create();
   let result = await response.json().catch(() => ({}));
+  if (response.status === 409 && result.code === 'OPEN_GROUP_UPGRADE_CONFIRMATION') {
+    if (!window.confirm(result.message)) throw new Error('השדרוג בוטל. לא בוצע חיוב.');
+    upgradeQuoteKey = result.upgradeQuoteKey;
+    response = await create();
+    result = await response.json().catch(() => ({}));
+  }
   if (response.status === 409 && result.code === 'RECURRING_CONSENT_REQUIRED') {
     if (!window.confirm(result.message)) throw new Error('המעבר להוראת קבע בוטל. לא נוצר חיוב.');
     recurringAcknowledged = true;
