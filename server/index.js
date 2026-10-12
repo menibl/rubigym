@@ -859,7 +859,9 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
       if (!renewal) return updated;
       const previous = state.payload.users.find(item => item.id === updated.id);
       return { ...updated, membershipExpiry: previous?.membershipExpiry > renewal.newExpiry ? previous.membershipExpiry : renewal.newExpiry,
-        membershipExpiryExclusive: true, membershipExpiryManualOverride: false, monthlyBillingDay: 1 };
+        // Older images only understand the override flag. Keep a paid advance
+        // renewal protected from their current-month calendar repair on rollback.
+        membershipExpiryExclusive: true, membershipExpiryManualOverride: true, membershipExpiryFromRenewal: true, monthlyBillingDay: 1 };
     });
     if (order.rc === 1) {
       const started = recurringSchedule(new Date(Number(order.t))).start.split('-').map(Number);
@@ -1355,6 +1357,7 @@ const handleVerifyPayment = async (request, env) => {
     userId: order.u || identity?.user_id,
     membershipType: order.m,
     mode: order.d,
+    renewalExtended: Boolean(order.nx?.length),
     purchaseVariant: order.v,
     familyMembersCount: order.f,
     familyBillingMode: order.fm,

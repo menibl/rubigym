@@ -337,6 +337,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         if (verified.membershipExpiry) {
           membershipTerm.membershipExpiry = verified.membershipExpiry;
           membershipTerm.membershipExpiryExclusive = true;
+          if (verified.renewalExtended) membershipTerm.membershipExpiryManualOverride = true;
         }
         if (verified.recurringContractEndsAt && verified.membershipExpiry) {
           membershipTerm.membershipCommitmentEndsAt = verified.recurringContractEndsAt;
@@ -378,7 +379,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       const purchasedSessions = purchaseVariant ? Number(purchaseVariant.split('_')[1]) : Math.max(0, Number(verified.includedSessions) || 0);
       return {
         ...user,
-        ...(verified.membershipExpiry ? { membershipExpiry: verified.membershipExpiry, membershipExpiryExclusive: true } : {}),
+        ...(verified.membershipExpiry ? { membershipExpiry: verified.membershipExpiry, membershipExpiryExclusive: true,
+          ...(verified.renewalExtended ? { membershipExpiryManualOverride: true } : {}) } : {}),
         secondaryMemberships: secondaryMemberships.includes(purchasedType)
           ? secondaryMemberships
           : [...secondaryMemberships, purchasedType],

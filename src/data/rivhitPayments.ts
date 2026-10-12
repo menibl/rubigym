@@ -40,6 +40,7 @@ interface CreatePaymentRequest {
 }
 
 export interface VerifiedRivhitPayment {
+  renewalExtended?: boolean;
   discountCode?: string | null;
   success: true;
   paymentReference: string;

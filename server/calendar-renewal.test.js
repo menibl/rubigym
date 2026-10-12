@@ -48,6 +48,7 @@ for (const type of ['OPEN_GYM', 'GROUP_MONTHLY']) test(`${type}: confirmation sh
     assert.equal((await verified.json()).membershipExpiry, nextMonthStart(f.expiry));
   }
   assert.equal(f.state().payload.users[0].membershipExpiry, nextMonthStart(f.expiry));
+  assert.equal(f.state().payload.users[0].membershipExpiryManualOverride, true, 'older calendar repair must preserve paid advance renewal on rollback');
   assert.equal(f.state().payload.payments.length, 2);
   assert.equal(repairCalendarMemberships(f.state().payload).payload.users[0].membershipExpiry, nextMonthStart(f.expiry));
 });
