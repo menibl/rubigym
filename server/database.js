@@ -138,6 +138,10 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       updated_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (club_id, slot)
     );
+    CREATE TABLE IF NOT EXISTS family_split_checkouts (
+      club_id text NOT NULL, payer_id text NOT NULL, revision bigint NOT NULL DEFAULT 1,
+      payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (club_id,payer_id)
+    );
     ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS profile jsonb;
     ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS failure_count integer NOT NULL DEFAULT 0;
     ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS last_success_at timestamptz;
@@ -145,6 +149,16 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
     ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS last_error text;
   `);
   return {
+    async getFamilySplitCheckout(clubId, payerId) {
+      const result = await pool.query('SELECT payload,revision FROM family_split_checkouts WHERE club_id=$1 AND payer_id=$2', [clubId, payerId]);
+      return result.rows[0] || { payload: null, revision: 0 };
+    },
+    async putFamilySplitCheckout(clubId, payerId, payload, revision) {
+      const result = Number(revision) === 0
+        ? await pool.query('INSERT INTO family_split_checkouts (club_id,payer_id,payload) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING revision', [clubId, payerId, payload])
+        : await pool.query('UPDATE family_split_checkouts SET payload=$3,revision=revision+1,updated_at=now() WHERE club_id=$1 AND payer_id=$2 AND revision=$4 RETURNING revision', [clubId, payerId, payload, revision]);
+      return result.rowCount === 1;
+    },
     async reserveFamilyCredit(clubId, sourcePaymentId, claimId, fingerprint) {
       const inserted = await pool.query("INSERT INTO family_credit_claims (club_id,source_payment_id,claim_id,fingerprint,recovery_stage) VALUES ($1,$2,$3,$4,'RESERVED') ON CONFLICT DO NOTHING RETURNING *", [clubId, sourcePaymentId, claimId, fingerprint]);
       if (inserted.rows[0]) return { ...inserted.rows[0], created: true };

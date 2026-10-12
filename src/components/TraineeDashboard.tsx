@@ -77,6 +77,7 @@ import {
   clearRivhitReturnParams,
   clearPendingRivhitPayment,
   getPendingRivhitPayment,
+  continueFamilySplitPayment,
   isRivhitConfigured,
   markTransactionProcessed,
   startRivhitPayment,
@@ -389,6 +390,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       return;
     }
     if (!pending || pending.mode === 'REGISTRATION' || pending.userId !== activeUser.id) return;
+    if (pending.familySplitBatchId) {
+      setPaymentStarting(true);
+      continueFamilySplitPayment(pending.familySplitBatchId, activeUser.id, pending.familySplitItemId)
+        .catch(error => showFeedback(error instanceof Error ? error.message : 'לא ניתן להשלים את התשלום המשפחתי.', 'error'))
+        .finally(() => setPaymentStarting(false));
+      return;
+    }
     const purchaseMode: 'PRIMARY' | 'ADDON' = pending.mode;
 
     setPaymentStarting(true);

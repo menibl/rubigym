@@ -16,6 +16,8 @@ export interface PendingRivhitPayment {
   familyBillingMode?: FamilyBillingMode;
   familyMemberPlans?: FamilyMemberPlanSelection[];
   discountCode?: string;
+  familySplitBatchId?: string;
+  familySplitItemId?: string;
 }
 
 interface CreatePaymentRequest {
@@ -93,6 +95,10 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
       body: JSON.stringify({ ...request, registrationDraft: undefined, quoteOnly: true })
     });
     const quote = await quoteResponse.json().catch(() => ({}));
+    if (quoteResponse.ok && quote.split && quote.batchId) {
+      await continueFamilySplitPayment(quote.batchId, request.userId);
+      return;
+    }
     if (!quoteResponse.ok || !quote.quoteKey) throw new Error(quote.message || 'לא ניתן לחשב את הקיזוז.');
     if (!window.confirm(`מחיר המסלולים: ₪${quote.packageAmount}\nקיזוז תשלום קודם: ₪${quote.creditAmount}\nלתשלום חד־פעמי עכשיו: ₪${quote.amountDue}\nבחידוש הבא נדרש תשלום ידני. להמשיך?`)) throw new Error('המעבר לתשלום בוטל. לא בוצע חיוב.');
     quoteKey = quote.quoteKey;
@@ -155,6 +161,49 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   };
   sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
   window.location.assign(result.url);
+};
+
+interface FamilySplitItem {
+  id: string; memberName: string; label: string; amount: number; recurring: boolean; status: string;
+}
+const familySplitAction = async (action: string, batchId: string, extra: Record<string, unknown> = {}) => {
+  const response = await fetch(`${paymentApiBase()}/api/payments/rivhit/family-split/${action}`, {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batchId, ...extra })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.message || 'התשלום המשפחתי דורש בירור. אין לבצע חיוב נוסף.');
+  return result;
+};
+
+export const continueFamilySplitPayment = async (batchId: string, userId: string, returnedItemId?: string) => {
+  if (returnedItemId) await familySplitAction('verify', batchId, { itemId: returnedItemId });
+  clearRivhitReturnParams();
+  const batch = await familySplitAction('status', batchId);
+  if (batch.completed) {
+    clearPendingRivhitPayment();
+    window.alert('בקשות התשלום המשפחתי הושלמו. הוראות שנוצרו יופעלו רק לאחר אישור החיוב בפועל מרווחית.');
+    window.location.reload();
+    return;
+  }
+  const items: FamilySplitItem[] = batch.items;
+  const next = items.find(item => !['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status));
+  if (!next) throw new Error('לא נמצא מסלול להשלמת התשלום.');
+  const summary = items.map(item => ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status)
+    ? `${item.memberName} — ${item.label}: כבר טופל, ללא חיוב נוסף כעת`
+    : `${item.memberName} — ${item.label}: ₪${item.amount} ${item.recurring ? 'לכל חודש, 12 חיובים; המחיר לאחר ההנחה קבוע לכל הסדרה' : 'חד־פעמי'}`).join('\n');
+  if (!window.confirm(`${batch.message}\n\n${summary}\n\nלהמשיך למסלול של ${next.memberName}: ${next.label}, ₪${next.amount}?`)) {
+    // Only an entirely undispatched quote can be discarded. Already created
+    // orders remain resumable; cancellation here never cancels Rivhit contracts.
+    if (items.every(item => ['READY', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status))) await familySplitAction('cancel', batchId);
+    return;
+  }
+  const checkout = await familySplitAction('create', batchId, { itemId: next.id, acknowledged: true });
+  const pending: PendingRivhitPayment = { paymentReference: checkout.paymentReference, userId,
+    membershipType: MembershipType.FAMILY_MEMBERSHIP, mode: 'PRIMARY', createdAt: new Date().toISOString(),
+    familySplitBatchId: batchId, familySplitItemId: next.id };
+  sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
+  window.location.assign(checkout.url);
 };
 
 export const getPendingRivhitPayment = (): PendingRivhitPayment | null => {
