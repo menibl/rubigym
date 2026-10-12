@@ -319,6 +319,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           membershipTerm.recurringBillingMonths = 12;
           membershipTerm.monthlyBillingDay = 1;
         }
+        if (verified.openGroupUpgrade && verified.membershipExpiry) {
+          membershipTerm.membershipExpiry = verified.membershipExpiry;
+          membershipTerm.membershipExpiryExclusive = true;
+          membershipTerm.membershipExpiryManualOverride = true;
+        }
         return {
           ...user,
           membershipType: purchasedType,
