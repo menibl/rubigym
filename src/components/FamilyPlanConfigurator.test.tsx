@@ -70,10 +70,10 @@ test('mixed annual and manual family plans show a prominent recurring warning, n
   const render = () => renderToStaticMarkup(<FamilyPlanConfigurator mode="CUSTOM_COMBINED" onModeChange={() => {}} count={2} onCountChange={() => {}} payerName="Annual" payerId="p" plans={plans} onPlansChange={() => {}} membershipPlans={catalog} familyMembers={[{ id: 'p', name: 'Annual' }, { id: 'c', name: 'Monthly' }]} />);
   assert.match(render(), /role="alert"/);
   assert.match(render(), /₪500 בכל חודש, 12 חיובים/);
-  assert.match(render(), /המעבר לסליקה ייחסם/);
+  assert.match(render(), /התשלום יפוצל לדפי סליקה נפרדים/);
   assert.doesNotMatch(render(), /התשלום חד־פעמי למסלולים הכלולים/);
   Object.assign(plans[0], { participation: 'SKIP' });
-  assert.doesNotMatch(render(), /המעבר לסליקה ייחסם/);
+  assert.doesNotMatch(render(), /התשלום יפוצל לדפי סליקה נפרדים/);
   assert.match(render(), /התשלום חד־פעמי למסלולים הכלולים/);
 });
 

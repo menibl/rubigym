@@ -152,3 +152,13 @@ test('legacy annual family mode cannot fall back to one-off when recurring is di
   assert.equal((await response.json()).code, 'RECURRING_DISABLED');
   assert.equal(f.requests.length, 0);
 });
+
+test('a single recurring plan keeps the discounted price in every charge, not just the first', async () => {
+  const f = fixture();
+  f.state().payload.discountCodes = [{ id: 'coupon', code: 'TEN', discountPercent: 10, isSingleUse: true }];
+  assert.equal((await f.create({ discountCode: 'TEN', recurringAcknowledged: true })).status, 200);
+  assert.equal(f.requests[0].body.Items[0].UnitPrice, 450);
+  // Inspect the signed immutable order, not a recalculation against a mutable coupon.
+  const order = JSON.parse(Buffer.from(f.requests[0].body.Custom1.split('.')[0], 'base64url').toString());
+  assert.equal(order.a, 450); assert.equal(order.c, 'TEN'); assert.equal(order.rm, 12);
+});
