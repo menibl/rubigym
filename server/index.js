@@ -12,7 +12,7 @@ import { familyPlanAmount } from '../shared/family-pricing.js';
 import { familySelectedPlans, familyPurchaseBenefits } from '../shared/family-multiple-plans.js';
 import { splitPersonName, hasFullPersonName } from '../shared/person-name.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
-import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
+import { repeatedMonthlyPayments, repeatedPaymentMessage, hasIncludedGroupAccess, monthlyMembershipCategory } from '../shared/monthly-payment-warning.js';
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../shared/club-check-in.js';
 import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoachArrival, recordCoachExceptionScan, redeemCoachArrivalApproval, coachArrivalResult } from '../shared/coach-exception-arrival.js';
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
@@ -453,6 +453,7 @@ const createSignedOrder = async (body, env, purchase) => {
     bu: purchase.beneficiaryId,
     bs: purchase.familySplitBatchId,
     bi: purchase.familySplitItemId,
+    nx: purchase.renewals,
     m: body.membershipType,
     d: body.mode,
     v: body.purchaseVariant || undefined,
@@ -657,6 +658,20 @@ const splitCustomerName = value => {
   return { firstName: firstName.slice(0, 20), lastName: lastName.slice(0, 30) };
 };
 
+const reserveRenewalCheckout = async (env, order) => {
+  if (!order.nx?.length || !env.STATE_STORE) return true;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
+    const pending = state.payload.renewalCheckouts || [];
+    if (pending.some(item => !item.completedAt && order.nx.some(next => next.userId === item.userId && next.newExpiry === item.newExpiry))) return false;
+    const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', { ...state.payload,
+      renewalCheckouts: [...pending, ...order.nx.map(next => ({ orderId: order.o, userId: next.userId, newExpiry: next.newExpiry, createdAt: new Date().toISOString() }))]
+    }, state.revision);
+    if (!saved.conflict) return true;
+  }
+  throw new Error('PAYMENT_STATE_CONFLICT');
+};
+
 const paymentReturnUrl = (request, env) => {
   const stagingUrl = env.PAYMENT_STAGING_APP_URL ? new URL(env.PAYMENT_STAGING_APP_URL) : null;
   return stagingUrl && request.headers.get('Origin') === stagingUrl.origin ? stagingUrl.toString() : env.PUBLIC_APP_URL;
@@ -839,6 +854,13 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
       && !(state.payload.payments || []).some(existing => existing.traineeId === userId
         && existing.providerRecurringSaleId === payment.recurringSaleId)) throw new Error('RECURRING_CONTRACT_MISSING');
     let updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.fa ?? order.a), state.payload.settings?.membershipPlans || []);
+    if (order.nx?.length) updatedUsers = updatedUsers.map(updated => {
+      const renewal = order.nx.find(item => item.userId === updated.id);
+      if (!renewal) return updated;
+      const previous = state.payload.users.find(item => item.id === updated.id);
+      return { ...updated, membershipExpiry: previous?.membershipExpiry > renewal.newExpiry ? previous.membershipExpiry : renewal.newExpiry,
+        membershipExpiryExclusive: true, membershipExpiryManualOverride: false, monthlyBillingDay: 1 };
+    });
     if (order.rc === 1) {
       const started = recurringSchedule(new Date(Number(order.t))).start.split('-').map(Number);
       const paidUntil = new Date(Date.UTC(started[2], started[1] + payment.recurringChargeNumber - 1, 1)).toISOString().slice(0, 10);
@@ -861,6 +883,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     }
     const payload = appendUserChangeMessages(state.payload, {
       ...state.payload,
+      renewalCheckouts: (state.payload.renewalCheckouts || []).map(item => item.orderId === order.o ? { ...item, completedAt: new Date().toISOString() } : item),
       recurringCheckouts: order.rc === 1 ? (state.payload.recurringCheckouts || []).map(item => item.orderId === order.o
         ? { ...item, recurringSaleId: payment.recurringSaleId } : item) : state.payload.recurringCheckouts,
       users: updatedUsers,
@@ -905,6 +928,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         discountAmount: order.da,
         familyPayerId: order.bu ? order.u : undefined,
         familySplitBatchId: order.bs,
+        renewalExtensions: order.nx,
         providerRecurringSaleId: payment.recurringSaleId || undefined,
         recurringChargeNumber: payment.recurringChargeNumber,
         recurringOrderId: order.rc === 1 ? order.o : undefined,
@@ -1175,7 +1199,20 @@ const handleCreatePayment = async (request, env, splitLine) => {
     purchase.recurringMonths = 12;
   }
   const repeatWarning = () => {
+    if (splitLine) return null; // The batch rechecks the actual beneficiary, not its payer.
     const matches = repeatedMonthlyPayments(checkoutState?.payload, body, purchase);
+    const includedOpen = matches.find(match => match.category === 'OPEN_GYM'
+      && hasIncludedGroupAccess(checkoutState?.payload?.users?.find(user => user.id === match.userId)));
+    if (includedOpen) return json({ code: 'OPEN_ALREADY_INCLUDED', message: `המנוי הקבוצתי כבר כולל Open Gym${includedOpen.currentExpiry ? ` והוא בתוקף עד ${includedOpen.currentExpiry}` : ''}. אין צורך ברכישה נוספת של Open Gym; כדי להאריך את הגישה${includedOpen.newExpiry ? ` עד ${includedOpen.newExpiry}` : ''} יש לבחור חידוש של המנוי הקבוצתי. לא נוצר חיוב.` }, 409, corsHeaders(request, env));
+    const payments = checkoutState?.payload?.payments || [];
+    const cancelled = new Set(payments.filter(payment => payment.recurringCancelledAt).map(payment => payment.providerRecurringSaleId));
+    if (!purchase.recurring && matches.some(match => payments.some(payment => payment.traineeId === match.userId
+      && payment.providerRecurringSaleId && !cancelled.has(payment.providerRecurringSaleId)
+      && monthlyMembershipCategory(payment.membershipTypePurchased) === match.category
+      && payment.status === 'PAID' && Date.parse(payment.timestamp || payment.date) > Date.now() - 366 * 86400000))) {
+      return json({ code: 'RECURRING_ALREADY_ACTIVE', message: 'כבר קיימת הוראת קבע פעילה. כדי למנוע חיוב כפול אין לבצע חידוש ידני נוסף למסלול הזה; יש לפנות למנהל לשינוי או ביטול ההוראה.' }, 409, corsHeaders(request, env));
+    }
+    purchase.renewals = matches.filter(match => match.newExpiry);
     return matches.length && body.repeatPaymentAcknowledged !== true
       ? json({ code: 'REPEAT_MONTHLY_PAYMENT', message: repeatedPaymentMessage(matches) }, 409, corsHeaders(request, env)) : null;
   };
@@ -1224,6 +1261,7 @@ const handleCreatePayment = async (request, env, splitLine) => {
   const { amount } = purchase;
   const providerAmount = rivhitChargeAmount(amount, env);
   const signedOrder = await createSignedOrder(body, env, purchase);
+  if (!await reserveRenewalCheckout(env, decodePayload(signedOrder.split('.')[0]))) return json({ code: 'RENEWAL_CHECKOUT_EXISTS', message: 'כבר נפתחה בקשת חידוש לתקופה הזו. יש להשלים את הבקשה הקיימת או לפנות למנהל לבירור; לא נפתח חיוב נוסף.' }, 409, corsHeaders(request, env));
   if (purchase.recurring && !await reserveRecurringCheckout(env, decodePayload(signedOrder.split('.')[0]))) {
     return json({ code: 'RECURRING_CHECKOUT_EXISTS', message: 'כבר נפתחה בקשת הוראת קבע לחשבון הזה. יש להשלים את הבקשה הקיימת או לפנות למנהל לבדיקתה מול רווחית; לא נפתחה בקשה נוספת.' }, 409, corsHeaders(request, env));
   }
@@ -1332,7 +1370,7 @@ const handleVerifyPayment = async (request, env) => {
     ...providerPayment
   };
   await persistVerifiedPurchase(env, order, payment, identity?.user_id);
-  if (order.rc === 1 && env.STATE_STORE) {
+  if ((order.rc === 1 || order.nx?.length) && env.STATE_STORE) {
     const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
     payment.membershipExpiry = state?.payload?.users?.find(user => user.id === order.u)?.membershipExpiry;
   }

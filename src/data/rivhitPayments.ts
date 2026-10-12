@@ -18,6 +18,7 @@ export interface PendingRivhitPayment {
   discountCode?: string;
   familySplitBatchId?: string;
   familySplitItemId?: string;
+  paymentUrl?: string;
 }
 
 interface CreatePaymentRequest {
@@ -89,6 +90,15 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות התשלום עדיין לא הוגדר בשרת.');
   let quoteKey: string | undefined;
+  const resumeRenewal = (message: string) => {
+    const previous = getPendingRivhitPayment();
+    let trusted = false;
+    try { trusted = ['https://icredit.rivhit.co.il', 'https://testicredit.rivhit.co.il'].includes(new URL(previous?.paymentUrl || '').origin); } catch { /* invalid stored URL */ }
+    if (!trusted || previous?.userId !== request.userId || previous?.membershipType !== request.membershipType
+      || !window.confirm(`${message}\nלהמשיך לדף התשלום הקיים?`)) return false;
+    window.location.assign(previous.paymentUrl!);
+    return true;
+  };
   if (request.membershipType === 'FAMILY_MEMBERSHIP' && request.mode === 'PRIMARY') {
     const quoteResponse = await fetch(`${apiBase}/api/payments/rivhit/create`, {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
@@ -130,6 +140,11 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   });
   let response = await create();
   let result = await response.json().catch(() => ({}));
+  if (response.status === 409 && result.code === 'OPEN_ALREADY_INCLUDED') {
+    window.alert(result.message);
+    throw new Error('לא נוצר חיוב נוסף. לחידוש יש לבחור במנוי הקבוצתי.');
+  }
+  if (response.status === 409 && result.code === 'RENEWAL_CHECKOUT_EXISTS' && resumeRenewal(result.message)) return;
   if (response.status === 409 && result.code === 'RECURRING_CONSENT_REQUIRED') {
     if (!window.confirm(result.message)) throw new Error('המעבר להוראת קבע בוטל. לא נוצר חיוב.');
     recurringAcknowledged = true;
@@ -140,6 +155,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
     if (!window.confirm(result.message)) throw new Error('התשלום הנוסף בוטל. לא בוצע חיוב.');
     response = await create(true);
     result = await response.json().catch(() => ({}));
+    if (response.status === 409 && result.code === 'RENEWAL_CHECKOUT_EXISTS' && resumeRenewal(result.message)) return;
   }
   if (response.ok && result.completed) { window.location.reload(); return; }
   if (!response.ok || !result.url || !result.paymentReference) {
@@ -147,6 +163,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   }
   const pending: PendingRivhitPayment = {
     paymentReference: result.paymentReference,
+    paymentUrl: result.url,
     userId: request.userId,
     membershipType: request.membershipType,
     mode: request.mode,
@@ -196,7 +213,7 @@ export const continueFamilySplitPayment = async (batchId: string, userId: string
     // Only an entirely undispatched quote can be discarded. Already created
     // orders remain resumable; cancellation here never cancels Rivhit contracts.
     if (items.every(item => ['READY', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status))) await familySplitAction('cancel', batchId);
-    return;
+    throw new Error('המעבר לתשלום בוטל. לא נפתח דף סליקה חדש; הוראות שכבר נוצרו אינן מבוטלות.');
   }
   const checkout = await familySplitAction('create', batchId, { itemId: next.id, acknowledged: true });
   const pending: PendingRivhitPayment = { paymentReference: checkout.paymentReference, userId,

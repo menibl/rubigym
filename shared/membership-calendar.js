@@ -27,6 +27,10 @@ export function repairCalendarMemberships(payload, now = new Date()) {
     if (!isCalendarMembership(user.membershipType) || user.role !== 'TRAINEE'
       || user.membershipStatus !== 'ACTIVE' || user.membershipExpiryManualOverride
       || user.registrationPaymentPending || user.familyPaymentPending) return user;
+    const renewalExpiry = (payload.payments || []).filter(payment => payment.status === 'PAID' && !payment.refundedAt)
+      .flatMap(payment => payment.renewalExtensions || []).filter(item => item.userId === user.id)
+      .map(item => item.newExpiry).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date || '')).sort().at(-1);
+    if (renewalExpiry && user.membershipExpiry >= renewalExpiry) return user;
     const paid = (payload.payments || []).some(payment => {
       if (payment.status !== 'PAID' || payment.purchaseMode === 'ADDON') return false;
       // Recurring access is derived from the verified charge number, not the
@@ -39,10 +43,11 @@ export function repairCalendarMemberships(payload, now = new Date()) {
       return payment.membershipTypePurchased === 'FAMILY_MEMBERSHIP'
         && payment.familyMemberPlans?.some(plan => plan.memberId === user.id && plan.membershipType === user.membershipType && (!plan.participation || plan.participation === 'INCLUDED'));
     });
-    if (!paid || (user.membershipExpiry === expiry && user.membershipExpiryExclusive && user.monthlyBillingDay === 1)) return user;
+    const paidExpiry = renewalExpiry && renewalExpiry > expiry ? renewalExpiry : expiry;
+    if (!paid || (user.membershipExpiry === paidExpiry && user.membershipExpiryExclusive && user.monthlyBillingDay === 1)) return user;
     changed = true;
     return { ...user, membershipExpiryBeforeCalendar: user.membershipExpiryBeforeCalendar || user.membershipExpiry,
-      membershipExpiry: expiry, membershipExpiryExclusive: true, monthlyBillingDay: 1 };
+      membershipExpiry: paidExpiry, membershipExpiryExclusive: true, monthlyBillingDay: 1 };
   });
   return { changed, payload: changed ? { ...payload, users } : payload };
 }

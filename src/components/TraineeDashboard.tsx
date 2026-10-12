@@ -96,6 +96,8 @@ import {
 import { DiscountCodeField } from './DiscountCodeField';
 import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { ProgramCheckoutButton } from './ProgramCheckoutButton';
+import { WeeklyBookingPopup } from './WeeklyBookingPopup';
+import { clubBookingWeek, weeklyBookingSuggestions } from '../data/weeklyBookingSuggestions';
 import { familyPurchaseAmount, resizeFamilyPlans } from '../data/familyMembership';
 import { familyPurchaseBenefits } from '../../shared/family-multiple-plans.js';
 import { billingPeriodForPlan, billingPeriodLabel, isSelectableTrainingCard, membershipCheckoutAmount } from '../data/membershipBilling';
@@ -162,6 +164,26 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
   const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [paymentStarting, setPaymentStarting] = useState(false);
+  const [bookingPopupRequested, setBookingPopupRequested] = useState(true);
+  const [bookingPopupNow, setBookingPopupNow] = useState(() => new Date());
+  useEffect(() => {
+    setBookingPopupRequested(true);
+    setBookingPopupNow(new Date());
+    let hidden = document.hidden;
+    let week = clubBookingWeek().start;
+    const refresh = () => {
+      const now = new Date(), nextWeek = clubBookingWeek(now).start;
+      if (nextWeek !== week) { week = nextWeek; setBookingPopupRequested(true); }
+      setBookingPopupNow(now);
+    };
+    const visible = () => {
+      if (document.hidden) hidden = true;
+      else { refresh(); if (hidden) setBookingPopupRequested(true); hidden = false; }
+    };
+    const timer = window.setInterval(refresh, 60000);
+    document.addEventListener('visibilitychange', visible);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
+  }, [activeUser.id]);
   useEffect(() => {
     if (activeTab !== 'membership' || !selectedMembershipPurchase) return;
     const timeout = window.setTimeout(() => {
@@ -312,6 +334,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           membershipTerm.recurringBillingMonths = 0;
           membershipTerm.monthlyBillingDay = 1;
         }
+        if (verified.membershipExpiry) {
+          membershipTerm.membershipExpiry = verified.membershipExpiry;
+          membershipTerm.membershipExpiryExclusive = true;
+        }
         if (verified.recurringContractEndsAt && verified.membershipExpiry) {
           membershipTerm.membershipCommitmentEndsAt = verified.recurringContractEndsAt;
           membershipTerm.membershipExpiry = verified.membershipExpiry;
@@ -352,6 +378,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       const purchasedSessions = purchaseVariant ? Number(purchaseVariant.split('_')[1]) : Math.max(0, Number(verified.includedSessions) || 0);
       return {
         ...user,
+        ...(verified.membershipExpiry ? { membershipExpiry: verified.membershipExpiry, membershipExpiryExclusive: true } : {}),
         secondaryMemberships: secondaryMemberships.includes(purchasedType)
           ? secondaryMemberships
           : [...secondaryMemberships, purchasedType],
@@ -2533,7 +2560,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         )}
 
       </div>
-
+      {bookingPopupRequested && activeTab !== 'membership' && !paymentStarting && !personalBookingChoice && !pendingLatePersonalCancellation
+        && (typeof window === 'undefined' || !new URLSearchParams(window.location.search).has('rivhit'))
+        && weeklyBookingSuggestions(sessions, activeUser, session => checkBookingEligibility(session).eligible, bookingPopupNow).length > 0
+        && <WeeklyBookingPopup sessions={weeklyBookingSuggestions(sessions, activeUser, session => checkBookingEligibility(session).eligible, bookingPopupNow)}
+          onClose={() => setBookingPopupRequested(false)} onRegister={session => {
+            setBookingPopupRequested(false);
+            setActiveTab('classes');
+            handleBookSession(session);
+          }} />}
     </div>
   );
 };
