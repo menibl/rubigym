@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
+import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
 import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
 import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
@@ -744,17 +745,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (bp) {
       recalculateUserPriority(bp.traineeId, updated);
     }
-  };
-
-  // Update Trainee Membership Status (billing / debit manual trigger for testing)
-  const handleUpdateStatus = (traineeId: string, newStatus: MembershipStatus) => {
-    const updatedUsers = users.map(u => {
-      if (u.id === traineeId) {
-        return { ...u, membershipStatus: newStatus };
-      }
-      return u;
-    });
-    onUpdateUsers(updatedUsers);
   };
 
   // Record an offline payment to clear a debt.
@@ -1622,16 +1612,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {currentPlans.map(plan => <option key={plan.id} value={plan.id}>{plan.label}</option>)}
                             </select>
 
-                            <select
-                              value={u.membershipStatus}
-                              aria-label={`סטטוס המנוי של ${u.name}`}
-                              onChange={(e) => handleUpdateStatus(u.id, e.target.value as MembershipStatus)}
-                              className="border border-slate-200 rounded p-1 text-[10px] focus:outline-none bg-white w-full"
-                            >
-                              <option value={MembershipStatus.ACTIVE}>סמן כפעיל</option>
-                              <option value={MembershipStatus.DEBT}>סמן בחוב כספי</option>
-                              <option value={MembershipStatus.EXPIRED}>סמן כפג תוקף</option>
-                            </select>
+                            <AdminMembershipStatusEditor key={`${u.id}:${u.membershipStatus}:${u.membershipExpiry || ''}`} user={u}
+                              onSave={updated => onUpdateUsers(users.map(member => member.id === updated.id ? updated : member))} />
                             </div></details>
                           </div>
                         </td>
