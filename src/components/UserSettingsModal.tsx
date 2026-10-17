@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { hasFullPersonName } from '../../shared/person-name.js';
+import { familyMemberSurname, missingFamilyMemberFields } from '../utils/familyMemberForm';
 import { User, UserRole, MembershipType, MembershipStatus, Gender, DiscountCode } from '../types';
 import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
 import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
@@ -70,7 +70,13 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
   // Add sub-family member form inside family tab
   const [showAddSubMember, setShowAddSubMember] = useState(false);
-  const [subName, setSubName] = useState('');
+  const [subFirstName, setSubFirstName] = useState('');
+  const [subLastName, setSubLastName] = useState(() => familyMemberSurname(currentUser, allUsers));
+  const subName = `${subFirstName.trim()} ${subLastName.trim()}`.trim();
+  const [subSurnameEdited, setSubSurnameEdited] = useState(false);
+  useEffect(() => {
+    if (!subSurnameEdited) setSubLastName(familyMemberSurname(currentUser, allUsers));
+  }, [currentUser, allUsers, subSurnameEdited]);
   const [subUsername, setSubUsername] = useState('');
   const [subEmail, setSubEmail] = useState(currentUser.email || '');
   const [subPassword, setSubPassword] = useState('');
@@ -336,8 +342,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const handleAddFamilyMember = async (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedEmail = subEmail.trim().toLowerCase();
-    if (!hasFullPersonName(subName) || !subUsername.trim() || !normalizedEmail || !subPassword.trim()) {
-      setMsg({ type: 'error', text: 'יש למלא שם פרטי ושם משפחה, שם משתמש, אימייל וסיסמה עבור בן המשפחה' });
+    const missing = missingFamilyMemberFields({ firstName: subFirstName, lastName: subLastName,
+      username: subUsername, email: subEmail, password: subPassword, birthDate: subBirthDate,
+      healthApproved: subHealthApproved, agreementApproved: subAgreementApproved });
+    if (missing.length) {
+      setMsg({ type: 'error', text: `להשלמת הוספת בן המשפחה חסרים: ${missing.join(', ')}.` });
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
@@ -349,18 +358,20 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       return;
     }
 
-    if (allUsers.some(u => String(u.username || '').trim().toLowerCase() === subUsername.trim().toLowerCase())
-      || allUsers.some(u => u.id !== currentUser.id && String(u.email || '').trim().toLowerCase() === normalizedEmail && (!currentUser.familyId || u.familyId !== currentUser.familyId))) {
-      setMsg({ type: 'error', text: 'שם המשתמש כבר תפוס או שכתובת האימייל שייכת לחשבון שאינו במשפחה' });
+    if (allUsers.some(u => String(u.username || '').trim().toLowerCase() === subUsername.trim().toLowerCase())) {
+      setMsg({ type: 'error', text: 'שם המשתמש להתחברות כבר תפוס. יש לבחור שם משתמש אחר לבן המשפחה.' });
       return;
     }
-    if (!subBirthDate || !subHealthApproved || !subAgreementApproved) {
-      setMsg({ type: 'error', text: 'יש להזין תאריך לידה ולאשר הצהרת בריאות והסכם הצטרפות עבור בן המשפחה' });
+    if (allUsers.some(u => u.id !== currentUser.id && String(u.email || '').trim().toLowerCase() === normalizedEmail && (!currentUser.familyId || u.familyId !== currentUser.familyId))) {
+      setMsg({ type: 'error', text: 'כתובת האימייל שייכת לחשבון שאינו במשפחה. יש להזין כתובת אחרת.' });
       return;
     }
-
     const birth = new Date(subBirthDate);
     const today = new Date();
+    if (!Number.isFinite(birth.getTime()) || birth > today) {
+      setMsg({ type: 'error', text: 'תאריך הלידה של בן המשפחה אינו תקין או נמצא בעתיד.' });
+      return;
+    }
     let subAge = today.getFullYear() - birth.getFullYear();
     if (
       today.getMonth() < birth.getMonth() ||
@@ -431,7 +442,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
 
     setShowAddSubMember(false);
-    setSubName('');
+    setSubFirstName('');
+    setSubLastName(familyMemberSurname(currentUser, allUsers));
+    setSubSurnameEdited(false);
     setSubUsername('');
     setSubEmail('');
     setSubPassword('');
@@ -499,7 +512,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
         </div>
 
         {msg && (
-          <div className={`mx-5 mt-4 p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+          <div role={msg.type === 'error' ? 'alert' : 'status'} className={`mx-5 mt-4 p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
             msg.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
           }`}>
             {msg.type === 'success' ? <Check size={16} /> : <X size={16} />}
@@ -792,50 +805,57 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
                       {/* Add sub member inline form */}
                       {showAddSubMember && (
-                        <form onSubmit={handleAddFamilyMember} className="p-3 bg-white border border-indigo-200 rounded-xl space-y-2.5">
+                        <form noValidate onSubmit={handleAddFamilyMember} className="p-3 bg-white border border-indigo-200 rounded-xl space-y-2.5">
                           <div className="font-bold text-slate-800 text-[11px]">הוספת בן משפחה חדש — המנוי ממתין לתשלום עד לרכישת המסלול:</div>
                           <div className="grid grid-cols-2 gap-2">
-                            <input
+                            <label className="text-xs font-bold">שם פרטי *<input
                               type="text"
                               required
-                              placeholder="שם פרטי ושם משפחה *"
-                              aria-label="שם פרטי ושם משפחה של בן המשפחה"
-                              value={subName}
-                              onChange={(e) => setSubName(e.target.value)}
-                              className="p-2 border rounded-lg text-xs"
-                            />
-                            <input
+                              autoComplete="given-name"
+                              value={subFirstName}
+                              onChange={(e) => setSubFirstName(e.target.value)}
+                              className="mt-1 w-full p-2 border rounded-lg text-xs"
+                            /></label>
+                            <label className="text-xs font-bold">שם משפחה *<input
+                              type="text" required autoComplete="family-name"
+                              value={subLastName}
+                              onChange={(e) => { setSubLastName(e.target.value); setSubSurnameEdited(true); }}
+                              className="mt-1 w-full p-2 border rounded-lg text-xs"
+                            /><span className="block mt-1 font-normal">מולא מפרטי המשפחה; ניתן לשנות.</span></label>
+                            <label className="text-xs font-bold">שם משתמש להתחברות *<input
                               type="text"
                               required
                               placeholder="שם משתמש להתחברות *"
                               value={subUsername}
                               onChange={(e) => setSubUsername(e.target.value)}
-                              className="p-2 border rounded-lg font-mono text-xs"
-                            />
-                            <input
+                              autoComplete="username"
+                              className="mt-1 w-full p-2 border rounded-lg font-mono text-xs"
+                            /></label>
+                            <label className="text-xs font-bold">אימייל להתחברות *<input
                               type="email"
                               required
                               placeholder="אימייל להתחברות *"
                               value={subEmail}
                               onChange={(e) => setSubEmail(e.target.value)}
                               autoComplete="email"
-                              className="p-2 border rounded-lg text-xs"
-                            />
-                            <input
+                              className="mt-1 w-full p-2 border rounded-lg text-xs"
+                            /></label>
+                            <label className="text-xs font-bold">סיסמה *<input
                               type="password"
                               required
                               placeholder="סיסמה *"
                               value={subPassword}
                               onChange={(e) => setSubPassword(e.target.value)}
-                              className="p-2 border rounded-lg font-mono text-xs"
-                            />
-                            <input
+                              autoComplete="new-password"
+                              className="mt-1 w-full p-2 border rounded-lg font-mono text-xs"
+                            /></label>
+                            <label className="text-xs font-bold">טלפון<input
                               type="tel"
                               placeholder="טלפון"
                               value={subPhone}
                               onChange={(e) => setSubPhone(e.target.value)}
-                              className="p-2 border rounded-lg text-xs"
-                            />
+                              className="mt-1 w-full p-2 border rounded-lg text-xs"
+                            /></label>
                           </div>
 
 
