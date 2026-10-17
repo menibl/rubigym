@@ -1,4 +1,5 @@
 import { workoutCoachPrompt } from './generated/workout-coach-prompt.js';
+import { readOpenAiResponse } from './openai-response.js';
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const requestWindows = new Map();
@@ -147,6 +148,15 @@ const readOutputText = response => {
   throw new Error('OPENAI_EMPTY_RESPONSE');
 };
 
+const readPlanResult = response => {
+  const text = readOutputText(response);
+  let plan;
+  try { plan = JSON.parse(text); }
+  catch { throw new Error('OPENAI_INVALID_PLAN_JSON'); }
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('OPENAI_INVALID_PLAN_SHAPE');
+  return plan;
+};
+
 const privacySafeIdentifier = async value => {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value || 'anonymous')));
   return [...new Uint8Array(bytes)].slice(0, 16).map(byte => byte.toString(16).padStart(2, '0')).join('');
@@ -229,6 +239,7 @@ export const preserveApprovedNutritionTargets = (result, currentDraft, message) 
 export const handleWorkoutAi = async (request, env, headers, json) => {
   const apiKey = resolveOpenAiApiKey(env);
   if (!apiKey) return json({ message: 'מפתח OpenAI עדיין לא הוגדר בשרת.' }, 503, headers);
+  let lastDiagnostics;
   try {
     assertAllowedOrigin(request, env);
     enforceRateLimit(request, env);
@@ -239,11 +250,13 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
     const context = cleanContext(body);
     const schema = body.scope === 'PERSONAL' ? personalSchema : body.scope === 'GROUP' ? groupSchema : nutritionSchema;
     const schemaName = body.scope === 'PERSONAL' ? 'personal_workout_plan' : body.scope === 'GROUP' ? 'group_workout_plan' : 'nutrition_plan';
-    const requestModel = async input => {
+    const requestModel = async (input, stage) => {
+      lastDiagnostics = { stage };
       const response = await fetch(OPENAI_RESPONSES_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
+          'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -262,35 +275,28 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
         max_output_tokens: Number(env.OPENAI_WORKOUT_MAX_OUTPUT_TOKENS || 12_000)
       })
       });
-      return { response, result: await response.json().catch(() => null) };
+      const decoded = await readOpenAiResponse(response, stage);
+      lastDiagnostics = decoded.diagnostics;
+      if (decoded.failure) {
+        console.error('OpenAI workout request failed', JSON.stringify({ ...decoded.diagnostics, code: decoded.failure }));
+        throw Object.assign(new Error(decoded.failure), { upstreamStatus: response.status, diagnosticLogged: true });
+      }
+      return { response, result: decoded.result };
     };
     const baseInput = [
       { role: 'system', content: workoutCoachPrompt },
       { role: 'user', content: `עדכן את הטיוטה בהתאם לבקשה ולהקשר הבא. אם זהו שאלון תזונה, החזר הצעה שמרנית לבדיקת איש מקצוע ואישור המאמן בלבד:\n${JSON.stringify(context)}` }
     ];
-    let { response: openAiResponse, result } = await requestModel(baseInput);
-    if (!openAiResponse.ok || !result) {
-      console.error('OpenAI workout request failed', openAiResponse.status, result?.error?.code || result?.error?.message || 'unknown');
-      const status = openAiResponse.status === 429 ? 429 : 502;
-      const message = openAiResponse.status === 401
-        ? 'מפתח OpenAI שמוגדר בשרת אינו תקין.'
-        : openAiResponse.status === 404
-          ? 'מודל ה־AI שמוגדר בשרת אינו זמין לפרויקט.'
-          : status === 429
-            ? 'שירות ה־AI עמוס כרגע או שמגבלת התקציב נוצלה. נסו שוב בעוד רגע.'
-            : 'שירות ה־AI לא הצליח ליצור תוכנית.';
-      return json({ message }, status, headers);
-    }
-    let parsedResult = JSON.parse(readOutputText(result));
+    let { result } = await requestModel(baseInput, 'generation');
+    let parsedResult = readPlanResult(result);
     if (containsVisibleLatinText(parsedResult)) {
       const correctionInput = [
         ...baseInput,
         { role: 'assistant', content: JSON.stringify(parsedResult) },
         { role: 'user', content: 'תקן את הטיוטה והחזר אותה במלואה: כל הטקסט הגלוי וכל שמות התרגילים חייבים להיות בעברית בלבד, ללא אותיות לטיניות. תרגם לעברית כל שם או מונח באנגלית. ערכי הסכמה הפנימיים יישארו ללא שינוי.' }
       ];
-      ({ response: openAiResponse, result } = await requestModel(correctionInput));
-      if (!openAiResponse.ok || !result) throw new Error('OPENAI_HEBREW_CORRECTION_FAILED');
-      parsedResult = JSON.parse(readOutputText(result));
+      ({ result } = await requestModel(correctionInput, 'hebrew-correction'));
+      parsedResult = readPlanResult(result);
       if (containsVisibleLatinText(parsedResult)) throw new Error('OPENAI_NON_HEBREW_RESPONSE');
     }
     if (body.scope === 'NUTRITION') {
@@ -298,10 +304,22 @@ export const handleWorkoutAi = async (request, env, headers, json) => {
     }
     return json({ result: parsedResult, model: result.model || env.OPENAI_WORKOUT_MODEL || 'gpt-5-mini' }, 200, headers);
   } catch (error) {
-    const code = error instanceof Error ? error.message : 'UNKNOWN';
+    const knownCodes = new Set(['AI_RATE_LIMIT', 'AI_ORIGIN_DENIED', 'OPENAI_REFUSAL', 'OPENAI_EMPTY_RESPONSE',
+      'OPENAI_NON_HEBREW_RESPONSE', 'OPENAI_RESPONSE_READ_FAILED', 'OPENAI_EMPTY_BODY', 'OPENAI_INVALID_JSON',
+      'OPENAI_INVALID_RESPONSE_SHAPE', 'OPENAI_REQUEST_REJECTED', 'OPENAI_INVALID_PLAN_JSON', 'OPENAI_INVALID_PLAN_SHAPE']);
+    // SyntaxError.message can include model output or personal details.
+    const code = error instanceof Error && knownCodes.has(error.message) ? error.message : 'OPENAI_RESPONSE_PROCESSING_FAILED';
     if (code === 'AI_RATE_LIMIT') return json({ message: 'הגעתם למגבלת בקשות ה־AI לשעה. נסו שוב מאוחר יותר.' }, 429, headers);
     if (code === 'AI_ORIGIN_DENIED') return json({ message: 'מקור הבקשה אינו מורשה.' }, 403, headers);
-    console.error('OpenAI workout error', code);
-    return json({ message: code === 'OPENAI_REFUSAL' ? 'הבקשה לא ניתנת לביצוע. נסחו אותה מחדש.' : 'לא ניתן היה לעבד את תשובת ה־AI.' }, 502, headers);
+    if (!error?.diagnosticLogged) console.error('OpenAI workout error', JSON.stringify({ ...lastDiagnostics, code }));
+    const status = error?.upstreamStatus === 429 ? 429 : 502;
+    const message = error?.upstreamStatus === 401 ? 'מפתח OpenAI שמוגדר בשרת אינו תקין.'
+      : error?.upstreamStatus === 404 ? 'מודל ה־AI שמוגדר בשרת אינו זמין לפרויקט.'
+      : status === 429 ? 'שירות ה־AI עמוס כרגע או שמגבלת התקציב נוצלה. נסו שוב בעוד רגע.'
+      : code === 'OPENAI_EMPTY_BODY' ? 'התקבלה תשובה ריקה משירות ה־AI. לא נוצרה תוכנית; ניתן לנסות שוב.'
+      : ['OPENAI_INVALID_JSON', 'OPENAI_INVALID_RESPONSE_SHAPE', 'OPENAI_INVALID_PLAN_JSON', 'OPENAI_INVALID_PLAN_SHAPE'].includes(code) ? 'שירות ה־AI החזיר תשובה בפורמט לא תקין. לא נוצרה תוכנית; ניתן לנסות שוב.'
+      : code === 'OPENAI_RESPONSE_READ_FAILED' ? 'קריאת תשובת ה־AI נכשלה או נקטעה. לא נוצרה תוכנית; ניתן לנסות שוב.'
+      : code === 'OPENAI_REFUSAL' ? 'הבקשה לא ניתנת לביצוע. נסחו אותה מחדש.' : 'לא ניתן היה לעבד את תשובת ה־AI.';
+    return json({ message, code }, status, headers);
   }
 };
