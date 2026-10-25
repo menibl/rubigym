@@ -10,9 +10,27 @@ test('previous and next group programs do not require registration and preserve 
   assert.equal(selected.next.id, 'next'); assert.equal(selected.previous.id, 'previous');
   assert.deepEqual(homeGroupSessions({ ...user, membershipType: 'OPEN_GYM' }, sessions), { next: undefined, previous: undefined });
 });
-test('registered next group anchors previous matching group; unassigned next remains visible', () => {
+test('nearest eligible group anchors previous matching group even when registered for a later group', () => {
   const result = homeGroupSessions(user, [session('old-a', '2026-10-04'), session('old-b', '2026-10-06', { title: 'אחרת' }), session('next-a', '2026-10-09', { registeredUsers: ['u'] }), session('near-b', '2026-10-08', { title: 'אחרת' })], new Date('2026-10-07').getTime());
-  assert.equal(result.next.id, 'next-a'); assert.equal(result.previous.id, 'old-a');
+  assert.equal(result.next.id, 'near-b'); assert.equal(result.previous.id, 'old-b');
+});
+
+test('server includes today unbooked group program alongside tomorrow booked program without exposing unrelated programs', t => {
+  t.mock.method(Date, 'now', () => new Date('2026-10-25T10:00:00').getTime());
+  const member = { ...user, gender: 'FEMALE', age: 55 };
+  const group = (id, date, extra = {}) => session(id, date, { time: '18:00', title: 'קבוצת נשים', genderRestriction: 'FEMALE', assignedGroupWorkoutProgramId: `program-${id}`, ...extra });
+  const sessions = [
+    group('previous', '2026-10-21'),
+    group('today', '2026-10-25'),
+    group('tomorrow', '2026-10-26', { registeredUsers: ['u'] }),
+    group('male', '2026-10-25', { time: '11:00', genderRestriction: 'MALE' }),
+    group('youth', '2026-10-25', { time: '12:00', ageMax: 18 }),
+    group('personal', '2026-10-25', { time: '13:00', isPersonalTraining: true }),
+    group('unrelated', '2026-10-27'),
+  ];
+  const safe = payloadForUser({ users: [member], sessions, groupWorkoutPrograms: sessions.map(s => ({ id: s.assignedGroupWorkoutProgramId })), workoutPlans: [] }, 'u', 'TRAINEE');
+  assert.deepEqual(safe.groupWorkoutPrograms.map(plan => plan.id), ['program-previous', 'program-today', 'program-tomorrow']);
+  assert.deepEqual(sessions.find(s => s.id === 'today').registeredUsers, []);
 });
 test('server returns only home group programs plus registered programs, no unrelated personal or library plan', () => {
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);

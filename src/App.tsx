@@ -669,7 +669,7 @@ export default function App() {
         <div className="max-w-sm rounded-2xl border border-zinc-700 bg-zinc-900 p-6 shadow-xl">
           <Dumbbell className="mx-auto text-amber-400" size={34} />
           <h1 className="mt-3 text-lg font-black">תוכנית האימון אינה זמינה</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-400">ניתן לצפות בתוכנית שפורסמה רק לאחר הרשמה לאימון המתאים ביומן.</p>
+          <p className="mt-2 text-sm leading-6 text-zinc-400">ניתן לצפות בתוכנית שפורסמה לאימון שנרשמת אליו, וגם בתוכנית הקבוצה הקרובה והקודמת המתאימות למנוי שלך, לגיל ולמין שלך — ללא הרשמה.</p>
           <button type="button" onClick={() => { window.location.hash = ''; }} className="mt-5 min-h-11 w-full rounded-xl bg-amber-400 font-black text-zinc-950">חזרה לאפליקציה</button>
         </div>
       </main>
