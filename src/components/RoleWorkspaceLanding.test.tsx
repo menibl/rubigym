@@ -49,3 +49,13 @@ test('group home provides previous and upcoming mobile program buttons without r
   assert.match(html, /עדיין לא שובצה תוכנית/);
   assert.match(html, /2020-01-01/); assert.match(html, /2099-01-01/);
 });
+
+test('home separates next booking from nearest eligible group program', () => {
+  const groupUser = { ...trainee, membershipType: MembershipType.GROUP_MONTHLY, gender: Gender.FEMALE, age: 55 };
+  const group = (id: string, date: string, registeredUsers: string[]) => ({ id, date, time: '18:00', title: id === 'near' ? 'הקבוצה הקרובה' : 'הקבוצה שהוזמנה', genderRestriction: Gender.FEMALE, allowedMemberships: [MembershipType.CORE_GROUPS], registeredUsers } as TrainingSession);
+  const html = renderToStaticMarkup(<RoleWorkspaceLanding activeUser={groupUser} sessions={[group('near', '2099-01-01', []), group('booked', '2099-01-02', ['trainee'])]} openGymSessions={[]} availableGroupSessionIds={['near']} onOpenSessionProgram={() => {}} onSelect={() => {}} onOpenProfile={() => {}} />);
+  assert.match(html, /הקבוצה שהוזמנה · 2099-01-02/);
+  assert.match(html, /תוכנית האימון הקרוב של הקבוצה/);
+  assert.match(html, /הקבוצה הקרובה · 2099-01-01/);
+  assert.doesNotMatch(html, /עדיין לא שובצה תוכנית/);
+});

@@ -17,7 +17,8 @@ export function homeGroupSessions(user, sessions, now = Date.now()) {
     .filter(session => Number.isFinite(new Date(`${session.date}T${session.time || '00:00'}:00`).getTime()))
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
   const future = eligible.filter(session => new Date(`${session.date}T${session.time || '00:00'}:00`).getTime() >= now);
-  const next = future.find(session => session.registeredUsers?.includes(user.id)) || future[0];
+  // Program access follows the nearest eligible group, independently of bookings.
+  const next = future[0];
   const past = eligible.filter(session => new Date(`${session.date}T${session.time || '00:00'}:00`).getTime() < now);
   const previous = (next ? past.filter(session => session.title === next.title) : past).at(-1) || past.at(-1);
   return { next, previous };

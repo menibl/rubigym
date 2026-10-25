@@ -271,7 +271,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
           </div>
         </div>
         {isTrainee && (groupSessions.next || groupSessions.previous) && <div className="flex flex-wrap gap-2" dir="rtl" aria-label="תוכניות אימוני הקבוצה">
-          {([{ session: groupSessions.next, label: 'תוכנית האימון' }, { session: groupSessions.previous, label: 'תוכנית האימון הקודמת של הקבוצה' }]).map(({ session, label }) => {
+          {([{ session: groupSessions.next, label: 'תוכנית האימון הקרוב של הקבוצה' }, { session: groupSessions.previous, label: 'תוכנית האימון הקודמת של הקבוצה' }]).map(({ session, label }) => {
             const available = session && availableGroupSessionIds.includes(session.id);
             return <button key={label} type="button" disabled={!available} onClick={() => session && onOpenSessionProgram?.(session)} className="min-h-11 rounded-xl border border-amber-400/50 bg-zinc-900 px-4 py-3 text-sm font-bold text-amber-200 disabled:border-zinc-700 disabled:text-zinc-400">
               <span className="block">{label}</span>
