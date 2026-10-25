@@ -353,6 +353,9 @@ export interface User {
   membershipExpiryExclusive?: boolean; // Calendar memberships expire at the start of this date.
   membershipExpiryManualOverride?: boolean;
   membershipExpiryBeforeCalendar?: string;
+  paymentReminderExempt?: boolean; // Not paying: stop reminders, without granting paid access.
+  paymentReminderUntil?: string; // Inclusive manager-approved extension.
+  paymentReminderExpiry?: string; // Extension applies only to this expiry cycle.
   membershipStartedAt?: string;
   membershipCommitmentEndsAt?: string;
   recurringBillingMonths?: number;
