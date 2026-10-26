@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { fitsSessionAge, isYouthSession } from '../shared/youth-session.js';
 import { paymentPending } from '../shared/registration-status.js';
 import { homeGroupSessions } from '../shared/group-program-access.js';
+import { validReminderDate } from '../shared/payment-reminder-policy.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -145,6 +146,7 @@ export const payloadForUser = (payload, userId, role) => {
   return {
     ...safe,
     coachArrivalApprovals: [],
+    membershipReminderDeliveries: [],
     users: safe.users
       .filter(user => user.id === userId || user.role === 'MANAGER' || user.role === 'COACH' || (familyId && user.familyId === familyId))
       .map(user => user.id === userId || (familyId && user.familyId === familyId) ? user : publicStaff(user)),
@@ -240,6 +242,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
   // Approval tokens and consumed audit logs are only created by authenticated
   // exception endpoints, never by generic client state synchronization.
   incoming.coachArrivalApprovals = current.coachArrivalApprovals || [];
+  incoming.membershipReminderDeliveries = current.membershipReminderDeliveries || [];
   const protectedLogs = (current.attendanceLogs || []).filter(log => log.coachException);
   incoming.attendanceLogs = [...(incoming.attendanceLogs || []).filter(log => !log.coachException && !String(log.id).startsWith('arrival-exception-')), ...protectedLogs];
   const preserveSystemMessages = requestedMessages => {
@@ -247,7 +250,16 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     const requestedIds = new Set(requested.map(message => message.id));
     return [...requested, ...(current.messages || []).filter(message => message.systemGenerated && !requestedIds.has(message.id))];
   };
-  if (role === 'MANAGER') return { ...incoming, messages: preserveSystemMessages(incoming.messages) };
+  if (role === 'MANAGER') {
+    incoming.users = incoming.users.map(user => {
+      const previous = current.users.find(member => member.id === user.id);
+      const setting = key => Object.hasOwn(user, key) ? user[key] : previous?.[key];
+      return { ...user, paymentReminderExempt: setting('paymentReminderExempt') === true,
+        paymentReminderUntil: validReminderDate(setting('paymentReminderUntil')) ? setting('paymentReminderUntil') : undefined,
+        paymentReminderExpiry: validReminderDate(setting('paymentReminderExpiry')) ? setting('paymentReminderExpiry') : undefined };
+    });
+    return { ...incoming, messages: preserveSystemMessages(incoming.messages) };
+  }
   if (role === 'COACH') {
     const allowed = new Set([
       'sessions', 'openGymSessions', 'workoutPlans', 'nutritionPlans', 'blackPoints', 'announcements',
@@ -297,7 +309,10 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
   const newFamilyMembers = incoming.users
     .filter(user => !current.users.some(existing => existing.id === user.id))
     .filter(user => user.role === 'TRAINEE' && user.familyPayerId === userId)
-    .map(stripCredentials);
+    .map(user => {
+      const { paymentReminderExempt: _exempt, paymentReminderUntil: _until, paymentReminderExpiry: _expiry, ...member } = user;
+      return stripCredentials(member);
+    });
   const ownNewMessages = (incoming.messages || []).filter(message => message.senderId === userId);
   const existingMessageIds = new Set((current.messages || []).map(message => message.id));
   const readIncomingMessageIds = new Set((incoming.messages || [])

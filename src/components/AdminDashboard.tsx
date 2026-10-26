@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
 import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
+import { AdminPaymentReminderEditor } from './AdminPaymentReminderEditor';
 import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
 import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
@@ -1613,6 +1614,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </select>
 
                             <AdminMembershipStatusEditor key={`${u.id}:${u.membershipStatus}:${u.membershipExpiry || ''}`} user={u}
+                              onSave={updated => onUpdateUsers(users.map(member => member.id === updated.id ? updated : member))} />
+                            <AdminPaymentReminderEditor key={`reminders:${u.id}:${u.membershipExpiry || ''}:${u.paymentReminderUntil || ''}:${u.paymentReminderExempt || false}`} user={u}
                               onSave={updated => onUpdateUsers(users.map(member => member.id === updated.id ? updated : member))} />
                             </div></details>
                           </div>
