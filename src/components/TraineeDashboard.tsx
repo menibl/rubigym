@@ -8,6 +8,7 @@ import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
 import { uniquePayments } from '../../shared/payment-ledger.js';
 import { fitsSessionAge, isYouthSession, sessionAgeMax } from '../../shared/youth-session.js';
 import { membershipExpired } from '../../shared/membership-calendar.js';
+import { isCancelledOccurrence } from '../../shared/scheduled-occurrence.js';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { BookingCategoryPicker } from './BookingCategoryPicker';
@@ -471,6 +472,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const end = start + session.durationMinutes;
     return sessions.some(existing => {
       if (
+        isCancelledOccurrence(existing) ||
         existing.id === session.id ||
         existing.date !== session.date ||
         !existing.registeredUsers.includes(activeUser.id)
@@ -478,7 +480,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       const existingStart = timeToMinutes(existing.time);
       return overlaps(start, end, existingStart, existingStart + existing.durationMinutes);
     }) || openGymSessions.some(existing => {
-      if (existing.date !== session.date || !existing.registeredUsers.includes(activeUser.id)) return false;
+      if (isCancelledOccurrence(existing) || existing.date !== session.date || !existing.registeredUsers.includes(activeUser.id)) return false;
       const [slotStart, slotEnd] = existing.timeSlot.split('-').map(timeToMinutes);
       return overlaps(start, end, slotStart, slotEnd);
     });
@@ -486,6 +488,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // Check booking eligibility constraints (Section 5.1 & 11)
   const checkBookingEligibility = (session: TrainingSession): { eligible: boolean; reason?: string } => {
+    if (isCancelledOccurrence(session)) return { eligible: false, reason: 'האימון בוטל ואינו זמין להרשמה.' };
     if (isYouthSession(session) && !fitsSessionAge(session, activeUser)) return { eligible: false, reason: 'אימון הנוער מיועד לטווח הגיל המוגדר ועד גיל 18 כולל. יש לוודא שהגיל בפרופיל מעודכן.' };
     if (activeUser.familyPaymentPending && !activeUser.offlinePaymentApproved) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
     if (new Date(`${session.date}T${session.time}`).getTime() <= Date.now()) {
@@ -653,11 +656,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   const checkOpenGymBookingEligibility = (og: OpenGymSession): { eligible: boolean; reason?: string } => {
+    if (isCancelledOccurrence(og)) return { eligible: false, reason: 'המשבצת בוטלה ואינה זמינה להרשמה.' };
     if (activeUser.familyPaymentPending && !activeUser.offlinePaymentApproved) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
     if (new Date(`${og.date}T${og.timeSlot.split('-')[0].trim()}`).getTime() <= Date.now()) return { eligible: false, reason: 'המשבצת כבר התחילה. יש לבחור אימון עתידי.' };
     if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) return { eligible: false, reason: 'כבר נרשמת למשבצת זו.' };
     const dailyOpenGymBookings = openGymSessions.filter(session =>
-      session.date === og.date
+      session.date === og.date && !isCancelledOccurrence(session)
       && (session.registeredUsers.includes(activeUser.id) || session.waitlistUsers.includes(activeUser.id))
     ).length;
     if (dailyOpenGymBookings >= 2) return { eligible: false, reason: 'ניתן להירשם לעד שתי משבצות Open Gym ביום.' };
@@ -681,11 +685,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
     const [openStart, openEnd] = og.timeSlot.split('-').map(timeToMinutes);
     const hasOverlap = sessions.some(session => {
-      if (session.date !== og.date || !session.registeredUsers.includes(activeUser.id)) return false;
+      if (isCancelledOccurrence(session) || session.date !== og.date || !session.registeredUsers.includes(activeUser.id)) return false;
       const start = timeToMinutes(session.time);
       return overlaps(openStart, openEnd, start, start + session.durationMinutes);
     }) || openGymSessions.some(existing => {
-      if (existing.id === og.id || existing.date !== og.date || !existing.registeredUsers.includes(activeUser.id)) return false;
+      if (isCancelledOccurrence(existing) || existing.id === og.id || existing.date !== og.date || !existing.registeredUsers.includes(activeUser.id)) return false;
       const [start, end] = existing.timeSlot.split('-').map(timeToMinutes);
       return overlaps(openStart, openEnd, start, end);
     });
@@ -1074,13 +1078,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // BOOK / CANCEL OPEN GYM (Section 10)
   const handleBookOpenGym = (og: OpenGymSession) => {
+    if (isCancelledOccurrence(og)) { showFeedback('המשבצת בוטלה ואינה זמינה להרשמה.', 'error'); return; }
     if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) {
       showFeedback('כבר נרשמת למשבצת Open Gym זו או לרשימת ההמתנה שלה.', 'error');
       return;
     }
 
     const dailyOpenGymBookings = openGymSessions.filter(session =>
-      session.date === og.date
+      session.date === og.date && !isCancelledOccurrence(session)
       && (session.registeredUsers.includes(activeUser.id) || session.waitlistUsers.includes(activeUser.id))
     ).length;
     if (dailyOpenGymBookings >= 2) {
@@ -1118,11 +1123,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
     const [openStart, openEnd] = og.timeSlot.split('-').map(timeToMinutes);
     const hasOverlap = sessions.some(session => {
-      if (session.date !== og.date || !session.registeredUsers.includes(activeUser.id)) return false;
+      if (isCancelledOccurrence(session) || session.date !== og.date || !session.registeredUsers.includes(activeUser.id)) return false;
       const sessionStart = timeToMinutes(session.time);
       return overlaps(openStart, openEnd, sessionStart, sessionStart + session.durationMinutes);
     }) || openGymSessions.some(existing => {
       if (
+        isCancelledOccurrence(existing) ||
         existing.id === og.id ||
         existing.date !== og.date ||
         !existing.registeredUsers.includes(activeUser.id)
@@ -1343,7 +1349,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const bookingItemsForDay = (dateKey: string): BookingListItem[] => {
     const nameNeedle = bookingNameFilter.trim().toLocaleLowerCase('he-IL');
     const sessionItems: BookingListItem[] = sessions
-      .filter(session => session.date === dateKey)
+      .filter(session => session.date === dateKey && !isCancelledOccurrence(session))
       .filter(session => !isYouthSession(session) || fitsSessionAge(session, activeUser))
       .filter(session => new Date(`${session.date}T${session.time}`).getTime() > now.getTime())
       .filter(session => !nameNeedle || session.title.toLocaleLowerCase('he-IL').includes(nameNeedle))
@@ -1351,7 +1357,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       .filter(session => showAllBookingOptions || isBooked(session) || isWaitlisted(session) || (isSessionRelevantToTrainee(session) && checkBookingEligibility(session).eligible))
       .map(session => ({ kind: 'SESSION', startTime: session.time, session }));
     const openGymItems: BookingListItem[] = openGymSessions
-      .filter(openGym => openGym.date === dateKey)
+      .filter(openGym => openGym.date === dateKey && !isCancelledOccurrence(openGym))
       .filter(openGym => new Date(`${openGym.date}T${openGym.timeSlot.split('-')[0].trim()}`).getTime() > now.getTime())
       .filter(() => matchesBookingCategory(bookingTypeFilter, bookingCategories.primary, 'OPEN_GYM'))
       .filter(() => !nameNeedle || 'open gym אימון חופשי'.includes(nameNeedle))
@@ -1897,7 +1903,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {openGymSessions.map(og => {
+              {openGymSessions.filter(og => !isCancelledOccurrence(og)).map(og => {
                 const booked = isOpenGymBooked(og);
                 const waitlisted = isOpenGymWaitlisted(og);
                 const isFull = og.registeredUsers.length >= og.maxParticipants;

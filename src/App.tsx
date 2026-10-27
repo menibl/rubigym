@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
 import {
   User,
   TrainingSession,
@@ -661,7 +662,7 @@ export default function App() {
       : groupProgram;
     const homeGroups = homeGroupSessions(activeUser, sessions);
     const hasHomeGroupAccess = !session?.isPersonalTraining && [homeGroups.next?.id, homeGroups.previous?.id].includes(session?.id);
-    if (session && (isRegistered || hasHomeGroupAccess) && displayProgram) {
+    if (session && !isCancelledOccurrence(session) && (isRegistered || hasHomeGroupAccess) && displayProgram) {
       return <TraineeSessionWorkoutView session={session} program={displayProgram} />;
     }
     return (

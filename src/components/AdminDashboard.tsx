@@ -10,8 +10,9 @@ import { AdminPaymentReminderEditor } from './AdminPaymentReminderEditor';
 import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
 import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
-import { membershipExpired } from '../../shared/membership-calendar.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
+import { TraineeMembershipStatus } from './TraineeMembershipStatus';
+import { offlinePaymentRecord } from '../../shared/offline-payment.js';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { addMinutesToTime, CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
@@ -34,7 +35,6 @@ import {
   MembershipType,
   CURRENT_MEMBERSHIP_CATALOG,
   MEMBERSHIP_TYPE_LABELS,
-  MEMBERSHIP_PRICES,
   DEFAULT_MEMBERSHIP_PLAN_CONFIGS,
   MembershipPlanConfig,
   MembershipStatus,
@@ -55,7 +55,7 @@ import {
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
 import { isYouthSession } from '../../shared/youth-session.js';
 import { FamilyCreditRecoveryControl } from './FamilyCreditRecoveryControl';
-import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate, isMembershipFreezeActive, isMembershipCancellationEffective } from '../data/membershipPolicy';
+import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
 import { cancelRivhitRecurring, refundRivhitPayment, updateRivhitRecurringAmount, reconcileRivhitPayment } from '../data/rivhitPayments';
 import { LandingImageManager } from './LandingImageManager';
@@ -750,21 +750,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Record an offline payment to clear a debt.
   const handlePayDebt = (trainee: User) => {
-    const purchasedType = trainee.membershipType || MembershipType.GROUP_MONTHLY;
+    const purchasedType = trainee.membershipType;
+    if (!purchasedType) { alert('יש לבחור מסלול למתאמן לפני רישום תשלום.'); return; }
     const purchasedPlan = membershipPlans.find(plan => plan.id === purchasedType);
-    const paymentAmount = purchasedPlan?.price ?? MEMBERSHIP_PRICES[purchasedType];
-    const newPayment: Payment = {
-      id: `pay-${Date.now()}`,
-      traineeId: trainee.id,
-      traineeName: trainee.name,
-      amount: paymentAmount,
-      date: new Date().toISOString().split('T')[0],
-      timestamp: new Date().toISOString(),
-      status: 'PAID',
-      membershipTypePurchased: purchasedType,
-      paymentMethod: 'סליקה מדומה (כרטיס אשראי)',
-      isMock: true
-    };
+    const label = purchasedPlan?.label || MEMBERSHIP_TYPE_LABELS[purchasedType]?.label || purchasedType;
+    const entered = prompt(`רישום תשלום ידני עבור ${trainee.name} — ${label}. מה הסכום שהתקבל בפועל במזומן או בהעברה? אין להזין מחיר מחירון אם לא שולם.`);
+    if (entered === null) return;
+    let newPayment: Payment;
+    try { newPayment = offlinePaymentRecord(trainee, Number(entered.trim()), `manual-${crypto.randomUUID()}`) as Payment; }
+    catch (error) { alert(error instanceof Error ? error.message : 'סכום התשלום אינו תקין.'); return; }
+    if (!confirm(`לאשר שהתקבלו בפועל ₪${newPayment.amount} עבור ${label}, ולרשום תשלום ידני על שם ${trainee.name}? לא יבוצע חיוב ברווחית.`)) return;
 
     onUpdatePayments([newPayment, ...payments]);
 
@@ -776,6 +771,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           ...clearManualPaymentPending(u),
           membershipStatus: MembershipStatus.ACTIVE,
           ...term,
+          ...(u.membershipExpiryManualOverride ? { membershipExpiry: u.membershipExpiry,
+            membershipExpiryExclusive: u.membershipExpiryExclusive, membershipExpiryManualOverride: true } : {}),
           ...(purchasedType === MembershipType.GROUP_ANNUAL && u.membershipCommitmentEndsAt
             ? { membershipCommitmentEndsAt: u.membershipCommitmentEndsAt } : {})
         };
@@ -1498,26 +1495,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
                         <td data-label="סטטוס ותשלומים" className="p-3">
                           <div className="trainee-payment-status space-y-1">
-                            <span className={`px-2 py-1 rounded-full text-[10px] font-semibold block w-fit ${
-                              u.membershipStatus === MembershipStatus.ACTIVE
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : u.membershipStatus === MembershipStatus.DEBT
-                                ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
-                                : 'bg-slate-200 text-slate-700'
-                            }`}>
-                              {u.membershipStatus === MembershipStatus.ACTIVE && (isMembershipCancellationEffective(u) ? 'המנוי בוטל' : membershipExpired(u) ? 'תוקף המנוי פג' : 'מנוי פעיל')}
-                              {u.membershipStatus === MembershipStatus.DEBT && 'חוב כספי ❌'}
-                              {u.membershipStatus === MembershipStatus.EXPIRED && 'פג תוקף ❌'}
-                            </span>
-
-                            {u.offlinePaymentApproved && (
-                              <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded block w-fit">
-                                🛡️ אישור חריג מנהל (מזומן/ידני)
-                              </span>
-                            )}
-                            {u.registrationIncomplete && <span className="block">בתהליך הרשמה — חסרים פרטים</span>}
-                            {(u.registrationPaymentPending || u.familyPaymentPending) && <span className="block">ממתין להשלמת תשלום</span>}
-                            {isMembershipFreezeActive(u) && <span className="block">מוקפא עד {u.membershipFrozenUntil}</span>}
+                            <TraineeMembershipStatus user={u} />
                             <TraineePaymentSummary user={u} payments={payments} discounts={discountCodes} plans={settings.membershipPlans || DEFAULT_MEMBERSHIP_PLAN_CONFIGS} />
                           </div>
                         </td>
@@ -1539,12 +1517,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               }}>דחיית בקשה</button>
                               {!canUseAnnualFreeze(u) && <p>הקפאת השנה נוצלה או שהמנוי כבר מוקפא.</p>}
                             </div>}
-                            {u.membershipStatus === MembershipStatus.DEBT && (
+                            {(u.membershipStatus === MembershipStatus.DEBT || u.offlinePaymentApproved) && (
                               <button
                                 onClick={() => handlePayDebt(u)}
                                 className="bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold py-1 px-2.5 rounded transition shadow-sm w-full text-center"
                               >
-                                רישום תשלום ידני וסגירת חוב
+                                {u.membershipStatus === MembershipStatus.DEBT ? 'רישום תשלום ידני וסגירת חוב' : 'תיעוד סכום שהתקבל במזומן/העברה'}
                               </button>
                             )}
 

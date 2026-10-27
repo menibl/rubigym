@@ -1,4 +1,16 @@
 import { uniquePayments } from './payment-ledger.js';
+import { familySelectedPlans } from './family-multiple-plans.js';
+
+export const isTestPayment = payment => payment.isMock === true || /מדומה|בדיקה|\b(mock|test|demo)\b/i.test(String(payment.paymentMethod || ''));
+
+// Match the receipt's purchased plan, never the user's current label or catalog price.
+export function paymentCoversPlan(payment, userId, type) {
+  if (payment.traineeId === userId && type === 'FAMILY_MEMBERSHIP' && payment.membershipTypePurchased === type) return true;
+  if (payment.familyMemberPlans?.length) return payment.familyMemberPlans.some(member => member.memberId === userId
+    && (!member.participation || member.participation === 'INCLUDED')
+    && familySelectedPlans(member).some(plan => plan.membershipType === type));
+  return payment.traineeId === userId && payment.membershipTypePurchased === type;
+}
 /** @param {any[]} payments @param {string} userId */
 export function traineePayments(payments, userId) {
   return uniquePayments(payments.filter(payment => payment.traineeId === userId));

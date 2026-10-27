@@ -1,6 +1,7 @@
 import webpush from 'web-push';
 import { sendWeeklyReminders } from './weekly-reminders.js';
 import { sendPaymentReminders } from './payment-reminders.js';
+import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
 
 const reminderWindowMs = 10 * 60 * 1000;
 const israelTimeZone = 'Asia/Jerusalem';
@@ -266,6 +267,7 @@ export const sendUpcomingWorkoutReminders = async (store, env, now = Date.now())
     const userById = new Map(users.map(user => [user.id, user]));
     const bookableSessions = [...(club.payload.sessions || []), ...(club.payload.openGymSessions || [])];
     for (const session of bookableSessions) {
+      if (isCancelledOccurrence(session)) continue;
       const startsAt = israelDateTimeToTimestamp(session.date, session.time);
       const untilStart = startsAt - now;
       if (!Number.isFinite(startsAt) || untilStart < 24 * 60 * 60 * 1000 - reminderWindowMs || untilStart > 24 * 60 * 60 * 1000 + reminderWindowMs) continue;

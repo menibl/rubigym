@@ -350,6 +350,7 @@ export interface User {
   membershipStatus?: MembershipStatus;
   familyPaymentPending?: boolean;
   membershipExpiry?: string; // ISO date string
+  membershipPlanExpiries?: Partial<Record<MembershipType, string>>;
   membershipExpiryExclusive?: boolean; // Calendar memberships expire at the start of this date.
   membershipExpiryManualOverride?: boolean;
   membershipExpiryBeforeCalendar?: string;

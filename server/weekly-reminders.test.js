@@ -52,3 +52,9 @@ test('CAS retries and restarts preserve one persisted message and one dispatch',
   await sendWeeklyReminders(store, {}, async () => { pushes++; }, saturday);
   assert.equal(state.payload.messages.length, 1); assert.equal(pushes, 1);
 });
+
+test('registration on a cancelled group occurrence does not suppress Sunday signup reminders', () => {
+  const payload = data();
+  payload.sessions = [{ date: '2026-10-04', registeredUsers: ['trainee'], excludedDates: ['2026-10-04'] }];
+  assert.equal(weeklyMessages(payload, sunday).length, 1);
+});
