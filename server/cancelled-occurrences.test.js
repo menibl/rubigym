@@ -66,3 +66,26 @@ test('offline money requires an explicit real amount and the actual assigned pla
   for (const amount of [undefined, NaN, Infinity, -1, 0, 2.001]) assert.throws(() => offlinePaymentRecord(user, amount, 'x'));
   assert.throws(() => offlinePaymentRecord({ ...user, membershipType: undefined }, 500, 'x'), /לבחור מסלול/);
 });
+
+test('cancelled group and personal/duo session targets cannot be added or checked into', () => {
+  for (const isPersonalTraining of [false, true]) {
+    const p = payload();
+    p.sessions = [{ id: 'session', date, time: '20:00', durationMinutes: 60, isPersonalTraining, excludedDates: [date], registeredUsers: [], waitlistUsers: [] }];
+    const incoming = structuredClone(p); incoming.sessions[0].registeredUsers = ['u']; incoming.sessions[0].waitlistUsers = ['u'];
+    assert.deepEqual(mergePayloadForUser(p, incoming, 'u', 'TRAINEE').sessions[0].registeredUsers, []);
+    p.sessions[0].registeredUsers = ['u'];
+    assert.equal(clubArrivalChoices(p, 'u', now).some(choice => choice.targetId === 'session'), false);
+    for (const type of ['SOLO', 'DUO']) assert.throws(() => recordClubArrival(p, 'u', { code: CLUB_CHECK_IN_CODE, type: 'SESSION', trainingType: type, targetId: 'session' }, now), /אינו זמין/);
+  }
+});
+
+test('fully deleted session records of every category cannot be resurrected from stale trainee state', () => {
+  for (const isPersonalTraining of [false, true]) {
+    const current = payload(); current.openGymSessions = [];
+    const incoming = structuredClone(current);
+    incoming.sessions = [{ id: 'deleted', date, isPersonalTraining, registeredUsers: ['u'], waitlistUsers: [] }];
+    incoming.openGymSessions = [{ ...slot('deleted-open', ['u']), excludedDates: [] }];
+    const next = mergePayloadForUser(current, incoming, 'u', 'TRAINEE');
+    assert.deepEqual(next.sessions, []); assert.deepEqual(next.openGymSessions, []);
+  }
+});

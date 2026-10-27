@@ -10,8 +10,8 @@ import { AdminPaymentReminderEditor } from './AdminPaymentReminderEditor';
 import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
 import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
-import { membershipExpired } from '../../shared/membership-calendar.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
+import { TraineeMembershipStatus } from './TraineeMembershipStatus';
 import { offlinePaymentRecord } from '../../shared/offline-payment.js';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
@@ -55,7 +55,7 @@ import {
 import { ClubCheckInBarcode } from './ClubCheckInBarcode';
 import { isYouthSession } from '../../shared/youth-session.js';
 import { FamilyCreditRecoveryControl } from './FamilyCreditRecoveryControl';
-import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate, isMembershipFreezeActive, isMembershipCancellationEffective } from '../data/membershipPolicy';
+import { createMembershipTerm, canUseAnnualFreeze, addCalendarMonths, toLocalIsoDate } from '../data/membershipPolicy';
 import { BILLING_PERIOD_OPTIONS, billingPeriodForPlan, priceUnitForBillingPeriod } from '../data/membershipBilling';
 import { cancelRivhitRecurring, refundRivhitPayment, updateRivhitRecurringAmount, reconcileRivhitPayment } from '../data/rivhitPayments';
 import { LandingImageManager } from './LandingImageManager';
@@ -1495,26 +1495,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
                         <td data-label="סטטוס ותשלומים" className="p-3">
                           <div className="trainee-payment-status space-y-1">
-                            <span className={`px-2 py-1 rounded-full text-[10px] font-semibold block w-fit ${
-                              u.membershipStatus === MembershipStatus.ACTIVE
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : u.membershipStatus === MembershipStatus.DEBT
-                                ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
-                                : 'bg-slate-200 text-slate-700'
-                            }`}>
-                              {u.membershipStatus === MembershipStatus.ACTIVE && (isMembershipCancellationEffective(u) ? 'המנוי בוטל' : membershipExpired(u) ? 'תוקף המנוי פג' : 'מנוי פעיל')}
-                              {u.membershipStatus === MembershipStatus.DEBT && 'חוב כספי ❌'}
-                              {u.membershipStatus === MembershipStatus.EXPIRED && 'פג תוקף ❌'}
-                            </span>
-
-                            {u.offlinePaymentApproved && (
-                              <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded block w-fit">
-                                🛡️ אישור חריג מנהל (מזומן/ידני)
-                              </span>
-                            )}
-                            {u.registrationIncomplete && <span className="block">בתהליך הרשמה — חסרים פרטים</span>}
-                            {(u.registrationPaymentPending || u.familyPaymentPending) && <span className="block">ממתין להשלמת תשלום</span>}
-                            {isMembershipFreezeActive(u) && <span className="block">מוקפא עד {u.membershipFrozenUntil}</span>}
+                            <TraineeMembershipStatus user={u} />
                             <TraineePaymentSummary user={u} payments={payments} discounts={discountCodes} plans={settings.membershipPlans || DEFAULT_MEMBERSHIP_PLAN_CONFIGS} />
                           </div>
                         </td>

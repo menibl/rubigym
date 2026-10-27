@@ -133,7 +133,7 @@ export const payloadForUser = (payload, userId, role) => {
   const currentUser = safe.users.find(user => user.id === userId);
   const familyId = currentUser?.familyId;
   const registeredSessions = (safe.sessions || []).filter(session =>
-    Array.isArray(session.registeredUsers) && session.registeredUsers.includes(userId)
+    !isCancelledOccurrence(session) && Array.isArray(session.registeredUsers) && session.registeredUsers.includes(userId)
   );
   const registeredSessionIds = new Set(registeredSessions.map(session => session.id));
   const assignedPersonalPlanIds = new Set(registeredSessions.map(session => session.assignedWorkoutPlanId).filter(Boolean));
