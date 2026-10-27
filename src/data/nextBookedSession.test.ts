@@ -31,3 +31,9 @@ test('dates are sorted together and an exact start time remains eligible', () =>
 test('no registrations leaves the card empty', () => {
   assert.equal(nextBookedSession('u', [], [], now), undefined);
 });
+
+test('cancelled group and Open Gym registrations never become the next workout', () => {
+  const excludedDates = ['2026-10-01'];
+  assert.equal(nextBookedSession('u', [{ ...session('10:00'), excludedDates }], [{ ...open('11:00-12:00'), excludedDates }], now), undefined);
+  assert.equal(nextBookedSession('u', [], [{ ...open('11:00-12:00'), excludedDates }, { ...open('12:00-13:00'), id: 'active' }], now)?.id, 'active');
+});

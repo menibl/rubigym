@@ -12,6 +12,7 @@ import { updateTrainingCard } from '../../shared/training-card.js';
 import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
+import { offlinePaymentRecord } from '../../shared/offline-payment.js';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { addMinutesToTime, CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
@@ -34,7 +35,6 @@ import {
   MembershipType,
   CURRENT_MEMBERSHIP_CATALOG,
   MEMBERSHIP_TYPE_LABELS,
-  MEMBERSHIP_PRICES,
   DEFAULT_MEMBERSHIP_PLAN_CONFIGS,
   MembershipPlanConfig,
   MembershipStatus,
@@ -750,21 +750,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Record an offline payment to clear a debt.
   const handlePayDebt = (trainee: User) => {
-    const purchasedType = trainee.membershipType || MembershipType.GROUP_MONTHLY;
+    const purchasedType = trainee.membershipType;
+    if (!purchasedType) { alert('יש לבחור מסלול למתאמן לפני רישום תשלום.'); return; }
     const purchasedPlan = membershipPlans.find(plan => plan.id === purchasedType);
-    const paymentAmount = purchasedPlan?.price ?? MEMBERSHIP_PRICES[purchasedType];
-    const newPayment: Payment = {
-      id: `pay-${Date.now()}`,
-      traineeId: trainee.id,
-      traineeName: trainee.name,
-      amount: paymentAmount,
-      date: new Date().toISOString().split('T')[0],
-      timestamp: new Date().toISOString(),
-      status: 'PAID',
-      membershipTypePurchased: purchasedType,
-      paymentMethod: 'סליקה מדומה (כרטיס אשראי)',
-      isMock: true
-    };
+    const label = purchasedPlan?.label || MEMBERSHIP_TYPE_LABELS[purchasedType]?.label || purchasedType;
+    const entered = prompt(`רישום תשלום ידני עבור ${trainee.name} — ${label}. מה הסכום שהתקבל בפועל במזומן או בהעברה? אין להזין מחיר מחירון אם לא שולם.`);
+    if (entered === null) return;
+    let newPayment: Payment;
+    try { newPayment = offlinePaymentRecord(trainee, Number(entered.trim()), `manual-${crypto.randomUUID()}`) as Payment; }
+    catch (error) { alert(error instanceof Error ? error.message : 'סכום התשלום אינו תקין.'); return; }
+    if (!confirm(`לאשר שהתקבלו בפועל ₪${newPayment.amount} עבור ${label}, ולרשום תשלום ידני על שם ${trainee.name}? לא יבוצע חיוב ברווחית.`)) return;
 
     onUpdatePayments([newPayment, ...payments]);
 
@@ -776,6 +771,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           ...clearManualPaymentPending(u),
           membershipStatus: MembershipStatus.ACTIVE,
           ...term,
+          ...(u.membershipExpiryManualOverride ? { membershipExpiry: u.membershipExpiry,
+            membershipExpiryExclusive: u.membershipExpiryExclusive, membershipExpiryManualOverride: true } : {}),
           ...(purchasedType === MembershipType.GROUP_ANNUAL && u.membershipCommitmentEndsAt
             ? { membershipCommitmentEndsAt: u.membershipCommitmentEndsAt } : {})
         };
@@ -1539,12 +1536,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               }}>דחיית בקשה</button>
                               {!canUseAnnualFreeze(u) && <p>הקפאת השנה נוצלה או שהמנוי כבר מוקפא.</p>}
                             </div>}
-                            {u.membershipStatus === MembershipStatus.DEBT && (
+                            {(u.membershipStatus === MembershipStatus.DEBT || u.offlinePaymentApproved) && (
                               <button
                                 onClick={() => handlePayDebt(u)}
                                 className="bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold py-1 px-2.5 rounded transition shadow-sm w-full text-center"
                               >
-                                רישום תשלום ידני וסגירת חוב
+                                {u.membershipStatus === MembershipStatus.DEBT ? 'רישום תשלום ידני וסגירת חוב' : 'תיעוד סכום שהתקבל במזומן/העברה'}
                               </button>
                             )}
 

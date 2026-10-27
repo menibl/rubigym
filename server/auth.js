@@ -4,6 +4,7 @@ import { fitsSessionAge, isYouthSession } from '../shared/youth-session.js';
 import { paymentPending } from '../shared/registration-status.js';
 import { homeGroupSessions } from '../shared/group-program-access.js';
 import { validReminderDate } from '../shared/payment-reminder-policy.js';
+import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -195,6 +196,7 @@ const mergeOwnBooking = (currentItems = [], incomingItems = [], userId, user) =>
   const mergeList = key => {
     const currentList = Array.isArray(current[key]) ? current[key] : [];
     const incomingList = Array.isArray(incoming[key]) ? incoming[key] : [];
+    if (isCancelledOccurrence(current) && incomingList.includes(userId) && !currentList.includes(userId)) return currentList;
     if (user && isYouthSession(current) && !fitsSessionAge(current, user) && incomingList.includes(userId) && !currentList.includes(userId)) return currentList;
     const withoutSelf = currentList.filter(id => id !== userId);
     return incomingList.includes(userId) ? [...withoutSelf, userId] : withoutSelf;
@@ -215,6 +217,7 @@ const mergeOwnOpenGymBooking = (currentItems = [], incomingItems = [], userId, a
   // Existing bookings that were not cancelled are kept first, so a save never removes
   // a reservation that the server had already accepted.
   for (const item of merged) {
+    if (isCancelledOccurrence(item)) continue;
     const participates = (item.registeredUsers || []).includes(userId) || (item.waitlistUsers || []).includes(userId);
     if (!participates || !currentParticipationIds.has(item.id)) continue;
     dailyCounts.set(item.date, (dailyCounts.get(item.date) || 0) + 1);
