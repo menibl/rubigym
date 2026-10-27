@@ -1,4 +1,5 @@
 import { membershipExpired } from '../shared/membership-calendar.js';
+import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
 const groups = new Set(['CORE_GROUPS', 'GROUP_MONTHLY', 'GROUP_ANNUAL', 'DEDICATED_GROUP_HALF_YEAR', 'YOUTH_ONCE_WEEKLY', 'YOUTH_TWICE_WEEKLY']);
 const openGym = new Set(['OPEN_GYM', 'OPEN_GYM_WITH_PLAN']);
 const shiftDate = (date, days) => new Date(Date.parse(`${date}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
@@ -26,7 +27,7 @@ export function weeklyMessages(payload, now) {
     const hasGroups = plans.some(p => groups.has(p));
     const lines = [];
     if (slot.kind === 'sunday') {
-      if (!hasGroups || (payload.sessions || []).some(s => !s.isPersonalTraining && s.date >= slot.week && s.date < shiftDate(slot.week, 7) && s.registeredUsers?.includes(user.id))) return [];
+      if (!hasGroups || (payload.sessions || []).some(s => !isCancelledOccurrence(s) && !s.isPersonalTraining && s.date >= slot.week && s.date < shiftDate(slot.week, 7) && s.registeredUsers?.includes(user.id))) return [];
       lines.push('בוקר טוב ושבוע טוב 💪 עדיין לא נרשמת לאימוני הקבוצות השבוע. זה הזמן לבחור את האימונים שמתאימים לך — מחכים לך במועדון!');
     } else {
       if (hasGroups) lines.push('שבוע חדש מתחיל 💪 זה הזמן להירשם לאימוני הקבוצות של השבוע הקרוב. בחרו את האימונים שלכם ונתראה במועדון!');

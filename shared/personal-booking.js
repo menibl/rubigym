@@ -1,5 +1,6 @@
 import { membershipExpired } from './membership-calendar.js';
 import { paymentPending } from './registration-status.js';
+import { isCancelledOccurrence } from './scheduled-occurrence.js';
 const fail = message => { throw new Error(message); };
 const balanceField = type => type === 'DUO' ? 'duoTrainingRemaining' : 'personalTrainingRemaining';
 const bookingMessages = (payload, session, booking, action, now) => {
@@ -65,6 +66,7 @@ export const changePersonalBooking = (payload, actorId, input, now = Date.now(),
     };
   }
   if (input.action !== 'BOOK' || !['SOLO', 'DUO'].includes(input.type)) fail('יש לבחור אימון אישי או זוגי.');
+  if (isCancelledOccurrence(session)) fail('האימון בוטל ואינו זמין להרשמה.');
   const payerId = staff ? input.payerId : actorId;
   if (previous?.status === 'BOOKED' && previous.id === input.bookingId && previous.payerId === payerId) return payload;
   if (previous?.id === input.bookingId) fail('בקשת הרשמה זו כבר בוטלה. יש לפתוח הרשמה חדשה.');
@@ -98,7 +100,7 @@ export const changePersonalBooking = (payload, actorId, input, now = Date.now(),
       const minutes = time => time?.split(':').reduce((hours, value) => hours * 60 + Number(value), 0);
       return { ...s, time: from, durationMinutes: minutes(to) - minutes(from) };
     })];
-    if (bookings.some(s => s.registeredUsers?.includes(user.id) && personalStart(s) < start + session.durationMinutes * 60000 && personalStart(s) + s.durationMinutes * 60000 > start)) fail(`${user.name}: קיים אימון חופף ביומן.`);
+    if (bookings.some(s => !isCancelledOccurrence(s) && s.registeredUsers?.includes(user.id) && personalStart(s) < start + session.durationMinutes * 60000 && personalStart(s) + s.durationMinutes * 60000 > start)) fail(`${user.name}: קיים אימון חופף ביומן.`);
   }
   // The partner attends using the payer's duo card; never require/debit a second card.
   const familyPayer = users.find(u => u.id === payer.familyPayerId);

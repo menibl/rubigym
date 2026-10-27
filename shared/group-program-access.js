@@ -1,10 +1,11 @@
 import { fitsSessionAge } from './youth-session.js';
+import { isCancelledOccurrence } from './scheduled-occurrence.js';
 
 const groups = new Set(['CORE_GROUPS', 'GROUP_MONTHLY', 'GROUP_ANNUAL', 'YOUTH_ONCE_WEEKLY', 'YOUTH_TWICE_WEEKLY', 'DEDICATED_GROUP_HALF_YEAR', 'WEIGHT_LOSS_HALF_YEAR', 'POSTPARTUM_HALF_YEAR']);
 const normalize = type => ['CORE_GROUPS', 'GROUP_MONTHLY', 'GROUP_ANNUAL'].includes(type) ? 'CORE_GROUPS' : type;
 export function eligibleGroupSession(user, session) {
   const memberships = [user?.membershipType, ...(user?.secondaryMemberships || [])];
-  return Boolean(user && !session.isPersonalTraining && memberships.some(type => groups.has(type))
+  return Boolean(user && !isCancelledOccurrence(session) && !session.isPersonalTraining && memberships.some(type => groups.has(type))
     && fitsSessionAge(session, user)
     && (!session.genderRestriction || session.genderRestriction === 'ALL' || session.genderRestriction === user.gender)
     && session.allowedMemberships?.some(type => memberships.some(own => normalize(own) === normalize(type))));

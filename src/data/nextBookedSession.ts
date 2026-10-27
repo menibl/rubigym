@@ -1,4 +1,5 @@
 import type { OpenGymSession, TrainingSession } from '../types';
+import { isCancelledOccurrence } from '../../shared/scheduled-occurrence.js';
 
 export function nextBookedSession(userId: string, sessions: TrainingSession[], openGymSessions: OpenGymSession[], now = new Date()) {
   const candidates = [
@@ -9,7 +10,7 @@ export function nextBookedSession(userId: string, sessions: TrainingSession[], o
       ...session, kind: 'OPEN_GYM' as const, title: 'Open Gym · אימון חופשי',
       time: session.timeSlot, startTime: session.timeSlot.split('-')[0].trim(), coachName: '',
     })),
-  ].filter(session => session.registeredUsers.includes(userId))
+  ].filter(session => !isCancelledOccurrence(session) && session.registeredUsers.includes(userId))
     .map(session => ({ ...session, startsAt: new Date(`${session.date}T${session.startTime.trim()}`).getTime() }))
     .filter(session => Number.isFinite(session.startsAt) && session.startsAt >= now.getTime())
     .sort((a, b) => a.startsAt - b.startsAt || a.id.localeCompare(b.id));
