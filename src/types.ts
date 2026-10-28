@@ -355,6 +355,7 @@ export interface User {
     seriesId: string; orderId: string; status: 'PENDING_FIRST_CHARGE' | 'ACTIVE' | 'PAYMENT_FAILED';
     endsAt: string; amount: number; discountCode?: string | null; paidUntil?: string;
     approvedAt?: string; updatedAt?: string; lastPaidCharge?: number; lastFailedCharge?: number; lastFailureCode?: string; cancelledAt?: string;
+    recoveredBy?: string; recoveredAt?: string; recoveryDiscountUnknown?: boolean;
   }>>;
   membershipExpiryExclusive?: boolean; // Calendar memberships expire at the start of this date.
   membershipExpiryManualOverride?: boolean;

@@ -9,6 +9,7 @@ export function RecurringMembershipNotice({ user, plans = [] }: { user: User; pl
       <span className="block">{contract.status === 'PAYMENT_FAILED' ? 'המסלול הושהה — כשל חיוב מאומת ברווחית. יש לפנות למנהל להסדרת התשלום.' : contract.endsAt <= clubDate() ? 'תקופת הוראת הקבע הסתיימה — יש להסדיר חידוש באישור המשתמש.' : contract.status === 'PENDING_FIRST_CHARGE' ? 'המנוי פעיל — ממתין לאישור החיוב הראשון. טרם נרשם תשלום שהושלם.' : 'הוראת קבע פעילה — חיוב אומת ברווחית.'}</span>
       <span className="block">סכום קבוע לכל חיוב: ₪{contract.amount} · 12 חיובים · ללא חידוש אוטומטי לשנה נוספת</span>
       {contract.discountCode && <span className="block">קוד הנחה: {contract.discountCode} — ההנחה כלולה בסכום לכל תקופת הסדרה.</span>}
+      {contract.recoveryDiscountUnknown && <span className="block">הסכום אומת מול רווחית; קוד ההנחה המקורי לא תועד בבקשת ההקמה הישנה.</span>}
       <span className="block">תוקף ההתקשרות: <bdi>{contract.endsAt}</bdi></span>
       {contract.paidUntil && <span className="block">תשלום מאומת לתקופה עד <bdi>{contract.paidUntil}</bdi> (לא כולל)</span>}
     </span>)}

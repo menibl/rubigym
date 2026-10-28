@@ -29,7 +29,8 @@ export function applyRecurringMembershipEvent(payload, order, payment, now = new
   const paidCharge = Math.max(previous?.lastPaidCharge || 0, ...historicalPaid, 0);
   // The current paid receipt is appended before this projection. An equal paid
   // counter must still be applied once; failed/setup events cannot undo it.
-  if (previous?.events?.includes(eventKey) || (kind === 'SETUP' && (paidCharge > 0 || previous?.status === 'PAYMENT_FAILED'))
+  if (previous?.events?.includes(eventKey) || (kind === 'PAID' && previous?.status === 'ACTIVE' && charge <= previous.lastPaidCharge)
+    || (kind === 'SETUP' && (paidCharge > 0 || previous?.status === 'PAYMENT_FAILED'))
     || (kind === 'FAILED' && paidCharge >= charge && paidCharge > 0)
     || (kind === 'PAID' && charge < Math.max(previous?.lastPaidCharge || 0, previous?.lastFailedCharge || 0))) return payload;
   if (!Number.isInteger(charge) || charge < 0 || charge > 12 || (kind === 'PAID' && charge < 1)) throw new Error('INVALID_RECURRING_MEMBERSHIP_EVENT');
@@ -40,11 +41,14 @@ export function applyRecurringMembershipEvent(payload, order, payment, now = new
   const contract = { ...previous, seriesId: payment.recurringSaleId, orderId: order.o,
     status: kind === 'FAILED' ? 'PAYMENT_FAILED' : kind === 'SETUP' ? 'PENDING_FIRST_CHARGE' : 'ACTIVE',
     endsAt: order.re, amount: Number(order.a), discountCode: order.c || null, paidUntil,
+    recoveryDiscountUnknown: Boolean(previous?.recoveryDiscountUnknown && !order.c),
     approvedAt: previous?.approvedAt || (kind !== 'FAILED' ? now.toISOString() : undefined),
     lastPaidCharge: kind === 'PAID' ? Math.max(paidCharge, charge) : paidCharge,
     lastFailedCharge: kind === 'FAILED' ? charge : previous?.lastFailedCharge,
     lastFailureCode: kind === 'FAILED' ? String(payment.recurringFailureCode || '').slice(0, 16) : undefined,
     updatedAt: now.toISOString(), events: [...(previous?.events || []), eventKey].slice(-100) };
+  if (payment.recoveryManagerId) Object.assign(contract, { recoveredBy: payment.recoveryManagerId, recoveredAt: now.toISOString(),
+    recoveryDiscountUnknown: Boolean(payment.recoveryDiscountUnknown) });
   let updated = { ...user, recurringMemberships: { ...user.recurringMemberships, [type]: contract } };
   if (kind !== 'FAILED') {
     const term = paidUntil || nextMonthStart(clubDate(now));
