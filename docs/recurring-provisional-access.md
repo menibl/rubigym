@@ -35,3 +35,11 @@
 מקורות: [הודעות הקמה וחיוב](https://rivhit-api.readme.io/docs/ipn-messages), [שדות IPN והבדל הצלחה/כשל](https://rivhit-api.readme.io/docs/array-values).
 
 סנכרון לפי מזהה הוראה: [פרטי הוראת קבע](https://rivhit-api.readme.io/reference/post_api-paymentpagerequest-svc-recurringsaledetails), [היסטוריית חיובים](https://rivhit-api.readme.io/reference/post_api-paymentpagerequest-svc-recurringsalehistory). ב־schema המתועד של History מוצגת הצלחה עם StatusCode=3 ו־RivhitCode=0; הקוד דורש גם מסמך, התאמת סכום ומניין מלא, ולא מסיק תשלום מסטטוס טקסט בלבד.
+
+### פורמטי תאריך ואבחון שגיאות
+
+קורא התאריכים תומך ב־ISO עם UTC/offset מפורש, ב־WCF `/Date(milliseconds±HHmm)/` ובאובייקט DateTimeOffset של WCF. במבנה WCF מספר המילישניות הוא כבר UTC; אין להחיל עליו את סיומת ה־offset פעם נוספת. לאחר הפענוח, מועדי החודש מחושבים לפי Asia/Jerusalem. תאריכים ללא אזור זמן, תאריך לא קיים או פורמט לא מזוהה נדחים — אין ניחוש לפי אזור הזמן של השרת.
+
+שגיאת פורמט אינה מוצגת כ״המנוי הסתיים״. מוחזר קוד נפרד עבור CreationDate, EndDate ו־Timestamp, ולעומת זאת גם קודים נפרדים להקמה עתידית, סיום לפני ההקמה, תקופה ארוכה מדי או התקשרות שבאמת הסתיימה. לוג `RIVHIT recurring sync date rejected` מכיל רק קוד, שם שדה וסיווג פורמט — ללא תשובת הספק הגולמית, טוקנים, טלפונים או פרטי כרטיס. כלל בדיקות הבעלות, הסכומים והחיובים לא השתנה.
+
+מקור לפענוח WCF: [Microsoft — DateTime Wire Format](https://learn.microsoft.com/en-us/dotnet/framework/wcf/feature-details/stand-alone-json-serialization#datetime-wire-format). תמיכה בפורמט אינה אישור שזהו הפורמט שהוחזר במקרה מסוים; בלי אבחון בפועל אין לקבוע את סיבת הכשל של אותו מתאמן.

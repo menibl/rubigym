@@ -35,6 +35,33 @@ test('an approved contract with zero successful charges remains explicitly unpai
   assert.equal(prepared.preview.successfulCharges, 0); assert.deepEqual(prepared.payments, []);
 });
 
+test('WCF creation/end/history dates sync to the same calendar term and receipt as ISO dates', () => {
+  const f = syncFixture(), iso = prepareRecurringIdSync(f);
+  for (const field of ['CreationDate', 'EndDate', 'ChargeDate']) f.details[field] = `/Date(${Date.parse(f.details[field])}+0300)/`;
+  f.history.RecurringSaleHistoryList[0].Timestamp = `/Date(${Date.parse(f.history.RecurringSaleHistoryList[0].Timestamp)})/`;
+  const wcf = prepareRecurringIdSync(f);
+  assert.deepEqual(wcf, iso);
+});
+
+test('date parsing errors and genuine expiry have separate codes without raw provider data', () => {
+  const cases = [
+    ['CreationDate', '2026-10-28T12:32:47', 'RIVHIT_CREATION_DATE_FORMAT', 'ISO_WITHOUT_ZONE'],
+    ['EndDate', '/Date(bad)/', 'RIVHIT_END_DATE_FORMAT', 'WCF_DATE'],
+    ['CreationDate', '2028-01-01T00:00:00Z', 'RIVHIT_CREATION_DATE_FUTURE', 'ISO_OFFSET'],
+    ['EndDate', '2026-01-01T00:00:00Z', 'RIVHIT_END_BEFORE_CREATION', 'ISO_OFFSET'],
+    ['EndDate', '2030-01-01T00:00:00Z', 'RIVHIT_END_DATE_RANGE', 'ISO_OFFSET']
+  ];
+  for (const [field, value, code, format] of cases) {
+    const f = syncFixture(); f.details[field] = value;
+    assert.throws(() => prepareRecurringIdSync(f), error => {
+      assert.equal(error.code, code); assert.deepEqual(error.diagnostic, { code, field, format });
+      assert.ok(!JSON.stringify(error.diagnostic).includes(value)); return true;
+    });
+  }
+  const expired = syncFixture(); expired.now = new Date('2027-10-01T12:00:00Z');
+  assert.throws(() => prepareRecurringIdSync(expired), { code: 'RIVHIT_CONTRACT_ENDED' });
+});
+
 test('saved signed order snapshot preserves historical coupon even if catalog or coupon changed', () => {
   const f = syncFixture(); f.payload.recurringCheckouts[0].orderSnapshot = { o: 'o', u: 'u', m: 'OPEN_GYM', rc: 1, a: 280, c: 'ORIGINAL', re: '2027-10-01' };
   const prepared = prepareRecurringIdSync(f);
@@ -171,6 +198,21 @@ test('confirmed zero-charge series activates pending access without fake paid ro
   assert.equal((await f.post({ ...f.input, action: 'confirm', confirmationKey: preview.confirmationKey })).status, 200);
   assert.equal(f.state().payload.payments.length, 0);
   assert.equal(f.state().payload.users[0].recurringMemberships.OPEN_GYM.status, 'PENDING_FIRST_CHARGE');
+});
+
+test('HTTP preview accepts WCF dates, but invalid end date returns a precise safe diagnostic without a write', async () => {
+  const f = httpFixture();
+  for (const field of ['CreationDate', 'EndDate', 'ChargeDate']) f.f.details[field] = `/Date(${Date.parse(f.f.details[field])}+0300)/`;
+  f.f.history.RecurringSaleHistoryList[0].Timestamp = `/Date(${Date.parse(f.f.history.RecurringSaleHistoryList[0].Timestamp)})/`;
+  const before = JSON.stringify(f.state());
+  const preview = await f.preview(); assert.equal(preview.preview.endsAt, '2027-10-01');
+  assert.equal(JSON.stringify(f.state()), before);
+  f.f.details.EndDate = 'bad-provider-data';
+  const response = await f.post(f.input); const result = await response.json();
+  assert.equal(response.status, 422); assert.equal(result.code, 'RIVHIT_END_DATE_FORMAT');
+  assert.match(result.message, /EndDate/); assert.doesNotMatch(result.message, /ההתקשרות הסתיימה/);
+  assert.deepEqual(result.diagnostic, { code: 'RIVHIT_END_DATE_FORMAT', field: 'EndDate', format: 'UNSUPPORTED_STRING' });
+  assert.ok(!JSON.stringify(result).includes('bad-provider-data')); assert.equal(JSON.stringify(f.state()), before);
 });
 
 test('trainee, invalid identifiers and changed provider history cannot bypass manager preview', async () => {
