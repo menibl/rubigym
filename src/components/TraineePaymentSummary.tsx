@@ -2,11 +2,12 @@ import React from 'react';
 import { DiscountCode, Payment, User, MembershipPlanConfig, MembershipType, MEMBERSHIP_TYPE_LABELS } from '../types';
 import { isTestPayment, paymentCoversPlan, recordedDiscount, traineePayments } from '../../shared/admin-trainees.js';
 import { validReminderDate } from '../../shared/payment-reminder-policy.js';
+import { adminMembershipSummary } from '../../shared/admin-membership-summary.js';
 
 const recordedAmount = (payment: Payment) => typeof payment.amount === 'number' && Number.isFinite(payment.amount) && payment.amount >= 0
   ? `₪${payment.amount.toLocaleString('he-IL')}` : 'סכום לא תועד';
 
-export function TraineePaymentSummary({ user, payments, discounts, plans }: { user: User; payments: Payment[]; discounts: DiscountCode[]; plans: MembershipPlanConfig[] }) {
+export function TraineePaymentSummary({ user, payments, discounts, plans, now = new Date() }: { user: User; payments: Payment[]; discounts: DiscountCode[]; plans: MembershipPlanConfig[]; now?: Date }) {
   const allOwn = traineePayments(payments, user.id);
   const own = allOwn.filter(payment => !isTestPayment(payment) && payment.status === 'PAID');
   const family = user.familyPayerId && user.familyPayerId !== user.id
@@ -16,7 +17,8 @@ export function TraineePaymentSummary({ user, payments, discounts, plans }: { us
   const testPayments = allOwn.filter(isTestPayment);
   const currentLabel = plans.find(plan => plan.id === user.membershipType)?.label || MEMBERSHIP_TYPE_LABELS[user.membershipType]?.label || user.membershipType || 'לא נבחר מסלול';
   return <div className="mt-2 space-y-2 text-xs leading-5">
-    {[...new Set([user.membershipType, ...(user.secondaryMemberships || [])].filter(Boolean))].map(type => {
+    {adminMembershipSummary(user, payments, now).map(summary => {
+      const type = summary.type as MembershipType;
       const paid = related.find(payment => payment.status === 'PAID' && paymentCoversPlan(payment, user.id, type));
       const pending = related.some(payment => payment.status === 'PENDING' && paymentCoversPlan(payment, user.id, type));
       const refunded = related.some(payment => payment.status === 'REFUNDED' && paymentCoversPlan(payment, user.id, type));
@@ -24,11 +26,13 @@ export function TraineePaymentSummary({ user, payments, discounts, plans }: { us
       const code = paid ? recordedDiscount(paid, discounts) : undefined;
       const balance = type === MembershipType.PERSONAL_TRAINING ? user.personalTrainingRemaining : type === MembershipType.DUO_TRAINING ? user.duoTrainingRemaining : type === MembershipType.OPEN_PUNCH_CARD ? user.punchCardRemaining : undefined;
       const hasBalance = [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING, MembershipType.OPEN_PUNCH_CARD].includes(type);
-      const expiry = type === user.membershipType ? user.membershipExpiry : user.membershipPlanExpiries?.[type];
+      const expiry = summary.expiry;
       return <div key={type} className="rounded-lg border border-slate-600 p-2">
         <p className="font-bold">{plans.find(plan => plan.id === type)?.label || MEMBERSHIP_TYPE_LABELS[type]?.label || type}</p>
+        <p>{summary.primary ? 'מסלול ראשי' : summary.assigned ? 'תוספת' : 'תוספת לפי רכישה מתועדת'} · {summary.status}</p>
         <p>{paid ? familyReceipt ? `נכלל בתשלום משפחתי מתועד מ־${paid.date} — הסכום הכולל מוצג בהיסטוריה` : `תשלום מתועד אחרון: ${recordedAmount(paid)} · ${paid.date}` : user.offlinePaymentApproved && type === user.membershipType ? 'אישור חריג — ללא תשלום מתועד למסלול זה' : 'לא תועד תשלום שהושלם למסלול זה'}</p>
         <p>תוקף מתועד למסלול: <span dir="ltr">{validReminderDate(expiry) ? expiry : 'לא תועד'}</span></p>
+        {summary.termSource === 'RECEIPT' && <p>התוקף חושב לפי מועד הרכישה ותנאי התשלום המתועדים{summary.exclusive ? ' — מסתיים בתחילת התאריך' : ''}.</p>}
         {paid && <p>אמצעי תשלום: {paid.provider === 'MANUAL' ? 'מזומן/העברה — דיווח ידני של המנהל' : paid.paymentMethod || 'לא תועד'}</p>}
         {paid && <p>קוד הנחה: {code === undefined ? 'לא תועד בעסקה זו' : code || 'ללא קוד'}</p>}
         {pending && <p>קיימת גם בקשת תשלום ממתינה — אינה הוכחת חיוב.</p>}
