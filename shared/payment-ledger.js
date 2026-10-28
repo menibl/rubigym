@@ -2,7 +2,10 @@
 // are never sufficient evidence that two purchases are the same transaction.
 export function paymentIdentifiers(payment) {
   const namespace = `${payment.isMock ? 'test' : 'live'}:${payment.provider || (String(payment.id).startsWith('payment-rivhit-') ? 'RIVHIT' : 'other')}:`;
-  return [payment.providerSaleId, payment.providerTransactionId, payment.paymentReference,
+  const counter = Number(payment.recurringChargeNumber);
+  const recurringCharge = typeof payment.providerRecurringSaleId === 'string' && payment.providerRecurringSaleId && Number.isInteger(counter) && counter > 0 && counter <= 12
+    ? `recurring:${payment.providerRecurringSaleId.toLowerCase()}:${counter}` : undefined;
+  return [payment.providerSaleId, payment.providerTransactionId, payment.paymentReference, recurringCharge,
     String(payment.id || '').replace(/^payment-rivhit-/, '')]
     .filter(value => typeof value === 'string' && value.trim())
     .map(value => namespace + value);

@@ -25,4 +25,7 @@ test('old contract and sync control explain expiration and no new charge respect
   assert.match(renderToStaticMarkup(<RecurringMembershipNotice user={expired} />), /הסתיימה/);
   const html = renderToStaticMarkup(<AdminRecurringSync userId="u" />);
   assert.match(html, /SaleId/); assert.match(html, /ללא חיוב או הקמת הוראה חדשה/);
+  assert.match(html, /מזהה הוראת קבע מהלוג — מומלץ/);
+  assert.match(html, /בדיקת ההוראה — ללא שינוי או חיוב/);
+  assert.doesNotMatch(html, /אישור שיוך ועדכון המנוי/); // No confirmation before a server preview.
 });

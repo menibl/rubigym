@@ -299,6 +299,22 @@ export const syncRivhitRecurring = async (userId: string, saleId: string): Promi
   return result.message;
 };
 
+export interface RecurringSyncPreview {
+  seriesId: string; userName: string; membershipType: string; planLabel: string; amount: number;
+  successfulCharges: number; endsAt: string; discountRecorded: boolean; discountCode: string | null; nextChargeDate: string | null;
+}
+export const syncRivhitRecurringId = async (userId: string, recurringSaleId: string, confirmationKey?: string): Promise<{ message?: string; preview?: RecurringSyncPreview; confirmationKey?: string }> => {
+  const apiBase = paymentApiBase();
+  if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
+  const response = await fetch(`${apiBase}/api/payments/rivhit/admin/recurring-sync`, {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, recurringSaleId, action: confirmationKey ? 'confirm' : 'preview', confirmationKey })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) throw new Error(result.message || 'לא ניתן לאמת את הוראת הקבע. לא נוצר חיוב נוסף.');
+  return result;
+};
+
 export interface FamilyCreditRecoveryResult {
   diagnostic?: { code: string; stage: string };
   ok: boolean;
