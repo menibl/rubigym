@@ -40,10 +40,16 @@ export function homeMembershipSummary(user, payments = [], now = new Date()) {
     let status = payment?.status === 'PAID' ? 'שולם' : payment?.status === 'REFUNDED' ? 'הוחזר' : payment?.status === 'PENDING' ? 'ממתין לתשלום'
       : user.offlinePaymentApproved ? 'מאושר ידנית' : user.registrationPaymentPending || user.familyPaymentPending || user.membershipStatus === 'DEBT' ? 'ממתין לתשלום'
       : type === user.membershipType && user.membershipStatus === 'ACTIVE' ? 'פעיל' : 'לא תועד תשלום';
+    const contract = user.recurringMemberships?.[type];
+    if (contract?.status === 'PAYMENT_FAILED') status = 'הושהה — כשל בחיוב';
+    else if (contract && contract.endsAt <= today) status = 'הסתיימה תקופת הוראת הקבע';
+    else if (contract?.status === 'PENDING_FIRST_CHARGE') status = 'פעיל — ממתין לאישור החיוב הראשון';
+    else if (contract?.status === 'ACTIVE') status = 'הוראת קבע פעילה';
+    if (contract && contract.status !== 'PAYMENT_FAILED' && contract.endsAt > today) expiry = contract.endsAt;
     if (user.registrationIncomplete) status = 'נדרש להשלים פרטים';
     else if (frozen) status += ' · מוקפא';
     else if (cancelled) status += ' · מבוטל';
-    else if (expired || (type === user.membershipType && user.membershipStatus === 'EXPIRED')) status += ' · פג תוקף';
+    else if ((expired && !(contract && contract.status !== 'PAYMENT_FAILED' && contract.endsAt > today)) || (type === user.membershipType && user.membershipStatus === 'EXPIRED')) status += ' · פג תוקף';
     const field = type === 'PERSONAL_TRAINING' ? 'personalTrainingRemaining' : type === 'DUO_TRAINING' ? 'duoTrainingRemaining' : type === 'OPEN_PUNCH_CARD' ? 'punchCardRemaining' : null;
     const sizeField = type === 'PERSONAL_TRAINING' ? 'personalTrainingCardSize' : type === 'DUO_TRAINING' ? 'duoTrainingCardSize' : null;
     return { type, status, expiry, remaining: field ? Number(user[field] || 0) : null,

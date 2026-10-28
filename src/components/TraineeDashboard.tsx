@@ -9,6 +9,8 @@ import { uniquePayments } from '../../shared/payment-ledger.js';
 import { fitsSessionAge, isYouthSession, sessionAgeMax } from '../../shared/youth-session.js';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { isCancelledOccurrence } from '../../shared/scheduled-occurrence.js';
+import { membershipTypesForAccess, recurringSessionBlocked } from '../../shared/recurring-access.js';
+import { RecurringMembershipNotice } from './RecurringMembershipNotice';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { BookingCategoryPicker } from './BookingCategoryPicker';
@@ -418,6 +420,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     setPaymentStarting(true);
     verifyPendingRivhitPayment(pending)
       .then(verified => {
+        if (verified.recurringSaleId) {
+          clearPendingRivhitPayment(); clearRivhitReturnParams();
+          setActiveTab('membership'); setSelectedMembershipPurchase(null);
+          window.dispatchEvent(new Event('baly:refresh-billing'));
+          showFeedback(verified.recurringPending ? 'הוראת הקבע אושרה. המנוי פעיל — ממתין לאישור החיוב הראשון. לא נרשם תשלום שהושלם.' : 'החיוב בהוראת הקבע אומת. המנוי עודכן בשרת.');
+          return;
+        }
         const transactionKey = verified.transactionId || verified.paymentReference;
         if (!wasTransactionProcessed(transactionKey)) {
           applyVerifiedMembershipPayment(pending.membershipType, purchaseMode, verified, pending.purchaseVariant, pending.familyMembersCount, pending.familyName, pending.familyBillingMode, pending.familyMemberPlans);
@@ -488,6 +497,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // Check booking eligibility constraints (Section 5.1 & 11)
   const checkBookingEligibility = (session: TrainingSession): { eligible: boolean; reason?: string } => {
+    if (recurringSessionBlocked(activeUser, session)) return { eligible: false, reason: 'המסלול הושהה בעקבות כשל חיוב מאומת. יש לפנות למנהל להסדרת התשלום.' };
     if (isCancelledOccurrence(session)) return { eligible: false, reason: 'האימון בוטל ואינו זמין להרשמה.' };
     if (isYouthSession(session) && !fitsSessionAge(session, activeUser)) return { eligible: false, reason: 'אימון הנוער מיועד לטווח הגיל המוגדר ועד גיל 18 כולל. יש לוודא שהגיל בפרופיל מעודכן.' };
     if (activeUser.familyPaymentPending && !activeUser.offlinePaymentApproved) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
@@ -549,10 +559,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
 
     // Consolidated list of all active membership types held by this user/family
-    const userMemberships: MembershipType[] = [
-      activeUser.membershipType,
-      ...(activeUser.secondaryMemberships || [])
-    ].filter(Boolean) as MembershipType[];
+    const userMemberships = membershipTypesForAccess(activeUser) as MembershipType[];
 
     const hasGroupAccess = userMemberships.some(m => 
       [MembershipType.CORE_GROUPS, MembershipType.YOUTH_TWICE_WEEKLY, MembershipType.YOUTH_ONCE_WEEKLY, MembershipType.DEDICATED_GROUP_HALF_YEAR, MembershipType.FAMILY_MEMBERSHIP, MembershipType.GROUP_MONTHLY, MembershipType.GROUP_ANNUAL, MembershipType.WEIGHT_LOSS_HALF_YEAR, MembershipType.POSTPARTUM_HALF_YEAR].includes(m)
@@ -656,6 +663,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   const checkOpenGymBookingEligibility = (og: OpenGymSession): { eligible: boolean; reason?: string } => {
+    if (recurringSessionBlocked(activeUser, og)) return { eligible: false, reason: 'המסלול הושהה בעקבות כשל חיוב מאומת. יש לפנות למנהל להסדרת התשלום.' };
     if (isCancelledOccurrence(og)) return { eligible: false, reason: 'המשבצת בוטלה ואינה זמינה להרשמה.' };
     if (activeUser.familyPaymentPending && !activeUser.offlinePaymentApproved) return { eligible: false, reason: 'המנוי המשפחתי ממתין לתשלום. יש להשלים תשלום דרך המשלם הראשי.' };
     if (new Date(`${og.date}T${og.timeSlot.split('-')[0].trim()}`).getTime() <= Date.now()) return { eligible: false, reason: 'המשבצת כבר התחילה. יש לבחור אימון עתידי.' };
@@ -677,7 +685,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     const expiryOwner = activeUser.membershipExpiry ? activeUser : payer;
     if (membershipExpired(expiryOwner)) return { eligible: false, reason: 'תוקף המנוי פג.' };
 
-    const memberships = [activeUser.membershipType, ...(activeUser.secondaryMemberships || [])].filter(Boolean) as MembershipType[];
+    const memberships = membershipTypesForAccess(activeUser) as MembershipType[];
     const includedOpenGymAccess = hasIncludedOpenGymAccess(memberships);
     const usesPunchCard = !includedOpenGymAccess && memberships.includes(MembershipType.OPEN_PUNCH_CARD);
     if (!includedOpenGymAccess && !usesPunchCard) return { eligible: false, reason: 'המסלול אינו כולל Open Gym.' };
@@ -696,7 +704,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     return hasOverlap ? { eligible: false, reason: 'המשבצת חופפת לאימון שכבר נרשמת אליו.' } : { eligible: true };
   };
 
-  const activeMembershipTypes = [activeUser.membershipType, ...(activeUser.secondaryMemberships || [])].filter(Boolean) as MembershipType[];
+  const activeMembershipTypes = membershipTypesForAccess(activeUser) as MembershipType[];
   const hasOpenGymMembershipAccess = hasIncludedOpenGymAccess(activeMembershipTypes)
     || activeMembershipTypes.includes(MembershipType.OPEN_PUNCH_CARD);
   const isSessionRelevantToTrainee = (session: TrainingSession) => {
@@ -1078,6 +1086,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   // BOOK / CANCEL OPEN GYM (Section 10)
   const handleBookOpenGym = (og: OpenGymSession) => {
+    if (recurringSessionBlocked(activeUser, og)) { showFeedback('המסלול הושהה בעקבות כשל בחיוב. יש לפנות למנהל.', 'error'); return; }
     if (isCancelledOccurrence(og)) { showFeedback('המשבצת בוטלה ואינה זמינה להרשמה.', 'error'); return; }
     if (isOpenGymBooked(og) || isOpenGymWaitlisted(og)) {
       showFeedback('כבר נרשמת למשבצת Open Gym זו או לרשימת ההמתנה שלה.', 'error');
@@ -1141,10 +1150,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       return;
     }
 
-    const memberships = [
-      activeUser.membershipType,
-      ...(activeUser.secondaryMemberships || [])
-    ].filter(Boolean) as MembershipType[];
+    const memberships = membershipTypesForAccess(activeUser) as MembershipType[];
     const includedOpenGymAccess = hasIncludedOpenGymAccess(memberships);
     const usesPunchCard = !includedOpenGymAccess && memberships.includes(MembershipType.OPEN_PUNCH_CARD);
 
@@ -1895,6 +1901,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {/* TAB 2: OPEN GYM BOOKINGS */}
         {activeTab === 'opengym' && (
           <div className="space-y-6">
+            <RecurringMembershipNotice user={activeUser} plans={membershipPlanConfigs} />
             <div className="bg-slate-50 border border-slate-150 p-4 rounded-xl space-y-1">
               <h3 className="text-sm font-bold text-slate-800">Open Gym – שעות אימון חופשיות</h3>
               <p className="text-xs text-slate-500 leading-relaxed">
@@ -2331,6 +2338,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {/* MEMBERSHIP MANAGEMENT & RIVHIT CHECKOUT */}
         {activeTab === 'membership' && (
           <div className="space-y-6">
+            <RecurringMembershipNotice user={activeUser} plans={membershipPlanConfigs} />
             {activeUser.registrationPaymentPending && <p role="alert" className="rounded-xl border border-amber-400/40 bg-zinc-900 p-4 text-amber-200">החשבון שלך נרשם בהצלחה, אך התשלום עדיין לא הושלם. יש לבחור מסלול ולהשלים תשלום כדי להירשם לאימונים.</p>}
             <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
               <button className="text-xs text-amber-300 mb-4" onClick={() => { setSelectedMembershipPurchase(null); setActiveTab('profile'); }}>
@@ -2340,7 +2348,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 <div>
                   <span className="text-[11px] text-amber-300 font-bold">המנוי שלי</span>
                   <h3 className="text-2xl font-black mt-1">ניהול ובחירת מסלולים</h3>
-                  <p className="text-xs text-slate-400 mt-2">שינוי או רכישת מסלול נכנסים לתוקף רק לאחר אימות התשלום מול RIVHIT.</p>
+                  <p className="text-xs text-slate-400 mt-2">תשלום חד פעמי מפעיל מסלול לאחר אימות החיוב. בהוראת קבע, אישור הקמת ההוראה ברווחית מפעיל את המסלול בהמתנה לחיוב הראשון; כשל חיוב מאומת משהה את המסלול הרלוונטי.</p>
                 </div>
                 <div className="rounded-xl bg-white/5 border border-white/10 p-3 min-w-52">
                   <div className="flex justify-between gap-4 text-xs">

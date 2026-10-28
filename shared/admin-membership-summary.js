@@ -39,7 +39,9 @@ export function adminMembershipSummary(user, payments = [], now = new Date()) {
     : [payment.membershipTypePurchased]).filter(Boolean);
   return [...new Set([...assigned, ...discovered])].flatMap(type => {
     const paid = related.find(payment => payment.status === 'PAID' && paymentCoversPlan(payment, user.id, type));
-    const term = planTerm(user, type, paid);
+    const contract = user.recurringMemberships?.[type];
+    const term = contract && contract.status !== 'PAYMENT_FAILED' && contract.endsAt > today
+      ? { expiry: contract.endsAt, exclusive: true, termSource: 'CONTRACT' } : planTerm(user, type, paid);
     const expired = term.expiry ? term.exclusive ? term.expiry <= today : term.expiry < today : false;
     const frozen = Boolean(user.isMembershipFrozen && (!user.membershipFrozenUntil || user.membershipFrozenUntil >= today));
     const cancelled = Boolean(user.cancellationEffectiveDate && user.cancellationEffectiveDate <= today);
@@ -51,12 +53,13 @@ export function adminMembershipSummary(user, payments = [], now = new Date()) {
     // Receipt-only additions require positive, current term evidence. Old purchases
     // or unknown/family mixed terms must not silently become active plans.
     if (!assignedPlan && (!paid || !term.expiry || expired || credited || latestRefund || paymentDate(paid) > today)) return [];
-    const status = cancelled ? 'מבוטל' : frozen ? 'מוקפא' : expired ? 'פג תוקף'
+    const status = cancelled ? 'מבוטל' : frozen ? 'מוקפא' : contract?.status === 'PAYMENT_FAILED' ? 'הושהה — כשל חיוב מאומת' : expired ? 'פג תוקף'
+      : contract?.status === 'PENDING_FIRST_CHARGE' ? 'פעיל — ממתין לאישור החיוב הראשון'
       : latestRefund ? 'קיים החזר למסלול — נדרשת בדיקת תוקף'
       : credited ? 'התשלום קוזז למסלול אחר' : !term.expiry ? 'תוקף לא תועד'
       : type === user.membershipType && user.offlinePaymentApproved ? 'אישור חריג'
       : paid ? 'רכישה בתוקף' : 'מוגדר בפרופיל — ללא תשלום מתועד';
     return [{ type, primary: type === user.membershipType, assigned: assignedPlan, ...term, status,
-      active: Boolean(term.expiry && !expired && !frozen && !cancelled && !credited && !latestRefund), payment: paid }];
+      active: Boolean(term.expiry && !expired && !frozen && !cancelled && !credited && !latestRefund && contract?.status !== 'PAYMENT_FAILED'), payment: paid }];
   });
 }

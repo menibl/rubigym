@@ -3,6 +3,7 @@ import { changePersonalBooking, personalStart } from './personal-booking.js';
 import { hasIncludedOpenGymAccess } from './open-gym-access.js';
 import { paymentPending } from './registration-status.js';
 import { isCancelledOccurrence } from './scheduled-occurrence.js';
+import { membershipTypesForAccess, recurringSessionBlocked } from './recurring-access.js';
 
 export const CLUB_CHECK_IN_CODE = 'BALY-CLUB-CHECKIN-V1';
 const fail = message => { throw new Error(message); };
@@ -47,10 +48,10 @@ const personalDropIn = (payload, actorId, type, partnerId, now) => {
 };
 const openCount = (payload, id, date) => (payload.openGymSessions || []).filter(s => !isCancelledOccurrence(s) && s.date === date && s.registeredUsers?.includes(id)).length
   + (payload.attendanceLogs || []).filter(l => l.traineeId === id && l.date === date && l.type === 'OPEN_GYM' && l.unscheduled).length;
-const usesOpenCard = user => !hasIncludedOpenGymAccess([user.membershipType, ...(user.secondaryMemberships || [])])
-  && [user.membershipType, ...(user.secondaryMemberships || [])].includes('OPEN_PUNCH_CARD');
+const usesOpenCard = user => !hasIncludedOpenGymAccess(membershipTypesForAccess(user))
+  && membershipTypesForAccess(user).includes('OPEN_PUNCH_CARD');
 const canOpen = (payload, user, s, now) => {
-  const memberships = [user.membershipType, ...(user.secondaryMemberships || [])];
+  const memberships = membershipTypesForAccess(user);
   if (!hasIncludedOpenGymAccess(memberships) && !memberships.includes('OPEN_PUNCH_CARD')) return false;
   if (s.registeredUsers?.includes(user.id)) return true;
   if (usesOpenCard(user) && !(Number(user.punchCardRemaining) >= 1)) return false;
@@ -68,7 +69,7 @@ export function clubArrivalChoices(payload, actorId, now = Date.now()) {
   const user = validateUser(payload, actorId, now), date = clubDate(new Date(now));
   const choices = [];
   for (const s of payload.sessions || []) {
-    if (isCancelledOccurrence(s) || s.date !== date || !inWindow(s, now, 30) || s.coachApprovalStatus === 'DECLINED') continue;
+    if (recurringSessionBlocked(user, s) || isCancelledOccurrence(s) || s.date !== date || !inWindow(s, now, 30) || s.coachApprovalStatus === 'DECLINED') continue;
     if (s.registeredUsers?.includes(actorId)) {
       choices.push({ key: `SESSION:${s.id}`, type: 'SESSION', targetId: s.id, title: s.title, time: s.time,
         trainingType: s.isPersonalTraining ? s.personalBooking?.type || 'SOLO' : 'GROUP', registered: true,
@@ -114,7 +115,7 @@ export function clubArrivalChoices(payload, actorId, now = Date.now()) {
   const cancelledOpenWindow = (payload.openGymSessions || []).some(s => isCancelledOccurrence(s) && s.date === date && inWindow(openSession(s), now));
   const overlapping = [...(payload.sessions || []), ...(payload.openGymSessions || []).map(openSession)].some(s => !isCancelledOccurrence(s) && s.registeredUsers?.includes(actorId) && inWindow(s, now));
   if (!openWindow && !cancelledOpenWindow && !overlapping && !choices.some(c => c.trainingType === 'OPEN_GYM') && openCount(payload, actorId, date) < 2
-    && (hasIncludedOpenGymAccess([user.membershipType, ...(user.secondaryMemberships || [])]) || (usesOpenCard(user) && Number(user.punchCardRemaining) >= 1))) choices.push({
+    && (hasIncludedOpenGymAccess(membershipTypesForAccess(user)) || (usesOpenCard(user) && Number(user.punchCardRemaining) >= 1))) choices.push({
       key: 'DROP_IN:OPEN_GYM', type: 'OPEN_GYM', targetId: dropInTarget(actorId, 'OPEN_GYM', date), title: 'Open Gym',
       time: 'כניסה ללא משבצת ביומן', trainingType: 'OPEN_GYM', usesPunchCard: usesOpenCard(user), registered: false, checkedIn: false, unscheduled: true });
   return choices;

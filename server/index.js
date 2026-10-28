@@ -4,7 +4,8 @@ import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
 import { calendarTerm, repairCalendarMemberships } from '../shared/membership-calendar.js';
-import { recurringPlan, recurringSchedule, recurringReceipt, familyRecurringSelections } from '../shared/recurring-billing.js';
+import { recurringPlan, recurringSchedule, recurringReceipt, recurringEvent, familyRecurringSelections } from '../shared/recurring-billing.js';
+import { applyRecurringMembershipEvent, rivhitChargeDate } from '../shared/recurring-membership-events.js';
 import { familySplitLines, publicFamilySplit, changeFamilySplit } from './family-split.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { openGroupUpgradeQuote } from './open-group-upgrade.js';
@@ -600,7 +601,7 @@ const verifiedRivhitPayment = async (paymentReference, env, allowExpired = false
   const reference = await verifyPaymentReference(paymentReference, env, allowExpired);
   const order = await verifySignedOrder(reference.o, env, allowExpired);
   let { sale, saleId, amount } = await getRivhitSale(reference.p, env);
-  if (order.rc === 1 && !recurringReceipt(sale).paid && env.STATE_STORE) {
+  if (order.rc === 1 && !recurringEvent(sale).failed && !recurringEvent(sale).paid && env.STATE_STORE) {
     const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
     const receipt = (state?.payload?.payments || []).find(payment => payment.traineeId === (order.bu || order.u)
       && payment.providerRecurringSaleId === recurringReceipt(sale).id && payment.recurringChargeNumber === 1 && payment.status === 'PAID');
@@ -615,9 +616,8 @@ const verifiedRivhitPayment = async (paymentReference, env, allowExpired = false
   }
   const providerAmount = signedOrderChargeAmount(order);
   if (amount !== providerAmount) throw new Error('AMOUNT_MISMATCH');
-  await verifyRivhitSale(saleId, providerAmount, env, order);
-  const recurring = order.rc === 1 ? recurringReceipt(sale) : null;
-  if (recurring && !recurring.paid && !order.bs) throw new Error('RIVHIT_RECURRING_PENDING');
+  const recurring = order.rc === 1 ? recurringEvent(sale) : null;
+  if (!recurring?.failed) await verifyRivhitSale(saleId, providerAmount, env, order);
   const cardNumber = String(rivhitValue(sale, 'TransactionCardNum', 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
   return {
     order,
@@ -628,6 +628,8 @@ const verifiedRivhitPayment = async (paymentReference, env, allowExpired = false
       recurringSaleId: recurring?.id || String(rivhitValue(sale, 'RecurringSaleId', 'recurringSaleId') || ''),
       recurringChargeNumber: recurring?.charge,
       recurringPending: recurring ? !recurring.paid : false,
+      recurringFailed: Boolean(recurring?.failed), recurringFailureCode: recurring?.failureCode,
+      providerChargeDate: rivhitChargeDate(sale),
       last4Digits: (cardNumber.match(/(\d{4})\D*$/) || [])[1]
     }
   };
@@ -675,7 +677,6 @@ const verifyWebhookSale = async (payload, order, env) => {
   const amount = Number(rivhitValue(payload, 'TransactionAmount', 'TotalAmount', 'Amount', 'totalAmount', 'amount'));
   const providerAmount = signedOrderChargeAmount(order);
   if (!saleId || !Number.isFinite(amount) || amount !== providerAmount) throw new Error('INVALID_RIVHIT_WEBHOOK');
-  await verifyRivhitSale(saleId, providerAmount, env, order);
   // Do not trust the posted charge counter/status. Retrieve them from Rivhit.
   let recurring;
   if (order.rc === 1) {
@@ -684,9 +685,10 @@ const verifyWebhookSale = async (payload, order, env) => {
     if (Number(details.Status) !== 0 || String(sale?.SaleId) !== saleId
       || String(sale?.Custom1) !== String(payload.Custom1)
       || Number(rivhitValue(sale, 'TransactionAmount', 'Amount', 'TotalAmount')) !== providerAmount) throw new Error('INVALID_RECURRING_RECEIPT');
-    recurring = recurringReceipt(sale);
+    recurring = recurringEvent(sale);
     payload = sale;
   }
+  if (!recurring?.failed) await verifyRivhitSale(saleId, providerAmount, env, order);
   const cardNumber = String(rivhitValue(payload, 'TransactionCardNum', 'CardNum', 'CardNumber', 'cardNum', 'cardNumber') || '');
   return {
     paymentReference: saleId,
@@ -695,6 +697,8 @@ const verifyWebhookSale = async (payload, order, env) => {
     recurringSaleId: recurring?.id || String(rivhitValue(payload, 'RecurringSaleId', 'recurringSaleId') || ''),
     recurringChargeNumber: recurring?.charge,
     recurringPending: recurring ? !recurring.paid : false,
+    recurringFailed: Boolean(recurring?.failed), recurringFailureCode: recurring?.failureCode,
+    providerChargeDate: rivhitChargeDate(payload),
     last4Digits: (cardNumber.match(/(\d{4})\D*$/) || [])[1]
   };
 };
@@ -813,6 +817,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
   if (!env.STATE_STORE || (order.d === 'REGISTRATION' && order.rc !== 1)) return;
   if (order.d === 'REGISTRATION' && !(await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness'))?.payload?.users?.some(user => user.id === order.u)) return;
   if (order.d === 'REGISTRATION') order = { ...order, d: 'PRIMARY' };
+  if (order.rc === 1 && (payment.recurringPending || payment.recurringFailed)) return persistRecurringMembershipEvent(env, order, payment);
   const userId = order.bu || order.u || fallbackUserId;
   if (!userId) return;
   const paymentId = `payment-rivhit-${payment.transactionId || payment.saleId || payment.paymentReference}`;
@@ -831,25 +836,19 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         providerTransactionId: payment.transactionId,
         paymentMethod: payment.last4Digits ? `RIVHIT iCredit •••• ${payment.last4Digits}` : existing.paymentMethod });
       const enriched = (state.payload.payments || []).map(existing => matching.includes(existing) ? enrich(existing) : existing);
-      if (JSON.stringify(enriched) === JSON.stringify(state.payload.payments)) return;
-      const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', { ...state.payload, payments: enriched }, state.revision);
+      const enrichedPayload = order.rc === 1
+        ? applyRecurringMembershipEvent({ ...state.payload, payments: enriched }, order, payment)
+        : { ...state.payload, payments: enriched };
+      if (JSON.stringify(enrichedPayload) === JSON.stringify(state.payload)) return;
+      const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', enrichedPayload, state.revision);
       if (!saved.conflict) return;
       continue;
     }
 
-    if (order.rc === 1 && payment.recurringChargeNumber > 1
+    if (order.rc === 1 && payment.recurringChargeNumber > 1 && user.recurringMemberships?.[order.m]?.seriesId !== payment.recurringSaleId
       && !(state.payload.payments || []).some(existing => existing.traineeId === userId
         && existing.providerRecurringSaleId === payment.recurringSaleId)) throw new Error('RECURRING_CONTRACT_MISSING');
-    let updatedUsers = applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.fa ?? order.a), state.payload.settings?.membershipPlans || []);
-    if (order.rc === 1) {
-      const started = recurringSchedule(new Date(Number(order.t))).start.split('-').map(Number);
-      const paidUntil = new Date(Date.UTC(started[2], started[1] + payment.recurringChargeNumber - 1, 1)).toISOString().slice(0, 10);
-      updatedUsers = updatedUsers.map(updated => updated.id === userId ? {
-        ...updated, membershipPlanExpiries: { ...updated.membershipPlanExpiries, [order.m]: paidUntil },
-        ...(order.d === 'PRIMARY' ? { membershipExpiry: paidUntil, membershipExpiryExclusive: true,
-          membershipCommitmentEndsAt: order.re, recurringBillingMonths: 12, monthlyBillingDay: 1 } : {})
-      } : updated);
-    }
+    let updatedUsers = order.rc === 1 ? state.payload.users : applyVerifiedPurchaseToUsers(state.payload.users, userId, order, Number(order.fa ?? order.a), state.payload.settings?.membershipPlans || []);
     if (order.cs) {
       // Adding a member does not buy another free month for the existing payer.
       updatedUsers = updatedUsers.map(updated => {
@@ -866,7 +865,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
       membershipExpiryManualOverride: true, membershipExpiryFromUpgrade: true,
       secondaryMemberships: (updated.secondaryMemberships || []).filter(type => type !== order.ug.from)
     } : updated);
-    const payload = appendUserChangeMessages(state.payload, {
+    let payload = appendUserChangeMessages(state.payload, {
       ...state.payload,
       recurringCheckouts: order.rc === 1 ? (state.payload.recurringCheckouts || []).map(item => item.orderId === order.o
         ? { ...item, recurringSaleId: payment.recurringSaleId } : item) : state.payload.recurringCheckouts,
@@ -920,6 +919,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         recurringAmount: order.rr ? Number(order.a) : undefined
       }, ...(state.payload.payments || [])]
     });
+    if (order.rc === 1) payload = applyRecurringMembershipEvent(payload, order, payment);
     const saved = await env.STATE_STORE.putClubState(env.CLUB_ID || 'baly-wellness', payload, state.revision);
     if (!saved.conflict) {
       try {
@@ -933,13 +933,31 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
   throw new Error('PAYMENT_STATE_CONFLICT');
 };
 
+const persistRecurringMembershipEvent = async (env, order, payment) => {
+  if (!env.STATE_STORE) throw new Error('PAYMENT_NOT_CONFIGURED');
+  const clubId = env.CLUB_ID || 'baly-wellness';
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const state = await env.STATE_STORE.getClubState(clubId);
+    if (!state) throw new Error('CLUB_STATE_MISSING');
+    let payload = applyRecurringMembershipEvent(state.payload, order, payment);
+    if (payload === state.payload) return;
+    payload = { ...payload, recurringCheckouts: (payload.recurringCheckouts || []).map(item => item.orderId === order.o
+      ? { ...item, recurringSaleId: payment.recurringSaleId, status: payment.recurringFailed ? 'PAYMENT_FAILED' : 'PENDING_FIRST_CHARGE' } : item) };
+    if ((await env.STATE_STORE.putClubState(clubId, payload, state.revision)).conflict) continue;
+    await dispatchStateChangePushes(env.STATE_STORE, env, clubId, state.payload, payload).catch(() => console.warn('Recurring membership push dispatch failed'));
+    return;
+  }
+  throw new Error('PAYMENT_STATE_CONFLICT');
+};
+
 const persistVerifiedDiscountUsage = async (env, order, payment) => {
+  if (payment.recurringFailed) return;
   // A series keeps its signed discounted amount even after a single-use code
   // is consumed. Monthly receipts do not redeem the coupon a second time.
   if (order.rc === 1 && Number(payment.recurringChargeNumber) > 1) return;
   const code = normalizeDiscountCode(order.c);
   if (!env.STATE_STORE || !code) return;
-  const paymentId = String(payment.transactionId || payment.saleId || payment.paymentReference || '');
+  const paymentId = String(order.rc === 1 ? order.o : payment.transactionId || payment.saleId || payment.paymentReference || '');
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
     if (!state) throw new Error('CLUB_STATE_MISSING');
@@ -1039,10 +1057,9 @@ const handleFamilySplit = async (request, env, action) => {
     if (!line.checkout?.paymentReference) return json({ message: 'לא נפתח דף תשלום למסלול הזה.' }, 409, corsHeaders(request, env));
     const { order, payment } = await verifiedRivhitPayment(line.checkout.paymentReference, env);
     if (order.u !== payerId || order.bs !== batch.id || order.bi !== line.id || order.bu !== line.memberId) throw new Error('INVALID_FAMILY_SPLIT_ORDER');
-    if (!payment.recurringPending) {
-      await persistVerifiedPurchase(env, order, payment);
-      await persistVerifiedDiscountUsage(env, order, payment);
-    }
+    await persistVerifiedPurchase(env, order, payment);
+    if (payment.recurringFailed) return json({ code: 'RECURRING_PAYMENT_FAILED', message: 'רווחית אישרה כשל בחיוב. המסלול הושהה ונשלחה הודעה למנהל. אין לבצע תשלום כפול.' }, 409, corsHeaders(request, env));
+    await persistVerifiedDiscountUsage(env, order, payment);
     batch = await changeFamilySplit(env.STATE_STORE, clubId, payerId, current => ({ ...current,
       items: current.items.map(item => item.id === line.id ? { ...item, status: payment.recurringPending ? 'SETUP' : 'PAID', recurringSaleId: payment.recurringSaleId } : item) }));
     return json(publicFamilySplit(batch), 200, corsHeaders(request, env));
@@ -1364,6 +1381,7 @@ const handleVerifyPayment = async (request, env) => {
     ...providerPayment
   };
   await persistVerifiedPurchase(env, order, payment, identity?.user_id);
+  if (payment.recurringFailed) return json({ code: 'RECURRING_PAYMENT_FAILED', message: 'רווחית אישרה כשל בחיוב. המסלול הושהה ונשלחה הודעה למנהל. אין לבצע תשלום כפול.' }, 409, corsHeaders(request, env));
   if ((order.rc === 1 || order.ug) && env.STATE_STORE) {
     const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
     payment.membershipExpiry = state?.payload?.users?.find(user => user.id === order.u)?.membershipExpiry;
@@ -1395,15 +1413,13 @@ const handleWebhook = async (request, env) => {
   }
   const order = await getOrderFromWebhook(payload, env);
   const payment = await verifyWebhookSale(payload, order, env);
-  if (!payment.recurringPending) {
-    await persistVerifiedPurchase(env, order, payment);
-    await persistVerifiedDiscountUsage(env, order, payment);
-  }
+  await persistVerifiedPurchase(env, order, payment);
+  await persistVerifiedDiscountUsage(env, order, payment);
   if (order.bs && env.STATE_STORE?.getFamilySplitCheckout) {
     await changeFamilySplit(env.STATE_STORE, env.CLUB_ID || 'baly-wellness', order.u, current => {
       if (!current || current.id !== order.bs) return null;
       return { ...current, items: current.items.map(item => item.id === order.bi && item.memberId === order.bu
-        ? { ...item, status: item.status === 'PAID' ? 'PAID' : payment.recurringPending ? 'SETUP' : 'PAID', recurringSaleId: payment.recurringSaleId } : item) };
+        ? { ...item, status: payment.recurringFailed ? 'REVIEW' : item.status === 'PAID' ? 'PAID' : payment.recurringPending ? 'SETUP' : 'PAID', recurringSaleId: payment.recurringSaleId } : item) };
     });
   }
   if (payment.recurringPending) return new Response('OK', { status: 200 });
@@ -1422,6 +1438,15 @@ const updatePersistedPayment = async (env, clubId, paymentId, patch) => {
       recurringCheckouts: patch.recurringCancelledAt ? (state.payload.recurringCheckouts || []).map(item =>
         item.orderId === payment.recurringOrderId || item.recurringSaleId === payment.providerRecurringSaleId
           ? { ...item, cancelledAt: patch.recurringCancelledAt } : item) : state.payload.recurringCheckouts,
+      users: patch.recurringCancelledAt ? state.payload.users.map(user => {
+        const match = Object.entries(user.recurringMemberships || {}).find(([, contract]) => contract.seriesId === payment.providerRecurringSaleId);
+        if (!match) return user;
+        const [type, contract] = match;
+        const endsAt = contract.paidUntil || clubDate();
+        return { ...user, recurringMemberships: { ...user.recurringMemberships, [type]: { ...contract, endsAt, cancelledAt: patch.recurringCancelledAt } },
+          membershipPlanExpiries: { ...user.membershipPlanExpiries, [type]: endsAt },
+          ...(user.membershipType === type ? { membershipExpiry: endsAt, membershipExpiryExclusive: true } : {}) };
+      }) : state.payload.users,
       payments: (state.payload.payments || []).map(candidate => candidate.id === paymentId ? updatedPayment : candidate)
     };
     const saved = await env.STATE_STORE.putClubState(clubId, payload, state.revision);
@@ -1786,12 +1811,15 @@ const handleApi = async (request, env, url) => {
           return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
         }
       }
-      let safeUser = stripCredentials({ ...user, registrationIncomplete: false, registrationCompletedAt: new Date().toISOString() });
+      let safeUser = stripCredentials({ ...user, recurringMemberships: undefined, registrationIncomplete: false, registrationCompletedAt: new Date().toISOString() });
       let registrationPayment = body.payment;
+      let recurringRegistration;
       if (env.RIVHIT_GROUP_PRIVATE_TOKEN && registrationPayment) {
         if (!registrationPayment.paymentReference) return json({ message: 'נדרש אישור עסקה מאומת. יש לרענן את הדף ולהשלים את אימות התשלום.' }, 400, headers);
         const verified = await verifiedRivhitPayment(registrationPayment.paymentReference, env);
         if (verified.order.u !== user.id || verified.order.d !== 'REGISTRATION') return json({ message: 'התשלום אינו שייך להרשמה הזו.' }, 400, headers);
+        if (verified.payment.recurringFailed) return json({ message: 'רווחית אישרה כשל בחיוב. יש להסדיר את ההוראה מול המנהל; אין לבצע חיוב כפול.' }, 409, headers);
+        if (verified.order.rc === 1) recurringRegistration = verified;
         const { paymentReference: _reference, ...receipt } = registrationPayment;
         registrationPayment = { ...receipt, id: `payment-rivhit-${verified.payment.transactionId}`, traineeId: user.id,
           discountCode: normalizeDiscountCode(verified.order.c) || null,
@@ -1801,15 +1829,20 @@ const handleApi = async (request, env, url) => {
           providerRecurringSaleId: verified.payment.recurringSaleId || undefined,
           recurringChargeNumber: verified.payment.recurringChargeNumber,
           purchaseMode: 'REGISTRATION', isMock: rivhitEnvironment(env) !== 'production' };
+        if (verified.payment.recurringPending) registrationPayment = undefined;
       }
       if (!registrationPayment) safeUser = unpaidRegistration(safeUser);
       else safeUser = { ...safeUser, ...calendarTerm(safeUser.membershipType) };
-      const safeFamilyUsers = familyUsers.map(candidate => registrationPayment ? { ...stripCredentials(candidate), ...calendarTerm(candidate.membershipType) } : unpaidRegistration(stripCredentials(candidate)));
-      const nextPayload = appendUserChangeMessages(state.payload, {
+      const safeFamilyUsers = familyUsers.map(candidate => registrationPayment ? { ...stripCredentials(candidate), recurringMemberships: undefined, ...calendarTerm(candidate.membershipType) } : unpaidRegistration({ ...stripCredentials(candidate), recurringMemberships: undefined }));
+      let nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
         users: [safeUser, ...safeFamilyUsers, ...(state.payload.users || []).filter(candidate => !registrations.some(registration => registration.id === candidate.id))],
         payments: registrationPayment ? [registrationPayment, ...(state.payload.payments || [])] : (state.payload.payments || [])
       });
+      if (recurringRegistration) {
+        nextPayload = applyRecurringMembershipEvent(nextPayload, recurringRegistration.order, recurringRegistration.payment);
+        safeUser = nextPayload.users.find(member => member.id === user.id);
+      }
       const saved = await env.STATE_STORE.putClubState(clubId, nextPayload, state.revision);
       if (saved.conflict) return json(saved, 409, headers);
       for (const candidate of registrations) {
@@ -1857,6 +1890,7 @@ const handleApi = async (request, env, url) => {
       const familyName = payer.familyName || String(candidate.familyName || `משפחת ${payer.name}`).slice(0, 100);
       const safeUser = {
         ...stripCredentials(candidate),
+        recurringMemberships: undefined,
         familyId, familyName, familyPayerId: payer.id, isFamilyPayer: false,
         membershipType: hasPaidSlot ? 'FAMILY_MEMBERSHIP' : candidate.membershipType,
         membershipStatus: hasPaidSlot ? 'ACTIVE' : 'DEBT',
@@ -2178,6 +2212,23 @@ const handleApi = async (request, env, url) => {
       });
       return json(result, 200, headers);
     }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/recurring-sync') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
+      requirePaymentEnv(env);
+      const body = await request.json();
+      const saleId = String(body.saleId || '').trim();
+      if (!saleId || saleId.length > 100 || !body.userId) return json({ message: 'יש לבחור מתאמן ולהזין מזהה עסקת הקמה (SaleId) מרווחית, לא מזהה דף תשלום.' }, 400, headers);
+      const result = await rivhitPost('/SaleDetails', { SaleId: saleId }, env);
+      const sale = Array.isArray(result.data) ? result.data[0] : result.Data?.[0] || result.data || result;
+      if (Number(result.Status) !== 0 || String(sale?.SaleId) !== saleId) return json({ message: 'רווחית לא אישרה את פרטי העסקה. לא שונה דבר ולא נוצר חיוב.' }, 422, headers);
+      const order = await verifySignedOrder(String(sale.Custom1 || ''), env, true);
+      if (order.rc !== 1 || (order.bu || order.u) !== body.userId) return json({ message: 'העסקה אינה הוראת קבע של המתאמן שנבחר. לא שונה דבר.' }, 422, headers);
+      const payment = await verifyWebhookSale({ ...sale, TransactionAmount: rivhitValue(sale, 'TransactionAmount', 'Amount', 'TotalAmount') }, order, env);
+      await persistVerifiedPurchase(env, order, payment);
+      await persistVerifiedDiscountUsage(env, order, payment);
+      return json({ ok: true, message: payment.recurringFailed ? 'רווחית אישרה כשל בחיוב; המסלול הושהה ונשלחו התראות.' : payment.recurringPending ? 'הוראת הקבע אושרה. המנוי פעיל בהמתנה לחיוב הראשון, ללא רישום תשלום שלא בוצע.' : 'החיוב אומת וסונכרן. לא נוצר חיוב נוסף.' }, 200, headers);
+    }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/reconcile') {
       requirePaymentEnv(env);
       const identity = await getIdentity();
@@ -2204,6 +2255,7 @@ const handleApi = async (request, env, url) => {
         return json({ message: 'לא ניתן להתאים בבטחה את הרשומה לעסקה ברווחית. לא שונה דבר; אין לאחד לפי סכום ותאריך בלבד.' }, 422, headers);
       }
       const receipt = verified.payment;
+      if (receipt.recurringPending || receipt.recurringFailed) return json({ message: 'זו אינה קבלה על חיוב מאושר. יש לסנכרן את הוראת הקבע בפעולות המתאמן, ללא יצירת תשלום נוסף.' }, 422, headers);
       const updatedPayment = await updatePersistedPayment(env, identity.session.club_id, payment.id, {
         provider: 'RIVHIT', providerSaleId: receipt.saleId, providerTransactionId: receipt.transactionId,
         paymentMethod: receipt.last4Digits ? `RIVHIT iCredit •••• ${receipt.last4Digits}` : payment.paymentMethod,

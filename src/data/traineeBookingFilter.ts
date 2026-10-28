@@ -1,5 +1,6 @@
 import { MembershipType, User } from '../types';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
+import { membershipTypesForAccess } from '../../shared/recurring-access.js';
 
 export type BookingCategory = 'GROUP' | 'PERSONAL' | 'OPEN_GYM';
 export type BookingFilter = BookingCategory | 'PRIMARY' | 'ALL';
@@ -17,10 +18,10 @@ export function membershipBookingCategory(type?: MembershipType): BookingCategor
 }
 
 export function traineeBookingCategories(user: User) {
-  const types = [user.membershipType, ...(user.secondaryMemberships || [])];
+  const types = membershipTypesForAccess(user) as MembershipType[];
   const categories = new Set<BookingCategory>(types.map(membershipBookingCategory).filter(Boolean) as BookingCategory[]);
   if (hasIncludedOpenGymAccess(types)) categories.add('OPEN_GYM');
-  const primary = membershipBookingCategory(user.membershipType) || [...categories][0];
+  const primary = (types.includes(user.membershipType) ? membershipBookingCategory(user.membershipType) : undefined) || [...categories][0];
   return { primary, additional: [...categories].filter(category => category !== primary) };
 }
 

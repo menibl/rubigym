@@ -3,6 +3,7 @@ import { DiscountCode, Payment, User, MembershipPlanConfig, MembershipType, MEMB
 import { isTestPayment, paymentCoversPlan, recordedDiscount, traineePayments } from '../../shared/admin-trainees.js';
 import { validReminderDate } from '../../shared/payment-reminder-policy.js';
 import { adminMembershipSummary } from '../../shared/admin-membership-summary.js';
+import { RecurringMembershipNotice } from './RecurringMembershipNotice';
 
 const recordedAmount = (payment: Payment) => typeof payment.amount === 'number' && Number.isFinite(payment.amount) && payment.amount >= 0
   ? `₪${payment.amount.toLocaleString('he-IL')}` : 'סכום לא תועד';
@@ -17,6 +18,7 @@ export function TraineePaymentSummary({ user, payments, discounts, plans, now = 
   const testPayments = allOwn.filter(isTestPayment);
   const currentLabel = plans.find(plan => plan.id === user.membershipType)?.label || MEMBERSHIP_TYPE_LABELS[user.membershipType]?.label || user.membershipType || 'לא נבחר מסלול';
   return <div className="mt-2 space-y-2 text-xs leading-5">
+    <RecurringMembershipNotice user={user} plans={plans} />
     {adminMembershipSummary(user, payments, now).map(summary => {
       const type = summary.type as MembershipType;
       const paid = related.find(payment => payment.status === 'PAID' && paymentCoversPlan(payment, user.id, type));
@@ -31,7 +33,7 @@ export function TraineePaymentSummary({ user, payments, discounts, plans, now = 
         <p className="font-bold">{plans.find(plan => plan.id === type)?.label || MEMBERSHIP_TYPE_LABELS[type]?.label || type}</p>
         <p>{summary.primary ? 'מסלול ראשי' : summary.assigned ? 'תוספת' : 'תוספת לפי רכישה מתועדת'} · {summary.status}</p>
         <p>{paid ? familyReceipt ? `נכלל בתשלום משפחתי מתועד מ־${paid.date} — הסכום הכולל מוצג בהיסטוריה` : `תשלום מתועד אחרון: ${recordedAmount(paid)} · ${paid.date}` : user.offlinePaymentApproved && type === user.membershipType ? 'אישור חריג — ללא תשלום מתועד למסלול זה' : 'לא תועד תשלום שהושלם למסלול זה'}</p>
-        <p>תוקף מתועד למסלול: <span dir="ltr">{validReminderDate(expiry) ? expiry : 'לא תועד'}</span></p>
+        <p>{summary.termSource === 'CONTRACT' ? 'תוקף הוראת הקבע' : 'תוקף מתועד למסלול'}: <span dir="ltr">{validReminderDate(expiry) ? expiry : 'לא תועד'}</span></p>
         {summary.termSource === 'RECEIPT' && <p>התוקף חושב לפי מועד הרכישה ותנאי התשלום המתועדים{summary.exclusive ? ' — מסתיים בתחילת התאריך' : ''}.</p>}
         {paid && <p>אמצעי תשלום: {paid.provider === 'MANUAL' ? 'מזומן/העברה — דיווח ידני של המנהל' : paid.paymentMethod || 'לא תועד'}</p>}
         {paid && <p>קוד הנחה: {code === undefined ? 'לא תועד בעסקה זו' : code || 'ללא קוד'}</p>}
