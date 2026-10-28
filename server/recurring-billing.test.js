@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from './index.js';
+import { createPhoneVerificationToken } from './sms-auth.js';
 import { recurringPlan, recurringSchedule, recurringReceipt, familyRecurringSelections } from '../shared/recurring-billing.js';
 
 test('one-off monthly prices never imply a recurring contract', () => {
@@ -32,17 +33,20 @@ function fixture(extra = {}) {
     settings: { membershipPlans: [{ id: 'GROUP_MONTHLY', label: 'שנתי חודשי', price: 500, active: true, billingPeriod: 'MONTHLY_ANNUAL_COMMITMENT', paymentMode: 'RECURRING' }] },
     payments: [], messages: []
   } };
-  let signedOrder, requests = [], charge = 0;
-  const sale = () => ({ SaleId: `sale-${charge}`, Custom1: signedOrder, Amount: 500, TransactionAmount: 500,
-    RecurringId: 'series', RecurringSaleChargeNumber: charge, TransactionStatus: 0, TransactionParamJ: charge === 0 ? 5 : 0,
+  let signedOrder, requests = [], charge = 0, amount = 500, failure = 0, providerUnavailable = false, role = 'TRAINEE';
+  const sale = () => ({ SaleId: `sale-${charge}`, Custom1: signedOrder, Amount: amount, TransactionAmount: amount,
+    RecurringId: 'series', RecurringSaleChargeNumber: charge, TransactionStatus: failure, TransactionParamJ: charge === 0 ? 5 : 0,
     CustomerTransactionId: `transaction-${charge}`, TransactionCardNum: '4580XXXX1111' });
   const env = {
     RIVHIT_ENVIRONMENT: 'production', RIVHIT_GROUP_PRIVATE_TOKEN: 'fixture-one-off-page',
     RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN: 'fixture-recurring-page', RIVHIT_ENABLE_RECURRING: 'true', RIVHIT_RECURRING_CALENDAR_VERIFIED: 'true',
     PAYMENT_SIGNING_SECRET: 'fixture-signing-key', PUBLIC_APP_URL: 'https://club.test/',
+    SMS_OTP_SIGNING_SECRET: 'fixture-registration-signing-key-long-enough',
     STATE_STORE: {
+      getAccountByLogin: async () => null,
+      upsertAccount: async () => {}, createSession: async () => {},
       getSession: async () => ({ club_id: 'baly-wellness', user_id: 'trainee' }),
-      getAccount: async () => ({ user_id: 'trainee', role: 'TRAINEE' }),
+      getAccount: async () => ({ user_id: 'trainee', role }),
       getClubState: async () => state,
       putClubState: async (_id, payload, revision) => {
         if (revision !== state.revision) return { conflict: true, revision: state.revision };
@@ -53,13 +57,14 @@ function fixture(extra = {}) {
       const body = JSON.parse(init.body); requests.push({ url, body });
       if (url.endsWith('/GetUrl')) {
         signedOrder = body.Custom1;
+        amount = body.Items[0].UnitPrice;
         return Response.json({ Status: 0, URL: 'https://icredit.rivhit.co.il/payment/fixture', PrivateSaleToken: 'fixture-private-sale' });
       }
       if (url.endsWith('/Verify')) {
         assert.equal(body.GroupPrivateToken, 'fixture-recurring-page');
         return Response.json({ Status: 'VERIFIED' });
       }
-      if (url.endsWith('/SaleDetails')) return Response.json({ Status: 0, data: [sale()] });
+      if (url.endsWith('/SaleDetails')) return providerUnavailable ? Response.json({ Status: 1 }) : Response.json({ Status: 0, data: [sale()] });
       throw new Error('Unexpected provider operation');
     }, ...extra
   };
@@ -67,7 +72,8 @@ function fixture(extra = {}) {
     method: 'POST', headers: { Cookie: 'baly_session=fixture', 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }), env);
   const create = (patch = {}) => post('create', { userId: 'trainee', userName: 'Trainee', membershipType: 'GROUP_MONTHLY', mode: 'PRIMARY', ...patch });
-  return { create, post, state: () => state, requests, charge: n => { charge = n; }, webhook: () => post('webhook', sale()) };
+  return { create, post, env, state: () => state, requests, charge: n => { charge = n; }, failure: n => { failure = n; },
+    asManager: () => { role = 'MANAGER'; }, unavailable: value => { providerUnavailable = value; }, webhook: (patch = {}) => post('webhook', { ...sale(), ...patch }) };
 }
 
 test('operator readiness and user consent are required before contacting provider', async () => {
@@ -79,17 +85,19 @@ test('operator readiness and user consent are required before contacting provide
   assert.equal((await response.json()).code, 'RECURRING_CONSENT_REQUIRED'); assert.equal(f.requests.length, 0);
 });
 
-test('separate hosted page; pending setup does not grant access; monthly receipts are idempotent', async () => {
+test('separate hosted page; verified setup grants pending access, not a receipt; monthly receipts are idempotent', async () => {
   const f = fixture();
   assert.equal((await f.create({ recurringAcknowledged: true })).status, 200);
   const request = f.requests[0].body;
   assert.equal(request.GroupPrivateToken, 'fixture-recurring-page');
   assert.equal(request.RecurringSaleCount, 12); assert.equal(request.NumberOfPayments, 1);
   assert.equal(request.SaleType, 2); assert.equal(request.Items[0].UnitPrice, 500);
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT'); // GetUrl alone never activates.
   const repeat = await f.create({ recurringAcknowledged: true });
   assert.equal(repeat.status, 409); assert.equal((await repeat.json()).code, 'RECURRING_CHECKOUT_EXISTS');
   assert.equal((await f.webhook()).status, 200);
-  assert.equal(f.state().payload.payments.length, 0); assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+  assert.equal(f.state().payload.payments.length, 0); assert.equal(f.state().payload.users[0].membershipStatus, 'ACTIVE');
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'PENDING_FIRST_CHARGE');
   f.charge(1); assert.equal((await f.webhook()).status, 200);
   const firstExpiry = f.state().payload.users[0].membershipExpiry;
   const commitment = f.state().payload.users[0].membershipCommitmentEndsAt;
@@ -161,4 +169,72 @@ test('a single recurring plan keeps the discounted price in every charge, not ju
   // Inspect the signed immutable order, not a recalculation against a mutable coupon.
   const order = JSON.parse(Buffer.from(f.requests[0].body.Custom1.split('.')[0], 'base64url').toString());
   assert.equal(order.a, 450); assert.equal(order.c, 'TEN'); assert.equal(order.rm, 12);
+  assert.equal((await f.webhook()).status, 200);
+  f.state().payload.discountCodes[0].discountPercent = 50;
+  for (const number of [1, 2, 12]) {
+    f.charge(number); assert.equal((await f.webhook()).status, 200);
+    assert.equal(f.state().payload.payments[0].amount, 450);
+  }
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.amount, 450);
+  assert.equal(f.state().payload.discountCodes[0].usedByPaymentId, order.o);
+});
+
+test('only provider-confirmed failure suspends; untrusted IPN and unavailable provider do not', async () => {
+  const f = fixture();
+  assert.equal((await f.create({ recurringAcknowledged: true })).status, 200);
+  assert.equal((await f.webhook({ TransactionStatus: 5 })).status, 200);
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'PENDING_FIRST_CHARGE');
+  f.charge(1); f.unavailable(true);
+  assert.equal((await f.webhook()).status, 502);
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'PENDING_FIRST_CHARGE');
+  f.unavailable(false); f.failure(5);
+  assert.equal((await f.webhook({ TransactionStatus: 0 })).status, 200);
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'PAYMENT_FAILED');
+  assert.equal(f.state().payload.payments.length, 0);
+  f.failure(0);
+  assert.equal((await f.webhook()).status, 200);
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'ACTIVE');
+  assert.equal(f.state().payload.payments.length, 1);
+});
+
+test('manager can sync an existing approved setup without a new charge; trainee and wrong beneficiary cannot', async () => {
+  const f = fixture(); await f.create({ recurringAcknowledged: true });
+  const body = { saleId: 'sale-0', userId: 'trainee' };
+  assert.equal((await f.post('admin/recurring-sync', body)).status, 403);
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+  f.asManager();
+  assert.equal((await f.post('admin/recurring-sync', { ...body, userId: 'other' })).status, 422);
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+  assert.equal((await f.post('admin/recurring-sync', body)).status, 200);
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'PENDING_FIRST_CHARGE');
+  assert.equal(f.state().payload.payments.length, 0);
+  assert.equal(f.requests.filter(request => request.url.endsWith('/GetUrl')).length, 1);
+  assert.equal(f.requests.filter(request => /Charge|RecurringSaleCreate/.test(request.url)).length, 0);
+});
+
+test('concurrent duplicate setups and failures preserve one notice per recipient and no phantom receipt', async () => {
+  const f = fixture(); f.state().payload.users.push({ id: 'manager', role: 'MANAGER', name: 'Manager' });
+  await f.create({ recurringAcknowledged: true });
+  await Promise.all([f.webhook(), f.webhook()]);
+  assert.equal(f.state().payload.messages.length, 2);
+  f.charge(1); f.failure(4);
+  await Promise.all([f.webhook(), f.webhook()]);
+  assert.equal(f.state().payload.messages.length, 4);
+  assert.equal(f.state().payload.payments.length, 0);
+});
+
+test('legacy registration return with verified J5 completes profile without fabricating a paid receipt', async () => {
+  const f = fixture();
+  const checkout = await f.create({ mode: 'REGISTRATION', recurringAcknowledged: true });
+  assert.equal(checkout.status, 200);
+  const { paymentReference } = await checkout.json();
+  const user = { id: 'trainee', role: 'TRAINEE', name: 'Test Trainee', username: 'fixture-user', email: 'fixture@example.com',
+    phone: '0541234567', password: 'fixture-password', membershipType: 'GROUP_MONTHLY', membershipStatus: 'ACTIVE' };
+  const phoneVerificationToken = await createPhoneVerificationToken({ env: f.env, clubId: 'baly-wellness', phone: user.phone });
+  const response = await worker.fetch(new Request('https://club.test/api/auth/register', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user, phoneVerificationToken, payment: { paymentReference, status: 'PAID' } }) }), f.env);
+  assert.equal(response.status, 201, await response.clone().text());
+  assert.equal(f.state().payload.payments.length, 0);
+  assert.equal(f.state().payload.users[0].registrationPaymentPending, false);
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'PENDING_FIRST_CHARGE');
 });

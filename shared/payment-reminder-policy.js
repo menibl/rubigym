@@ -1,4 +1,5 @@
 import { clubDate } from './membership-calendar.js';
+import { recurringAccessUntil } from './recurring-access.js';
 
 export const validReminderDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
@@ -16,6 +17,9 @@ export function paymentReminderWindow(user, today = clubDate()) {
 }
 
 export function paymentReminderEligible(user, today = clubDate()) {
+  // An approved auto-charge contract is not an unpaid manual renewal. A verified
+  // failure sends its own notification; never invite a duplicate checkout on delay.
+  if (recurringAccessUntil(user, today)) return false;
   if (user?.role !== 'TRAINEE' || user.registrationIncomplete || user.paymentReminderExempt
     || (user.isMembershipFrozen && (!user.membershipFrozenUntil || user.membershipFrozenUntil >= today))
     || (user.cancellationEffectiveDate && user.cancellationEffectiveDate <= today)) return false;

@@ -5,6 +5,7 @@ import { paymentPending } from '../shared/registration-status.js';
 import { homeGroupSessions } from '../shared/group-program-access.js';
 import { validReminderDate } from '../shared/payment-reminder-policy.js';
 import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
+import { recurringSessionBlocked } from '../shared/recurring-access.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -148,6 +149,7 @@ export const payloadForUser = (payload, userId, role) => {
     ...safe,
     coachArrivalApprovals: [],
     membershipReminderDeliveries: [],
+    recurringCheckouts: (safe.recurringCheckouts || []).filter(item => item.userId === userId || (familyId && safe.users.some(member => member.id === item.userId && member.familyId === familyId))),
     users: safe.users
       .filter(user => user.id === userId || user.role === 'MANAGER' || user.role === 'COACH' || (familyId && user.familyId === familyId))
       .map(user => user.id === userId || (familyId && user.familyId === familyId) ? user : publicStaff(user)),
@@ -196,6 +198,7 @@ const mergeOwnBooking = (currentItems = [], incomingItems = [], userId, user) =>
   const mergeList = key => {
     const currentList = Array.isArray(current[key]) ? current[key] : [];
     const incomingList = Array.isArray(incoming[key]) ? incoming[key] : [];
+    if (user && recurringSessionBlocked(user, current) && incomingList.includes(userId) && !currentList.includes(userId)) return currentList;
     if (isCancelledOccurrence(current) && incomingList.includes(userId) && !currentList.includes(userId)) return currentList;
     if (user && isYouthSession(current) && !fitsSessionAge(current, user) && incomingList.includes(userId) && !currentList.includes(userId)) return currentList;
     const withoutSelf = currentList.filter(id => id !== userId);
@@ -204,8 +207,8 @@ const mergeOwnBooking = (currentItems = [], incomingItems = [], userId, user) =>
   return { ...current, registeredUsers: mergeList('registeredUsers'), waitlistUsers: mergeList('waitlistUsers') };
 });
 
-const mergeOwnOpenGymBooking = (currentItems = [], incomingItems = [], userId, attendance = []) => {
-  const merged = mergeOwnBooking(currentItems, incomingItems, userId);
+const mergeOwnOpenGymBooking = (currentItems = [], incomingItems = [], userId, attendance = [], user) => {
+  const merged = mergeOwnBooking(currentItems, incomingItems, userId, user);
   const currentParticipationIds = new Set(currentItems
     .filter(item => (item.registeredUsers || []).includes(userId) || (item.waitlistUsers || []).includes(userId))
     .map(item => item.id));
@@ -246,6 +249,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
   // exception endpoints, never by generic client state synchronization.
   incoming.coachArrivalApprovals = current.coachArrivalApprovals || [];
   incoming.membershipReminderDeliveries = current.membershipReminderDeliveries || [];
+  incoming.recurringCheckouts = current.recurringCheckouts || [];
   const protectedLogs = (current.attendanceLogs || []).filter(log => log.coachException);
   incoming.attendanceLogs = [...(incoming.attendanceLogs || []).filter(log => !log.coachException && !String(log.id).startsWith('arrival-exception-')), ...protectedLogs];
   const preserveSystemMessages = requestedMessages => {
@@ -257,7 +261,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     incoming.users = incoming.users.map(user => {
       const previous = current.users.find(member => member.id === user.id);
       const setting = key => Object.hasOwn(user, key) ? user[key] : previous?.[key];
-      return { ...user, paymentReminderExempt: setting('paymentReminderExempt') === true,
+      return { ...user, recurringMemberships: previous?.recurringMemberships, paymentReminderExempt: setting('paymentReminderExempt') === true,
         paymentReminderUntil: validReminderDate(setting('paymentReminderUntil')) ? setting('paymentReminderUntil') : undefined,
         paymentReminderExpiry: validReminderDate(setting('paymentReminderExpiry')) ? setting('paymentReminderExpiry') : undefined };
     });
@@ -313,7 +317,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     .filter(user => !current.users.some(existing => existing.id === user.id))
     .filter(user => user.role === 'TRAINEE' && user.familyPayerId === userId)
     .map(user => {
-      const { paymentReminderExempt: _exempt, paymentReminderUntil: _until, paymentReminderExpiry: _expiry, ...member } = user;
+      const { paymentReminderExempt: _exempt, paymentReminderUntil: _until, paymentReminderExpiry: _expiry, recurringMemberships: _recurring, ...member } = user;
       return stripCredentials(member);
     });
   const ownNewMessages = (incoming.messages || []).filter(message => message.senderId === userId);
@@ -333,7 +337,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     ...current,
     users: [...nextUsers, ...newFamilyMembers],
     sessions: unpaid ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId, current.users.find(user => user.id === userId)),
-    openGymSessions: unpaid ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId, current.attendanceLogs),
+    openGymSessions: unpaid ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId, current.attendanceLogs, actor),
     messages: [...messagesWithReadReceipts, ...ownNewMessages.filter(message => !existingMessageIds.has(message.id))],
     attendanceLogs: [...(current.attendanceLogs || []), ...ownNewAttendance.filter(log => !existingAttendanceIds.has(log.id))],
     traineeProfiles: [

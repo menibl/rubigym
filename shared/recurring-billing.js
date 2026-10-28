@@ -46,3 +46,14 @@ export function recurringReceipt(sale) {
   if (charge > 0 && param === 0) return { id, charge, paid: true };
   throw new Error('INVALID_RECURRING_RECEIPT');
 }
+
+// SaleDetails must be fetched server-to-server before using a failure to suspend.
+export function recurringEvent(sale) {
+  if (sale?.RecurringSaleCount !== undefined && Number(sale.RecurringSaleCount) !== 12) throw new Error('INVALID_RECURRING_RECEIPT');
+  const status = Number(sale?.TransactionStatus);
+  if (Number.isInteger(status) && status !== 0 && (sale?.RecurringId || sale?.RecurringSaleId) && Number.isInteger(Number(sale.RecurringSaleChargeNumber))
+    && Number(sale.RecurringSaleChargeNumber) >= 0 && Number(sale.RecurringSaleChargeNumber) <= 12) {
+    return { id: String(sale.RecurringId || sale.RecurringSaleId), charge: Number(sale.RecurringSaleChargeNumber), paid: false, failed: true, failureCode: String(status) };
+  }
+  return recurringReceipt(sale);
+}

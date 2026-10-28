@@ -22,6 +22,19 @@ const fixture = () => ({
 });
 const input = (type = 'SOLO') => ({ code: CLUB_CHECK_IN_CODE, type: 'SESSION', targetId: 's', trainingType: type, partnerId: 'partner' });
 
+test('recurring decline blocks only Open scans; pending verified setup survives a first-charge delay', () => {
+  const payload = fixture();
+  payload.users[0].recurringMemberships = { OPEN_GYM: { status: 'PAYMENT_FAILED', seriesId: 'series', endsAt: '2027-10-01' } };
+  const choices = clubArrivalChoices(payload, 'u', now);
+  assert.equal(choices.some(choice => choice.trainingType === 'OPEN_GYM'), false);
+  assert.ok(choices.some(choice => choice.trainingType === 'SOLO'));
+  assert.ok(choices.some(choice => choice.trainingType === 'DUO'));
+  assert.equal(payload.users[0].personalTrainingRemaining, 2);
+  payload.users[0].recurringMemberships.OPEN_GYM.status = 'PENDING_FIRST_CHARGE';
+  payload.users[0].membershipExpiry = '2026-10-01';
+  assert.ok(clubArrivalChoices(payload, 'u', now).some(choice => choice.trainingType === 'OPEN_GYM'));
+});
+
 test('success reports the saved solo balance and actual card size, without inventing missing size', () => {
   const state = fixture(); Object.assign(state.users[0], { personalTrainingRemaining: 6, personalTrainingCardSize: 10 });
   const next = recordClubArrival(state, 'u', input(), now);
