@@ -3,9 +3,10 @@ import { dispatchStateChangePushes, isPushConfigured, sendPushToUsers, validateP
 import { appendUserChangeMessages } from './user-change-messages.js';
 import { recoverUsersFromAccounts } from './user-recovery.js';
 import { familyPurchaseIdentity, repairPaidFamilyOwners } from './family-purchase.js';
-import { calendarTerm, repairCalendarMemberships } from '../shared/membership-calendar.js';
+import { calendarTerm, clubDate, repairCalendarMemberships } from '../shared/membership-calendar.js';
 import { recurringPlan, recurringSchedule, recurringReceipt, recurringEvent, familyRecurringSelections } from '../shared/recurring-billing.js';
 import { applyRecurringMembershipEvent, rivhitChargeDate } from '../shared/recurring-membership-events.js';
+import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
 import { familySplitLines, publicFamilySplit, changeFamilySplit } from './family-split.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { openGroupUpgradeQuote } from './open-group-upgrade.js';
@@ -649,7 +650,7 @@ const reserveRecurringCheckout = async (env, order) => {
     if (reservations.some(item => item.userId === (order.bu || order.u) && (!item.membershipType || item.membershipType === order.m) && !item.cancelledAt
       && item.endsAt > recurringSchedule().start.split('-').reverse().join('-'))) return false;
     const saved = await env.STATE_STORE.putClubState(clubId, { ...state.payload,
-      recurringCheckouts: [...reservations, { orderId: order.o, userId: order.bu || order.u, membershipType: order.m, endsAt: order.re, dispatchedAt: new Date().toISOString() }]
+      recurringCheckouts: [...reservations, { orderId: order.o, userId: order.bu || order.u, membershipType: order.m, endsAt: order.re, dispatchedAt: new Date().toISOString(), orderSnapshot: order }]
     }, state.revision);
     if (!saved.conflict) return true;
   }
@@ -829,11 +830,13 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     if (!user) throw new Error('PAYMENT_USER_NOT_FOUND');
     const matching = (state.payload.payments || []).filter(existing => sameProviderPayment(existing, {
       id: paymentId, provider: 'RIVHIT', isMock: rivhitEnvironment(env) !== 'production',
-      providerSaleId: payment.saleId, providerTransactionId: payment.transactionId
+      providerSaleId: payment.saleId, providerTransactionId: payment.transactionId,
+      providerRecurringSaleId: payment.recurringSaleId, recurringChargeNumber: payment.recurringChargeNumber
     }));
     if (matching.length) {
-      const enrich = existing => ({ ...existing, provider: 'RIVHIT', providerSaleId: payment.saleId,
-        providerTransactionId: payment.transactionId,
+      const enrich = existing => ({ ...existing, provider: 'RIVHIT', providerSaleId: payment.saleId || existing.providerSaleId,
+        providerTransactionId: payment.providerHistoryVerified ? existing.providerTransactionId || payment.transactionId : payment.transactionId,
+        ...(payment.recoveryDiscountUnknown ? {} : { discountCode: normalizeDiscountCode(order.c) || null, discountAmount: order.da }),
         paymentMethod: payment.last4Digits ? `RIVHIT iCredit •••• ${payment.last4Digits}` : existing.paymentMethod });
       const enriched = (state.payload.payments || []).map(existing => matching.includes(existing) ? enrich(existing) : existing);
       const enrichedPayload = order.rc === 1
@@ -895,8 +898,8 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         upgradeCreditAmount: order.ug ? order.ca : undefined,
         upgradeFrom: order.ug?.from,
         purchaseMode: order.d,
-        date: new Date().toISOString().slice(0, 10),
-        timestamp: new Date().toISOString(),
+        date: payment.historyTimestamp ? clubDate(new Date(payment.historyTimestamp)) : new Date().toISOString().slice(0, 10),
+        timestamp: payment.historyTimestamp || new Date().toISOString(),
         status: 'PAID',
         membershipTypePurchased: order.m,
         familyMembersCount: order.f,
@@ -909,7 +912,9 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         provider: 'RIVHIT',
         providerSaleId: payment.saleId,
         providerTransactionId: payment.transactionId,
-        discountCode: normalizeDiscountCode(order.c) || null,
+        providerDocumentKey: payment.providerDocumentKey,
+        providerHistoryVerifiedAt: payment.providerHistoryVerified ? new Date().toISOString() : undefined,
+        discountCode: payment.recoveryDiscountUnknown ? undefined : normalizeDiscountCode(order.c) || null,
         discountAmount: order.da,
         familyPayerId: order.bu ? order.u : undefined,
         familySplitBatchId: order.bs,
@@ -2217,6 +2222,34 @@ const handleApi = async (request, env, url) => {
       if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
       requirePaymentEnv(env);
       const body = await request.json();
+      if (body.recurringSaleId !== undefined) {
+        const seriesId = recurringId(body.recurringSaleId);
+        if (!seriesId || !body.userId || !['preview', 'confirm'].includes(body.action)) return json({ message: 'יש להזין מזהה הוראת קבע ולבחור בדיקה לפני אישור הסנכרון.' }, 400, headers);
+        let prepared;
+        try {
+          const state = await loadClubState(identity.session.club_id);
+          const details = await rivhitPost('/RecurringSaleDetails', { RecurringSaleId: seriesId }, env);
+          const history = await rivhitPost('/RecurringSaleHistory', { RecurringSaleId: seriesId }, env);
+          prepared = prepareRecurringIdSync({ payload: state.payload, userId: body.userId, seriesId, details, history, appUrl: env.PUBLIC_APP_URL });
+        } catch (error) {
+          const safe = error?.message && !/RIVHIT_|fetch|network|timeout/i.test(error.message) ? error.message : 'לא ניתן לאמת כרגע את פרטי ההוראה והחיובים ברווחית. לא שונה דבר ולא נוצר חיוב.';
+          return json({ message: safe }, 422, headers);
+        }
+        const confirmationKey = await sign(JSON.stringify({ clubId: identity.session.club_id, userId: body.userId, managerId: identity.session.user_id, prepared }), env.PAYMENT_SIGNING_SECRET);
+        if (body.action === 'preview') return json({ ok: true, preview: prepared.preview, confirmationKey }, 200, headers);
+        if (body.confirmationKey !== confirmationKey) return json({ message: 'פרטי ההוראה השתנו או שלא בוצעה בדיקה מקדימה. יש לבדוק שוב לפני אישור הסנכרון.' }, 409, headers);
+        const audit = { recoveryManagerId: identity.session.user_id, recoveryDiscountUnknown: prepared.discountUnknown };
+        if (prepared.payments.length) {
+          for (const payment of prepared.payments) await persistVerifiedPurchase(env, prepared.order, { ...payment, ...audit });
+        } else {
+          const latest = await loadClubState(identity.session.club_id);
+          const existing = latest.payload.users.find(user => user.id === body.userId)?.recurringMemberships?.[prepared.order.m];
+          if (existing?.seriesId !== seriesId || existing.status !== 'PENDING_FIRST_CHARGE') await persistVerifiedPurchase(env, prepared.order,
+            { saleId: `setup-${seriesId}`, recurringSaleId: seriesId, recurringChargeNumber: 0, recurringPending: true, ...audit });
+        }
+        if (!prepared.discountUnknown) await persistVerifiedDiscountUsage(env, prepared.order, prepared.payments[0] || { recurringChargeNumber: 0 });
+        return json({ ok: true, message: prepared.payments.length ? `סונכרנו ${prepared.payments.length} חיובים מאומתים מהיסטוריית רווחית. לא נוצר חיוב חדש.` : 'ההוראה אושרה והמנוי פעיל בהמתנה לחיוב הראשון. לא נרשם תשלום שלא בוצע ולא נוצר חיוב חדש.' }, 200, headers);
+      }
       const saleId = String(body.saleId || '').trim();
       if (!saleId || saleId.length > 100 || !body.userId) return json({ message: 'יש לבחור מתאמן ולהזין מזהה עסקת הקמה (SaleId) מרווחית, לא מזהה דף תשלום.' }, 400, headers);
       const result = await rivhitPost('/SaleDetails', { SaleId: saleId }, env);
