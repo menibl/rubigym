@@ -11,6 +11,7 @@ import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
 import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
+import { adminMembershipSummary } from '../../shared/admin-membership-summary.js';
 import { TraineeMembershipStatus } from './TraineeMembershipStatus';
 import { offlinePaymentRecord } from '../../shared/offline-payment.js';
 import { getGenderLabel } from '../data/userProfile';
@@ -1479,6 +1480,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             )}
 
                             {/* Secondary Memberships Badge Display */}
+                            {adminMembershipSummary(u, payments).filter(plan => !plan.primary && !u.secondaryMemberships?.includes(plan.type as MembershipType)).map(plan => <div key={plan.type} className="mt-1 rounded-lg border border-slate-600 p-2 text-xs">
+                              {settings.membershipPlans?.find(config => config.id === plan.type)?.label || MEMBERSHIP_TYPE_LABELS[plan.type as MembershipType]?.label || plan.type} · תוספת לפי רכישה מתועדת<br />תוקף: <span dir="ltr">{plan.expiry}</span> · {plan.status}
+                            </div>)}
                             {u.secondaryMemberships && u.secondaryMemberships.length > 0 && (
                               <div className="mt-1.5 pt-1 border-t border-slate-100">
                                 <div className="text-[9px] text-slate-400 font-bold">מנויים משולבים נוספים:</div>
