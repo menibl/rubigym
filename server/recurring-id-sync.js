@@ -1,4 +1,5 @@
 import { clubDate, isCalendarMembership } from '../shared/membership-calendar.js';
+import { providerTimestamp as providerTime, providerDateFormat } from './provider-date.js';
 
 const reject = message => { throw new Error(message); };
 export const recurringId = value => {
@@ -12,7 +13,12 @@ const providerData = result => {
   const value = result.data || result.Data || result;
   return Array.isArray(value) ? value.length === 1 ? value[0] : null : value;
 };
-const providerTime = value => typeof value === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value)) ? new Date(value) : null;
+const rejectDate = (message, code, field, value) => {
+  const error = new Error(message);
+  error.code = code;
+  error.diagnostic = { code, field, format: providerDateFormat(value) };
+  throw error;
+};
 const documentKey = value => {
   try {
     const url = new URL(value);
@@ -43,8 +49,12 @@ export function prepareRecurringIdSync({ payload, userId, seriesId, details: det
     || Number(details.RecurringCycle) !== 3 || Number(details.RecurringDay) !== 1 || Number(details.RecurringStep) !== 1
     || Number(details.RecurringSaleCount) !== 12 || details.ProRata !== false) reject('תנאי ההוראה אינם תואמים לסדרה פעילה של 12 חיובים חודשיים ב־1 לחודש. נדרשת בדיקת מנהל מול רווחית.');
   const creation = providerTime(details.CreationDate), ending = providerTime(details.EndDate);
-  if (!creation || !ending || creation.getTime() > now.getTime() + 60000 || ending <= creation
-    || ending.getTime() - creation.getTime() > 13 * 31 * 86400000 || clubDate(ending) <= clubDate(now)) reject('תאריכי ההוראה אינם תקינים או שההתקשרות הסתיימה.');
+  if (!creation) rejectDate('לא ניתן לקרוא את תאריך הקמת ההוראה שחזר מרווחית (CreationDate). אין פירוש הדבר שהמנוי הסתיים.', 'RIVHIT_CREATION_DATE_FORMAT', 'CreationDate', details.CreationDate);
+  if (!ending) rejectDate('לא ניתן לקרוא את תאריך סיום ההוראה שחזר מרווחית (EndDate). אין פירוש הדבר שהמנוי הסתיים.', 'RIVHIT_END_DATE_FORMAT', 'EndDate', details.EndDate);
+  if (creation.getTime() > now.getTime() + 60000) rejectDate('תאריך הקמת ההוראה ברווחית נמצא בעתיד. יש לבדוק את נתוני הספק; לא שונה המנוי.', 'RIVHIT_CREATION_DATE_FUTURE', 'CreationDate', details.CreationDate);
+  if (ending <= creation) rejectDate('תאריך סיום ההוראה ברווחית אינו מאוחר מתאריך ההקמה. יש לבדוק את תנאי ההוראה.', 'RIVHIT_END_BEFORE_CREATION', 'EndDate', details.EndDate);
+  if (ending.getTime() - creation.getTime() > 13 * 31 * 86400000) rejectDate('תקופת ההוראה שחזרה מרווחית ארוכה מהסדרה השנתית שאושרה. הסנכרון נעצר לבדיקה.', 'RIVHIT_END_DATE_RANGE', 'EndDate', details.EndDate);
+  if (clubDate(ending) <= clubDate(now)) rejectDate(`לפי תאריך הסיום שחזר מרווחית, ההתקשרות הסתיימה בתאריך ${clubDate(ending)}. לא בוצע חידוש או חיוב נוסף.`, 'RIVHIT_CONTRACT_ENDED', 'EndDate', details.EndDate);
   const endsAt = clubDate(ending);
   const candidates = (payload.recurringCheckouts || []).filter(checkout => checkout.userId === userId && !checkout.cancelledAt
     && checkout.endsAt === endsAt && isCalendarMembership(checkout.membershipType)
@@ -60,7 +70,9 @@ export function prepareRecurringIdSync({ payload, userId, seriesId, details: det
   if (!Array.isArray(records) || records.length > 100) reject('לא התקבלה היסטוריית חיובים מלאה מרווחית.');
   const sorted = records.map(record => ({ ...record, time: providerTime(record.Timestamp) }))
     .sort((a, b) => (a.time?.getTime() || 0) - (b.time?.getTime() || 0));
-  if (sorted.some(record => !record.time || record.time.getTime() > now.getTime() + 60000 || record.time < creation)) reject('תאריכי היסטוריית החיובים אינם תקינים.');
+  const invalidTime = sorted.find(record => !record.time);
+  if (invalidTime) rejectDate('לא ניתן לקרוא תאריך חיוב בהיסטוריית רווחית (Timestamp). לא נוצר רישום תשלום.', 'RIVHIT_HISTORY_DATE_FORMAT', 'Timestamp', invalidTime.Timestamp);
+  if (sorted.some(record => record.time.getTime() > now.getTime() + 60000 || record.time < creation)) rejectDate('תאריך חיוב בהיסטוריית רווחית נמצא בעתיד או לפני הקמת ההוראה. נדרשת בדיקה.', 'RIVHIT_HISTORY_DATE_RANGE', 'Timestamp', sorted[0]?.Timestamp);
   const successful = sorted.filter(record => Number(record.StatusCode) === 3 && Number(record.RivhitCode) === 0
     && documentKey(record.DocumentLink));
   // The documented history does not expose SaleId or the provider charge number.
@@ -79,6 +91,6 @@ export function prepareRecurringIdSync({ payload, userId, seriesId, details: det
   const preview = { seriesId, userName: user.name, membershipType: order.m,
     planLabel: payload.settings?.membershipPlans?.find(plan => plan.id === order.m)?.label || order.m,
     amount, successfulCharges: count, endsAt, discountRecorded: Boolean(snapshot),
-    discountCode: snapshot?.c || null, nextChargeDate: providerTime(details.ChargeDate) ? clubDate(new Date(details.ChargeDate)) : null };
+    discountCode: snapshot?.c || null, nextChargeDate: providerTime(details.ChargeDate) ? clubDate(providerTime(details.ChargeDate)) : null };
   return { order, payments, preview, discountUnknown: !snapshot };
 }
