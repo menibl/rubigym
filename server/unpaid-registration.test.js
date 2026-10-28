@@ -21,11 +21,13 @@ test('unpaid profile can register, log in with password and load the app without
   const env = { STATE_STORE: store, CLUB_ID: 'test', SMS_OTP_SIGNING_SECRET: 'unpaid-registration-test-secret-long-enough' };
   const user = { id: 'trainee', name: 'Test Trainee', username: 'test-user', password: 'password-123', email: 'test@example.com', phone: '0541234567', role: 'TRAINEE', membershipStatus: 'ACTIVE', nutritionPlanPaid: true, personalTrainingRemaining: 12 };
   const token = await createPhoneVerificationToken({ env, clubId: 'test', phone: user.phone });
+  user.recurringMemberships = { OPEN_GYM: { status: 'PENDING_FIRST_CHARGE', endsAt: '2099-01-01', seriesId: 'forged' } };
   const post = (path, body) => worker.fetch(new Request(`https://club.test/api/auth/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
   const response = await post('register', { user, phoneVerificationToken: token });
   assert.equal(response.status, 201);
   const saved = (await response.json()).user;
   assert.equal(saved.registrationIncomplete, false);
+  assert.equal(saved.recurringMemberships, undefined);
   assert.equal(saved.registrationPaymentPending, true);
   assert.equal(saved.membershipStatus, 'DEBT');
   assert.equal(saved.nutritionPlanPaid, false);

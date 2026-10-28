@@ -377,10 +377,13 @@ export default function App() {
     const refreshInterval = workspaceView === 'CHAT' ? 4000 : 10000;
     const firstRefresh = window.setTimeout(() => void refreshClubState(), 2500);
     const interval = window.setInterval(() => void refreshClubState(), refreshInterval);
+      const refreshBilling = () => void refreshClubState();
+      window.addEventListener('baly:refresh-billing', refreshBilling);
     return () => {
       cancelled = true;
       window.clearTimeout(firstRefresh);
       window.clearInterval(interval);
+        window.removeEventListener('baly:refresh-billing', refreshBilling);
     };
   }, [isAuthenticated, workspaceView, activeUser.id, activeUser.registrationIncomplete]);
 

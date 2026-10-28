@@ -39,6 +39,7 @@ interface CreatePaymentRequest {
 }
 
 export interface VerifiedRivhitPayment {
+  recurringPending?: boolean;
   openGroupUpgrade?: boolean;
   discountCode?: string | null;
   success: true;
@@ -191,7 +192,7 @@ export const continueFamilySplitPayment = async (batchId: string, userId: string
   const batch = await familySplitAction('status', batchId);
   if (batch.completed) {
     clearPendingRivhitPayment();
-    window.alert('בקשות התשלום המשפחתי הושלמו. הוראות שנוצרו יופעלו רק לאחר אישור החיוב בפועל מרווחית.');
+    window.alert('בקשות התשלום המשפחתי הושלמו. הוראות קבע שהקמתן אושרה ברווחית מאפשרות גישה בהמתנה לחיוב הראשון; אישור הקמה אינו קבלה על תשלום. כשל חיוב מאומת ישהה רק את המסלול הרלוונטי.');
     window.location.reload();
     return;
   }
@@ -286,6 +287,17 @@ export const refundRivhitPayment = (paymentId: string, reason: string) =>
   runAdminPaymentAction('refund', { paymentId, reason });
 export const reconcileRivhitPayment = (paymentId: string) =>
   runAdminPaymentAction('reconcile', { paymentId });
+
+export const syncRivhitRecurring = async (userId: string, saleId: string): Promise<string> => {
+  const apiBase = paymentApiBase();
+  if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
+  const response = await fetch(`${apiBase}/api/payments/rivhit/admin/recurring-sync`, {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, saleId })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) throw new Error(result.message || 'לא ניתן לאמת את ההוראה ברווחית. אין לבצע תשלום נוסף.');
+  return result.message;
+};
 
 export interface FamilyCreditRecoveryResult {
   diagnostic?: { code: string; stage: string };

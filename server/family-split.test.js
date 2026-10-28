@@ -98,7 +98,9 @@ test('mixed family checkout uses different pages, grants the beneficiary once, a
   assert.equal(recurringRequest.Items[0].UnitPrice, 450);
   assert.equal(recurringRequest.RecurringSaleCount, 12);
   assert.equal((await f.post('family-split/verify', second)).status, 200);
-  assert.equal(f.state().payload.users[1].membershipStatus, 'DEBT'); // J5 is not payment.
+  assert.equal(f.state().payload.users[1].membershipStatus, 'ACTIVE'); // Verified J5 grants provisional access, never a receipt.
+  assert.equal(f.state().payload.payments.length, 1);
+  assert.equal(f.state().payload.users[1].recurringMemberships.GROUP_ANNUAL.status, 'PENDING_FIRST_CHARGE');
   const sale = f.signed.get('sale-2');
   Object.assign(sale, { RecurringSaleChargeNumber: 1, TransactionParamJ: 0 });
   assert.equal((await f.post('webhook', sale)).status, 200);

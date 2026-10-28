@@ -1,6 +1,7 @@
 import { membershipExpired } from './membership-calendar.js';
 import { paymentPending } from './registration-status.js';
 import { isCancelledOccurrence } from './scheduled-occurrence.js';
+import { membershipTypesForAccess } from './recurring-access.js';
 const fail = message => { throw new Error(message); };
 const balanceField = type => type === 'DUO' ? 'duoTrainingRemaining' : 'personalTrainingRemaining';
 const bookingMessages = (payload, session, booking, action, now) => {
@@ -82,7 +83,7 @@ export const changePersonalBooking = (payload, actorId, input, now = Date.now(),
   if (partner && !staff && !(payer.familyId && payer.familyId === partner.familyId)) fail('ניתן לבחור בן משפחה משויך בלבד. לצירוף מתאמן אחר יש לפנות למאמן.');
   const field = balanceField(input.type);
   const membership = input.type === 'DUO' ? 'DUO_TRAINING' : 'PERSONAL_TRAINING';
-  if (![payer.membershipType, ...(payer.secondaryMemberships || [])].includes(membership) || !(Number(payer[field]) >= 1)) fail('אין יתרה בכרטיסייה שנבחרה.');
+  if (!membershipTypesForAccess(payer).includes(membership) || !(Number(payer[field]) >= 1)) fail('אין יתרה בכרטיסייה שנבחרה.');
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date(now));
   const participants = partner ? [payer, partner] : [payer];
   for (const user of participants) {

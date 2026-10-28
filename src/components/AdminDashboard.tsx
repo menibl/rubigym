@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
 import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
+import { AdminRecurringSync } from './AdminRecurringSync';
 import { AdminPaymentReminderEditor } from './AdminPaymentReminderEditor';
 import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
@@ -1509,6 +1510,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button type="button" className="w-full rounded-xl bg-amber-400 px-3 py-3 font-bold text-black" onClick={() => setEditingTraineeId(u.id)}>עריכת פרטים ושיוך למשפחה</button>
                             <details className="w-full rounded-xl border p-3 text-right"><summary className="cursor-pointer font-bold">פעולות מסלול, תשלום ומחיקה</summary><div className="mt-3 flex flex-col gap-2">
                             <DeleteUserControl user={u} users={users} manager={activeUser} />
+                            <AdminRecurringSync userId={u.id} />
                             {u.membershipFreezeRequestedAt && <div className="w-full rounded-lg border p-2 text-sm">
                               <p>בקשת הקפאה לחודש — {new Date(u.membershipFreezeRequestedAt).toLocaleDateString('he-IL')}</p>
                               <button disabled={!canUseAnnualFreeze(u)} className="rounded border px-2 py-1" onClick={() => {

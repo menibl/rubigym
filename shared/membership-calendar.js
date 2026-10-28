@@ -1,3 +1,4 @@
+import { recurringAccessUntil, unaffectedAccessUntil } from './recurring-access.js';
 // Paid access is separate from any annual commitment. All dates use the club's timezone.
 const calendarTypes = new Set(['OPEN_GYM', 'OPEN_MONTHLY', 'GROUP_MONTHLY', 'GROUP_ANNUAL', 'CORE_GROUPS', 'YOUTH_ONCE_WEEKLY', 'YOUTH_TWICE_WEEKLY', 'FAMILY_MEMBERSHIP']);
 export const isCalendarMembership = type => calendarTypes.has(type);
@@ -16,6 +17,7 @@ export function calendarTerm(type, now = new Date()) {
   } : {};
 }
 export function membershipExpired(user, date = clubDate()) {
+  if (recurringAccessUntil(user, date) || unaffectedAccessUntil(user, date)) return false;
   return !user?.membershipExpiry || (user.membershipExpiryExclusive ? user.membershipExpiry <= date : user.membershipExpiry < date);
 }
 
