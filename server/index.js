@@ -2232,8 +2232,9 @@ const handleApi = async (request, env, url) => {
           const history = await rivhitPost('/RecurringSaleHistory', { RecurringSaleId: seriesId }, env);
           prepared = prepareRecurringIdSync({ payload: state.payload, userId: body.userId, seriesId, details, history, appUrl: env.PUBLIC_APP_URL });
         } catch (error) {
+          if (error?.diagnostic) console.warn('RIVHIT recurring sync date rejected', error.diagnostic);
           const safe = error?.message && !/RIVHIT_|fetch|network|timeout/i.test(error.message) ? error.message : 'לא ניתן לאמת כרגע את פרטי ההוראה והחיובים ברווחית. לא שונה דבר ולא נוצר חיוב.';
-          return json({ message: safe }, 422, headers);
+          return json({ message: safe, code: error?.code, diagnostic: error?.diagnostic }, 422, headers);
         }
         const confirmationKey = await sign(JSON.stringify({ clubId: identity.session.club_id, userId: body.userId, managerId: identity.session.user_id, prepared }), env.PAYMENT_SIGNING_SECRET);
         if (body.action === 'preview') return json({ ok: true, preview: prepared.preview, confirmationKey }, 200, headers);
