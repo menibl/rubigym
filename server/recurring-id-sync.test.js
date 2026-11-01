@@ -35,6 +35,20 @@ test('an approved contract with zero successful charges remains explicitly unpai
   assert.equal(prepared.preview.successfulCharges, 0); assert.deepEqual(prepared.payments, []);
 });
 
+test('shared family series sync binds only signed group participants and keeps one receipt order', () => {
+  const f = syncFixture();
+  f.payload.users.push({ id: 'child', name: 'Child', role: 'TRAINEE', familyPayerId: 'u', phone: '0529999999',
+    recurringMemberships: { GROUP_ANNUAL: { seriesId, orderId: 'o' } } });
+  f.payload.recurringCheckouts[0].recurringSaleId = seriesId;
+  const snapshot = { o: 'o', u: 'u', bu: 'u', m: 'OPEN_GYM', rc: 1, a: 280, re: '2027-10-01',
+    gp: [{ memberId: 'u', membershipType: 'OPEN_GYM', amount: 100 }, { memberId: 'child', membershipType: 'GROUP_ANNUAL', amount: 180 }] };
+  f.payload.recurringCheckouts[0].orderSnapshot = snapshot;
+  const prepared = prepareRecurringIdSync(f); assert.deepEqual(prepared.order.gp, snapshot.gp); assert.equal(prepared.payments.length, 1);
+  f.userId = 'child'; assert.equal(prepareRecurringIdSync(f).order.bu, 'u');
+  f.payload.users.push({ id: 'unrelated', role: 'TRAINEE', recurringMemberships: { OPEN_GYM: { seriesId, orderId: 'different' } } });
+  assert.throws(() => prepareRecurringIdSync(f), /משויכת למתאמן אחר/);
+});
+
 test('daily reconciliation of a manager-bound legacy series imports real history once and tolerates initial history downtime', async () => {
   const f = syncFixture(); let state = { payload: f.payload, revision: 1 };
   f.payload.recurringCheckouts[0].recurringSaleId = seriesId;

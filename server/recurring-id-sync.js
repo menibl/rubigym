@@ -48,7 +48,12 @@ export function prepareRecurringIdSync({ payload, userId, seriesId, details: det
   let expectedIpn;
   try { expectedIpn = new URL('/api/payments/rivhit/webhook', appUrl).href; } catch { reject('כתובת המועדון אינה מוגדרת כראוי.'); }
   if (details.IpnUrl !== expectedIpn) reject('כתובת הדיווח בהוראת הקבע אינה שייכת למועדון. לא שונה דבר.');
-  const boundElsewhere = payload.users.some(member => member.id !== userId && Object.values(member.recurringMemberships || {}).some(contract => contract.seriesId?.toLowerCase() === seriesId));
+  const groupCheckout = (payload.recurringCheckouts || []).find(checkout => !checkout.cancelledAt
+    && checkout.orderSnapshot?.gp?.some(line => line.memberId === userId)
+    && (!checkout.recurringSaleId || checkout.recurringSaleId.toLowerCase() === seriesId));
+  const boundElsewhere = payload.users.some(member => member.id !== userId && Object.entries(member.recurringMemberships || {}).some(([type, contract]) =>
+    contract.seriesId?.toLowerCase() === seriesId && !(groupCheckout && contract.orderId === groupCheckout.orderId
+      && groupCheckout.orderSnapshot.gp.some(line => line.memberId === member.id && line.membershipType === type))));
   if (boundElsewhere) reject('הוראת הקבע כבר משויכת למתאמן אחר. לא שונה דבר.');
   if (Object.values(user.recurringMemberships || {}).some(contract => contract.seriesId?.toLowerCase() === seriesId && contract.cancelledAt)) reject('ההוראה בוטלה באפליקציה. אין להפעיל אותה מחדש באמצעות סנכרון.');
   // A shared family email is not identity evidence. Require the beneficiary's
@@ -67,7 +72,7 @@ export function prepareRecurringIdSync({ payload, userId, seriesId, details: det
   if (ending.getTime() - creation.getTime() > 13 * 31 * 86400000) rejectDate('תקופת ההוראה שחזרה מרווחית ארוכה מהסדרה השנתית שאושרה. הסנכרון נעצר לבדיקה.', 'RIVHIT_END_DATE_RANGE', 'EndDate', details.EndDate);
   if (clubDate(ending) <= clubDate(now)) rejectDate(`לפי תאריך הסיום שחזר מרווחית, ההתקשרות הסתיימה בתאריך ${clubDate(ending)}. לא בוצע חידוש או חיוב נוסף.`, 'RIVHIT_CONTRACT_ENDED', 'EndDate', details.EndDate);
   const endsAt = clubDate(ending);
-  const candidates = (payload.recurringCheckouts || []).filter(checkout => checkout.userId === userId && !checkout.cancelledAt
+  const candidates = (payload.recurringCheckouts || []).filter(checkout => (checkout.userId === userId || checkout.orderSnapshot?.gp?.some(line => line.memberId === userId)) && !checkout.cancelledAt
     && checkout.endsAt === endsAt && isCalendarMembership(checkout.membershipType)
     && (!checkout.recurringSaleId || checkout.recurringSaleId.toLowerCase() === seriesId)
     && Number.isFinite(Date.parse(checkout.dispatchedAt)) && clubDate(new Date(checkout.dispatchedAt)) === clubDate(creation));
@@ -76,7 +81,7 @@ export function prepareRecurringIdSync({ payload, userId, seriesId, details: det
   const amount = Number(details.Amount), count = Number(details.ChargeCount);
   if (!(amount > 0) || !Number.isFinite(amount) || !Number.isInteger(count) || count < 0 || count > 12) reject('הסכום או מונה החיובים ברווחית אינם תקינים.');
   if (snapshot && (Number(snapshot.a) !== amount || snapshot.rc !== 1 || snapshot.m !== checkout.membershipType
-    || (snapshot.bu || snapshot.u) !== userId || snapshot.re !== endsAt || snapshot.o !== checkout.orderId)) reject('תנאי הוראת הקבע שונים מהבקשה המקורית שנשמרה. לא שונה דבר.');
+    || ((snapshot.bu || snapshot.u) !== userId && !snapshot.gp?.some(line => line.memberId === userId)) || snapshot.re !== endsAt || snapshot.o !== checkout.orderId)) reject('תנאי הוראת הקבע שונים מהבקשה המקורית שנשמרה. לא שונה דבר.');
   const records = history.RecurringSaleHistoryList;
   if (!Array.isArray(records) || records.length > 100) reject('לא התקבלה היסטוריית חיובים מלאה מרווחית.');
   const sorted = records.map(record => ({ ...record, time: providerTime(record.Timestamp) }))

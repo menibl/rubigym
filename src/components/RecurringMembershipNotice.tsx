@@ -8,6 +8,7 @@ export function RecurringMembershipNotice({ user, plans = [] }: { user: User; pl
       <strong className="block">{plans.find(plan => plan.id === type)?.label || MEMBERSHIP_TYPE_LABELS[type as MembershipType]?.label || type}</strong>
       <span className="block">{contract.status === 'PAYMENT_FAILED' ? 'תשלום נדחה — המסלול הושהה בעקבות כשל חיוב מאומת ברווחית. יש לפנות למנהל להסדרת התשלום.' : contract.endsAt <= clubDate() ? 'תקופת הוראת הקבע הסתיימה — יש להסדיר חידוש באישור המשתמש.' : contract.status === 'PENDING_FIRST_CHARGE' ? 'המנוי פעיל — ממתין לאישור רווחית לחיוב הראשון. טרם נרשם תשלום שהושלם.' : 'הוראת קבע פעילה — חיוב אומת ברווחית.'}</span>
       <span className="block">סכום קבוע לכל חיוב: ₪{contract.amount} · 12 חיובים · ללא חידוש אוטומטי לשנה נוספת</span>
+      {contract.groupSize && <span className="block">הסכום לעיל הוא החלק המשויך למסלול זה. הוראה משפחתית מאוחדת: ₪{contract.groupAmount} לכל חודש בסך הכול. הקפאה באפליקציה אינה מפחיתה את החיוב; שינוי מחייב טיפול מנהל מול רווחית. ביטול ההוראה מבטל אותה לכל המשתתפים.</span>}
       {contract.discountCode && <span className="block">קוד הנחה: {contract.discountCode} — ההנחה כלולה בסכום לכל תקופת הסדרה.</span>}
       {contract.recoveryDiscountUnknown && <span className="block">הסכום אומת מול רווחית; קוד ההנחה המקורי לא תועד בבקשת ההקמה הישנה.</span>}
       <span className="block">תוקף ההתקשרות: <bdi>{contract.endsAt}</bdi></span>

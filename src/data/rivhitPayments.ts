@@ -21,6 +21,7 @@ export interface PendingRivhitPayment {
 }
 
 interface CreatePaymentRequest {
+  familyPaymentGrouping?: 'COMBINED' | 'SEPARATE';
   userId: string;
   userName: string;
   email: string;
@@ -126,6 +127,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
       familyMembersCount: request.familyMembersCount,
       familyName: request.familyName,
       familyBillingMode: request.familyBillingMode,
+      familyPaymentGrouping: request.familyPaymentGrouping,
       familyMemberPlans: request.familyMemberPlans,
       discountCode: request.discountCode,
       planAmount: request.planAmount,
@@ -177,6 +179,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
 
 interface FamilySplitItem {
   id: string; memberName: string; label: string; amount: number; recurring: boolean; status: string;
+  groupLines?: { memberName: string; label: string; amount: number }[];
 }
 const familySplitAction = async (action: string, batchId: string, extra: Record<string, unknown> = {}) => {
   const response = await fetch(`${paymentApiBase()}/api/payments/rivhit/family-split/${action}`, {
@@ -203,7 +206,7 @@ export const continueFamilySplitPayment = async (batchId: string, userId: string
   if (!next) throw new Error('לא נמצא מסלול להשלמת התשלום.');
   const summary = items.map(item => ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status)
     ? `${item.memberName} — ${item.label}: כבר טופל, ללא חיוב נוסף כעת`
-    : `${item.memberName} — ${item.label}: ₪${item.amount} ${item.recurring ? 'לכל חודש, 12 חיובים; המחיר לאחר ההנחה קבוע לכל הסדרה' : 'חד־פעמי'}`).join('\n');
+    : `${item.memberName} — ${item.label}: ₪${item.amount} ${item.recurring ? 'לכל חודש, 12 חיובים; המחיר לאחר ההנחה קבוע לכל הסדרה' : 'חד־פעמי'}${item.groupLines ? '\n' + item.groupLines.map(line => `  ${line.memberName} — ${line.label}: ₪${line.amount} לחודש`).join('\n') : ''}`).join('\n');
   if (!window.confirm(`${batch.message}\n\n${summary}\n\nלהמשיך למסלול של ${next.memberName}: ${next.label}, ₪${next.amount}?`)) {
     // Only an entirely undispatched quote can be discarded. Already created
     // orders remain resumable; cancellation here never cancels Rivhit contracts.
@@ -352,8 +355,8 @@ export const recoverFamilyPaymentCredit = async (paymentId: string, action: 'che
   return result;
 };
 
-export const cancelRivhitRecurring = (paymentId: string, reason: string) =>
-  runAdminPaymentAction('cancel-recurring', { paymentId, reason });
+export const cancelRivhitRecurring = (paymentId: string, reason: string, confirmFamilySeries = false) =>
+  runAdminPaymentAction('cancel-recurring', { paymentId, reason, confirmFamilySeries });
 
 export const updateRivhitRecurringAmount = (paymentId: string, amount: number, reason: string) =>
   runAdminPaymentAction('update-recurring', { paymentId, amount, reason });

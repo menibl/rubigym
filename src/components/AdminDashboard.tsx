@@ -797,7 +797,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!window.confirm(action === 'REFUND'
       ? `לבצע החזר מלא של ₪${payment.amount} ברווחית? פעולה זו אינה הפיכה.`
       : action === 'CANCEL_RECURRING'
-        ? 'לבטל את הוראת הקבע ברווחית?'
+        ? (payment.familyMemberPlans?.length || 0) > 1 ? 'זו הוראת קבע משפחתית מאוחדת. ביטולה יבטל את כל המסלולים הכלולים בה לכל בני המשפחה. לבטל את ההוראה כולה ברווחית?' : 'לבטל את הוראת הקבע ברווחית?'
         : `לעדכן את החיוב המחזורי ל־₪${billingAmount}?`)) return;
     setBillingPending(true);
     setBillingError('');
@@ -806,7 +806,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const updated = action === 'REFUND'
         ? await refundRivhitPayment(payment.id, billingReason)
         : action === 'CANCEL_RECURRING'
-          ? await cancelRivhitRecurring(payment.id, billingReason)
+          ? await cancelRivhitRecurring(payment.id, billingReason, (payment.familyMemberPlans?.length || 0) > 1)
           : await updateRivhitRecurringAmount(payment.id, Number(billingAmount), billingReason);
       applyProviderPayment(updated);
       setBillingNotice(action === 'REFUND' ? 'ההחזר אושר ברווחית ונרשם במערכת.' : action === 'CANCEL_RECURRING' ? 'הוראת הקבע בוטלה ברווחית.' : 'סכום החיוב המחזורי עודכן ברווחית.');

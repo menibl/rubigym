@@ -20,6 +20,15 @@ test('failure is a suspension, not a paid or active label', () => {
   const html = renderToStaticMarkup(<RecurringMembershipNotice user={failed} />);
   assert.match(html, /המסלול הושהה/); assert.doesNotMatch(html, /המנוי פעיל/);
 });
+
+test('shared instruction distinguishes the individual allocation from the total and warns about freezes', () => {
+  const shared = structuredClone(user);
+  Object.assign(shared.recurringMemberships!.OPEN_GYM!, { amount: 252, groupAmount: 702, groupSize: 2 });
+  const html = renderToStaticMarkup(<RecurringMembershipNotice user={shared} />);
+  assert.match(html, /החלק המשויך למסלול זה/); assert.match(html, /702/);
+  assert.match(html, /הקפאה באפליקציה אינה מפחיתה את החיוב/);
+  assert.match(html, /ביטול ההוראה מבטל אותה לכל המשתתפים/);
+});
 test('old contract and sync control explain expiration and no new charge respectively', () => {
   const expired = structuredClone(user); expired.recurringMemberships!.OPEN_GYM!.endsAt = '2020-01-01';
   assert.match(renderToStaticMarkup(<RecurringMembershipNotice user={expired} />), /הסתיימה/);

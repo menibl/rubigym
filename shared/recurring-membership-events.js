@@ -12,6 +12,16 @@ export function rivhitChargeDate(sale) {
 // Call only with an authenticated provider result and a verified signed order.
 // Never infer a paid receipt from an approved recurring contract.
 export function applyRecurringMembershipEvent(payload, order, payment, now = new Date()) {
+  if (order.gp) {
+    if (!Array.isArray(order.gp) || order.gp.length < 2 || order.gp.length > 30
+      || new Set(order.gp.map(line => `${line.memberId}:${line.membershipType}`)).size !== order.gp.length
+      || order.gp.some(line => !(Number(line.amount) > 0) || !payload.users?.some(user => user.id === line.memberId))
+      || order.gp.reduce((sum, line) => sum + Math.round(Number(line.amount) * 100), 0) !== Math.round(Number(order.a) * 100)) throw new Error('INVALID_RECURRING_FAMILY_GROUP');
+    // One provider charge/receipt, several separately scoped entitlements.
+    return order.gp.reduce((state, line) => applyRecurringMembershipEvent(state,
+      { ...order, gp: undefined, bu: line.memberId, m: line.membershipType, a: line.amount, d: line.mode,
+        groupAmount: order.a, groupSize: order.gp.length }, payment, now), payload);
+  }
   const userId = order.bu || order.u;
   const user = payload.users?.find(member => member.id === userId);
   if (!user || order.rc !== 1 || !payment.recurringSaleId || !validReminderDate(order.re)) throw new Error('INVALID_RECURRING_MEMBERSHIP_EVENT');
@@ -39,6 +49,7 @@ export function applyRecurringMembershipEvent(payload, order, payment, now = new
   const fallback = new Date(Date.UTC(year, month + charge - 1, 1)).toISOString().slice(0, 10);
   const paidUntil = kind === 'PAID' ? payment.providerChargeDate ? nextMonthStart(payment.providerChargeDate) : fallback : previous?.paidUntil;
   const contract = { ...previous, seriesId: payment.recurringSaleId, orderId: order.o,
+    ...(order.groupSize ? { groupAmount: order.groupAmount, groupSize: order.groupSize, familyPayerId: order.u } : {}),
     status: kind === 'FAILED' ? 'PAYMENT_FAILED' : kind === 'SETUP' ? 'PENDING_FIRST_CHARGE' : 'ACTIVE',
     endsAt: order.re, amount: Number(order.a), discountCode: order.c || null, paidUntil,
     recoveryDiscountUnknown: Boolean(previous?.recoveryDiscountUnknown && !order.c),
@@ -68,7 +79,7 @@ export function applyRecurringMembershipEvent(payload, order, payment, now = new
     ? `חיוב הוראת הקבע עבור ${user.name}, מסלול ${label}, נכשל לפי אישור רווחית. המסלול הושהה עד להסדרת התשלום. מסלולים אחרים לא הושהו. יש לפנות למנהל; אין לבצע תשלום כפול.`
     : kind === 'SETUP' ? `הוראת הקבע עבור ${user.name}, מסלול ${label}, אושרה ברווחית. המנוי פעיל — ממתין לאישור החיוב הראשון. אין עדיין תשלום שהושלם. סכום כל חיוב: ₪${order.a}.`
       : `אושר חיוב ${charge} בהוראת הקבע עבור ${user.name}, מסלול ${label}: ₪${order.a}. תשלום מאומת עד ${paidUntil}.`;
-  const messages = sender ? recipients.map(receiverId => ({ id: `recurring-${payment.recurringSaleId}-${eventKey}-${receiverId}`,
+  const messages = sender ? recipients.map(receiverId => ({ id: `recurring-${payment.recurringSaleId}-${eventKey}-${type}-${receiverId}`,
     senderId: staff.some(member => member.id === receiverId) ? user.id : sender.id,
     senderName: staff.some(member => member.id === receiverId) ? user.name : sender.name,
     senderRole: staff.some(member => member.id === receiverId) ? 'TRAINEE' : sender.role, receiverId, content: `עדכון תשלום אוטומטי\n${content}`,

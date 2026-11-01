@@ -29,7 +29,8 @@ export async function readRecurringContinuation(store, secret, clubId, orderId, 
 }
 
 export const openRecurringCheckout = (payload, userId, type) => (payload.recurringCheckouts || []).find(item =>
-  item.userId === userId && (!item.membershipType || item.membershipType === type) && !item.cancelledAt
+  ((item.userId === userId && (!item.membershipType || item.membershipType === type))
+    || item.orderSnapshot?.gp?.some(line => line.memberId === userId && line.membershipType === type)) && !item.cancelledAt
     && (item.endsAt > clubDate() || !item.recurringSaleId));
 
 export async function updateRecurringCheckout(store, clubId, orderId, transform) {
