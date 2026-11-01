@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
+import { canPurchasePlan } from '../../shared/youth-plan.js';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -427,10 +428,17 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     resetMessages();
     // The first save creates only the account; family members/plans are chosen in the app.
     const isFamilyPlan = !profileOnly && selectedPlan === MembershipType.FAMILY_MEMBERSHIP;
+    if (!profileOnly && !isFamilyPlan && !canPurchasePlan(selectedPlanConfig || selectedPlan, { birthDate: registerBirthDate })) {
+      setError('מסלול נוער מיועד עד גיל 18 כולל. יש לבחור מסלול המתאים לתאריך הלידה.'); return;
+    }
 
     const age = calculateAge(registerBirthDate);
     const isTrainingCard = selectedPlanUsesTrainingCard;
     const normalizedFamilyPlans = resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי').map((plan, index) => ({ ...plan, memberName: index === 0 ? registerName.trim() : familyAccountAt(index - 1).name.trim() }));
+    if (!profileOnly && isFamilyPlan && normalizedFamilyPlans.some((plan, index) => (!plan.participation || plan.participation === 'INCLUDED')
+      && [plan, ...(plan.additionalPlans || [])].some(selection => !canPurchasePlan(registrationPlans.find(config => config.id === selection.membershipType) || selection.membershipType, { birthDate: index === 0 ? registerBirthDate : familyAccountAt(index - 1).birthDate })))) {
+      setError('נבחר מסלול נוער שאינו מתאים לתאריך הלידה של אחד מבני המשפחה. יש לעדכן את הבחירה.'); return;
+    }
     if (isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED') {
       const included = normalizedFamilyPlans.filter(plan => !plan.participation || plan.participation === 'INCLUDED');
       if (!included.length || included.some(plan => !registrationPlans.some(config => config.active && config.id === plan.membershipType))) {
@@ -698,7 +706,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                     <span><strong>מנוי משפחתי</strong><small>חשבון משלם אחד, עם פרופיל נפרד לכל בן משפחה</small></span>
                     <b>מ־₪900</b>
                   </button>
-                  {registrationPlans.map(planConfig => {
+                  {registrationPlans.filter(plan => canPurchasePlan(plan, { birthDate: registerBirthDate })).map(planConfig => {
                     const plan = planConfig.id as MembershipType;
                     return (
                     <button
@@ -725,7 +733,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 )}
                 {isFamilyPlan && <div className="space-y-3">
                   <label className="block text-xs font-bold">שם המשפחה<input value={familyName} onChange={event => setFamilyName(event.target.value)} placeholder={`משפחת ${registerName.trim().split(' ')[0] || 'ישראל'}`} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyMembersCount} onCountChange={setFamilyMembersCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={registerName.trim() || 'המשלם הראשי'} membershipPlans={registrationPlans} registrationMemberNames={[registerName.trim(), ...Array.from({ length: familyMembersCount - 1 }, (_, index) => familyAccountAt(index).name)]} />
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyMembersCount} onCountChange={setFamilyMembersCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={registerName.trim() || 'המשלם הראשי'} membershipPlans={registrationPlans} registrationMemberNames={[registerName.trim(), ...Array.from({ length: familyMembersCount - 1 }, (_, index) => familyAccountAt(index).name)]} registrationMemberBirthDates={[registerBirthDate, ...Array.from({ length: familyMembersCount - 1 }, (_, index) => familyAccountAt(index).birthDate)]} />
                   <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-zinc-950/70 p-4">
                     <div><strong className="text-sm text-amber-300">חשבונות כניסה לבני המשפחה</strong><small className="mt-1 block text-zinc-300">לאחר התשלום ייווצר לכל אחד חשבון מתאמן נפרד. בכניסה הראשונה יהיה עליו לחתום על הצהרת בריאות.</small></div>
                     {Array.from({ length: familyMembersCount - 1 }, (_, index) => {
