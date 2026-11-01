@@ -31,7 +31,8 @@ export const resizeFamilyPlans = (
 ) => Array.from({ length: count }, (_, index) => plans[index] || {
   memberId: index === 0 ? payerId : undefined,
   memberName: index === 0 ? payerName : `בן/בת משפחה ${index + 1}`,
-  membershipType: index === 0 ? MembershipType.GROUP_ANNUAL : MembershipType.OPEN_GYM
+  membershipType: '' as MembershipType,
+  participation: 'NOT_STARTED' as const
 });
 
 export const familyMemberPlanPrice = (plan: FamilyMemberPlanSelection, planConfigs: MembershipPlanConfig[] = []) => {

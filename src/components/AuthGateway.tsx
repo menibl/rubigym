@@ -431,6 +431,12 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     const age = calculateAge(registerBirthDate);
     const isTrainingCard = selectedPlanUsesTrainingCard;
     const normalizedFamilyPlans = resizeFamilyPlans(familyMemberPlans, familyMembersCount, registerName.trim() || 'המשלם הראשי').map((plan, index) => ({ ...plan, memberName: index === 0 ? registerName.trim() : familyAccountAt(index - 1).name.trim() }));
+    if (isFamilyPlan && familyBillingMode === 'CUSTOM_COMBINED') {
+      const included = normalizedFamilyPlans.filter(plan => !plan.participation || plan.participation === 'INCLUDED');
+      if (!included.length || included.some(plan => !registrationPlans.some(config => config.active && config.id === plan.membershipType))) {
+        setError('יש לבחור ולאשר לפחות מסלול פעיל אחד עבור בן משפחה שכלול בתשלום.'); return;
+      }
+    }
     const selectedFamilyPayerPlan = familyBillingMode === 'CUSTOM_COMBINED' ? normalizedFamilyPlans[0]?.membershipType : MembershipType.FAMILY_MEMBERSHIP;
     const membershipTerm = createMembershipTerm(
       isFamilyPlan && familyBillingMode === 'ANNUAL_BY_SIZE' ? MembershipType.GROUP_ANNUAL : isFamilyPlan ? selectedFamilyPayerPlan : selectedPlan,

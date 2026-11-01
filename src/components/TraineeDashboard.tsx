@@ -5,6 +5,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
+import { activePlanExpiry, emptyFamilyPurchase } from '../data/membershipRenewal';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
 import { uniquePayments } from '../../shared/payment-ledger.js';
 import { fitsSessionAge, isYouthSession, sessionAgeMax } from '../../shared/youth-session.js';
@@ -182,16 +183,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [familyPaymentGrouping, setFamilyPaymentGrouping] = useState<'COMBINED' | 'SEPARATE'>('COMBINED');
   const [familyPurchaseCount, setFamilyPurchaseCount] = useState<number>(Math.max(2, users.filter(user => activeUser.familyId && user.familyId === activeUser.familyId).length));
   const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>('CUSTOM_COMBINED');
+  const [familyEditing, setFamilyEditing] = useState(false);
   const familyUsers = useMemo(() => [activeUser, ...users.filter(user => user.id !== activeUser.id && activeUser.familyId && user.familyId === activeUser.familyId)], [activeUser, users]);
   const familyCheckoutRef = useRef<HTMLElement | null>(null);
-  const initialFamilyPlans = activeUser.familyMemberPlans?.length ? activeUser.familyMemberPlans : familyUsers.map(user => ({ memberId: user.id, memberName: user.name, membershipType: user.membershipType || MembershipType.OPEN_GYM }));
+  const initialFamilyPlans = emptyFamilyPurchase(familyUsers);
   const [familyMemberPlans, setFamilyMemberPlans] = useState<FamilyMemberPlanSelection[]>(() => resizeFamilyPlans(initialFamilyPlans, familyPurchaseCount, activeUser.name, activeUser.id).map((plan, index) => ({ ...plan, ...(index === 0 ? { memberId: activeUser.id, memberName: activeUser.name } : {}), membershipType: plan.membershipType === MembershipType.FAMILY_MEMBERSHIP ? MembershipType.GROUP_ANNUAL : plan.membershipType })));
   useEffect(() => {
     setFamilyPurchaseCount(Math.max(2, familyUsers.length));
     setFamilyMemberPlans(previous => familyUsers.map(member => ({
       ...(previous.find(plan => plan.memberId === member.id)
-        || activeUser.familyMemberPlans?.find(plan => plan.memberId === member.id)
-        || { membershipType: member.membershipType || MembershipType.OPEN_GYM }),
+        || emptyFamilyPurchase([member])[0]),
       memberId: member.id,
       memberName: member.name,
     })));
@@ -787,6 +788,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const handleMembershipCheckout = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedMembershipPurchase) return;
+    const existingExpiry = activePlanExpiry(activeUser, selectedMembershipPurchase);
+    if (existingExpiry && !window.confirm(`המנוי שלך בתוקף עד ${existingExpiry}. האם תרצה להמשיך בתשלום?\nלפני החיוב יוצגו תנאי החידוש והסכום. לא יבוצע חיוב ללא אישורך.`)) return;
     if (!isRivhitConfigured()) {
       showFeedback('שרת התשלומים טרם הוגדר. יש להשלים את כתובת השרת לפני ביצוע חיוב.', 'error');
       return;
@@ -811,11 +814,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     } catch (error) {
       setPaymentStarting(false);
       showFeedback(error instanceof Error ? error.message : 'לא ניתן לפתוח את דף התשלום.', 'error');
-    }
+    } finally { setPaymentStarting(false); }
   };
 
   const handleFamilyCheckout = async () => {
+    if (familyEditing) return showFeedback('יש לאשר את בחירת בן המשפחה לפני מעבר לתשלום.', 'error');
     const selected = resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id);
+    const includedPlans = selected.filter(plan => !plan.participation || plan.participation === 'INCLUDED');
+    if (includedPlans.some(plan => !membershipPlanConfigs.some(config => config.id === plan.membershipType && config.active))) return showFeedback('יש להשלים בחירת מסלול פעיל לכל בן משפחה שכלול בתשלום.', 'error');
     if (!selected.some(plan => !plan.participation || plan.participation === 'INCLUDED')) return showFeedback('יש לבחור לפחות בן משפחה אחד לתשלום. אין צורך לשלם עבור מי שטרם מתחיל.', 'error');
     if (selected.some(plan => (!plan.participation || plan.participation === 'INCLUDED') && familyUsers.some(member => member.id === plan.memberId && isMembershipFreezeActive(member)))) return showFeedback('מנוי מוקפא אינו נכלל בתשלום. בחרו עבורו ללא חיוב.', 'error');
     if (selected[0]?.memberId !== activeUser.id || selected.some(plan => !familyUsers.some(member => member.id === plan.memberId)) || new Set(selected.map(plan => plan.memberId)).size !== selected.length) {
@@ -823,6 +829,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
     if (!familyPurchaseName.trim()) return showFeedback('יש להזין שם למשפחה.', 'error');
     if (!isRivhitConfigured()) return showFeedback('שרת התשלומים טרם הוגדר.', 'error');
+    const activeSelections = includedPlans.flatMap(plan => {
+      const member = familyUsers.find(user => user.id === plan.memberId);
+      return member ? [plan, ...(plan.additionalPlans || [])].flatMap(selection => {
+        const expiry = activePlanExpiry(member, selection.membershipType);
+        return expiry ? [`${member.name}: ${membershipPlanConfigs.find(config => config.id === selection.membershipType)?.label || selection.membershipType} בתוקף עד ${expiry}`] : [];
+      }) : [];
+    });
+    if (activeSelections.length && !window.confirm(`${activeSelections.join('\n')}\nהאם להמשיך לבדיקת התשלום? הקיזוזים והחיובים יחושבו בשרת; בחירה זו אינה מבטלת הוראות קבע קיימות.`)) return;
     setPaymentStarting(true);
     try {
       await startRivhitPayment({
@@ -842,7 +856,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     } catch (error) {
       setPaymentStarting(false);
       showFeedback(error instanceof Error ? error.message : 'לא ניתן לפתוח את דף התשלום המשפחתי.', 'error');
-    }
+    } finally { setPaymentStarting(false); }
   };
 
   // REQUEST WORKOUT PLAN (For non-Open Gym subscribers or upon request)
@@ -2425,7 +2439,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
                   </div>
                   <label className="block text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} />
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} onEditingChange={setFamilyEditing} />
+                  {familyEditing && <p role="status" className="rounded-lg bg-slate-950 p-3 font-bold text-amber-100">יש ללחוץ על ״אישור הבחירה״ בבן המשפחה הפתוח לפני מעבר לתשלום.</p>}
                   <fieldset className="rounded-xl border border-slate-600 p-3 space-y-2 text-sm">
                     <legend className="px-2 font-bold">אופן התשלום — ראש המשפחה משלם</legend>
                     <label className="flex items-start gap-2"><input type="radio" name="family-payment-grouping" checked={familyPaymentGrouping === 'COMBINED'} onChange={() => setFamilyPaymentGrouping('COMBINED')} />חיוב מאוחד להוראות חדשות באותה תקופה ובאותם תנאי חיוב</label>
@@ -2436,7 +2451,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id), membershipPlanConfigs)).toLocaleString('he-IL')}</strong></div>
-                    <button type="button" onClick={() => void handleFamilyCheckout()} disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
+                    <button type="button" onClick={() => void handleFamilyCheckout()} disabled={familyEditing || paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
                       {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
                     </button>
                   </div>

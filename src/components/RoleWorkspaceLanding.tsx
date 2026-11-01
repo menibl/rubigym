@@ -23,6 +23,7 @@ import { Announcement, Gender, MEMBERSHIP_TYPE_LABELS, MembershipType, Membershi
 import { HomeMembershipSummary } from './HomeMembershipSummary';
 import { nextBookedSession } from '../data/nextBookedSession';
 import { homeGroupSessions } from '../../shared/group-program-access.js';
+import { primaryMembershipExpired } from '../data/membershipRenewal';
 
 export type WorkspaceView =
   | 'CLUB_MANAGEMENT'
@@ -251,6 +252,11 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
 
   return (
     <section className="workspace-landing mobile-role-home" dir="rtl">
+      {isTrainee && primaryMembershipExpired(activeUser) && <section role="alert" aria-label="המנוי פג תוקף" className="mb-4 rounded-2xl border-2 border-amber-400 bg-slate-950 p-5 text-amber-100">
+        <h2 className="text-xl font-black">המנוי פג תוקף</h2>
+        <p className="my-2">כדי להירשם לאימונים יש לחדש את המסלול. חידוש אינו מתבצע עד להשלמת התהליך.</p>
+        <button type="button" onClick={() => onSelect('MY_MEMBERSHIP')} className="min-h-12 rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950">חידוש מנוי — בחירת מסלול ותשלום</button>
+      </section>}
       <section className="role-home-summary">
         <div className="role-home-greeting">
           <div>
