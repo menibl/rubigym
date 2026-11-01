@@ -11,7 +11,7 @@ const user = { id: 'u', recurringMemberships: { [MembershipType.OPEN_GYM]: {
 } } } as User;
 test('pending setup is explicitly not paid and shows fixed discounted series amount', () => {
   const html = renderToStaticMarkup(<RecurringMembershipNotice user={user} />);
-  assert.match(html, /ממתין לאישור החיוב הראשון/); assert.match(html, /טרם נרשם תשלום שהושלם/);
+  assert.match(html, /ממתין לאישור רווחית לחיוב הראשון/); assert.match(html, /טרם נרשם תשלום שהושלם/);
   assert.match(html, /450/); assert.match(html, /TEN/); assert.match(html, /ההנחה כלולה בסכום לכל תקופת הסדרה/);
   assert.match(html, /ללא חידוש אוטומטי/);
 });

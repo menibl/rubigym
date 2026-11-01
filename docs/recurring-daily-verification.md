@@ -1,0 +1,14 @@
+# Recurring approval and daily reconciliation
+
+- Only a server-verified hosted checkout/approved series activates booking. Opening GetUrl, returning to the app, or a client success flag alone never activates anything.
+- Approved setup grants access as `PENDING_FIRST_CHARGE`; it is explicitly unpaid. Finance lists pending, approved and declined contracts separately from the real payment ledger and revenue totals.
+- `node-entry.js` starts the reconciliation scheduler even without Web Push configuration. SQL delivery claims limit each saved checkout to one check per Jerusalem calendar day across process restarts and replicas. Calls are sequential. Restart is not a way to force another daily check; manager sync remains available.
+- Webhooks and the browser's server-side return verification still update immediately. The daily job is fallback, not a replacement. A missed return/webhook after that day's check may be recovered on the next day or by manager synchronization.
+- For new checkouts the original private reference is encrypted in the continuation table (PR270). The job can recover approved setup without a browser return, verifies the signed beneficiary/order, then persists only verified events. It never creates a page, charges a card, refunds, or cancels a contract.
+- For known series it additionally reads RecurringSaleDetails/RecurringSaleHistory. Complete successful history imports actual receipts idempotently using the existing strict owner/merchant/schedule/amount/date checks.
+- A verified zero-charge active series can be activated independently of an unavailable history endpoint, after all ownership/schedule checks. Positive-charge history cannot be replaced with an empty list. Explicit returned unsuccessful history is not silently discarded.
+- Explicit card declines from verified SaleDetails or the verified IPN path suspend only the affected plan and notify trainee/payer/staff using the existing deduplicated event messages/push. Network errors, empty/partial history, unknown history status codes and delayed settlement NEVER imply rejection. History exposes no documented SaleId/charge counter; ambiguous unsuccessful history is deferred for review, not guessed into a failure counter.
+- Old checkouts without an encrypted continuation or linked series cannot be discovered by name/email. Use manager recurring-ID sync once to bind the provider instruction; daily checks then use that binding. Do not ask the customer to pay again.
+- Production must run the merged main image and database migration; Pages alone cannot run this server job. No new secret or charging permission is needed. Existing merchant environment, signing key and database are used. No credentials are logged.
+
+Official read-only endpoints: https://rivhit-api.readme.io/reference/post_api-paymentpagerequest-svc-recurringsaledetails and https://rivhit-api.readme.io/reference/post_api-paymentpagerequest-svc-recurringsalehistory

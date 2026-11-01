@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import worker from './index.js';
+import worker, { inspectRecurringCheckout } from './index.js';
 import { createPhoneVerificationToken } from './sms-auth.js';
 import { recurringPlan, recurringSchedule, recurringReceipt, familyRecurringSelections } from '../shared/recurring-billing.js';
 
@@ -33,10 +33,10 @@ function fixture(extra = {}) {
     settings: { membershipPlans: [{ id: 'GROUP_MONTHLY', label: 'שנתי חודשי', price: 500, active: true, billingPeriod: 'MONTHLY_ANNUAL_COMMITMENT', paymentMode: 'RECURRING' }] },
     payments: [], messages: []
   } };
-  let signedOrder, requests = [], charge = 0, amount = 500, failure = 0, providerUnavailable = false, role = 'TRAINEE';
+  let signedOrder, requests = [], charge = 0, amount = 500, failure = 0, providerUnavailable = false, incomplete = false, role = 'TRAINEE';
   const continuations = new Map();
   const sale = () => ({ SaleId: `sale-${charge}`, Custom1: signedOrder, Amount: amount, TransactionAmount: amount,
-    RecurringId: 'series', RecurringSaleChargeNumber: charge, TransactionStatus: failure, TransactionParamJ: charge === 0 ? 5 : 0,
+    RecurringId: incomplete ? undefined : 'series', RecurringSaleChargeNumber: charge, TransactionStatus: failure, TransactionParamJ: charge === 0 ? 5 : 0,
     CustomerTransactionId: `transaction-${charge}`, TransactionCardNum: '4580XXXX1111' });
   const env = {
     RIVHIT_ENVIRONMENT: 'production', RIVHIT_GROUP_PRIVATE_TOKEN: 'fixture-one-off-page',
@@ -76,7 +76,7 @@ function fixture(extra = {}) {
   }), env);
   const create = (patch = {}) => post('create', { userId: 'trainee', userName: 'Trainee', membershipType: 'GROUP_MONTHLY', mode: 'PRIMARY', ...patch });
   return { create, post, env, state: () => state, requests, charge: n => { charge = n; }, failure: n => { failure = n; },
-    asManager: () => { role = 'MANAGER'; }, unavailable: value => { providerUnavailable = value; }, webhook: (patch = {}) => post('webhook', { ...sale(), ...patch }) };
+    asManager: () => { role = 'MANAGER'; }, incomplete: () => { incomplete = true; }, unavailable: value => { providerUnavailable = value; }, webhook: (patch = {}) => post('webhook', { ...sale(), ...patch }) };
 }
 
 test('operator readiness and user consent are required before contacting provider', async () => {
@@ -86,6 +86,49 @@ test('operator readiness and user consent are required before contacting provide
   const f = fixture();
   const response = await f.create(); assert.equal(response.status, 409);
   assert.equal((await response.json()).code, 'RECURRING_CONSENT_REQUIRED'); assert.equal(f.requests.length, 0);
+});
+
+test('background verification recovers completed hosted setup and real payment without a browser return or second checkout', async () => {
+  const f = fixture();
+  assert.equal((await f.create({ recurringAcknowledged: true })).status, 200);
+  const checkout = f.state().payload.recurringCheckouts[0];
+  // The fixture has no UUID series details endpoint. Setup is safely persisted
+  // from the signed private checkout before optional history reconciliation.
+  await inspectRecurringCheckout(f.env, checkout);
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'PENDING_FIRST_CHARGE');
+  assert.equal(f.state().payload.users[0].membershipStatus, 'ACTIVE');
+  assert.equal(f.state().payload.payments.length, 0);
+  await inspectRecurringCheckout(f.env, checkout);
+  assert.equal(f.state().payload.payments.length, 0);
+  f.charge(1);
+  await inspectRecurringCheckout(f.env, checkout);
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'ACTIVE');
+  assert.equal(f.state().payload.payments.length, 1);
+  await inspectRecurringCheckout(f.env, checkout);
+  assert.equal(f.state().payload.payments.length, 1);
+  assert.equal(f.requests.filter(item => item.url.endsWith('/GetUrl')).length, 1);
+});
+
+test('daily verification distinguishes provider unavailability from an explicit verified card decline', async () => {
+  const f = fixture();
+  await f.create({ recurringAcknowledged: true });
+  const checkout = f.state().payload.recurringCheckouts[0];
+  await inspectRecurringCheckout(f.env, checkout);
+  f.unavailable(true);
+  await assert.rejects(inspectRecurringCheckout(f.env, checkout));
+  assert.equal(f.state().payload.users[0].membershipStatus, 'ACTIVE');
+  f.unavailable(false); f.charge(1); f.failure(4);
+  await inspectRecurringCheckout(f.env, checkout);
+  assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'PAYMENT_FAILED');
+  assert.equal(f.state().payload.payments.length, 0);
+});
+
+test('background check cannot activate a checkout abandoned before provider setup', async () => {
+  const f = fixture(); await f.create({ recurringAcknowledged: true }); f.incomplete();
+  await assert.rejects(inspectRecurringCheckout(f.env, f.state().payload.recurringCheckouts[0]));
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+  assert.equal(f.state().payload.users[0].recurringMemberships, undefined);
+  assert.equal(f.state().payload.payments.length, 0);
 });
 
 test('separate hosted page; verified setup grants pending access, not a receipt; monthly receipts are idempotent', async () => {

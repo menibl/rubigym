@@ -955,6 +955,38 @@ const persistRecurringMembershipEvent = async (env, order, payment) => {
   throw new Error('PAYMENT_STATE_CONFLICT');
 };
 
+// Read-only provider calls; never GetUrl, Charge, Cancel or a second contract.
+export async function inspectRecurringCheckout(env, checkout) {
+  const clubId = env.CLUB_ID || 'baly-wellness';
+  let state = await env.STATE_STORE.getClubState(clubId);
+  const current = state?.payload?.recurringCheckouts?.find(item => item.orderId === checkout.orderId);
+  if (!current || current.cancelledAt) return;
+  const saved = await readRecurringContinuation(env.STATE_STORE, env.PAYMENT_SIGNING_SECRET, clubId, current.orderId, current.userId);
+  let seriesId = current.recurringSaleId;
+  if (saved?.paymentReference) {
+    const reference = await verifyPaymentReference(saved.paymentReference, env, true);
+    const signed = await verifySignedOrder(reference.o, env, true);
+    if (signed.o !== current.orderId || (signed.bu || signed.u) !== current.userId || signed.m !== current.membershipType || signed.rc !== 1) throw new Error('INVALID_RECURRING_CHECKOUT');
+    const verified = await verifiedRivhitPayment(saved.paymentReference, env, true);
+    if (seriesId && seriesId !== verified.payment.recurringSaleId) throw new Error('INVALID_RECURRING_RECEIPT');
+    await persistVerifiedPurchase(env, verified.order, verified.payment);
+    await persistVerifiedDiscountUsage(env, verified.order, verified.payment);
+    seriesId = verified.payment.recurringSaleId;
+  }
+  if (!recurringId(seriesId)) return; // Legacy requests require manager recovery.
+  const details = await rivhitPost('/RecurringSaleDetails', { RecurringSaleId: seriesId }, env);
+  let history;
+  try { history = await rivhitPost('/RecurringSaleHistory', { RecurringSaleId: seriesId }, env); }
+  catch { history = null; }
+  state = await env.STATE_STORE.getClubState(clubId);
+  const prepared = prepareRecurringIdSync({ payload: state.payload, userId: current.userId, seriesId, details, history, appUrl: env.PUBLIC_APP_URL });
+  if (prepared.payments.length) {
+    for (const payment of prepared.payments) await persistVerifiedPurchase(env, prepared.order, { ...payment, recoveryDiscountUnknown: prepared.discountUnknown });
+  } else {
+    await persistVerifiedPurchase(env, prepared.order, { saleId: `setup-${seriesId}`, recurringSaleId: seriesId, recurringChargeNumber: 0, recurringPending: true });
+  }
+}
+
 const persistVerifiedDiscountUsage = async (env, order, payment) => {
   if (payment.recurringFailed) return;
   // A series keeps its signed discounted amount even after a single-use code
@@ -2347,10 +2379,12 @@ const handleApi = async (request, env, url) => {
         try {
           const state = await loadClubState(identity.session.club_id);
           const details = await rivhitPost('/RecurringSaleDetails', { RecurringSaleId: seriesId }, env);
-          const history = await rivhitPost('/RecurringSaleHistory', { RecurringSaleId: seriesId }, env);
+          let history;
+          try { history = await rivhitPost('/RecurringSaleHistory', { RecurringSaleId: seriesId }, env); }
+          catch { history = null; }
           prepared = prepareRecurringIdSync({ payload: state.payload, userId: body.userId, seriesId, details, history, appUrl: env.PUBLIC_APP_URL });
         } catch (error) {
-          if (error?.diagnostic) console.warn('RIVHIT recurring sync date rejected', error.diagnostic);
+          if (error?.diagnostic) console.warn('RIVHIT recurring sync rejected', error.diagnostic);
           const safe = error?.message && !/RIVHIT_|fetch|network|timeout/i.test(error.message) ? error.message : 'לא ניתן לאמת כרגע את פרטי ההוראה והחיובים ברווחית. לא שונה דבר ולא נוצר חיוב.';
           return json({ message: safe, code: error?.code, diagnostic: error?.diagnostic }, 422, headers);
         }
