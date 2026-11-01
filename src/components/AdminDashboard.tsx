@@ -8,6 +8,7 @@ import { AdminTraineeEditor } from './AdminTraineeEditor';
 import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
 import { AdminRecurringSync } from './AdminRecurringSync';
 import { AdminRecurringRequests } from './AdminRecurringRequests';
+import { RecurringFinanceStatus } from './RecurringFinanceStatus';
 import { AdminPaymentReminderEditor } from './AdminPaymentReminderEditor';
 import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
@@ -1808,6 +1809,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div>
+              <RecurringFinanceStatus users={users} />
               <h3 className="text-sm font-semibold text-slate-800 mb-3">יומן עסקאות ותשלומים</h3>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-right text-xs">

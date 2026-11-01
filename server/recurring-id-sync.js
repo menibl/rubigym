@@ -7,9 +7,14 @@ export const recurringId = value => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) ? id : null;
 };
 const phone = value => String(value || '').replace(/\D/g, '').replace(/^00972/, '0').replace(/^972/, '0');
-const providerData = result => {
+const providerData = (result, operation) => {
   if (!result || (result.error_code !== undefined && Number(result.error_code) !== 0)
-    || (result.Status !== undefined && Number(result.Status) !== 0)) reject('רווחית לא החזירה תשובה תקינה. לא שונה דבר.');
+    || (result.Status !== undefined && Number(result.Status) !== 0)) {
+    const error = new Error(`לא ניתן לאמת ${operation === 'RecurringSaleDetails' ? 'את פרטי ההוראה' : 'את היסטוריית החיובים'} ברווחית. אין פירוש הדבר שהתשלום נדחה.`);
+    error.code = 'RIVHIT_SYNC_PROVIDER_RESPONSE';
+    error.diagnostic = { operation, code: Number.isFinite(Number(result?.error_code ?? result?.Status)) ? Number(result.error_code ?? result.Status) : null };
+    throw error;
+  }
   const value = result.data || result.Data || result;
   return Array.isArray(value) ? value.length === 1 ? value[0] : null : value;
 };
@@ -31,7 +36,13 @@ const documentKey = value => {
 // and require complete successful history, real document references and counts.
 export function prepareRecurringIdSync({ payload, userId, seriesId, details: detailsResult, history: historyResult, appUrl, now = new Date() }) {
   if (!recurringId(seriesId)) reject('יש להזין מזהה הוראת קבע תקין, כפי שמופיע בלוג iCredit.');
-  const details = providerData(detailsResult), history = providerData(historyResult);
+  const details = providerData(detailsResult, 'RecurringSaleDetails');
+  // Approval of an active, owned series is independent of receipt availability.
+  // Never invent a receipt or treat a failed history request as a declined card.
+  const noCharges = Number(details?.ChargeCount) === 0;
+  let history;
+  try { history = providerData(historyResult, 'RecurringSaleHistory'); }
+  catch (error) { if (!noCharges) throw error; history = { RecurringSaleHistoryList: [] }; }
   const user = payload.users?.find(member => member.id === userId && member.role === 'TRAINEE');
   if (!user || !details || !history) reject('לא נמצאו פרטי הוראה מלאים למתאמן שנבחר.');
   let expectedIpn;

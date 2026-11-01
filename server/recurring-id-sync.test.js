@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
 import { sameProviderPayment, uniquePayments } from '../shared/payment-ledger.js';
-import worker from './index.js';
+import worker, { inspectRecurringCheckout } from './index.js';
 import { createHmac } from 'node:crypto';
 
 const seriesId = '11111111-1111-4111-8111-111111111111'; // Fixture, never a live provider call.
@@ -33,6 +33,52 @@ test('an approved contract with zero successful charges remains explicitly unpai
   const f = syncFixture(); f.details.ChargeCount = 0; f.history.RecurringSaleHistoryList = [];
   const prepared = prepareRecurringIdSync(f);
   assert.equal(prepared.preview.successfulCharges, 0); assert.deepEqual(prepared.payments, []);
+});
+
+test('daily reconciliation of a manager-bound legacy series imports real history once and tolerates initial history downtime', async () => {
+  const f = syncFixture(); let state = { payload: f.payload, revision: 1 };
+  f.payload.recurringCheckouts[0].recurringSaleId = seriesId;
+  const checkout = f.payload.recurringCheckouts[0];
+  const details = structuredClone(f.details); details.ChargeCount = 0;
+  let history = { error_code: 9 };
+  const env = { PUBLIC_APP_URL: f.appUrl, PAYMENT_SIGNING_SECRET: 'fixture-only', RIVHIT_ENVIRONMENT: 'production',
+    STATE_STORE: { getClubState: async () => state, putClubState: async (_, payload, revision) => {
+      if (state.revision !== revision) return { conflict: true };
+      state = { payload, revision: revision + 1 }; return { conflict: false };
+    } }, RIVHIT_FETCH: async url => {
+      if (url.endsWith('/RecurringSaleDetails')) return Response.json(details);
+      if (url.endsWith('/RecurringSaleHistory')) return Response.json(history);
+      throw new Error('No charging or checkout operation permitted');
+    } };
+  await inspectRecurringCheckout(env, checkout);
+  assert.equal(state.payload.users[0].recurringMemberships.OPEN_GYM.status, 'PENDING_FIRST_CHARGE');
+  assert.equal(state.payload.payments.length, 0);
+  details.ChargeCount = 1; history = f.history;
+  await inspectRecurringCheckout(env, checkout);
+  await inspectRecurringCheckout(env, checkout);
+  assert.equal(state.payload.users[0].recurringMemberships.OPEN_GYM.status, 'ACTIVE');
+  assert.equal(state.payload.payments.length, 1);
+  assert.equal(state.payload.payments[0].amount, 280);
+  history = { error_code: 9 };
+  await assert.rejects(inspectRecurringCheckout(env, checkout));
+  assert.equal(state.payload.users[0].recurringMemberships.OPEN_GYM.status, 'ACTIVE');
+});
+
+test('a fully verified zero-charge series can activate despite unavailable history, never fabricate payment', () => {
+  for (const history of [null, { error_code: 9 }, { Status: 1 }]) {
+    const f = syncFixture(); f.details.ChargeCount = 0; f.history = history;
+    assert.deepEqual(prepareRecurringIdSync(f).payments, []);
+    f.details.PhoneNumber = '0529999999';
+    assert.throws(() => prepareRecurringIdSync(f), /הטלפון/);
+  }
+});
+
+test('provider rejection identifies the operation, not a card decline or raw body', () => {
+  const f = syncFixture(); f.history = { error_code: 9, debug_message: 'secret-provider-body' };
+  assert.throws(() => prepareRecurringIdSync(f), error => {
+    assert.equal(error.diagnostic.operation, 'RecurringSaleHistory'); assert.equal(error.diagnostic.code, 9);
+    assert.ok(!JSON.stringify(error).includes('secret-provider-body')); return true;
+  });
 });
 
 test('WCF creation/end/history dates sync to the same calendar term and receipt as ISO dates', () => {
