@@ -307,7 +307,7 @@ export const syncRivhitRecurring = async (userId: string, saleId: string): Promi
 
 export interface RecurringSyncPreview {
   seriesId: string; userName: string; membershipType: string; planLabel: string; amount: number;
-  successfulCharges: number; endsAt: string; discountRecorded: boolean; discountCode: string | null; nextChargeDate: string | null;
+  successfulCharges: number; endsAt: string; lastChargeDate?: string; discountRecorded: boolean; discountCode: string | null; nextChargeDate: string | null;
 }
 export interface RecurringCheckoutItem {
   orderId: string; label: string; amount?: number; createdAt: string; stage: string; canRelease: boolean;

@@ -35,6 +35,45 @@ test('an approved contract with zero successful charges remains explicitly unpai
   assert.equal(prepared.preview.successfulCharges, 0); assert.deepEqual(prepared.payments, []);
 });
 
+test('November setup: last debit October 1 is distinct from exclusive membership expiry November 1', () => {
+  const f = syncFixture();
+  f.now = new Date('2026-11-01T12:00:00Z');
+  f.details.CreationDate = '2026-11-01T08:00:00Z';
+  f.details.EndDate = '2027-10-01T00:00:00Z';
+  f.details.ChargeCount = 0; f.history.RecurringSaleHistoryList = [];
+  const checkout = f.payload.recurringCheckouts[0];
+  checkout.dispatchedAt = '2026-11-01T07:59:00Z'; checkout.endsAt = '2027-11-01';
+  checkout.orderSnapshot = { o: 'o', u: 'u', m: 'OPEN_GYM', rc: 1, a: 280, re: '2027-11-01', c: 'ORIGINAL' };
+  const prepared = prepareRecurringIdSync(f);
+  assert.equal(prepared.order.re, '2027-11-01');
+  assert.equal(prepared.preview.endsAt, '2027-11-01');
+  assert.equal(prepared.preview.lastChargeDate, '2027-10-01');
+  assert.equal(prepared.preview.discountCode, 'ORIGINAL');
+  assert.deepEqual(prepared.payments, []);
+  // The final debit month is still covered, even after its first day.
+  f.now = new Date('2027-10-15T10:00:00Z');
+  assert.equal(prepareRecurringIdSync(f).order.re, '2027-11-01');
+  f.now = new Date('2027-11-01T10:00:00Z');
+  assert.throws(() => prepareRecurringIdSync(f), { code: 'RIVHIT_CONTRACT_ENDED' });
+});
+
+test('last-debit interpretation never accepts an arbitrary extra month or altered signed expiry', () => {
+  for (const end of ['2027-08-01T00:00:00Z', '2027-09-02T00:00:00Z', '2027-10-02T00:00:00Z']) {
+    const f = syncFixture(); f.details.EndDate = end;
+    assert.throws(() => prepareRecurringIdSync(f));
+  }
+  const f = syncFixture(); f.details.EndDate = '2027-09-01T00:00:00Z';
+  assert.equal(prepareRecurringIdSync(f).preview.endsAt, '2027-10-01');
+  f.payload.recurringCheckouts[0].orderSnapshot = { o: 'o', u: 'u', m: 'OPEN_GYM', rc: 1, a: 280, re: '2027-11-01' };
+  assert.throws(() => prepareRecurringIdSync(f), /שונים מהבקשה/);
+});
+
+test('exact-date legacy coverage stays unchanged rather than receiving an extra month', () => {
+  const f = syncFixture();
+  assert.equal(prepareRecurringIdSync(f).order.re, '2027-10-01');
+  assert.equal(prepareRecurringIdSync(f).preview.lastChargeDate, undefined);
+});
+
 test('shared family series sync binds only signed group participants and keeps one receipt order', () => {
   const f = syncFixture();
   f.payload.users.push({ id: 'child', name: 'Child', role: 'TRAINEE', familyPayerId: 'u', phone: '0529999999',

@@ -29,6 +29,7 @@ export function AdminRecurringSync({ userId }: { userId: string }) {
       <p>סכום לכל חיוב: ₪{preview.data.amount} · 12 חיובים בסדרה</p>
       <p>חיובים מוצלחים מאומתים: {preview.data.successfulCharges}{preview.data.successfulCharges === 0 ? ' — טרם שולם, ההוראה בלבד אושרה' : ''}</p>
       <p>תוקף התקשרות: <bdi>{preview.data.endsAt}</bdi></p>
+      {preview.data.lastChargeDate && <p>מועד החיוב האחרון בסדרה: <bdi>{preview.data.lastChargeDate}</bdi> · תוקף המנוי מסתיים בתחילת החודש הבא</p>}
       {preview.data.nextChargeDate && <p>מועד חיוב הבא לפי רווחית: <bdi>{preview.data.nextChargeDate}</bdi></p>}
       {!preview.data.discountRecorded && <p>קוד הנחה מקורי לא תועד בבקשה הישנה; סכום ההוראה אומת מול רווחית.</p>}
       <button type="button" disabled={busy} className="mt-3 min-h-11 w-full rounded-lg bg-amber-400 p-2 font-bold text-black disabled:opacity-50" onClick={async () => {
