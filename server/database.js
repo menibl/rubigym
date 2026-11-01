@@ -142,6 +142,10 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       club_id text NOT NULL, payer_id text NOT NULL, revision bigint NOT NULL DEFAULT 1,
       payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (club_id,payer_id)
     );
+    CREATE TABLE IF NOT EXISTS recurring_checkout_continuations (
+      club_id text NOT NULL, order_id text NOT NULL, user_id text NOT NULL,
+      encrypted_checkout text NOT NULL, updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (club_id,order_id)
+    );
     ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS profile jsonb;
     ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS failure_count integer NOT NULL DEFAULT 0;
     ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS last_success_at timestamptz;
@@ -149,6 +153,16 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
     ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS last_error text;
   `);
   return {
+    async getRecurringContinuation(clubId, orderId) {
+      const result = await pool.query('SELECT user_id,encrypted_checkout FROM recurring_checkout_continuations WHERE club_id=$1 AND order_id=$2', [clubId, orderId]);
+      return result.rows[0] || null;
+    },
+    async saveRecurringContinuation(clubId, orderId, userId, encrypted) {
+      const result = await pool.query(`INSERT INTO recurring_checkout_continuations (club_id,order_id,user_id,encrypted_checkout) VALUES ($1,$2,$3,$4)
+        ON CONFLICT (club_id,order_id) DO UPDATE SET encrypted_checkout=EXCLUDED.encrypted_checkout,updated_at=now()
+        WHERE recurring_checkout_continuations.user_id=EXCLUDED.user_id`, [clubId, orderId, userId, encrypted]);
+      if (result.rowCount !== 1) throw new Error('RECURRING_CONTINUATION_OWNER_MISMATCH');
+    },
     async getFamilySplitCheckout(clubId, payerId) {
       const result = await pool.query('SELECT payload,revision FROM family_split_checkouts WHERE club_id=$1 AND payer_id=$2', [clubId, payerId]);
       return result.rows[0] || { payload: null, revision: 0 };
@@ -226,6 +240,7 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
         const account = await client.query('SELECT phone_normalized FROM auth_accounts WHERE club_id=$1 AND user_id=$2', [clubId, targetId]);
         await client.query('UPDATE club_state SET payload=$2, revision=revision+1, updated_at=now() WHERE club_id=$1', [clubId, payload]);
         await client.query('DELETE FROM auth_sessions WHERE club_id=$1 AND user_id=$2', [clubId, targetId]);
+        await client.query('DELETE FROM recurring_checkout_continuations WHERE club_id=$1 AND user_id=$2', [clubId, targetId]);
         await client.query('DELETE FROM push_subscriptions WHERE club_id=$1 AND user_id=$2', [clubId, targetId]);
         await client.query('DELETE FROM sms_otp_challenges WHERE club_id=$1 AND phone_normalized=$2', [clubId, account.rows[0]?.phone_normalized || '']);
         await client.query('DELETE FROM auth_accounts WHERE club_id=$1 AND user_id=$2', [clubId, targetId]);

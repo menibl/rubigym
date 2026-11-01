@@ -129,7 +129,8 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
       familyMemberPlans: request.familyMemberPlans,
       discountCode: request.discountCode,
       planAmount: request.planAmount,
-      planLabel: request.planLabel
+      planLabel: request.planLabel,
+      pendingPaymentReference: getPendingRivhitPayment()?.userId === request.userId ? getPendingRivhitPayment()?.paymentReference : undefined
     })
   });
   let response = await create();
@@ -151,15 +152,16 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
     response = await create(true);
     result = await response.json().catch(() => ({}));
   }
-  if (response.ok && result.completed) { window.location.reload(); return; }
+  if (response.ok && result.completed) { clearPendingRivhitPayment(); clearRivhitReturnParams(); window.alert(result.message || 'הבקשה הקיימת סונכרנה. לא נוצר חיוב נוסף.'); window.location.reload(); return; }
   if (!response.ok || !result.url || !result.paymentReference) {
     throw new Error(result.message || 'לא ניתן לפתוח את דף התשלום של RIVHIT.');
   }
+  if (result.resumed && !window.confirm(`כבר קיימת בקשת תשלום עבור ${result.resumeSummary.label}, בסכום ₪${result.resumeSummary.amount} לכל חודש, ל־12 חיובים. תוקף ההתקשרות עד ${result.resumeSummary.endsAt}.\nזו אותה בקשה — לא נפתחת הוראת קבע נוספת. המחיר וקוד ההנחה נשארים לפי הבקשה המקורית. להמשיך?`)) return;
   const pending: PendingRivhitPayment = {
     paymentReference: result.paymentReference,
     userId: request.userId,
-    membershipType: request.membershipType,
-    mode: request.mode,
+    membershipType: result.resumeSummary?.membershipType || request.membershipType,
+    mode: result.resumeSummary?.mode || request.mode,
     purchaseVariant: request.purchaseVariant,
     createdAt: new Date().toISOString(),
     registrationDraft: request.registrationDraft,
@@ -167,7 +169,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
     familyName: request.familyName,
     familyBillingMode: request.familyBillingMode,
     familyMemberPlans: result.familyMemberPlans || request.familyMemberPlans,
-    discountCode: request.discountCode
+    discountCode: result.resumeSummary ? result.resumeSummary.discountCode : request.discountCode
   };
   sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
   window.location.assign(result.url);
@@ -209,6 +211,7 @@ export const continueFamilySplitPayment = async (batchId: string, userId: string
     return;
   }
   const checkout = await familySplitAction('create', batchId, { itemId: next.id, acknowledged: true });
+  if (checkout.completed) { clearPendingRivhitPayment(); clearRivhitReturnParams(); window.location.reload(); return; }
   const pending: PendingRivhitPayment = { paymentReference: checkout.paymentReference, userId,
     membershipType: MembershipType.FAMILY_MEMBERSHIP, mode: 'PRIMARY', createdAt: new Date().toISOString(),
     familySplitBatchId: batchId, familySplitItemId: next.id };
@@ -303,6 +306,20 @@ export interface RecurringSyncPreview {
   seriesId: string; userName: string; membershipType: string; planLabel: string; amount: number;
   successfulCharges: number; endsAt: string; discountRecorded: boolean; discountCode: string | null; nextChargeDate: string | null;
 }
+export interface RecurringCheckoutItem {
+  orderId: string; label: string; amount?: number; createdAt: string; stage: string; canRelease: boolean;
+}
+export const adminRecurringCheckout = async (userId: string, action: 'list' | 'inspect' | 'release' = 'list', orderId?: string, reason?: string): Promise<{ items?: RecurringCheckoutItem[]; message?: string }> => {
+  const apiBase = paymentApiBase();
+  if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
+  const response = await fetch(`${apiBase}/api/payments/rivhit/admin/recurring-checkouts`, {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, action, orderId, reason, confirmUndispatched: action === 'release' })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) throw new Error(result.message || 'הבקשה לא שוחררה. יש לבדוק מול רווחית לפני תשלום נוסף.');
+  return result;
+};
 export const syncRivhitRecurringId = async (userId: string, recurringSaleId: string, confirmationKey?: string): Promise<{ message?: string; preview?: RecurringSyncPreview; confirmationKey?: string }> => {
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
