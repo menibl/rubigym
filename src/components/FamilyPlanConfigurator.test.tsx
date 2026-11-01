@@ -6,6 +6,25 @@ import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { MembershipType, MembershipPlanConfig } from '../types';
 import { familyPlanCatalog, familyPurchaseAmount } from '../data/familyMembership';
 
+test('youth purchase options follow each family member age, not the payer age', () => {
+  const catalog: MembershipPlanConfig[] = [
+    { id: MembershipType.OPEN_GYM, label: 'Open', description: '', price: 280, active: true, category: 'PRIMARY', billingPeriod: 'MONTHLY' },
+    { id: MembershipType.YOUTH_TWICE_WEEKLY, label: 'נוער', description: '', price: 500, active: true, category: 'PRIMARY', billingPeriod: 'MONTHLY' }
+  ];
+  const props = { mode: 'CUSTOM_COMBINED' as const, onModeChange: () => {}, count: 2, onCountChange: () => {}, payerName: 'Adult', payerId: 'p',
+    plans: [{ memberId: 'p', memberName: 'Adult', membershipType: MembershipType.OPEN_GYM }, { memberId: 'c', memberName: 'Child', membershipType: MembershipType.OPEN_GYM }],
+    onPlansChange: () => {}, membershipPlans: catalog };
+  const html = renderToStaticMarkup(<FamilyPlanConfigurator {...props} familyMembers={[{ id: 'p', name: 'Adult', age: 40 }, { id: 'c', name: 'Child', age: 16 }]} />);
+  const rows = html.split('<article').slice(1);
+  assert.doesNotMatch(rows[0], /value="YOUTH_TWICE_WEEKLY"/);
+  assert.match(rows[1], /value="YOUTH_TWICE_WEEKLY"/);
+  const unknown = renderToStaticMarkup(<FamilyPlanConfigurator {...props} familyMembers={[{ id: 'p', name: 'Adult' }, { id: 'c', name: 'Child' }]} />);
+  assert.doesNotMatch(unknown, /value="YOUTH_TWICE_WEEKLY"/);
+  const registration = renderToStaticMarkup(<FamilyPlanConfigurator {...props} registrationMemberNames={['Adult', 'Child']} registrationMemberBirthDates={['1986-01-01', '2010-01-01']} />);
+  assert.doesNotMatch(registration.split('<article')[1], /value="YOUTH_TWICE_WEEKLY"/);
+  assert.match(registration.split('<article')[2], /value="YOUTH_TWICE_WEEKLY"/);
+});
+
 test('fresh family checkout shows collapsed named rows, no automatic plans and zero new charge', () => {
   const html = renderToStaticMarkup(<FamilyPlanConfigurator mode="CUSTOM_COMBINED" onModeChange={() => {}} count={2} onCountChange={() => {}} payerName="Parent" payerId="p" plans={[]} onPlansChange={() => {}} familyMembers={[{ id: 'p', name: 'Parent' }, { id: 'c', name: 'Child' }]} />);
   assert.match(html, /ללא מסלול — טרם מתחיל, ללא חיוב/);

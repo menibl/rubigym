@@ -15,6 +15,7 @@ import {
 } from '../data/familyMembership';
 import { billingPeriodLabel } from '../data/membershipBilling';
 import { isMembershipFreezeActive } from '../data/membershipPolicy';
+import { canPurchasePlan } from '../../shared/youth-plan.js';
 import { familyRecurringSelections } from '../../shared/recurring-billing.js';
 
 interface FamilyPlanConfiguratorProps {
@@ -27,13 +28,14 @@ interface FamilyPlanConfiguratorProps {
   payerName: string;
   payerId?: string;
   membershipPlans?: MembershipPlanConfig[];
-  familyMembers?: Array<Pick<User, 'id' | 'name' | 'isMembershipFrozen' | 'membershipFrozenUntil' | 'membershipFreezeRequestedAt'>>;
+  familyMembers?: Array<Pick<User, 'id' | 'name' | 'isMembershipFrozen' | 'membershipFrozenUntil' | 'membershipFreezeRequestedAt'> & Partial<Pick<User, 'age' | 'birthDate'>>>;
+  registrationMemberBirthDates?: string[];
   onRequestFreeze?: (memberId: string) => void;
   registrationMemberNames?: string[];
   onEditingChange?: (editing: boolean) => void;
 }
 
-export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ count, onCountChange, plans, onPlansChange, payerName, payerId, membershipPlans = [], familyMembers = [], registrationMemberNames, onRequestFreeze, onEditingChange }) => {
+export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ count, onCountChange, plans, onPlansChange, payerName, payerId, membershipPlans = [], familyMembers = [], registrationMemberNames, registrationMemberBirthDates, onRequestFreeze, onEditingChange }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [validation, setValidation] = useState('');
   useEffect(() => { onEditingChange?.(editingIndex !== null); }, [editingIndex, onEditingChange]);
@@ -66,6 +68,8 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
     <div className="space-y-3">
       {normalizedPlans.map((plan, index) => {
         const member = familyMembers.find(item => item.id === plan.memberId);
+        const person = registrationMemberBirthDates ? { birthDate: registrationMemberBirthDates[index] } : member;
+        const memberCatalog = catalog.filter(config => canPurchasePlan(config, person));
         const frozen = member && isMembershipFreezeActive(member as User);
         const included = !plan.participation || plan.participation === 'INCLUDED';
         const isTrainingCard = plan.membershipType === MembershipType.PERSONAL_TRAINING || plan.membershipType === MembershipType.DUO_TRAINING;
@@ -116,18 +120,18 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
               additionalPlans: (plan.additionalPlans || []).filter(item => item.membershipType !== membershipType) });
           }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
             {!plan.membershipType && <option value="">בחרו מסלול לתשלום</option>}
-            {plan.membershipType && !catalog.some(config => config.id === plan.membershipType) && <option value={plan.membershipType} disabled>המסלול אינו זמין — יש לבחור מסלול פעיל</option>}
-            {catalog.map(config => <option key={config.id} value={config.id}>{config.label} — ₪{config.price} · {billingPeriodLabel(config)}</option>)}
+            {plan.membershipType && !memberCatalog.some(config => config.id === plan.membershipType) && <option value={plan.membershipType} disabled>המסלול אינו זמין או אינו מתאים לגיל — יש לבחור מסלול אחר</option>}
+            {memberCatalog.map(config => <option key={config.id} value={config.id}>{config.label} — ₪{config.price} · {billingPeriodLabel(config)}</option>)}
           </select></label>}
           {included && isTrainingCard && <label className="text-[11px] font-bold text-slate-600">מספר אימונים<input type="number" min={1} max={50} value={plan.trainingSessionsCount || 1} onChange={event => updatePlan(index, { trainingSessionsCount: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label>}
           {included && <fieldset className="sm:col-span-3 rounded-xl bg-slate-950 p-3 text-slate-100">
             <legend className="rounded-lg bg-slate-950 px-2 text-sm font-bold">מסלולים נוספים — {plan.memberName}</legend>
             <p className="mb-2 text-xs text-slate-300">אפשר לסמן כמה תוספות, כגון תוכנית אימון ותוכנית תזונה.</p>
-            {(plan.additionalPlans || []).filter(item => !catalog.some(config => config.id === item.membershipType && config.category === 'ADD_ON')).map(item => <div key={item.membershipType} role="alert" className="mb-2 rounded-lg border border-amber-400 p-2 text-sm">
-              המסלול {membershipPlans.find(config => config.id === item.membershipType)?.label || item.membershipType} אינו זמין לרכישה.
+            {(plan.additionalPlans || []).filter(item => !memberCatalog.some(config => config.id === item.membershipType && config.category === 'ADD_ON')).map(item => <div key={item.membershipType} role="alert" className="mb-2 rounded-lg border border-amber-400 p-2 text-sm">
+              המסלול {membershipPlans.find(config => config.id === item.membershipType)?.label || item.membershipType} אינו זמין לרכישה או אינו מתאים לגיל.
               <button type="button" className="mr-2 min-h-11 underline" onClick={() => updatePlan(index, { additionalPlans: (plan.additionalPlans || []).filter(other => other.membershipType !== item.membershipType) })}>הסר תוספת</button>
             </div>)}
-            <div className="space-y-2">{catalog.filter(config => config.category === 'ADD_ON' && config.id !== plan.membershipType).map(config => {
+            <div className="space-y-2">{memberCatalog.filter(config => config.category === 'ADD_ON' && config.id !== plan.membershipType).map(config => {
               const selected = plan.additionalPlans?.find(item => item.membershipType === config.id);
               const training = [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(config.id as MembershipType);
               return <div key={config.id} className="rounded-lg border border-slate-700 p-2">
@@ -144,9 +148,9 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
           </fieldset>}
           <div className="sm:col-span-3 rounded-lg bg-slate-100 px-3 py-2 text-center text-sm font-black text-slate-800">סך הכול עבור {plan.memberName}: ₪{familyMemberPlanPrice(plan, membershipPlans).toLocaleString('he-IL')}</div>
           <button type="button" className="min-h-12 rounded-lg bg-indigo-900 p-3 font-bold text-white sm:col-span-3" onClick={() => {
-            if (included && (frozen || !catalog.some(config => config.id === plan.membershipType)
-              || (plan.additionalPlans || []).some(selection => !catalog.some(config => config.id === selection.membershipType && config.category === 'ADD_ON')))) {
-              setValidation('יש לבחור מסלול פעיל ותוספות זמינות, או לבחור ללא חיוב.'); return;
+            if (included && (frozen || !memberCatalog.some(config => config.id === plan.membershipType)
+              || (plan.additionalPlans || []).some(selection => !memberCatalog.some(config => config.id === selection.membershipType && config.category === 'ADD_ON')))) {
+              setValidation('יש לבחור מסלול פעיל ותוספות המתאימים לגיל. מסלולי נוער מיועדים עד גיל 18 כולל ונדרש גיל מעודכן. אפשר גם לבחור ללא חיוב.'); return;
             }
             if (!registrationMemberNames && (!plan.memberId || normalizedPlans.some((other, otherIndex) => otherIndex !== index && other.memberId === plan.memberId))) {
               setValidation('יש לבחור בן משפחה משויך ושונה לכל שורה.'); return;
