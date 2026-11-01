@@ -103,3 +103,8 @@ CREATE TABLE IF NOT EXISTS family_split_checkouts (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (club_id, payer_id)
 );
+CREATE TABLE IF NOT EXISTS recurring_checkout_continuations (
+  club_id text NOT NULL, order_id text NOT NULL, user_id text NOT NULL,
+  encrypted_checkout text NOT NULL, updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (club_id, order_id)
+);
