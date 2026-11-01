@@ -1,4 +1,5 @@
-import { clubDate, isCalendarMembership } from '../shared/membership-calendar.js';
+import { clubDate, isCalendarMembership, nextMonthStart } from '../shared/membership-calendar.js';
+import { recurringSchedule } from '../shared/recurring-billing.js';
 import { providerTimestamp as providerTime, providerDateFormat } from './provider-date.js';
 
 const reject = message => { throw new Error(message); };
@@ -64,25 +65,35 @@ export function recurringSyncIdentity({ payload, userId, seriesId, details: deta
   if (creation.getTime() > now.getTime() + 60000) rejectDate('תאריך הקמת ההוראה ברווחית נמצא בעתיד. יש לבדוק את נתוני הספק; לא שונה המנוי.', 'RIVHIT_CREATION_DATE_FUTURE', 'CreationDate', details.CreationDate);
   if (ending <= creation) rejectDate('תאריך סיום ההוראה ברווחית אינו מאוחר מתאריך ההקמה. יש לבדוק את תנאי ההוראה.', 'RIVHIT_END_BEFORE_CREATION', 'EndDate', details.EndDate);
   if (ending.getTime() - creation.getTime() > 13 * 31 * 86400000) rejectDate('תקופת ההוראה שחזרה מרווחית ארוכה מהסדרה השנתית שאושרה. הסנכרון נעצר לבדיקה.', 'RIVHIT_END_DATE_RANGE', 'EndDate', details.EndDate);
-  if (clubDate(ending) <= clubDate(now)) rejectDate(`לפי תאריך הסיום שחזר מרווחית, ההתקשרות הסתיימה בתאריך ${clubDate(ending)}. לא בוצע חידוש או חיוב נוסף.`, 'RIVHIT_CONTRACT_ENDED', 'EndDate', details.EndDate);
-  const endsAt = clubDate(ending);
+  const providerEndDate = clubDate(ending);
+  // Rivhit EndDate can be the LAST debit date, whereas the saved signed re is
+  // exclusive membership coverage. Do not blindly add a month: accept this
+  // interpretation only for day 1 of the final month of our original 12-month
+  // calendar schedule. Preserve exact-date legacy contracts without extending them.
+  const scheduledEnd = recurringSchedule(creation).endsAt;
+  const lastDebitCoverageEnd = providerEndDate.endsWith('-01') && nextMonthStart(providerEndDate) === scheduledEnd
+    ? scheduledEnd : null;
+  const coverageEnd = lastDebitCoverageEnd || providerEndDate;
+  if (coverageEnd <= clubDate(now)) rejectDate(`לפי תאריכי ההוראה, ההתקשרות הסתיימה בתאריך ${coverageEnd}. לא בוצע חידוש או חיוב נוסף.`, 'RIVHIT_CONTRACT_ENDED', 'EndDate', details.EndDate);
   const candidates = (payload.recurringCheckouts || []).filter(checkout => (checkout.userId === userId || checkout.orderSnapshot?.gp?.some(line => line.memberId === userId)) && !checkout.cancelledAt
-    && checkout.endsAt === endsAt && isCalendarMembership(checkout.membershipType)
+    && (checkout.endsAt === providerEndDate || checkout.endsAt === lastDebitCoverageEnd) && isCalendarMembership(checkout.membershipType)
     && (!checkout.recurringSaleId || checkout.recurringSaleId.toLowerCase() === seriesId)
     && Number.isFinite(Date.parse(checkout.dispatchedAt)) && clubDate(new Date(checkout.dispatchedAt)) === clubDate(creation));
   if (candidates.length !== 1) reject(candidates.length ? 'נמצאו כמה בקשות הקמה מתאימות. אין לשייך אוטומטית; יש לסנכרן לפי SaleId.' : 'לא נמצאה בקשת הקמה שמורה התואמת למתאמן ולתאריכי ההוראה. יש לסנכרן לפי SaleId או לפנות לתמיכה.');
-  const checkout = candidates[0], snapshot = checkout.orderSnapshot;
+  const checkout = candidates[0], snapshot = checkout.orderSnapshot, endsAt = checkout.endsAt;
+  if (endsAt <= clubDate(now)) rejectDate(`ההתקשרות הסתיימה בתאריך ${endsAt}. לא בוצע חידוש או חיוב נוסף.`, 'RIVHIT_CONTRACT_ENDED', 'EndDate', details.EndDate);
+  const lastChargeDate = endsAt === lastDebitCoverageEnd ? providerEndDate : null;
   const amount = Number(details.Amount), count = Number(details.ChargeCount);
   if (!(amount > 0) || !Number.isFinite(amount) || details.ChargeCount === null || details.ChargeCount === ''
     || typeof details.ChargeCount === 'boolean' || !Number.isInteger(count) || count < 0 || count > 12) reject('הסכום או מונה החיובים ברווחית אינם תקינים.');
   if (snapshot && (Number(snapshot.a) !== amount || snapshot.rc !== 1 || snapshot.m !== checkout.membershipType
     || ((snapshot.bu || snapshot.u) !== userId && !snapshot.gp?.some(line => line.memberId === userId)) || snapshot.re !== endsAt || snapshot.o !== checkout.orderId)) reject('תנאי הוראת הקבע שונים מהבקשה המקורית שנשמרה. לא שונה דבר.');
-  return { details, user, payer, checkout, snapshot, amount, count, endsAt, creation };
+  return { details, user, payer, checkout, snapshot, amount, count, endsAt, lastChargeDate, creation };
 }
 
 export function prepareRecurringIdSync(input) {
   const { payload, userId, seriesId, history: historyResult, now = new Date() } = input;
-  const { details, user, payer, checkout, snapshot, amount, count, endsAt, creation } = recurringSyncIdentity(input);
+  const { details, user, payer, checkout, snapshot, amount, count, endsAt, lastChargeDate, creation } = recurringSyncIdentity(input);
   // Setup approval is independent of receipt availability. Positive-charge
   // history is always required and explicit unsuccessful records are reviewed.
   let history;
@@ -113,7 +124,7 @@ export function prepareRecurringIdSync(input) {
   const preview = { seriesId, userName: user.name, membershipType: order.m,
     planLabel: order.gp ? `הוראת קבע משפחתית מאוחדת — ${order.gp.map(line => line.memberName || line.memberId).join(', ')}`
       : payload.settings?.membershipPlans?.find(plan => plan.id === order.m)?.label || order.m,
-    amount, successfulCharges: count, endsAt, discountRecorded: Boolean(snapshot),
+    amount, successfulCharges: count, endsAt, ...(lastChargeDate ? { lastChargeDate } : {}), discountRecorded: Boolean(snapshot),
     discountCode: snapshot?.c || null, nextChargeDate: providerTime(details.ChargeDate) ? clubDate(providerTime(details.ChargeDate)) : null };
   return { order, payments, preview, discountUnknown: !snapshot };
 }
