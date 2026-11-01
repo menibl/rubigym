@@ -356,6 +356,7 @@ export interface User {
     endsAt: string; amount: number; discountCode?: string | null; paidUntil?: string;
     approvedAt?: string; updatedAt?: string; lastPaidCharge?: number; lastFailedCharge?: number; lastFailureCode?: string; cancelledAt?: string;
     recoveredBy?: string; recoveredAt?: string; recoveryDiscountUnknown?: boolean;
+      groupAmount?: number; groupSize?: number; familyPayerId?: string;
   }>>;
   membershipExpiryExclusive?: boolean; // Calendar memberships expire at the start of this date.
   membershipExpiryManualOverride?: boolean;

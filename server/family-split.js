@@ -1,4 +1,4 @@
-import { recurringPlan } from '../shared/recurring-billing.js';
+import { recurringPlan, recurringSchedule } from '../shared/recurring-billing.js';
 import { familySelectedPlans } from '../shared/family-multiple-plans.js';
 
 const cents = value => Math.round(Number(value) * 100);
@@ -25,6 +25,7 @@ export function familySplitLines(members, catalog, payments, discount, productio
       return { id: `${member.memberId}:${selected.membershipType}`, memberId: member.memberId, memberName: member.memberName,
         membershipType: selected.membershipType, label: config.label, baseAmount, amount: baseAmount,
         recurring: recurringPlan(config), billingPeriod: period,
+        ...(recurringPlan(config) ? { startsAt: recurringSchedule(now).start, endsAt: recurringSchedule(now).endsAt, recurringMonths: 12 } : {}),
         mode: index === 0 ? 'PRIMARY' : 'ADDON', includedSessions: selected.trainingSessionsCount,
         status: active ? 'EXISTING_RECURRING' : paid ? 'ALREADY_PAID' : 'READY' };
     }));
@@ -44,9 +45,36 @@ export function familySplitLines(members, catalog, payments, discount, productio
   return lines;
 }
 
+// Only NEW, compatible series are combined. Existing paid/approved series are
+// never resized, cancelled or replaced when a family adds another member.
+export function groupFamilyRecurringLines(lines, mode = 'COMBINED') {
+  if (mode === 'SEPARATE') return lines;
+  const buckets = new Map();
+  for (const line of lines) {
+    if (line.status !== 'READY' || !line.recurring || !line.startsAt || !line.endsAt) continue;
+    const key = JSON.stringify([line.startsAt, line.endsAt, line.recurringMonths]);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(line);
+  }
+  const grouped = new Set(), result = [];
+  for (const line of lines) {
+    if (grouped.has(line.id)) continue;
+    const bucket = [...buckets.values()].find(items => items.includes(line));
+    if (!bucket || bucket.length < 2) { result.push(line); continue; }
+    bucket.forEach(item => grouped.add(item.id));
+    result.push({ ...line, id: `combined:${bucket.map(item => item.id).sort().join('|')}`,
+      label: 'הוראת קבע משפחתית מאוחדת', memberName: [...new Set(bucket.map(item => item.memberName))].join(' + '),
+      amount: bucket.reduce((sum, item) => sum + cents(item.amount), 0) / 100,
+      baseAmount: bucket.reduce((sum, item) => sum + cents(item.baseAmount), 0) / 100,
+      discountAmount: bucket.reduce((sum, item) => sum + cents(item.discountAmount || 0), 0) / 100,
+      groupLines: bucket });
+  }
+  return result;
+}
+
 export const publicFamilySplit = batch => ({ split: true, batchId: batch.id, items: batch.items.map(({ checkout, ...line }) => line),
   completed: Boolean(batch.cancelled) || batch.items.every(line => ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(line.status)),
-  message: 'כל מסלול מאושר בנפרד. הוראת קבע מחויבת מדי חודש במשך 12 חיובים במחיר לאחר ההנחה; מסלול חד־פעמי מחויב פעם אחת בלבד. יצירת הוראה אינה אישור שהחיוב הראשון שולם.' });
+  message: 'ראש המשפחה משלם. הוראות חדשות בעלות אותה תקופה ותנאי חיוב מאוחדות לפי הבחירה; תוספות והוראות קיימות אינן מחויבות שוב. הוראת קבע: 12 חיובים במחיר הקבוע לאחר ההנחה. מסלול חד־פעמי אינו מצטרף לחיובים החודשיים. ביטול הוראה מאוחדת משפיע על כל המשתתפים בה; הקפאה באפליקציה אינה משנה את החיוב ברווחית.' });
 
 export async function changeFamilySplit(store, clubId, payerId, mutate) {
   for (let i = 0; i < 5; i++) {

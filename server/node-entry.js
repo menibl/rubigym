@@ -2,7 +2,8 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import worker from './index.js';
+import worker, { inspectRecurringCheckout } from './index.js';
+import { startRecurringReconciliation } from './recurring-reconciliation.js';
 import { createDatabaseStore } from './database.js';
 import { ensureInitialManager } from './auth.js';
 import { startPushReminderScheduler } from './push.js';
@@ -17,6 +18,7 @@ const maxBodyBytes = Number(process.env.MAX_REQUEST_BODY_BYTES || 16_777_216);
 const databaseStore = await createDatabaseStore(process.env.DATABASE_URL, process.env.DATABASE_SSL);
 await ensureInitialManager(databaseStore, process.env);
 startPushReminderScheduler(databaseStore, process.env);
+startRecurringReconciliation(databaseStore, process.env, inspectRecurringCheckout);
 
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
