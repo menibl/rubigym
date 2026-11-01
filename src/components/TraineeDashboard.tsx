@@ -165,6 +165,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>(initialTab);
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
+  const [checkoutAdditions, setCheckoutAdditions] = useState<{ membershipType: MembershipType; trainingSessionsCount?: number }[]>([]);
+  useEffect(() => { setCheckoutAdditions([]); }, [selectedMembershipPurchase]);
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
   const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [paymentStarting, setPaymentStarting] = useState(false);
@@ -806,6 +808,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         phone: activeUser.phone,
         membershipType: selectedMembershipPurchase,
         mode: membershipPurchaseMode,
+        individualSelections: membershipPurchaseMode === 'PRIMARY' && checkoutAdditions.length ? [
+          { membershipType: selectedMembershipPurchase, trainingSessionsCount: selectedMembershipUsesTrainingCard ? trainingCardSize : undefined },
+          ...checkoutAdditions
+        ] : undefined,
         purchaseVariant: isTrainingCard
           ? `${selectedMembershipPurchase === MembershipType.PERSONAL_TRAINING ? 'PERSONAL' : 'DUO'}_${trainingCardSize}` as PaymentPurchaseVariant
           : undefined,
@@ -2405,6 +2411,21 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <strong className="text-xl text-amber-800">₪{applySelectedDiscount(selectedMembershipAmount)} · {billingPeriodLabel(selectedMembershipConfig)}</strong>
                 </div>
                 <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
+                  {membershipPurchaseMode === 'PRIMARY' && <fieldset className="rounded-xl border border-slate-600 bg-slate-950 p-4 text-slate-100">
+                    <legend className="px-2 font-bold">תוספות לאותה רכישה</legend>
+                    <p className="mb-3 text-sm">בחרו הכול לפני התשלום. הוראות קבע תואמות ישולמו יחד, ותוספות חד־פעמיות בתשלום מאוחד נפרד לאחריהן.</p>
+                    {membershipAddOns.filter(plan => plan.id !== selectedMembershipPurchase).map(plan => {
+                      const selected = checkoutAdditions.find(item => item.membershipType === plan.id);
+                      const training = [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(plan.id as MembershipType);
+                      return <div key={plan.id} className="mb-2">
+                        <label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={Boolean(selected)} onChange={event => setCheckoutAdditions(current => event.target.checked
+                          ? [...current, { membershipType: plan.id as MembershipType, trainingSessionsCount: training ? 1 : undefined }]
+                          : current.filter(item => item.membershipType !== plan.id))} />{plan.label} — ₪{plan.price} · {billingPeriodLabel(plan)}</label>
+                        {selected && training && <label className="block text-sm">מספר אימונים — {plan.label}<input className="mt-1 w-full rounded-lg bg-slate-800 p-2" type="number" min={1} max={50} value={selected.trainingSessionsCount || 1} onChange={event => setCheckoutAdditions(current => current.map(item => item.membershipType === plan.id ? { ...item, trainingSessionsCount: Math.max(1, Math.min(50, Math.round(Number(event.target.value) || 1))) } : item))} /></label>}
+                      </div>;
+                    })}
+                    {!!checkoutAdditions.length && <p className="mt-3 font-bold">מחיר הבחירה לפני הנחה: ₪{(selectedMembershipAmount + checkoutAdditions.reduce((sum, item) => sum + (membershipPlanConfigs.find(plan => plan.id === item.membershipType)?.price || 0) * (item.trainingSessionsCount || 1), 0)).toLocaleString('he-IL')} — הפירוט לפי סוג חיוב יוצג לפני המעבר לרווחית.</p>}
+                  </fieldset>}
                   {selectedMembershipUsesTrainingCard && (
                     <label className="text-xs font-bold text-slate-700">בחרו גודל כרטיסייה
                       <select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3">

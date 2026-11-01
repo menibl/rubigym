@@ -4,9 +4,53 @@ import { discoverTodayRecurring, publicRecovery } from './bulk-recurring-recover
 import { clubDate } from '../shared/membership-calendar.js';
 import { recurringSchedule } from '../shared/recurring-billing.js';
 import worker from './index.js';
+import { inspectRecurringCheckout } from './index.js';
+import { discoverApprovedSetup } from './recurring-setup-discovery.js';
 
 const series = '11111111-1111-4111-8111-111111111111';
 const otherSeries = '22222222-2222-4222-8222-222222222222';
+
+test('automatic discovery activates approved missing-link setups without a manager and without a fake receipt', async () => {
+  const f = fixture(new Date());
+  let state = { payload: f.payload, revision: 1 };
+  const store = { getClubState: async () => state, putClubState: async (_, payload, revision) => {
+    if (revision !== state.revision) return { conflict: true };
+    state = { payload, revision: revision + 1 }; return { conflict: false };
+  } };
+  const env = { STATE_STORE: store, PUBLIC_APP_URL: f.input.appUrl, RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN: 'fixture-page', PAYMENT_SIGNING_SECRET: 'fixture-only',
+    RIVHIT_FETCH: async (url, options) => Response.json(await f.input.post(`/${url.split('/').at(-1)}`, JSON.parse(options.body))) };
+  await inspectRecurringCheckout(env, f.payload.recurringCheckouts[0]);
+  assert.equal(state.payload.users[0].recurringMemberships.GROUP_ANNUAL.status, 'PENDING_FIRST_CHARGE');
+  assert.equal(state.payload.payments.length, 0);
+  assert.equal(state.payload.users[0].membershipStatus, 'ACTIVE');
+  assert.ok(f.calls.every(call => !['/GetUrl', '/RecurringSaleCancel'].includes(call.path)));
+});
+
+test('automatic discovery caches provider reads, revalidates local ownership and never approves a mismatched or abandoned page', async () => {
+  const f = fixture();
+  const env = { STATE_STORE: { getClubState: async () => ({ payload: f.payload }) }, PUBLIC_APP_URL: f.input.appUrl, RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN: 'fixture-page' };
+  assert.ok(await discoverApprovedSetup(env, f.order, f.input.post, f.input.now));
+  const count = f.calls.length;
+  assert.ok(await discoverApprovedSetup(env, f.order, f.input.post, f.input.now));
+  assert.equal(f.calls.length, count);
+  f.payload.users[0].phone = '0529999999';
+  await assert.rejects(discoverApprovedSetup(env, f.order, f.input.post, f.input.now));
+  const abandoned = fixture(); abandoned.setList({ RecurringSales: [] });
+  const other = { ...env, STATE_STORE: { getClubState: async () => ({ payload: abandoned.payload }) } };
+  assert.equal(await discoverApprovedSetup(other, abandoned.order, abandoned.input.post, abandoned.input.now), null);
+});
+
+test('automatic discovery is request-bounded and includes a setup completed just after club midnight', async () => {
+  const f = fixture(new Date('2026-10-31T21:55:00Z'));
+  const nextDay = new Date('2026-10-31T22:01:00Z');
+  assert.notEqual(clubDate(f.input.now), clubDate(nextDay));
+  const env = { STATE_STORE: { getClubState: async () => ({ payload: f.payload }) }, PUBLIC_APP_URL: f.input.appUrl, RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN: 'fixture-page' };
+  assert.ok(await discoverApprovedSetup(env, f.order, f.input.post, nextDay));
+  const bounded = fixture();
+  const result = await discoverTodayRecurring({ ...bounded.input, requestBudget: 1 });
+  assert.equal(result.entries[0].status, 'REVIEW');
+  assert.equal(bounded.calls.length, 1);
+});
 function fixture(now = new Date('2026-11-01T10:00:00Z')) {
   const endsAt = recurringSchedule(now).endsAt;
   const order = { o: 'order', u: 'u', m: 'GROUP_ANNUAL', d: 'PRIMARY', a: 5, c: 'ORIGINAL', rc: 1, rr: true, rm: 12,

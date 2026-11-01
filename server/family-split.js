@@ -45,14 +45,14 @@ export function familySplitLines(members, catalog, payments, discount, productio
   return lines;
 }
 
-// Only NEW, compatible series are combined. Existing paid/approved series are
-// never resized, cancelled or replaced when a family adds another member.
+// Only NEW, compatible series are combined; one-off lines form a separate
+// checkout. Existing series are never resized/cancelled when adding a member.
 export function groupFamilyRecurringLines(lines, mode = 'COMBINED') {
   if (mode === 'SEPARATE') return lines;
   const buckets = new Map();
   for (const line of lines) {
-    if (line.status !== 'READY' || !line.recurring || !line.startsAt || !line.endsAt) continue;
-    const key = JSON.stringify([line.startsAt, line.endsAt, line.recurringMonths]);
+    if (line.status !== 'READY' || (line.recurring && (!line.startsAt || !line.endsAt))) continue;
+    const key = line.recurring ? JSON.stringify([line.startsAt, line.endsAt, line.recurringMonths]) : 'ONE_TIME';
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(line);
   }
@@ -63,7 +63,7 @@ export function groupFamilyRecurringLines(lines, mode = 'COMBINED') {
     if (!bucket || bucket.length < 2) { result.push(line); continue; }
     bucket.forEach(item => grouped.add(item.id));
     result.push({ ...line, id: `combined:${bucket.map(item => item.id).sort().join('|')}`,
-      label: 'הוראת קבע משפחתית מאוחדת', memberName: [...new Set(bucket.map(item => item.memberName))].join(' + '),
+      label: line.recurring ? 'הוראת קבע מאוחדת' : 'תשלום חד־פעמי מאוחד', memberName: [...new Set(bucket.map(item => item.memberName))].join(' + '),
       amount: bucket.reduce((sum, item) => sum + cents(item.amount), 0) / 100,
       baseAmount: bucket.reduce((sum, item) => sum + cents(item.baseAmount), 0) / 100,
       discountAmount: bucket.reduce((sum, item) => sum + cents(item.discountAmount || 0), 0) / 100,
@@ -72,9 +72,20 @@ export function groupFamilyRecurringLines(lines, mode = 'COMBINED') {
   return result;
 }
 
+// A single aggregate receipt retains every beneficiary and selected addition.
+export function groupedReceiptPlans(lines) {
+  const members = new Map();
+  for (const line of lines) {
+    const selection = { membershipType: line.membershipType, trainingSessionsCount: line.includedSessions };
+    if (!members.has(line.memberId)) members.set(line.memberId, { memberId: line.memberId, memberName: line.memberName, participation: 'INCLUDED', ...selection, additionalPlans: [] });
+    else members.get(line.memberId).additionalPlans.push(selection);
+  }
+  return [...members.values()];
+}
+
 export const publicFamilySplit = batch => ({ split: true, batchId: batch.id, items: batch.items.map(({ checkout, ...line }) => line),
   completed: Boolean(batch.cancelled) || batch.items.every(line => ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(line.status)),
-  message: 'ראש המשפחה משלם. הוראות חדשות בעלות אותה תקופה ותנאי חיוב מאוחדות לפי הבחירה; תוספות והוראות קיימות אינן מחויבות שוב. הוראת קבע: 12 חיובים במחיר הקבוע לאחר ההנחה. מסלול חד־פעמי אינו מצטרף לחיובים החודשיים. ביטול הוראה מאוחדת משפיע על כל המשתתפים בה; הקפאה באפליקציה אינה משנה את החיוב ברווחית.' });
+  message: 'התשלום מבוצע על ידי בעל החשבון המשלם. הוראות חדשות בעלות אותה תקופה ותנאי חיוב מאוחדות לפי הבחירה, והתשלומים החד־פעמיים מאוחדים בנפרד; מסלולים שכבר שולמו והוראות קיימות אינם מחויבים שוב. הוראת קבע: 12 חיובים במחיר הקבוע לאחר ההנחה. מסלול חד־פעמי אינו מצטרף לחיובים החודשיים. ביטול הוראה מאוחדת משפיע על כל המשתתפים בה; הקפאה באפליקציה אינה משנה את החיוב ברווחית.' });
 
 export async function changeFamilySplit(store, clubId, payerId, mutate) {
   for (let i = 0; i < 5; i++) {

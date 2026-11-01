@@ -15,17 +15,21 @@ const parseList = result => {
 
 // Discovery is read-only. Never guess by name/email or let a matching amount
 // substitute for the existing owned order, phone, merchant and schedule checks.
-export async function discoverTodayRecurring({ payload, post, appUrl, groupToken, now = new Date() }) {
+export async function discoverTodayRecurring({ payload, post, appUrl, groupToken, now = new Date(), requestBudget = Infinity, recentOnly = false, priorityOrderId }) {
   const day = clubDate(now);
   const checkouts = (payload.recurringCheckouts || []).filter(item => !item.cancelledAt
-    && Number.isFinite(Date.parse(item.dispatchedAt)) && clubDate(new Date(item.dispatchedAt)) === day)
-    .sort((a, b) => String(a.orderId).localeCompare(String(b.orderId)));
+    && Number.isFinite(Date.parse(item.dispatchedAt)) && (recentOnly
+      ? Date.parse(item.dispatchedAt) <= now.getTime() && now.getTime() - Date.parse(item.dispatchedAt) < 24 * 60 * 60_000
+      : clubDate(new Date(item.dispatchedAt)) === day))
+    .sort((a, b) => Number(b.orderId === priorityOrderId) - Number(a.orderId === priorityOrderId) || String(a.orderId).localeCompare(String(b.orderId)));
   if (checkouts.length > 50) reject('RECOVERY_BATCH_TOO_LARGE');
   if (checkouts.length && !groupToken) reject('RECURRING_PAGE_NOT_CONFIGURED');
   const lists = new Map(), detailsCache = new Map(), historyCache = new Map();
   const started = Date.now();
+  let requests = 0;
   const read = async (path, body) => {
     if (Date.now() - started > 60_000) reject('RECOVERY_TIME_LIMIT');
+    if (++requests > requestBudget) reject('RECOVERY_REQUEST_LIMIT');
     return post(path, body);
   };
   const cached = (cache, key, load) => {
