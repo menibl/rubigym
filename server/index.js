@@ -7,6 +7,7 @@ import { calendarTerm, clubDate, repairCalendarMemberships } from '../shared/mem
 import { recurringPlan, recurringSchedule, recurringReceipt, recurringEvent, familyRecurringSelections } from '../shared/recurring-billing.js';
 import { applyRecurringMembershipEvent, rivhitChargeDate } from '../shared/recurring-membership-events.js';
 import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
+import { discoverTodayRecurring, publicRecovery } from './bulk-recurring-recovery.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, updateRecurringCheckout, releaseUndispatchedRecurringCheckout } from './recurring-checkout.js';
 import { familySplitLines, groupFamilyRecurringLines, publicFamilySplit, changeFamilySplit } from './family-split.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
@@ -2383,6 +2384,58 @@ const handleApi = async (request, env, url) => {
           amount: item.orderSnapshot?.a, createdAt: item.dispatchedAt, stage: item.stage || 'LEGACY_UNKNOWN',
           canRelease: item.stage === 'RESERVED' && !item.requestDispatchedAt && !item.recurringSaleId && Date.now() - Date.parse(item.dispatchedAt) > 5 * 60000 }));
       return json({ ok: true, items }, 200, headers);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/recurring-recovery') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
+      if (identity.session.club_id !== (env.CLUB_ID || 'baly-wellness')) return json({ message: 'הגדרות הסליקה אינן שייכות למועדון המחובר.' }, 403, headers);
+      requirePaymentEnv(env);
+      const body = await request.json();
+      if (!['preview', 'confirm'].includes(body.action)) return json({ message: 'יש לבצע בדיקה מקדימה לפני הסנכרון.' }, 400, headers);
+      const checkedAt = body.action === 'preview' ? Date.now() : Number(body.checkedAt);
+      if (!Number.isFinite(checkedAt) || checkedAt > Date.now() || Date.now() - checkedAt > 10 * 60_000) return json({ message: 'הבדיקה פגה. יש לבדוק שוב לפני סנכרון.' }, 409, headers);
+      const providerFetch = typeof env.RIVHIT_FETCH === 'function' ? env.RIVHIT_FETCH : fetch;
+      const boundedEnv = { ...env, RIVHIT_FETCH: (target, options) => providerFetch(target, { ...options, signal: AbortSignal.timeout(10_000) }) };
+      let recovery;
+      try {
+        const state = await loadClubState(identity.session.club_id);
+        recovery = await discoverTodayRecurring({ payload: state.payload,
+          post: (path, data) => rivhitPost(path, data, boundedEnv), appUrl: env.PUBLIC_APP_URL, groupToken: env.RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN });
+      } catch {
+        return json({ message: 'לא ניתן להשלים בדיקת הוראות היום. לא בוצע סנכרון או חיוב. יש לבדוק הגדרות וחיבור לרווחית.' }, 422, headers);
+      }
+      // Provider bodies are server-only. A scoped HMAC binds every match and
+      // exception, the operator, date, amounts and receipts to this preview.
+      const canonical = { day: recovery.day, entries: recovery.entries.map(({ provider: _provider, ...entry }) => entry) };
+      const key = await sign(JSON.stringify({ clubId: identity.session.club_id, managerId: identity.session.user_id,
+        checkedAt, recovery: canonical }), env.PAYMENT_SIGNING_SECRET);
+      if (body.action === 'preview') return json({ ...publicRecovery(recovery), checkedAt, confirmationKey: key }, 200, headers);
+      if (body.confirmationKey !== key) return json({ message: 'הנתונים השתנו מאז הבדיקה. יש לבצע בדיקה חדשה; לא בוצע סנכרון.' }, 409, headers);
+      const results = [];
+      for (const entry of recovery.entries) {
+        if (entry.status !== 'VERIFIED') { results.push({ orderId: entry.orderId, name: entry.name, status: 'REVIEW', code: entry.code }); continue; }
+        try {
+          const latest = await loadClubState(identity.session.club_id);
+          const prepared = prepareRecurringIdSync({ payload: latest.payload, userId: entry.userId, seriesId: entry.seriesId,
+            details: entry.provider.details, history: entry.provider.history, appUrl: env.PUBLIC_APP_URL });
+          if (prepared.order.o !== entry.orderId) throw new Error('RECOVERY_ORDER_CHANGED');
+          const audit = { recoveryManagerId: identity.session.user_id, recoveryDiscountUnknown: prepared.discountUnknown };
+          if (prepared.payments.length) {
+            for (const payment of prepared.payments) await persistVerifiedPurchase(env, prepared.order, { ...payment, ...audit });
+          } else await persistVerifiedPurchase(env, prepared.order, { saleId: `setup-${entry.seriesId}`, recurringSaleId: entry.seriesId,
+            recurringChargeNumber: 0, recurringPending: true, ...audit });
+          const after = await loadClubState(identity.session.club_id);
+          const targets = prepared.order.gp || [{ memberId: prepared.order.bu || prepared.order.u, membershipType: prepared.order.m }];
+          if (!targets.every(target => {
+            const contract = after.payload.users.find(user => user.id === target.memberId)?.recurringMemberships?.[target.membershipType];
+            return contract?.seriesId === entry.seriesId && contract.orderId === entry.orderId && !contract.cancelledAt
+              && ['ACTIVE', 'PENDING_FIRST_CHARGE'].includes(contract.status);
+          })) throw new Error('RECOVERY_ACCESS_NOT_CONFIRMED');
+          if (!prepared.discountUnknown) await persistVerifiedDiscountUsage(env, prepared.order, prepared.payments[0] || { recurringChargeNumber: 0 });
+          results.push({ orderId: entry.orderId, name: entry.name, status: 'SYNCED', code: prepared.payments.length ? 'PAID_VERIFIED' : 'PENDING_FIRST_CHARGE' });
+        } catch { results.push({ orderId: entry.orderId, name: entry.name, status: 'REVIEW', code: 'APPLY_REQUIRES_REVIEW' }); }
+      }
+      return json({ ok: true, day: recovery.day, results, message: 'הסנכרון הסתיים. רק הוראות שאומתו עודכנו; לא נוצר חיוב חדש.' }, 200, headers);
     }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/recurring-sync') {
       const identity = await getIdentity();

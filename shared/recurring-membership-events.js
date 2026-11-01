@@ -12,6 +12,7 @@ export function rivhitChargeDate(sale) {
 // Call only with an authenticated provider result and a verified signed order.
 // Never infer a paid receipt from an approved recurring contract.
 export function applyRecurringMembershipEvent(payload, order, payment, now = new Date()) {
+  if (payload.recurringCheckouts?.some(item => item.orderId === order.o && item.cancelledAt)) return payload;
   if (order.gp) {
     if (!Array.isArray(order.gp) || order.gp.length < 2 || order.gp.length > 30
       || new Set(order.gp.map(line => `${line.memberId}:${line.membershipType}`)).size !== order.gp.length
@@ -63,7 +64,9 @@ export function applyRecurringMembershipEvent(payload, order, payment, now = new
   let updated = { ...user, recurringMemberships: { ...user.recurringMemberships, [type]: contract } };
   if (kind !== 'FAILED') {
     const term = paidUntil || nextMonthStart(clubDate(now));
-    const retainPrimary = user.membershipType && user.membershipType !== type && user.membershipStatus === 'ACTIVE';
+    const primaryExpired = validReminderDate(user.membershipExpiry) && (user.membershipExpiryExclusive
+      ? user.membershipExpiry <= clubDate(now) : user.membershipExpiry < clubDate(now));
+    const retainPrimary = user.membershipType && user.membershipType !== type && user.membershipStatus === 'ACTIVE' && !primaryExpired;
     updated = { ...updated, membershipStatus: 'ACTIVE', registrationPaymentPending: false, familyPaymentPending: false,
       membershipType: retainPrimary ? user.membershipType : type,
       secondaryMemberships: retainPrimary ? [...new Set([...(user.secondaryMemberships || []), type])] : (user.secondaryMemberships || []).filter(item => item !== type),
