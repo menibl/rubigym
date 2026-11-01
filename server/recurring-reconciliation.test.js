@@ -36,3 +36,44 @@ test('skip another merchant, cancelled, ended and deleted users', async () => {
     assert.equal(calls, 0);
   }
 });
+
+test('a new setup is retried each minute after early failure, deduplicated across concurrent runs', async () => {
+  const f = fixture(); f.checkout.dispatchedAt = '2026-11-01T10:00:00Z'; f.checkout.stage = 'PAGE_AVAILABLE';
+  let calls = 0;
+  const inspect = async () => {
+    calls++;
+    if (calls < 3) throw new Error('provider is still processing');
+    f.club.payload.users[0].recurringMemberships = { OPEN_GYM: { orderId: 'o', status: 'PENDING_FIRST_CHARGE' } };
+  };
+  for (let minute = 0; minute < 3; minute++) {
+    const now = new Date(Date.parse(f.checkout.dispatchedAt) + minute * 60_000);
+    await Promise.all([reconcileRecurringDaily(f.store, env, inspect, now), reconcileRecurringDaily(f.store, env, inspect, now)]);
+    assert.equal(calls, minute + 1);
+  }
+  // Once approved, normal daily reconciliation is used (not minute polling).
+  await reconcileRecurringDaily(f.store, env, inspect, new Date('2026-11-01T10:03:00Z'));
+  await reconcileRecurringDaily(f.store, env, inspect, new Date('2026-11-01T10:04:00Z'));
+  assert.equal(calls, 4);
+});
+
+test('unapproved setup slows to 15 minutes after ten minutes and daily after 24 hours', async () => {
+  const f = fixture(); f.checkout.dispatchedAt = '2026-11-01T10:00:00Z';
+  let calls = 0; const inspect = async () => { calls++; };
+  for (const time of ['10:16', '10:17', '10:18']) await reconcileRecurringDaily(f.store, env, inspect, new Date(`2026-11-01T${time}:00Z`));
+  assert.equal(calls, 1);
+  await reconcileRecurringDaily(f.store, env, inspect, new Date('2026-11-01T10:30:00Z')); assert.equal(calls, 2);
+  await reconcileRecurringDaily(f.store, env, inspect, new Date('2026-11-02T11:30:00Z'));
+  await reconcileRecurringDaily(f.store, env, inspect, new Date('2026-11-02T11:31:00Z')); assert.equal(calls, 3);
+});
+
+test('pending setup polling skips never-dispatched work and caps provider load per run', async () => {
+  const f = fixture(); f.checkout.stage = 'RESERVED'; f.checkout.dispatchedAt = '2026-11-01T10:00:00Z';
+  let calls = 0;
+  await reconcileRecurringDaily(f.store, env, async () => { calls++; }, new Date('2026-11-01T10:01:00Z')); assert.equal(calls, 0);
+  delete f.checkout.stage;
+  f.club.payload.recurringCheckouts = Array.from({ length: 50 }, (_, i) => ({ ...f.checkout, orderId: `order-${i}` }));
+  const seen = new Set(); const inspect = async (_, row) => { calls++; seen.add(row.orderId); };
+  await reconcileRecurringDaily(f.store, env, inspect, new Date('2026-11-01T10:01:00Z')); assert.equal(calls, 20);
+  await reconcileRecurringDaily(f.store, env, inspect, new Date('2026-11-01T10:02:00Z')); assert.equal(calls, 40);
+  assert.ok(seen.size > 20, 'capped work rotates rather than starving later requests');
+});

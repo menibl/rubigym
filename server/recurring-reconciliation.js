@@ -5,14 +5,25 @@ import { clubDate } from '../shared/membership-calendar.js';
 export async function reconcileRecurringDaily(store, env, inspect, now = new Date()) {
   if (!store || !env.PAYMENT_SIGNING_SECRET || !env.PUBLIC_APP_URL) return;
   const day = clubDate(now);
+  const started = Date.now(); let checked = 0;
   for (const club of await store.getAllClubStates()) {
     // The process has one merchant configuration. Never use it for another club.
     if (club.club_id !== (env.CLUB_ID || 'baly-wellness')) continue;
-    for (const checkout of club.payload.recurringCheckouts || []) {
+    const checkouts = club.payload.recurringCheckouts || [];
+    const offset = checkouts.length ? (Math.floor(now.getTime() / 60_000) * 20) % checkouts.length : 0;
+    for (const checkout of [...checkouts.slice(offset), ...checkouts.slice(0, offset)]) {
+      if (checked >= 20 || Date.now() - started >= 45_000) return;
       if (checkout.cancelledAt || checkout.endsAt <= day || (!checkout.orderSnapshot && !checkout.recurringSaleId)
         || (checkout.stage === 'RESERVED' && !checkout.recurringSaleId)
         || !club.payload.users?.some(user => user.id === checkout.userId)) continue;
-      if (!await store.claimPushDelivery(club.club_id, `recurring-check:${day}:${checkout.orderId}`)) continue;
+      const age = now.getTime() - Date.parse(checkout.dispatchedAt);
+      const contract = club.payload.users.flatMap(user => Object.values(user.recurringMemberships || {})).find(item => item.orderId === checkout.orderId);
+      const awaitingSetup = !contract && Number.isFinite(age) && age >= 0 && age < 24 * 60 * 60_000;
+      const interval = age < 10 * 60_000 ? 60_000 : 15 * 60_000;
+      const key = awaitingSetup ? `recurring-setup:${Math.floor(now.getTime() / interval)}:${interval}:${checkout.orderId}`
+        : `recurring-check:${day}:${checkout.orderId}`;
+      if (!await store.claimPushDelivery(club.club_id, key)) continue;
+      checked++;
       try {
         const providerFetch = typeof env.RIVHIT_FETCH === 'function' ? env.RIVHIT_FETCH : fetch;
         await inspect({ ...env, STATE_STORE: store, CLUB_ID: club.club_id,
@@ -38,7 +49,7 @@ export function startRecurringReconciliation(store, env, inspect) {
     finally { running = false; }
   };
   void run();
-  const timer = setInterval(run, 15 * 60_000);
+  const timer = setInterval(run, 60_000);
   timer.unref?.();
   return timer;
 }

@@ -1,4 +1,5 @@
 import { DiscountCode, FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, Payment, PaymentPurchaseVariant } from '../types';
+import { retryPaymentApproval, approvalFetchSignal } from './paymentApprovalRetry';
 
 const PENDING_PAYMENT_KEY = 'baly_rivhit_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_rivhit_processed_transactions_v1';
@@ -181,18 +182,20 @@ interface FamilySplitItem {
   id: string; memberName: string; label: string; amount: number; recurring: boolean; status: string;
   groupLines?: { memberName: string; label: string; amount: number }[];
 }
-const familySplitAction = async (action: string, batchId: string, extra: Record<string, unknown> = {}) => {
+const familySplitAction = async (action: string, batchId: string, extra: Record<string, unknown> = {}, signal?: AbortSignal) => {
   const response = await fetch(`${paymentApiBase()}/api/payments/rivhit/family-split/${action}`, {
     method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ batchId, ...extra })
+    body: JSON.stringify({ batchId, ...extra }), signal: action === 'verify' ? approvalFetchSignal(signal) : undefined
   });
   const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.message || 'התשלום המשפחתי דורש בירור. אין לבצע חיוב נוסף.');
+  if (!response.ok) throw Object.assign(new Error(result.message || 'התשלום המשפחתי דורש בירור. אין לבצע חיוב נוסף.'), { code: result.code, status: response.status });
   return result;
 };
 
-export const continueFamilySplitPayment = async (batchId: string, userId: string, returnedItemId?: string) => {
-  if (returnedItemId) await familySplitAction('verify', batchId, { itemId: returnedItemId });
+export const continueFamilySplitPayment = async (batchId: string, userId: string, returnedItemId?: string, options: { signal?: AbortSignal; onRetry?: (attempt: number) => void } = {}) => {
+  if (returnedItemId) await retryPaymentApproval(() => familySplitAction('verify', batchId, { itemId: returnedItemId }, options.signal), options);
+  if (options.signal?.aborted) return;
+  if (returnedItemId) window.dispatchEvent(new Event('baly:refresh-billing'));
   clearRivhitReturnParams();
   const batch = await familySplitAction('status', batchId);
   if (batch.completed) {
@@ -233,17 +236,17 @@ export const getPendingRivhitPayment = (): PendingRivhitPayment | null => {
 
 export const clearPendingRivhitPayment = () => sessionStorage.removeItem(PENDING_PAYMENT_KEY);
 
-export const verifyPendingRivhitPayment = async (pending: PendingRivhitPayment): Promise<VerifiedRivhitPayment> => {
+export const verifyPendingRivhitPayment = async (pending: PendingRivhitPayment, signal?: AbortSignal): Promise<VerifiedRivhitPayment> => {
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
   const response = await fetch(`${apiBase}/api/payments/rivhit/verify`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ paymentReference: pending.paymentReference })
+    body: JSON.stringify({ paymentReference: pending.paymentReference }), signal: approvalFetchSignal(signal)
   });
   const result = await response.json().catch(() => ({}));
-  if (!response.ok || !result.success) throw Object.assign(new Error(result.message || 'לא ניתן לאמת את העסקה מול RIVHIT.'), { code: result.code });
+  if (!response.ok || !result.success) throw Object.assign(new Error(result.message || 'לא ניתן לאמת את העסקה מול RIVHIT.'), { code: result.code, status: response.status });
   if (result.userId && result.userId !== pending.userId) throw new Error('התשלום אינו משויך למשתמש המחובר.');
   if (result.membershipType !== pending.membershipType) throw new Error('פרטי העסקה אינם תואמים למסלול שנבחר.');
   if (result.mode !== pending.mode) throw new Error('סוג העסקה אינו תואם לפעולה שנבחרה.');
