@@ -34,17 +34,11 @@ const documentKey = value => {
 // A manager supplies only the series UUID. Never reconstruct a payment from a
 // name, price or screenshot: bind the provider phone to a server-owned checkout,
 // and require complete successful history, real document references and counts.
-export function prepareRecurringIdSync({ payload, userId, seriesId, details: detailsResult, history: historyResult, appUrl, now = new Date() }) {
+export function recurringSyncIdentity({ payload, userId, seriesId, details: detailsResult, appUrl, now = new Date() }) {
   if (!recurringId(seriesId)) reject('יש להזין מזהה הוראת קבע תקין, כפי שמופיע בלוג iCredit.');
   const details = providerData(detailsResult, 'RecurringSaleDetails');
-  // Approval of an active, owned series is independent of receipt availability.
-  // Never invent a receipt or treat a failed history request as a declined card.
-  const noCharges = Number(details?.ChargeCount) === 0;
-  let history;
-  try { history = providerData(historyResult, 'RecurringSaleHistory'); }
-  catch (error) { if (!noCharges) throw error; history = { RecurringSaleHistoryList: [] }; }
   const user = payload.users?.find(member => member.id === userId && member.role === 'TRAINEE');
-  if (!user || !details || !history) reject('לא נמצאו פרטי הוראה מלאים למתאמן שנבחר.');
+  if (!user || !details) reject('לא נמצאו פרטי הוראה מלאים למתאמן שנבחר.');
   let expectedIpn;
   try { expectedIpn = new URL('/api/payments/rivhit/webhook', appUrl).href; } catch { reject('כתובת המועדון אינה מוגדרת כראוי.'); }
   if (details.IpnUrl !== expectedIpn) reject('כתובת הדיווח בהוראת הקבע אינה שייכת למועדון. לא שונה דבר.');
@@ -79,9 +73,21 @@ export function prepareRecurringIdSync({ payload, userId, seriesId, details: det
   if (candidates.length !== 1) reject(candidates.length ? 'נמצאו כמה בקשות הקמה מתאימות. אין לשייך אוטומטית; יש לסנכרן לפי SaleId.' : 'לא נמצאה בקשת הקמה שמורה התואמת למתאמן ולתאריכי ההוראה. יש לסנכרן לפי SaleId או לפנות לתמיכה.');
   const checkout = candidates[0], snapshot = checkout.orderSnapshot;
   const amount = Number(details.Amount), count = Number(details.ChargeCount);
-  if (!(amount > 0) || !Number.isFinite(amount) || !Number.isInteger(count) || count < 0 || count > 12) reject('הסכום או מונה החיובים ברווחית אינם תקינים.');
+  if (!(amount > 0) || !Number.isFinite(amount) || details.ChargeCount === null || details.ChargeCount === ''
+    || typeof details.ChargeCount === 'boolean' || !Number.isInteger(count) || count < 0 || count > 12) reject('הסכום או מונה החיובים ברווחית אינם תקינים.');
   if (snapshot && (Number(snapshot.a) !== amount || snapshot.rc !== 1 || snapshot.m !== checkout.membershipType
     || ((snapshot.bu || snapshot.u) !== userId && !snapshot.gp?.some(line => line.memberId === userId)) || snapshot.re !== endsAt || snapshot.o !== checkout.orderId)) reject('תנאי הוראת הקבע שונים מהבקשה המקורית שנשמרה. לא שונה דבר.');
+  return { details, user, payer, checkout, snapshot, amount, count, endsAt, creation };
+}
+
+export function prepareRecurringIdSync(input) {
+  const { payload, userId, seriesId, history: historyResult, now = new Date() } = input;
+  const { details, user, payer, checkout, snapshot, amount, count, endsAt, creation } = recurringSyncIdentity(input);
+  // Setup approval is independent of receipt availability. Positive-charge
+  // history is always required and explicit unsuccessful records are reviewed.
+  let history;
+  try { history = providerData(historyResult, 'RecurringSaleHistory'); }
+  catch (error) { if (count !== 0) throw error; history = { RecurringSaleHistoryList: [] }; }
   const records = history.RecurringSaleHistoryList;
   if (!Array.isArray(records) || records.length > 100) reject('לא התקבלה היסטוריית חיובים מלאה מרווחית.');
   const sorted = records.map(record => ({ ...record, time: providerTime(record.Timestamp) }))
