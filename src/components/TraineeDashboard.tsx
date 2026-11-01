@@ -9,6 +9,7 @@ import { activePlanExpiry, emptyFamilyPurchase } from '../data/membershipRenewal
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
 import { uniquePayments } from '../../shared/payment-ledger.js';
 import { fitsSessionAge, isYouthSession, sessionAgeMax } from '../../shared/youth-session.js';
+import { canPurchasePlan } from '../../shared/youth-plan.js';
 import { membershipExpired } from '../../shared/membership-calendar.js';
 import { isCancelledOccurrence } from '../../shared/scheduled-occurrence.js';
 import { membershipTypesForAccess, recurringSessionBlocked } from '../../shared/recurring-access.js';
@@ -210,8 +211,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [selectedWorkoutDay, setSelectedWorkoutDay] = useState(1);
   const [demoExercise, setDemoExercise] = useState<Exercise | null>(null);
   const membershipPlanConfigs = (settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS).filter(plan => plan.active);
-  const primaryMembershipPlans = membershipPlanConfigs.filter(plan => plan.category === 'PRIMARY');
-  const membershipAddOns = membershipPlanConfigs.filter(plan => plan.category === 'ADD_ON');
+  const primaryMembershipPlans = membershipPlanConfigs.filter(plan => plan.category === 'PRIMARY' && canPurchasePlan(plan, activeUser));
+  const membershipAddOns = membershipPlanConfigs.filter(plan => plan.category === 'ADD_ON' && canPurchasePlan(plan, activeUser));
   const selectedMembershipConfig = membershipPlanConfigs.find(plan => plan.id === selectedMembershipPurchase);
   const selectedMembershipPrice = selectedMembershipConfig?.price ?? (selectedMembershipPurchase ? MEMBERSHIP_PRICES[selectedMembershipPurchase] : 0) ?? 0;
   const selectedMembershipUsesTrainingCard = isSelectableTrainingCard(selectedMembershipConfig)
@@ -788,6 +789,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const handleMembershipCheckout = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedMembershipPurchase) return;
+    if (!canPurchasePlan(selectedMembershipConfig || selectedMembershipPurchase, activeUser)) return showFeedback('מסלול נוער מיועד עד גיל 18 כולל. יש לבחור מסלול המתאים לגיל ולעדכן תאריך לידה במידת הצורך.', 'error');
     const existingExpiry = activePlanExpiry(activeUser, selectedMembershipPurchase);
     if (existingExpiry && !window.confirm(`המנוי שלך בתוקף עד ${existingExpiry}. האם תרצה להמשיך בתשלום?\nלפני החיוב יוצגו תנאי החידוש והסכום. לא יבוצע חיוב ללא אישורך.`)) return;
     if (!isRivhitConfigured()) {
@@ -821,6 +823,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     if (familyEditing) return showFeedback('יש לאשר את בחירת בן המשפחה לפני מעבר לתשלום.', 'error');
     const selected = resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id);
     const includedPlans = selected.filter(plan => !plan.participation || plan.participation === 'INCLUDED');
+    if (includedPlans.some(plan => [plan, ...(plan.additionalPlans || [])].some(selection => !canPurchasePlan(membershipPlanConfigs.find(config => config.id === selection.membershipType) || selection.membershipType, familyUsers.find(member => member.id === plan.memberId))))) return showFeedback('נבחר מסלול נוער שאינו מתאים לגיל של אחד מבני המשפחה. יש לעדכן את הבחירה או את תאריך הלידה.', 'error');
     if (includedPlans.some(plan => !membershipPlanConfigs.some(config => config.id === plan.membershipType && config.active))) return showFeedback('יש להשלים בחירת מסלול פעיל לכל בן משפחה שכלול בתשלום.', 'error');
     if (!selected.some(plan => !plan.participation || plan.participation === 'INCLUDED')) return showFeedback('יש לבחור לפחות בן משפחה אחד לתשלום. אין צורך לשלם עבור מי שטרם מתחיל.', 'error');
     if (selected.some(plan => (!plan.participation || plan.participation === 'INCLUDED') && familyUsers.some(member => member.id === plan.memberId && isMembershipFreezeActive(member)))) return showFeedback('מנוי מוקפא אינו נכלל בתשלום. בחרו עבורו ללא חיוב.', 'error');

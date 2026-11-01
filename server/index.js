@@ -19,6 +19,7 @@ import { familySelectedPlans, familyPurchaseBenefits } from '../shared/family-mu
 import { splitPersonName, hasFullPersonName } from '../shared/person-name.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
+import { invalidYouthPurchase } from '../shared/youth-plan.js';
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../shared/club-check-in.js';
 import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoachArrival, recordCoachExceptionScan, redeemCoachArrivalApproval, coachArrivalResult } from '../shared/coach-exception-arrival.js';
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
@@ -1118,6 +1119,10 @@ const handleFamilySplit = async (request, env, action) => {
     return json(publicFamilySplit(batch), 200, corsHeaders(request, env));
   }
   if (action !== 'create') return json({ message: 'פעולה לא מוכרת.' }, 400, corsHeaders(request, env));
+  const ageState = await env.STATE_STORE.getClubState(clubId);
+  if (invalidYouthPurchase(ageState.payload, { membershipType: line.membershipType }, { ...line, beneficiaryId: line.memberId })) {
+    return json({ code: 'YOUTH_PLAN_AGE_MISMATCH', message: 'מסלול נוער אינו מתאים לגיל של בן המשפחה. יש לעדכן את הבחירה לפני התשלום. לא נפתח חיוב.' }, 422, corsHeaders(request, env));
+  }
   if (batch.items.some(item => item.recurring) && String(env.RIVHIT_ENABLE_FAMILY_SPLIT_RECURRING).toLowerCase() !== 'true') return json({ code: 'FAMILY_SPLIT_DISABLED', message: 'תשלום משפחתי מפוצל אינו פעיל. לא נפתח דף סליקה חדש.' }, 503, corsHeaders(request, env));
   if (['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(line.status)) return json({ message: 'המסלול כבר טופל. לא נפתח חיוב נוסף.' }, 409, corsHeaders(request, env));
   if (line.checkout) {
@@ -1262,6 +1267,10 @@ const handleCreatePayment = async (request, env, splitLine) => {
     if (!identity || identity.user_id !== body.userId) {
       return json({ message: 'לא ניתן ליצור תשלום עבור משתמש אחר.' }, 403, corsHeaders(request, env));
     }
+  }
+  const ageState = env.STATE_STORE?.getClubState ? await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness') : null;
+  if (invalidYouthPurchase(ageState?.payload, body, splitLine)) {
+    return json({ code: 'YOUTH_PLAN_AGE_MISMATCH', message: 'מסלול נוער מיועד עד גיל 18 כולל. יש לעדכן תאריך לידה תקין ולבחור מסלול המתאים לגיל של המתאמן. לא נפתחה בקשת תשלום.' }, 422, corsHeaders(request, env));
   }
   if (!splitLine && body.membershipType === 'FAMILY_MEMBERSHIP' && body.mode === 'PRIMARY' && body.quoteOnly && env.STATE_STORE?.getFamilySplitCheckout) {
     const previous = (await env.STATE_STORE.getFamilySplitCheckout(env.CLUB_ID || 'baly-wellness', body.userId)).payload;
