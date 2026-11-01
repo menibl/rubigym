@@ -8,6 +8,7 @@ import { recurringPlan, recurringSchedule, recurringReceipt, recurringEvent, fam
 import { applyRecurringMembershipEvent, rivhitChargeDate } from '../shared/recurring-membership-events.js';
 import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
 import { discoverTodayRecurring, publicRecovery } from './bulk-recurring-recovery.js';
+import { checkStuckCheckout, releaseStuckCheckout } from './stuck-checkout-release.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, updateRecurringCheckout, releaseUndispatchedRecurringCheckout } from './recurring-checkout.js';
 import { familySplitLines, groupFamilyRecurringLines, publicFamilySplit, changeFamilySplit } from './family-split.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
@@ -23,6 +24,7 @@ import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoa
 import { unpaidRegistration, completedLegacyRegistration } from '../shared/registration-status.js';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 const deletionAttempts = new Map();
+const checkoutReleaseAttempts = new Map();
 import {
   createPhoneVerificationToken,
   normalizeIsraeliMobile,
@@ -2356,6 +2358,44 @@ const handleApi = async (request, env, url) => {
         }
       });
       return json(result, 200, headers);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/stuck-checkout-release') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל בלבד.' }, 403, headers);
+      if (identity.session.club_id !== (env.CLUB_ID || 'baly-wellness') || (origin && origin !== url.origin)) return json({ message: 'יש לבצע את הפעולה מאתר המועדון המתאים.' }, 403, headers);
+      requirePaymentEnv(env);
+      const body = await request.json();
+      if (!['preview', 'confirm'].includes(body.action) || typeof body.userId !== 'string' || typeof body.orderId !== 'string') return json({ message: 'יש לבחור בקשה ולבצע בדיקה מקדימה.' }, 400, headers);
+      const now = Date.now(), checkedAt = body.action === 'preview' ? now : Number(body.checkedAt);
+      if (!Number.isFinite(checkedAt) || checkedAt > now || now - checkedAt > 5 * 60_000) return json({ message: 'הבדיקה פגה. יש לבדוק מחדש.' }, 409, headers);
+      const reason = String(body.reason || '').trim().slice(0, 300), providerReference = String(body.providerReference || '').trim().slice(0, 200);
+      if (body.action === 'confirm') {
+        if (body.oldPageUnusable !== true || body.noChargeOrInstruction !== true || reason.length < 10 || providerReference.length < 10
+          || typeof body.password !== 'string' || !body.password || body.password.length > 1024) return json({ message: 'נדרשים סיסמת מנהל, סיבה, אסמכתת בירור מול רווחית ואישור מפורש שאין חיוב או הוראה ושדף ישן אינו שמיש.' }, 400, headers);
+        const attemptKey = `${identity.session.club_id}:${identity.session.user_id}`;
+        for (const [key, value] of checkoutReleaseAttempts) if (value.until <= now) checkoutReleaseAttempts.delete(key);
+        const attempt = checkoutReleaseAttempts.get(attemptKey) || { count: 0, until: now + 15 * 60_000 };
+        if (attempt.count >= 5) return json({ message: 'יותר מדי ניסיונות. יש להמתין 15 דקות.' }, 429, headers);
+        attempt.count++; checkoutReleaseAttempts.set(attemptKey, attempt);
+        if (!await verifyPassword(body.password, identity.account.password_hash)) return json({ message: 'סיסמת המנהל אינה נכונה.' }, 403, headers);
+      }
+      try {
+        const state = await loadClubState(identity.session.club_id);
+        const providerFetch = typeof env.RIVHIT_FETCH === 'function' ? env.RIVHIT_FETCH : fetch;
+        const boundedEnv = { ...env, RIVHIT_FETCH: (target, options) => providerFetch(target, { ...options, signal: AbortSignal.timeout(10_000) }) };
+        const context = await checkStuckCheckout({ payload: state.payload, userId: body.userId, orderId: body.orderId,
+          groupToken: env.RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN, post: (path, data) => rivhitPost(path, data, boundedEnv) });
+        const confirmationKey = await sign(JSON.stringify({ clubId: identity.session.club_id, managerId: identity.session.user_id,
+          userId: body.userId, orderId: body.orderId, checkedAt, fingerprint: context.fingerprint }), env.PAYMENT_SIGNING_SECRET);
+        if (body.action === 'preview') return json({ ok: true, confirmationKey, checkedAt, message: 'לא נמצאה הוראה פעילה בטלפונים שנבדקו. זו אינה הוכחה שהדף הישן אינו שמיש. נדרש אישור בירור מול רווחית לפני שחרור.' }, 200, headers);
+        if (confirmationKey !== body.confirmationKey) return json({ message: 'הבקשה השתנתה. יש לבדוק מחדש; לא שוחררה בקשה.' }, 409, headers);
+        await releaseStuckCheckout(env.STATE_STORE, identity.session.club_id, body.userId, body.orderId,
+          { managerId: identity.session.user_id, reason, providerReference, releasedAt: new Date().toISOString() }, context.fingerprint);
+        checkoutReleaseAttempts.delete(`${identity.session.club_id}:${identity.session.user_id}`);
+        return json({ ok: true, message: 'הבקשה שוחררה לפי אישור המנהל והאסמכתה. המתאמן יכול לבחור מסלול ולפתוח בקשה חדשה. לא בוצע חיוב ולא נמחקה היסטוריה.' }, 200, headers);
+      } catch {
+        return json({ message: 'לא ניתן לשחרר בבטחה: קיימת הוראה או תשלום, חסרים נתונים, הבקשה משפחתית מפוצלת או בדיקת רווחית לא הושלמה. לא שונה דבר; נדרש בירור פרטני.' }, 409, headers);
+      }
     }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/recurring-checkouts') {
       const identity = await getIdentity();

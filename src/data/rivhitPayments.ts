@@ -335,6 +335,21 @@ export const syncRivhitRecurringId = async (userId: string, recurringSaleId: str
   return result;
 };
 
+export interface StuckReleaseInput {
+  action: 'preview' | 'confirm'; userId: string; orderId: string; checkedAt?: number; confirmationKey?: string;
+  password?: string; reason?: string; providerReference?: string; oldPageUnusable?: boolean; noChargeOrInstruction?: boolean;
+}
+export const releaseStuckRecurringCheckout = async (input: StuckReleaseInput): Promise<{ message: string; checkedAt: number; confirmationKey: string }> => {
+  const apiBase = paymentApiBase();
+  if (!apiBase) throw new Error('שירות התשלום אינו זמין.');
+  const response = await fetch(`${apiBase}/api/payments/rivhit/admin/stuck-checkout-release`, {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input)
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) throw new Error(result.message || 'הבקשה לא שוחררה; יש לבצע בירור מול רווחית.');
+  return result;
+};
+
 export interface FamilyCreditRecoveryResult {
   diagnostic?: { code: string; stage: string };
   ok: boolean;

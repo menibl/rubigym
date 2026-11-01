@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { adminRecurringCheckout, type RecurringCheckoutItem } from '../data/rivhitPayments';
+import { AdminStuckCheckoutRelease } from './AdminStuckCheckoutRelease';
 
 export function AdminRecurringRequests({ userId }: { userId: string }) {
   const [items, setItems] = useState<RecurringCheckoutItem[] | null>(null);
@@ -33,6 +34,7 @@ export function AdminRecurringRequests({ userId }: { userId: string }) {
       <p>{item.stage === 'RESERVED' ? 'בהכנה — טרם נשלחה לרווחית' : item.stage === 'PAGE_AVAILABLE' ? 'דף תשלום קיים שמור להמשך' : 'נשלחה או בקשה ישנה — נדרשת בדיקה, אין לשחרר לפי זמן בלבד'}</p>
       <button type="button" disabled={busy} onClick={() => void run('inspect', item)} className="mt-2 min-h-11 w-full rounded-lg border border-amber-400 p-2 text-amber-100">בדיקה וסנכרון מול רווחית — ללא חיוב</button>
       {item.canRelease && <button type="button" disabled={busy} onClick={() => void run('release', item)} className="mt-2 min-h-11 w-full rounded-lg border border-rose-400 p-2 text-rose-100">שחרור בקשה שלא נשלחה</button>}
+      {!item.canRelease && <AdminStuckCheckoutRelease userId={userId} orderId={item.orderId} onReleased={() => void run('list')} />}
     </section>)}
     {message && <p role="status" className="mt-3 rounded-lg border border-amber-500 bg-slate-950 p-3 text-amber-100">{message}</p>}
   </details>;
