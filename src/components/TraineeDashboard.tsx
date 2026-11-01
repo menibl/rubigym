@@ -178,6 +178,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     try { return JSON.parse(sessionStorage.getItem('baly_family_purchase_draft_v1') || 'null'); } catch { return null; }
   })();
   const [familyPurchaseName, setFamilyPurchaseName] = useState(familyDraft?.familyName || activeUser.familyName || `משפחת ${activeUser.name.split(' ')[0]}`);
+  const [familyPaymentGrouping, setFamilyPaymentGrouping] = useState<'COMBINED' | 'SEPARATE'>('COMBINED');
   const [familyPurchaseCount, setFamilyPurchaseCount] = useState<number>(Math.max(2, users.filter(user => activeUser.familyId && user.familyId === activeUser.familyId).length));
   const [familyBillingMode, setFamilyBillingMode] = useState<FamilyBillingMode>('CUSTOM_COMBINED');
   const familyUsers = useMemo(() => [activeUser, ...users.filter(user => user.id !== activeUser.id && activeUser.familyId && user.familyId === activeUser.familyId)], [activeUser, users]);
@@ -828,6 +829,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         familyMembersCount: familyPurchaseCount,
         familyName: familyPurchaseName.trim(),
         familyBillingMode,
+        familyPaymentGrouping,
         familyMemberPlans: familyBillingMode === 'CUSTOM_COMBINED' ? resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id) : undefined,
         discountCode: appliedDiscount?.code
       });
@@ -2418,6 +2420,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   </div>
                   <label className="block text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
                   <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} />
+                  <fieldset className="rounded-xl border border-slate-600 p-3 space-y-2 text-sm">
+                    <legend className="px-2 font-bold">אופן התשלום — ראש המשפחה משלם</legend>
+                    <label className="flex items-start gap-2"><input type="radio" name="family-payment-grouping" checked={familyPaymentGrouping === 'COMBINED'} onChange={() => setFamilyPaymentGrouping('COMBINED')} />חיוב מאוחד להוראות חדשות באותה תקופה ובאותם תנאי חיוב</label>
+                    <label className="flex items-start gap-2"><input type="radio" name="family-payment-grouping" checked={familyPaymentGrouping === 'SEPARATE'} onChange={() => setFamilyPaymentGrouping('SEPARATE')} />תשלום נפרד לכל בן משפחה / מסלול</label>
+                    <p className="text-xs">בן משפחה שמתווסף בהמשך או תקופות שונות מחויבים בנפרד. הוראות קיימות אינן מוחלפות או מחויבות שוב. במסלולים חד־פעמיים לא תיווצר הוראת קבע.</p>
+                    <p className="text-xs">בהוראה מאוחדת, הקפאה או הוצאת בן משפחה מחייבת פנייה למנהל להתאמת החיוב ברווחית. הקפאה באפליקציה אינה מפחיתה את החיוב אוטומטית.</p>
+                  </fieldset>
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id), membershipPlanConfigs)).toLocaleString('he-IL')}</strong></div>

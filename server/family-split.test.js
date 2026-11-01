@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './index.js';
-import { familySplitLines } from './family-split.js';
+import { familySplitLines, groupFamilyRecurringLines } from './family-split.js';
 
 const catalog = [
   { id: 'GROUP_ANNUAL', label: 'שנתי', price: 500, active: true, category: 'PRIMARY', billingPeriod: 'MONTHLY_ANNUAL_COMMITMENT', paymentMode: 'RECURRING' },
@@ -23,17 +23,130 @@ test('percentage and fixed family discounts are frozen per line without multiply
   assert.throws(() => familySplitLines(members, catalog, [], { discountPercent: 100 }, true), /SPLIT_ZERO_AMOUNT/);
 });
 
-function fixture() {
+test('only new matching recurring periods group; one-off, different terms and existing series stay separate', () => {
+  const lines = ['a', 'b', 'c', 'd', 'e'].map(id => ({ id, memberId: id, memberName: id, membershipType: 'OPEN_GYM', amount: 100,
+    baseAmount: 100, discountAmount: 0, recurring: true, status: 'READY', startsAt: '01-11-2026', endsAt: '2027-11-01', recurringMonths: 12 }));
+  lines[2].endsAt = '2027-12-01'; lines[3].recurring = false; lines[4].status = 'EXISTING_RECURRING';
+  const grouped = groupFamilyRecurringLines(lines);
+  assert.equal(grouped.length, 4); assert.equal(grouped[0].amount, 200); assert.equal(grouped[0].groupLines.length, 2);
+  assert.equal(groupFamilyRecurringLines(lines, 'SEPARATE').length, 5);
+});
+
+test('one family page creates one fixed discounted series, grants both members, and records one aggregate receipt', async () => {
+  const f = fixture(true); const quote = await (await f.quote()).json();
+  assert.equal(quote.items.length, 1); assert.equal(quote.items[0].amount, 702);
+  assert.deepEqual(quote.items[0].groupLines.map(line => line.amount), [252, 450]);
+  const request = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+  const responses = await Promise.all([f.post('family-split/create', request), f.post('family-split/create', request)]);
+  assert.ok(responses.some(response => response.status === 200));
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.equal(f.calls.find(call => call.url.endsWith('/GetUrl')).body.Items[0].UnitPrice, 702);
+  assert.equal((await f.post('family-split/verify', request)).status, 200);
+  assert.equal(f.state().payload.payments.length, 0);
+  const [payer, child] = f.state().payload.users;
+  assert.equal(payer.recurringMemberships.OPEN_GYM.amount, 252);
+  assert.equal(child.recurringMemberships.GROUP_ANNUAL.amount, 450);
+  assert.equal(child.recurringMemberships.GROUP_ANNUAL.groupAmount, 702);
+  assert.equal(child.recurringMemberships.GROUP_ANNUAL.status, 'PENDING_FIRST_CHARGE');
+  const sale = f.signed.get('sale-1'); Object.assign(sale, { RecurringSaleChargeNumber: 1, TransactionParamJ: 0 });
+  assert.equal((await f.post('webhook', sale)).status, 200);
+  assert.equal((await f.post('webhook', sale)).status, 200);
+  assert.equal(f.state().payload.payments.length, 1);
+  assert.equal(f.state().payload.payments[0].amount, 702);
+  assert.equal(f.state().payload.payments[0].traineeId, 'payer');
+  assert.equal(f.state().payload.payments[0].familyMemberPlans.length, 2);
+  assert.equal(f.state().payload.users[1].recurringMemberships.GROUP_ANNUAL.status, 'ACTIVE');
+  // Failure affects this shared instruction, not an unrelated paid nutrition plan.
+  f.state().payload.users[1].secondaryMemberships = ['NUTRITION_PLAN'];
+  Object.assign(sale, { SaleId: 'decline', CustomerTransactionId: 'decline', RecurringSaleChargeNumber: 2, TransactionStatus: 4 });
+  f.signed.set('decline', sale);
+  assert.equal((await f.post('webhook', sale)).status, 200);
+  for (const user of f.state().payload.users) assert.equal(Object.values(user.recurringMemberships)[0].status, 'PAYMENT_FAILED');
+  assert.equal(f.state().payload.users[1].membershipStatus, 'ACTIVE');
+  assert.equal(f.state().payload.payments.length, 1);
+});
+
+test('payer can select independent payments and cannot combine/change an already dispatched quote', async () => {
+  const f = fixture(true); let quote = await (await f.quote({ familyPaymentGrouping: 'SEPARATE' })).json();
+  assert.equal(quote.items.length, 2);
+  quote = await (await f.quote({ familyPaymentGrouping: 'COMBINED' })).json(); assert.equal(quote.items.length, 1);
+  const request = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+  await f.post('family-split/create', request);
+  const retry = await (await f.quote({ familyPaymentGrouping: 'SEPARATE' })).json();
+  assert.equal(retry.batchId, quote.batchId); assert.equal(retry.items.length, 1);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+});
+
+test('separate one-off family payments do not require a recurring merchant page or recurring activation', async () => {
+  const f = fixture(); f.state().payload.settings.membershipPlans[0].paymentMode = 'ONE_TIME';
+  f.env.RIVHIT_ENABLE_RECURRING = 'false'; f.env.RIVHIT_ENABLE_FAMILY_SPLIT_RECURRING = 'false'; f.env.RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN = '';
+  const response = await f.quote({ familyPaymentGrouping: 'SEPARATE' }); assert.equal(response.status, 200);
+  const quote = await response.json(); assert.equal(quote.items.length, 2); assert.ok(quote.items.every(item => !item.recurring));
+  const input = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+  assert.equal((await f.post('family-split/create', input)).status, 200);
+  assert.equal(f.calls[0].body.GroupPrivateToken, 'fixture-manual');
+  assert.equal(f.calls[0].body.CreateRecurringSale, false);
+});
+
+test('a non-lead unlinked/frozen/already-paid member blocks the entire group before provider dispatch', async () => {
+  for (const mutate of [f => { f.state().payload.users[1].familyPayerId = 'other'; },
+    f => { f.state().payload.users[1].isMembershipFrozen = true; },
+    f => { f.state().payload.payments.push({ traineeId: 'child', membershipTypePurchased: 'GROUP_ANNUAL', status: 'PAID', amount: 500, timestamp: new Date().toISOString() }); }]) {
+    const f = fixture(true); const quote = await (await f.quote()).json(); mutate(f);
+    const response = await f.post('family-split/create', { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true, amount: 1 });
+    assert.ok([403, 409].includes(response.status)); assert.equal(f.calls.length, 0);
+  }
+});
+
+test('adding a family member never replaces or recharges an existing shared instruction', async () => {
+  const f = fixture(true); const quote = await (await f.quote()).json();
+  const request = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+  await f.post('family-split/create', request); await f.post('family-split/verify', request);
+  f.state().payload.users.push({ id: 'new', name: 'New', role: 'TRAINEE', familyId: 'fam', familyPayerId: 'payer' });
+  const added = { memberId: 'new', memberName: 'New', membershipType: 'GROUP_ANNUAL', participation: 'INCLUDED' };
+  const next = await (await f.quote({ familyMembersCount: 3, familyMemberPlans: [...members, added], discountCode: undefined })).json();
+  assert.equal(next.items.filter(item => item.status === 'EXISTING_RECURRING').length, 2);
+  const due = next.items.find(item => item.status === 'READY'); assert.equal(due.memberId, 'new'); assert.equal(due.amount, 500); assert.equal(due.groupLines, undefined);
+  assert.equal((await f.post('family-split/create', { batchId: next.batchId, itemId: due.id, acknowledged: true })).status, 200);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 2);
+});
+
+test('manager must explicitly confirm shared cancellation; all linked entitlements end together', async () => {
+  const f = fixture(true); const quote = await (await f.quote()).json();
+  const input = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+  await f.post('family-split/create', input);
+  const sale = f.signed.get('sale-1'); Object.assign(sale, { RecurringSaleChargeNumber: 1, TransactionParamJ: 0 });
+  await f.post('webhook', sale); f.asManager();
+  const paymentId = f.state().payload.payments[0].id;
+  let cancellations = 0; const providerFetch = f.env.RIVHIT_FETCH;
+  f.env.RIVHIT_FETCH = async (url, options) => {
+    if (url.endsWith('/RecurringSaleCancel')) { cancellations++; return Response.json({ Status: 0 }); }
+    return providerFetch(url, options);
+  };
+  assert.equal((await f.post('admin/cancel-recurring', { paymentId, reason: 'fixture cancellation' })).status, 409);
+  assert.equal(cancellations, 0);
+  assert.equal((await f.post('admin/cancel-recurring', { paymentId, reason: 'fixture cancellation', confirmFamilySeries: true })).status, 200);
+  assert.equal(cancellations, 1);
+  for (const user of f.state().payload.users) assert.ok(Object.values(user.recurringMemberships)[0].cancelledAt);
+  assert.ok(f.state().payload.recurringCheckouts[0].cancelledAt);
+});
+
+function fixture(bothRecurring = false) {
+  const configuredCatalog = structuredClone(catalog);
+  if (bothRecurring) configuredCatalog[1].paymentMode = 'RECURRING';
   let state = { revision: 1, payload: { users: [
     { id: 'payer', name: 'Payer Example', role: 'TRAINEE', familyId: 'fam', isFamilyPayer: true, membershipType: 'OPEN_GYM', membershipStatus: 'DEBT' },
     { id: 'child', name: 'Child Example', role: 'TRAINEE', familyId: 'fam', familyPayerId: 'payer', membershipType: 'GROUP_ANNUAL', membershipStatus: 'DEBT' }
-  ], settings: { membershipPlans: catalog }, payments: [], discountCodes: [{ id: 'coupon', code: 'SAVE10', discountPercent: 10, isSingleUse: true }], messages: [] } };
+  ], settings: { membershipPlans: configuredCatalog }, payments: [], discountCodes: [{ id: 'coupon', code: 'SAVE10', discountPercent: 10, isSingleUse: true }], messages: [] } };
   let journal = { revision: 0, payload: null }, signed = new Map(), calls = [], count = 0;
-  let authenticatedUser = 'payer';
+  let authenticatedUser = 'payer', authenticatedRole = 'TRAINEE';
+  const continuations = new Map();
   const clone = obj => structuredClone(obj);
   const store = {
+    async getRecurringContinuation(_club, order) { return continuations.get(order) || null; },
+    async saveRecurringContinuation(_club, order, user, encrypted) { continuations.set(order, { user_id: user, encrypted_checkout: encrypted }); },
     async getSession() { return { club_id: 'test', user_id: authenticatedUser }; },
-    async getAccount() { return { user_id: authenticatedUser, role: 'TRAINEE' }; },
+    async getAccount() { return { user_id: authenticatedUser, role: authenticatedRole }; },
     async getClubState() { return clone(state); },
     async putClubState(_club, payload, revision) {
       if (state.revision !== revision) return { conflict: true };
@@ -66,10 +179,10 @@ function fixture() {
   const post = (path, body) => worker.fetch(new Request(`https://club.test/api/payments/rivhit/${path}`, {
     method: 'POST', headers: { Cookie: 'baly_session=fixture', 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }), env);
-  const quote = () => post('create', { userId: 'payer', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyBillingMode: 'CUSTOM_COMBINED',
-    familyMembersCount: 2, familyMemberPlans: members, discountCode: 'SAVE10', quoteOnly: true });
+  const quote = (patch = {}) => post('create', { userId: 'payer', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyBillingMode: 'CUSTOM_COMBINED',
+    familyMembersCount: 2, familyMemberPlans: members, discountCode: 'SAVE10', quoteOnly: true, ...patch });
   return { env, quote, post, state: () => state, journal: () => journal, calls, signed,
-    authenticate: user => { authenticatedUser = user; } };
+    authenticate: user => { authenticatedUser = user; }, asManager: () => { authenticatedRole = 'MANAGER'; } };
 }
 
 test('mixed family checkout uses different pages, grants the beneficiary once, and resumes without duplicate dispatch', async () => {

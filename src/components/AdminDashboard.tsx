@@ -7,6 +7,8 @@ import React, { useState } from 'react';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
 import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
 import { AdminRecurringSync } from './AdminRecurringSync';
+import { AdminRecurringRequests } from './AdminRecurringRequests';
+import { RecurringFinanceStatus } from './RecurringFinanceStatus';
 import { AdminPaymentReminderEditor } from './AdminPaymentReminderEditor';
 import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
@@ -795,7 +797,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!window.confirm(action === 'REFUND'
       ? `לבצע החזר מלא של ₪${payment.amount} ברווחית? פעולה זו אינה הפיכה.`
       : action === 'CANCEL_RECURRING'
-        ? 'לבטל את הוראת הקבע ברווחית?'
+        ? (payment.familyMemberPlans?.length || 0) > 1 ? 'זו הוראת קבע משפחתית מאוחדת. ביטולה יבטל את כל המסלולים הכלולים בה לכל בני המשפחה. לבטל את ההוראה כולה ברווחית?' : 'לבטל את הוראת הקבע ברווחית?'
         : `לעדכן את החיוב המחזורי ל־₪${billingAmount}?`)) return;
     setBillingPending(true);
     setBillingError('');
@@ -804,7 +806,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const updated = action === 'REFUND'
         ? await refundRivhitPayment(payment.id, billingReason)
         : action === 'CANCEL_RECURRING'
-          ? await cancelRivhitRecurring(payment.id, billingReason)
+          ? await cancelRivhitRecurring(payment.id, billingReason, (payment.familyMemberPlans?.length || 0) > 1)
           : await updateRivhitRecurringAmount(payment.id, Number(billingAmount), billingReason);
       applyProviderPayment(updated);
       setBillingNotice(action === 'REFUND' ? 'ההחזר אושר ברווחית ונרשם במערכת.' : action === 'CANCEL_RECURRING' ? 'הוראת הקבע בוטלה ברווחית.' : 'סכום החיוב המחזורי עודכן ברווחית.');
@@ -1511,6 +1513,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <details className="w-full rounded-xl border p-3 text-right"><summary className="cursor-pointer font-bold">פעולות מסלול, תשלום ומחיקה</summary><div className="mt-3 flex flex-col gap-2">
                             <DeleteUserControl user={u} users={users} manager={activeUser} />
                             <AdminRecurringSync userId={u.id} />
+                            <AdminRecurringRequests userId={u.id} />
                             {u.membershipFreezeRequestedAt && <div className="w-full rounded-lg border p-2 text-sm">
                               <p>בקשת הקפאה לחודש — {new Date(u.membershipFreezeRequestedAt).toLocaleDateString('he-IL')}</p>
                               <button disabled={!canUseAnnualFreeze(u)} className="rounded border px-2 py-1" onClick={() => {
@@ -1806,6 +1809,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div>
+              <RecurringFinanceStatus users={users} />
               <h3 className="text-sm font-semibold text-slate-800 mb-3">יומן עסקאות ותשלומים</h3>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-right text-xs">
