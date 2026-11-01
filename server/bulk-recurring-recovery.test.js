@@ -16,7 +16,7 @@ function fixture(now = new Date('2026-11-01T10:00:00Z')) {
     recurringCheckouts: [{ orderId: 'order', userId: 'u', membershipType: 'GROUP_ANNUAL', endsAt, dispatchedAt: now.toISOString(), orderSnapshot: order }] };
   const details = { Amount: 5, PhoneNumber: '972541234567', AutoCharge: true, IsActive: true, Currency: 1, ProRata: false,
     RecurringCycle: 3, RecurringDay: 1, RecurringStep: 1, RecurringSaleCount: 12, ChargeCount: 0,
-    CreationDate: now.toISOString(), EndDate: `${endsAt}T00:00:00Z`, ChargeDate: now.toISOString(), IpnUrl: 'https://club.test/api/payments/rivhit/webhook',
+    CreationDate: now.toISOString(), EndDate: new Date(Date.UTC(Number(endsAt.slice(0, 4)), Number(endsAt.slice(5, 7)) - 2, 1)).toISOString(), ChargeDate: now.toISOString(), IpnUrl: 'https://club.test/api/payments/rivhit/webhook',
     Token: 'fixture-sensitive-provider-field' };
   let list = { RecurringSales: [{ RecurringSaleId: series, IsActive: true }] }, history = { error_code: 0, RecurringSaleHistoryList: [] };
   const calls = [];
