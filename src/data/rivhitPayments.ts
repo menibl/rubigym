@@ -22,6 +22,7 @@ export interface PendingRivhitPayment {
 }
 
 interface CreatePaymentRequest {
+  individualSelections?: { membershipType: MembershipType; trainingSessionsCount?: number }[];
   familyPaymentGrouping?: 'COMBINED' | 'SEPARATE';
   userId: string;
   userName: string;
@@ -94,10 +95,10 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   if (!apiBase) throw new Error('שירות התשלום עדיין לא הוגדר בשרת.');
   let quoteKey: string | undefined;
   let upgradeQuoteKey: string | undefined;
-  if (request.membershipType === 'FAMILY_MEMBERSHIP' && request.mode === 'PRIMARY') {
+  if ((request.membershipType === 'FAMILY_MEMBERSHIP' || request.individualSelections?.length) && request.mode === 'PRIMARY') {
     const quoteResponse = await fetch(`${apiBase}/api/payments/rivhit/create`, {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...request, registrationDraft: undefined, quoteOnly: true })
+      body: JSON.stringify({ ...request, registrationDraft: undefined, quoteOnly: true, unifiedCheckout: true })
     });
     const quote = await quoteResponse.json().catch(() => ({}));
     if (quoteResponse.ok && quote.split && quote.batchId) {
@@ -200,7 +201,7 @@ export const continueFamilySplitPayment = async (batchId: string, userId: string
   const batch = await familySplitAction('status', batchId);
   if (batch.completed) {
     clearPendingRivhitPayment();
-    window.alert('בקשות התשלום המשפחתי הושלמו. הוראות קבע שהקמתן אושרה ברווחית מאפשרות גישה בהמתנה לחיוב הראשון; אישור הקמה אינו קבלה על תשלום. כשל חיוב מאומת ישהה רק את המסלול הרלוונטי.');
+    window.alert('בקשות התשלום הושלמו. הוראות קבע שהקמתן אושרה ברווחית מאפשרות גישה בהמתנה לחיוב הראשון; אישור הקמה אינו קבלה על תשלום. כשל חיוב מאומת ישהה רק את המסלול הרלוונטי.');
     window.location.reload();
     return;
   }
@@ -209,7 +210,7 @@ export const continueFamilySplitPayment = async (batchId: string, userId: string
   if (!next) throw new Error('לא נמצא מסלול להשלמת התשלום.');
   const summary = items.map(item => ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status)
     ? `${item.memberName} — ${item.label}: כבר טופל, ללא חיוב נוסף כעת`
-    : `${item.memberName} — ${item.label}: ₪${item.amount} ${item.recurring ? 'לכל חודש, 12 חיובים; המחיר לאחר ההנחה קבוע לכל הסדרה' : 'חד־פעמי'}${item.groupLines ? '\n' + item.groupLines.map(line => `  ${line.memberName} — ${line.label}: ₪${line.amount} לחודש`).join('\n') : ''}`).join('\n');
+    : `${item.memberName} — ${item.label}: ₪${item.amount} ${item.recurring ? 'לכל חודש, 12 חיובים; המחיר לאחר ההנחה קבוע לכל הסדרה' : 'חד־פעמי'}${item.groupLines ? '\n' + item.groupLines.map(line => `  ${line.memberName} — ${line.label}: ₪${line.amount}${item.recurring ? ' לחודש' : ' חד־פעמי'}`).join('\n') : ''}`).join('\n');
   if (!window.confirm(`${batch.message}\n\n${summary}\n\nלהמשיך למסלול של ${next.memberName}: ${next.label}, ₪${next.amount}?`)) {
     // Only an entirely undispatched quote can be discarded. Already created
     // orders remain resumable; cancellation here never cancels Rivhit contracts.

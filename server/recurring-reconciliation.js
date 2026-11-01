@@ -32,7 +32,7 @@ export async function reconcileRecurringDaily(store, env, inspect, now = new Dat
         // Never log provider bodies, personal details or continuation tokens.
         console.warn('RIVHIT daily reconciliation deferred', {
           operation: error?.diagnostic?.operation || 'RecurringVerification',
-          code: /^[A-Z_]{3,80}$/.test(error?.code || '') ? error.code : 'REVIEW_REQUIRED'
+          code: /^[A-Z_]{3,80}$/.test(error?.code || error?.message || '') ? (error.code || error.message) : 'REVIEW_REQUIRED'
         });
       }
     }

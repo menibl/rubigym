@@ -165,7 +165,7 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
       {recurringSelections.length > 0 ? <div role="alert" className="rounded-xl border-2 border-amber-500 bg-slate-950 p-4 text-base font-bold text-amber-100">
         <p>החבילה כוללת הוראת קבע — לא תשלום חד־פעמי.</p>
         <ul className="mt-2 list-inside list-disc">{recurringSelections.map((selection, index) => <li key={index}>{selection.memberName}: {selection.plan.label} — ₪{selection.plan.price} בכל חודש, 12 חיובים.</li>)}</ul>
-        <p className="mt-2">התשלום יפוצל לדפי סליקה נפרדים לכל בן משפחה ומסלול: הוראת קבע למסלול מתחדש ותשלום חד־פעמי למסלול ידני. לפני כל מעבר יוצג סכום לאחר ההנחה. ההנחה של הוראת הקבע נשמרת לכל 12 החיובים. מסלול שכבר שולם או שיש לו הוראת קבע קיימת לא יחויב שוב; בסיום כל שלב ניתן להמשיך למסלול הבא. שינוי הבחירה אינו מבטל הוראת קבע קיימת.</p>
+          <p className="mt-2">בבחירה בחיוב מאוחד, הוראות קבע חדשות לאותה תקופה ותנאי חיוב ישולמו יחד, ואחריהן התוספות החד־פעמיות בתשלום אחד נפרד. לפני כל מעבר יוצג סכום לאחר ההנחה. ההנחה של הוראת הקבע נשמרת לכל 12 החיובים. מסלול שכבר שולם או שיש לו הוראת קבע קיימת לא יחויב שוב; בסיום כל שלב ניתן להמשיך למסלול הבא. שינוי הבחירה אינו מבטל הוראת קבע קיימת.</p>
       </div> : <p className="text-xs text-slate-700">הסכום מחושב לפי מחירי מסלולי המועדון, ללא הנחה משפחתית אוטומטית. לפני התשלום יוצגו הקיזוז והיתרה המחושבים בשרת. התשלום חד־פעמי למסלולים הכלולים בלבד, ללא יצירה או ביטול של הוראת קבע.</p>}
       {normalizedPlans.some(plan => plan.participation && plan.participation !== 'INCLUDED') && <p className="text-sm">ברכישה חלקית נגבה רק מחיר המסלולים שנבחרו. לא מקוזז שוב תשלום של מי שלא נכלל ברכישה. אם כבר שילמתם עבור עצמכם, בחרו עבורכם ״כבר שולם״ וכללו רק את בן המשפחה החדש.</p>}
     </div>
