@@ -91,6 +91,8 @@ test('database deletion revokes sessions, account, push and OTP in one transacti
   const store = await createDatabaseStore('postgres://localhost/test');
   await store.deleteClubUser('club', 'payer', 'manager', 'adult');
   assert.equal(queries[0].sql, 'BEGIN');
+  assert.ok(queries.some(query => query.sql === 'DELETE FROM recurring_checkout_continuations WHERE club_id=$1 AND user_id=$2'
+    && query.values[0] === 'club' && query.values[1] === 'payer'));
   assert.equal(queries.at(-1).sql, 'COMMIT');
   for (const table of ['auth_sessions', 'auth_accounts', 'push_subscriptions', 'sms_otp_challenges']) {
     assert.ok(queries.some(query => query.sql.startsWith(`DELETE FROM ${table}`) && query.values[0] === 'club'));
