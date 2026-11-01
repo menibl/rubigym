@@ -6,6 +6,15 @@ import { FamilyPlanConfigurator } from './FamilyPlanConfigurator';
 import { MembershipType, MembershipPlanConfig } from '../types';
 import { familyPlanCatalog, familyPurchaseAmount } from '../data/familyMembership';
 
+test('fresh family checkout shows collapsed named rows, no automatic plans and zero new charge', () => {
+  const html = renderToStaticMarkup(<FamilyPlanConfigurator mode="CUSTOM_COMBINED" onModeChange={() => {}} count={2} onCountChange={() => {}} payerName="Parent" payerId="p" plans={[]} onPlansChange={() => {}} familyMembers={[{ id: 'p', name: 'Parent' }, { id: 'c', name: 'Child' }]} />);
+  assert.match(html, /ללא מסלול — טרם מתחיל, ללא חיוב/);
+  assert.equal((html.match(/aria-expanded="false"/g) || []).length, 2);
+  assert.equal((html.match(/style="display:none"/g) || []).length, 2);
+  assert.match(html, /₪0/);
+  assert.doesNotMatch(html, /aria-expanded="true"/);
+});
+
 test('family options use club labels, prices, periods and active custom plans', () => {
   const catalog: MembershipPlanConfig[] = [
     { id: 'CUSTOM_PLAN', label: 'מסלול המועדון החדש', description: '', price: 720, category: 'PRIMARY', active: true, billingPeriod: 'THREE_MONTHS' },
@@ -13,7 +22,7 @@ test('family options use club labels, prices, periods and active custom plans', 
     { id: MembershipType.FAMILY_MEMBERSHIP, label: 'משפחה', description: '', price: 900, category: 'PRIMARY', active: true }
   ];
   assert.deepEqual(familyPlanCatalog(catalog).map(plan => plan.id), ['CUSTOM_PLAN']);
-  const html = renderToStaticMarkup(<FamilyPlanConfigurator mode="CUSTOM_COMBINED" onModeChange={() => {}} count={2} onCountChange={() => {}} payerName="Parent" plans={[]} onPlansChange={() => {}} membershipPlans={catalog} />);
+  const html = renderToStaticMarkup(<FamilyPlanConfigurator mode="CUSTOM_COMBINED" onModeChange={() => {}} count={2} onCountChange={() => {}} payerName="Parent" plans={[{ memberName: 'Parent', membershipType: 'CUSTOM_PLAN' as MembershipType }]} onPlansChange={() => {}} membershipPlans={catalog} />);
   assert.match(html, /מסלול המועדון החדש/);
   assert.match(html, /720/);
   assert.match(html, /שלושה חודשים/);

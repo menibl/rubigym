@@ -28,6 +28,14 @@ test('coach home does not show a trainee Open Gym booking as a coaching assignme
   assert.match(render({ ...trainee, role: UserRole.COACH }, [openGym]), /אין כרגע אימון משובץ/);
 });
 
+test('expired trainee home prominently offers direct renewal; current memberships and staff do not', () => {
+  const expired = { ...trainee, membershipStatus: 'ACTIVE', membershipExpiry: '2020-01-01', membershipExpiryExclusive: true } as User;
+  assert.match(render(expired, []), /aria-label="המנוי פג תוקף"/);
+  assert.match(render(expired, []), /חידוש מנוי — בחירת מסלול ותשלום/);
+  assert.doesNotMatch(render({ ...expired, membershipExpiry: '2099-01-01' }, []), /aria-label="המנוי פג תוקף"/);
+  assert.doesNotMatch(render({ ...expired, role: UserRole.COACH }, []), /aria-label="המנוי פג תוקף"/);
+});
+
 test('membership tile contains every assigned plan and personal/duo balances on home', () => {
   const html = render({ ...trainee, membershipStatus: 'ACTIVE', membershipExpiry: '2099-11-01', secondaryMemberships: [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING], personalTrainingRemaining: 5, personalTrainingCardSize: 10, duoTrainingRemaining: 2, duoTrainingCardSize: 3 } as User, []);
   assert.match(html, /המנוי והתשלומים שלי/);
