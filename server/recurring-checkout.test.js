@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker from './index.js';
+import worker, { inspectRecurringCheckout } from './index.js';
+import { reconcileRecurringDaily } from './recurring-reconciliation.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, releaseUndispatchedRecurringCheckout, updateRecurringCheckout } from './recurring-checkout.js';
 import { clubDate, nextMonthStart } from '../shared/membership-calendar.js';
 
@@ -87,6 +88,28 @@ test('a recurring setup completed meanwhile is synchronized instead of redirecti
   assert.equal((await response.json()).completed, true);
   assert.equal(f.state().payload.users[0].recurringMemberships.OPEN_GYM.status, 'PENDING_FIRST_CHARGE');
   assert.equal(f.state().payload.payments.length, 0); assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+});
+
+test('delayed provider setup opens access automatically on the next minute without another checkout or receipt', async () => {
+  const f = fixture(); const created = await (await f.create()).json();
+  const pending = await f.post('verify', { paymentReference: created.paymentReference });
+  assert.equal(pending.status, 409); assert.equal((await pending.json()).code, 'RIVHIT_RECURRING_PENDING');
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+  const claims = new Set();
+  f.store.getAllClubStates = async () => [{ club_id: 'test', payload: f.state().payload }];
+  f.store.claimPushDelivery = async (_, key) => { if (claims.has(key)) return false; claims.add(key); return true; };
+  const start = Date.parse(f.state().payload.recurringCheckouts[0].dispatchedAt);
+  await reconcileRecurringDaily(f.store, f.env, inspectRecurringCheckout, new Date(start + 1000));
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+  f.submitted(0);
+  await reconcileRecurringDaily(f.store, f.env, inspectRecurringCheckout, new Date(start + 61_000));
+  const user = f.state().payload.users[0];
+  assert.equal(user.membershipStatus, 'ACTIVE'); assert.equal(user.recurringMemberships.OPEN_GYM.status, 'PENDING_FIRST_CHARGE');
+  assert.equal(f.state().payload.payments.length, 0);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  const messages = f.state().payload.messages.length;
+  await reconcileRecurringDaily(f.store, f.env, inspectRecurringCheckout, new Date(start + 121_000));
+  assert.equal(f.state().payload.messages.length, messages);
 });
 
 test('a different real payment recorded meanwhile blocks unpaid-page continuation rather than charging the month twice', async () => {

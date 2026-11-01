@@ -605,6 +605,11 @@ const verifiedRivhitPayment = async (paymentReference, env, allowExpired = false
   const reference = await verifyPaymentReference(paymentReference, env, allowExpired);
   const order = await verifySignedOrder(reference.o, env, allowExpired);
   let { sale, saleId, amount } = await getRivhitSale(reference.p, env);
+  if (order.rc === 1 && (!String(sale.RecurringId || sale.RecurringSaleId || '')
+    || (sale.RecurringId || sale.RecurringSaleId) === '00000000-0000-0000-0000-000000000000')) {
+    if (amount !== signedOrderChargeAmount(order)) throw new Error('AMOUNT_MISMATCH');
+    throw new Error('RIVHIT_RECURRING_PENDING');
+  }
   if (order.rc === 1 && !recurringEvent(sale).failed && !recurringEvent(sale).paid && env.STATE_STORE) {
     const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
     const receipt = (state?.payload?.payments || []).find(payment => payment.traineeId === (order.gp ? order.u : order.bu || order.u)
@@ -2599,7 +2604,7 @@ const handleApi = async (request, env, url) => {
     return json({ message: 'Not found' }, 404, headers);
   } catch (error) {
     console.error('API request error', error instanceof Error ? error.message : error);
-    if (error?.message === 'RIVHIT_RECURRING_PENDING') return json({ code: 'RIVHIT_RECURRING_PENDING', message: 'הוראת הקבע נוצרה וממתינה לאישור החיוב הראשון. המנוי יופעל לאחר אישור התשלום; אין לבצע תשלום נוסף.' }, 409, headers);
+    if (error?.message === 'RIVHIT_RECURRING_PENDING') return json({ code: 'RIVHIT_RECURRING_PENDING', message: 'הקמת הוראת הקבע עדיין לא אושרה ברווחית. מתבצעות בדיקות חוזרות; אין לבצע תשלום נוסף.' }, 409, headers);
     return json({ message: 'שירות השרת אינו זמין כרגע. נסו שוב מאוחר יותר.' }, 502, headers);
   }
 };

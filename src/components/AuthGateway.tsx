@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { retryPaymentApproval } from '../data/paymentApprovalRetry';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -212,7 +213,9 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     }
 
     setPaymentStarting(true);
-    verifyPendingRivhitPayment(pending)
+    const controller = new AbortController();
+    retryPaymentApproval(() => verifyPendingRivhitPayment(pending, controller.signal), { signal: controller.signal,
+      onRetry: () => setNotice('ממתינים לאישור מרווחית ובודקים שוב אוטומטית. אין לבצע תשלום נוסף.') })
       .then(verified => {
         const transactionKey = verified.transactionId || verified.paymentReference;
         if (wasTransactionProcessed(transactionKey)) {
@@ -248,9 +251,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         });
       })
       .catch(paymentError => {
+        if (controller.signal.aborted) return;
         setError(paymentError instanceof Error ? paymentError.message : 'לא ניתן לאמת את התשלום מול RIVHIT.');
       })
-      .finally(() => setPaymentStarting(false));
+      .finally(() => { if (!controller.signal.aborted) setPaymentStarting(false); });
+    return () => controller.abort();
     // Process the hosted-payment return once when the unauthenticated gateway mounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { retryPaymentApproval } from '../data/paymentApprovalRetry';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
 import { uniquePayments } from '../../shared/payment-ledger.js';
 import { fitsSessionAge, isYouthSession, sessionAgeMax } from '../../shared/youth-session.js';
@@ -409,17 +410,19 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       return;
     }
     if (!pending || pending.mode === 'REGISTRATION' || pending.userId !== activeUser.id) return;
+    const controller = new AbortController();
+    const onRetry = () => showFeedback('ממתינים לאישור מרווחית ובודקים שוב אוטומטית. אין לבצע תשלום נוסף.');
     if (pending.familySplitBatchId) {
       setPaymentStarting(true);
-      continueFamilySplitPayment(pending.familySplitBatchId, activeUser.id, pending.familySplitItemId)
-        .catch(error => showFeedback(error instanceof Error ? error.message : 'לא ניתן להשלים את התשלום המשפחתי.', 'error'))
-        .finally(() => setPaymentStarting(false));
-      return;
+      continueFamilySplitPayment(pending.familySplitBatchId, activeUser.id, pending.familySplitItemId, { signal: controller.signal, onRetry })
+        .catch(error => { if (!controller.signal.aborted) showFeedback(error instanceof Error ? error.message : 'לא ניתן להשלים את התשלום המשפחתי.', 'error'); })
+        .finally(() => { if (!controller.signal.aborted) setPaymentStarting(false); });
+      return () => controller.abort();
     }
     const purchaseMode: 'PRIMARY' | 'ADDON' = pending.mode;
 
     setPaymentStarting(true);
-    verifyPendingRivhitPayment(pending)
+    retryPaymentApproval(() => verifyPendingRivhitPayment(pending, controller.signal), { signal: controller.signal, onRetry })
       .then(verified => {
         if (verified.recurringSaleId) {
           clearPendingRivhitPayment(); clearRivhitReturnParams();
@@ -442,11 +445,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         showFeedback(`${purchasedLabel} נרכש והופעל בהצלחה.`);
       })
       .catch(error => {
+        if (controller.signal.aborted) return;
+        if (error?.code === 'APPROVAL_CHECK_DEFERRED') { showFeedback(error.message, 'error'); return; }
         if (error?.code !== 'RIVHIT_RECURRING_PENDING') clearRivhitReturnParams();
         setActiveTab('membership');
         showFeedback(error instanceof Error ? error.message : 'לא ניתן לאמת את התשלום.', 'error');
       })
-      .finally(() => setPaymentStarting(false));
+      .finally(() => { if (!controller.signal.aborted) setPaymentStarting(false); });
+    return () => controller.abort();
     // The RIVHIT return is intentionally processed once when the dashboard mounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
