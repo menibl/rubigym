@@ -354,7 +354,10 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated || activeUser.registrationIncomplete) return;
     let cancelled = false;
+    let refreshing = false;
     const refreshClubState = async () => {
+      if (cancelled || refreshing || document.visibilityState === 'hidden') return;
+      refreshing = true;
       try {
         const latest = await getClubState();
         if (
@@ -372,18 +375,20 @@ export default function App() {
           return;
         }
         console.warn('Unable to refresh club data', error);
-      }
+      } finally { refreshing = false; }
     };
     const refreshInterval = workspaceView === 'CHAT' ? 4000 : 10000;
     const firstRefresh = window.setTimeout(() => void refreshClubState(), 2500);
     const interval = window.setInterval(() => void refreshClubState(), refreshInterval);
       const refreshBilling = () => void refreshClubState();
       window.addEventListener('baly:refresh-billing', refreshBilling);
+      document.addEventListener('visibilitychange', refreshBilling);
     return () => {
       cancelled = true;
       window.clearTimeout(firstRefresh);
       window.clearInterval(interval);
         window.removeEventListener('baly:refresh-billing', refreshBilling);
+        document.removeEventListener('visibilitychange', refreshBilling);
     };
   }, [isAuthenticated, workspaceView, activeUser.id, activeUser.registrationIncomplete]);
 
