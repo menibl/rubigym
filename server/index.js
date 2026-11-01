@@ -2379,7 +2379,7 @@ const handleApi = async (request, env, url) => {
           ? 'קיים דף תשלום שמור. המתאמן יכול ללחוץ שוב על תשלום כדי להמשיך באותו דף, ללא פתיחת בקשה חדשה.' : outcome.message }, 200, headers);
       }
       const items = (state.payload.recurringCheckouts || []).filter(item => item.userId === target.id && !item.cancelledAt && (item.endsAt > clubDate() || !item.recurringSaleId))
-        .map(item => ({ orderId: item.orderId, label: state.payload.settings?.membershipPlans?.find(plan => plan.id === item.membershipType)?.label || item.membershipType,
+        .map(item => ({ orderId: item.orderId, label: item.orderSnapshot?.gp ? 'הוראת קבע משפחתית מאוחדת' : state.payload.settings?.membershipPlans?.find(plan => plan.id === item.membershipType)?.label || item.membershipType,
           amount: item.orderSnapshot?.a, createdAt: item.dispatchedAt, stage: item.stage || 'LEGACY_UNKNOWN',
           canRelease: item.stage === 'RESERVED' && !item.requestDispatchedAt && !item.recurringSaleId && Date.now() - Date.parse(item.dispatchedAt) > 5 * 60000 }));
       return json({ ok: true, items }, 200, headers);

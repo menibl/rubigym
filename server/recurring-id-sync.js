@@ -105,7 +105,8 @@ export function prepareRecurringIdSync({ payload, userId, seriesId, details: det
     historyTimestamp: record.time.toISOString(), providerDocumentKey: documentKey(record.DocumentLink),
     last4Digits: (String(record.TruncCardNum || '').match(/(\d{4})\D*$/) || [])[1], providerHistoryVerified: true }));
   const preview = { seriesId, userName: user.name, membershipType: order.m,
-    planLabel: payload.settings?.membershipPlans?.find(plan => plan.id === order.m)?.label || order.m,
+    planLabel: order.gp ? `הוראת קבע משפחתית מאוחדת — ${order.gp.map(line => line.memberName || line.memberId).join(', ')}`
+      : payload.settings?.membershipPlans?.find(plan => plan.id === order.m)?.label || order.m,
     amount, successfulCharges: count, endsAt, discountRecorded: Boolean(snapshot),
     discountCode: snapshot?.c || null, nextChargeDate: providerTime(details.ChargeDate) ? clubDate(providerTime(details.ChargeDate)) : null };
   return { order, payments, preview, discountUnknown: !snapshot };
