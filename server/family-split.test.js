@@ -30,8 +30,11 @@ function fixture() {
   ], settings: { membershipPlans: catalog }, payments: [], discountCodes: [{ id: 'coupon', code: 'SAVE10', discountPercent: 10, isSingleUse: true }], messages: [] } };
   let journal = { revision: 0, payload: null }, signed = new Map(), calls = [], count = 0;
   let authenticatedUser = 'payer';
+  const continuations = new Map();
   const clone = obj => structuredClone(obj);
   const store = {
+    async getRecurringContinuation(_club, order) { return continuations.get(order) || null; },
+    async saveRecurringContinuation(_club, order, user, encrypted) { continuations.set(order, { user_id: user, encrypted_checkout: encrypted }); },
     async getSession() { return { club_id: 'test', user_id: authenticatedUser }; },
     async getAccount() { return { user_id: authenticatedUser, role: 'TRAINEE' }; },
     async getClubState() { return clone(state); },

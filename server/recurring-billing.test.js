@@ -34,6 +34,7 @@ function fixture(extra = {}) {
     payments: [], messages: []
   } };
   let signedOrder, requests = [], charge = 0, amount = 500, failure = 0, providerUnavailable = false, role = 'TRAINEE';
+  const continuations = new Map();
   const sale = () => ({ SaleId: `sale-${charge}`, Custom1: signedOrder, Amount: amount, TransactionAmount: amount,
     RecurringId: 'series', RecurringSaleChargeNumber: charge, TransactionStatus: failure, TransactionParamJ: charge === 0 ? 5 : 0,
     CustomerTransactionId: `transaction-${charge}`, TransactionCardNum: '4580XXXX1111' });
@@ -43,6 +44,8 @@ function fixture(extra = {}) {
     PAYMENT_SIGNING_SECRET: 'fixture-signing-key', PUBLIC_APP_URL: 'https://club.test/',
     SMS_OTP_SIGNING_SECRET: 'fixture-registration-signing-key-long-enough',
     STATE_STORE: {
+      getRecurringContinuation: async (_club, order) => continuations.get(order) || null,
+      saveRecurringContinuation: async (_club, order, user, encrypted) => { continuations.set(order, { user_id: user, encrypted_checkout: encrypted }); },
       getAccountByLogin: async () => null,
       upsertAccount: async () => {}, createSession: async () => {},
       getSession: async () => ({ club_id: 'baly-wellness', user_id: 'trainee' }),
@@ -94,7 +97,8 @@ test('separate hosted page; verified setup grants pending access, not a receipt;
   assert.equal(request.SaleType, 2); assert.equal(request.Items[0].UnitPrice, 500);
   assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT'); // GetUrl alone never activates.
   const repeat = await f.create({ recurringAcknowledged: true });
-  assert.equal(repeat.status, 409); assert.equal((await repeat.json()).code, 'RECURRING_CHECKOUT_EXISTS');
+  assert.equal(repeat.status, 200); assert.equal((await repeat.json()).completed, true);
+  assert.equal(f.requests.filter(request => request.url.endsWith('/GetUrl')).length, 1);
   assert.equal((await f.webhook()).status, 200);
   assert.equal(f.state().payload.payments.length, 0); assert.equal(f.state().payload.users[0].membershipStatus, 'ACTIVE');
   assert.equal(f.state().payload.users[0].recurringMemberships.GROUP_MONTHLY.status, 'PENDING_FIRST_CHARGE');
@@ -109,7 +113,8 @@ test('separate hosted page; verified setup grants pending access, not a receipt;
   assert.ok(f.state().payload.users[0].membershipExpiry > firstExpiry);
   assert.equal(f.state().payload.users[0].membershipCommitmentEndsAt, commitment);
   const blocked = await f.create({ recurringAcknowledged: true, repeatPaymentAcknowledged: true });
-  assert.equal(blocked.status, 409); assert.equal((await blocked.json()).code, 'RECURRING_ALREADY_ACTIVE');
+  assert.equal(blocked.status, 200); assert.equal((await blocked.json()).completed, true);
+  assert.equal(f.requests.filter(request => request.url.endsWith('/GetUrl')).length, 1);
   f.charge(13); assert.equal((await f.webhook()).status, 502); assert.equal(f.state().payload.payments.length, 2);
 });
 
