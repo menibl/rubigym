@@ -137,3 +137,50 @@ test('missing merchant and partial family phone failure fail closed', async () =
     post: async () => { if (++calls === 2) throw new Error('partial timeout'); return { RecurringSales: [] }; } }));
   assert.equal(f.state().recurringCheckouts[0].cancelledAt, undefined);
 });
+
+function splitFixture() {
+  const f = fixture(); let revision = 1;
+  f.edit(payload => { payload.recurringCheckouts[0].orderSnapshot = { ...payload.recurringCheckouts[0].orderSnapshot, bs: 'batch', bi: 'line' };
+    payload.discountCodes[0] = { code: 'FIXTURE', reservedFamilySplitId: 'batch' }; });
+  let batch = { id: 'batch', payerId: 'u', items: [{ id: 'line', memberId: 'u', status: 'PAGE', checkout: { paymentReference: 'fixture-private' } },
+    { id: 'paid-other', memberId: 'someone-else', status: 'PAID' }] };
+  f.store.getFamilySplitCheckout = async () => ({ payload: structuredClone(batch), revision });
+  f.store.putFamilySplitCheckout = async (_, payerId, next, expected) => {
+    assert.equal(payerId, 'u'); if (expected !== revision) return false;
+    batch = structuredClone(next); revision++; return true;
+  };
+  return { ...f, batch: () => batch, changeBatch: fn => { fn(batch); revision++; } };
+}
+
+test('audited family release cancels only the selected journal line before releasing its reservation', async () => {
+  const f = splitFixture();
+  const response = await f.post({ action: 'preview' }); assert.equal(response.status, 200);
+  const preview = await response.json();
+  assert.ok(!JSON.stringify(preview).includes('fixture-private'));
+  assert.equal((await f.post(f.confirmation(preview))).status, 200);
+  assert.equal(f.batch().items[0].status, 'CANCELLED');
+  assert.equal(f.batch().items[0].releasedOrderId, 'old');
+  assert.equal(f.batch().items[1].status, 'PAID');
+  assert.equal(f.state().recurringCheckouts[0].stage, 'RELEASED_MANAGER_REVIEW');
+  assert.equal(f.state().discountCodes[0].reservedFamilySplitId, undefined);
+  assert.deepEqual(f.state().payments, []); assert.equal(f.state().users[0].membershipStatus, 'DEBT');
+});
+
+test('completed or changed family journal never releases; lost CAS can be reviewed again without undoing payments', async () => {
+  const inFlight = splitFixture(); inFlight.changeBatch(batch => { batch.items[0].status = 'DISPATCHING'; });
+  const blocked = await inFlight.post({ action: 'preview' }); assert.equal(blocked.status, 409);
+  assert.equal((await blocked.json()).code, 'STUCK_SPLIT_IN_PROGRESS');
+  const changed = splitFixture(); const preview = await (await changed.post({ action: 'preview' })).json();
+  changed.changeBatch(batch => { batch.items[0].status = 'SETUP'; });
+  assert.equal((await changed.post(changed.confirmation(preview))).status, 409);
+  assert.equal(changed.state().recurringCheckouts[0].cancelledAt, undefined);
+  const f = splitFixture(); const first = await (await f.post({ action: 'preview' })).json();
+  const originalSave = f.store.putClubState; let conflict = true;
+  f.store.putClubState = async (...args) => { if (conflict) { conflict = false; return { conflict: true }; } return originalSave(...args); };
+  assert.equal((await f.post(f.confirmation(first))).status, 409);
+  assert.equal(f.batch().items[0].status, 'CANCELLED');
+  assert.equal(f.state().recurringCheckouts[0].cancelledAt, undefined);
+  const second = await (await f.post({ action: 'preview' })).json();
+  assert.equal((await f.post(f.confirmation(second))).status, 200);
+  assert.equal(f.batch().items[1].status, 'PAID');
+});
