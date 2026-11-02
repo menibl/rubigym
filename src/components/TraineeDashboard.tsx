@@ -14,6 +14,7 @@ import { membershipExpired } from '../../shared/membership-calendar.js';
 import { isCancelledOccurrence } from '../../shared/scheduled-occurrence.js';
 import { membershipTypesForAccess, recurringSessionBlocked } from '../../shared/recurring-access.js';
 import { RecurringMembershipNotice } from './RecurringMembershipNotice';
+import { PendingCheckoutRecovery } from './PendingCheckoutRecovery';
 import { getGenderLabel } from '../data/userProfile';
 import { WeeklyCalendar } from './WeeklyCalendar';
 import { BookingCategoryPicker } from './BookingCategoryPicker';
@@ -410,10 +411,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     if (returnStatus === 'failed') {
       clearRivhitReturnParams();
       setActiveTab('membership');
-      showFeedback('התשלום לא הושלם. לא בוצע חיוב ולא בוצע שינוי במנוי.', 'error');
+      showFeedback('תהליך התשלום לא הושלם או שטרם אומת. ניתן להמשיך או לבדוק את הבקשה השמורה בדף המנוי; אין לפתוח חיוב נוסף לפני הבדיקה.', 'error');
       return;
     }
-    if (!pending || pending.mode === 'REGISTRATION' || pending.userId !== activeUser.id) return;
+    if (!pending || (pending.mode === 'REGISTRATION' && !pending.resumedAuthenticatedRegistration) || pending.userId !== activeUser.id) return;
     const controller = new AbortController();
     const onRetry = () => showFeedback('ממתינים לאישור מרווחית ובודקים שוב אוטומטית. אין לבצע תשלום נוסף.');
     if (pending.familySplitBatchId) {
@@ -423,7 +424,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         .finally(() => { if (!controller.signal.aborted) setPaymentStarting(false); });
       return () => controller.abort();
     }
-    const purchaseMode: 'PRIMARY' | 'ADDON' = pending.mode;
+    const purchaseMode: 'PRIMARY' | 'ADDON' = pending.mode === 'ADDON' ? 'ADDON' : 'PRIMARY';
 
     setPaymentStarting(true);
     retryPaymentApproval(() => verifyPendingRivhitPayment(pending, controller.signal), { signal: controller.signal, onRetry })
@@ -2370,6 +2371,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {activeTab === 'membership' && (
           <div className="space-y-6">
             <RecurringMembershipNotice user={activeUser} plans={membershipPlanConfigs} />
+            <PendingCheckoutRecovery key={activeUser.id} userId={activeUser.id} />
             {activeUser.registrationPaymentPending && <p role="alert" className="rounded-xl border border-amber-400/40 bg-zinc-900 p-4 text-amber-200">החשבון שלך נרשם בהצלחה, אך התשלום עדיין לא הושלם. יש לבחור מסלול ולהשלים תשלום כדי להירשם לאימונים.</p>}
             <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
               <button className="text-xs text-amber-300 mb-4" onClick={() => { setSelectedMembershipPurchase(null); setActiveTab('profile'); }}>

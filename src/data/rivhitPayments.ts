@@ -5,6 +5,7 @@ const PENDING_PAYMENT_KEY = 'baly_rivhit_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_rivhit_processed_transactions_v1';
 
 export interface PendingRivhitPayment {
+  resumedAuthenticatedRegistration?: boolean;
   paymentReference: string;
   userId: string;
   membershipType: MembershipType;
@@ -246,6 +247,72 @@ export const getPendingRivhitPayment = (): PendingRivhitPayment | null => {
 };
 
 export const clearPendingRivhitPayment = () => sessionStorage.removeItem(PENDING_PAYMENT_KEY);
+
+export interface RecoverableCheckout {
+  id: string;
+  kind: 'RECURRING' | 'FAMILY';
+  label: string;
+  amount?: number;
+  createdAt?: string;
+  pendingCount?: number;
+  canRestart: boolean;
+}
+
+const checkoutRecovery = async (action: 'status' | 'resume' | 'restart', orderId?: string, signal?: AbortSignal) => {
+  const response = await fetch(`${paymentApiBase()}/api/payments/rivhit/checkout-recovery`, {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, orderId, confirmUndispatched: action === 'restart' }), signal: approvalFetchSignal(signal)
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const temporary = action === 'resume' && ['CONTINUATION_LIST_UNAVAILABLE', 'CONTINUATION_PROVIDER_UNAVAILABLE',
+      'CONTINUATION_PROVIDER_STATUS', 'CONTINUATION_ACTIVE_SERIES', 'RIVHIT_UNAVAILABLE', 'RIVHIT_RECURRING_PENDING'].includes(result.reasonCode);
+    throw Object.assign(new Error(result.message || 'בדיקת בקשת התשלום אינה זמינה כרגע. הבקשה נשמרה; לא נפתח חיוב נוסף.'),
+      { code: temporary ? 'CHECKOUT_VERIFICATION_PENDING' : result.code, reasonCode: result.reasonCode, status: response.status });
+  }
+  return result;
+};
+
+export const listRecoverableCheckouts = async (signal?: AbortSignal): Promise<RecoverableCheckout[]> => {
+  const result = await checkoutRecovery('status', undefined, signal);
+  if (!Array.isArray(result.items) || result.items.some(item => !item || typeof item.id !== 'string'
+    || !['RECURRING', 'FAMILY'].includes(item.kind) || typeof item.label !== 'string')) {
+    throw new Error('לא התקבלה רשימת בקשות תקינה. אין לפתוח חיוב נוסף לפני בדיקה.');
+  }
+  return result.items;
+};
+
+export const restartUndispatchedCheckout = async (orderId: string) => {
+  const result = await checkoutRecovery('restart', orderId);
+  window.dispatchEvent(new Event('baly:refresh-billing'));
+  return result.message as string;
+};
+
+export const resumeSavedCheckout = async (orderId: string, userId: string, options: {
+  signal?: AbortSignal; onRetry?: (attempt: number) => void;
+} = {}) => {
+  // This endpoint cannot create/GetUrl, even on retry or after a lost response.
+  const result = await retryPaymentApproval(() => checkoutRecovery('resume', orderId, options.signal),
+    { ...options, delays: [3000, 5000, 10000] });
+  if (options.signal?.aborted) return;
+  if (result.completed) {
+    clearPendingRivhitPayment(); clearRivhitReturnParams();
+    window.dispatchEvent(new Event('baly:refresh-billing'));
+    window.alert(result.message || 'הבקשה סונכרנה. לא נפתח חיוב נוסף.');
+    window.location.reload(); return;
+  }
+  const summary = result.resumeSummary;
+  if (!result.resumed || !result.url || !result.paymentReference || !summary) throw new Error('לא התקבל קישור מאומת לבקשה המקורית. לא נפתח חיוב נוסף.');
+  if (!window.confirm(`המשך הבקשה המקורית: ${summary.label}, ₪${summary.amount} לכל חודש, 12 חיובים. תוקף ההתקשרות עד ${summary.endsAt}.\nלא נפתחת הוראת קבע נוספת. המחיר וההנחה נשארים כפי שאושרו בבקשה המקורית. להמשיך?`)) return;
+  const pending: PendingRivhitPayment = { paymentReference: result.paymentReference, userId,
+    resumedAuthenticatedRegistration: summary.mode === 'REGISTRATION',
+    membershipType: summary.membershipType, mode: summary.mode, createdAt: new Date().toISOString(),
+    purchaseVariant: summary.purchaseVariant, familyMembersCount: summary.familyMembersCount,
+    familyName: summary.familyName, familyBillingMode: summary.familyBillingMode,
+    familyMemberPlans: result.familyMemberPlans, discountCode: summary.discountCode };
+  sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
+  window.location.assign(result.url);
+};
 
 export const verifyPendingRivhitPayment = async (pending: PendingRivhitPayment, signal?: AbortSignal): Promise<VerifiedRivhitPayment> => {
   const apiBase = paymentApiBase();

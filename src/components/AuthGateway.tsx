@@ -204,6 +204,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     if (!returnStatus) return;
     const pending = getPendingRivhitPayment();
     if (!pending || pending.mode !== 'REGISTRATION') return;
+    if (pending.resumedAuthenticatedRegistration) {
+      setScreen('login');
+      setNotice('בקשת התשלום שמורה בחשבון הקיים. יש להתחבר כדי לבדוק את האישור ולהמשיך; אין צורך להירשם או לשלם שוב.');
+      return;
+    }
     setScreen('register');
     setRegisterStep(4);
 

@@ -3,7 +3,7 @@ type RetryError = Error & { code?: string; status?: number };
 export const isApprovalRetryable = (error: unknown) => {
   const value = error as RetryError;
   if (value?.name === 'AbortError') return false;
-  if (value?.code === 'RIVHIT_RECURRING_PENDING') return true;
+  if (value?.code === 'RIVHIT_RECURRING_PENDING' || value?.code === 'CHECKOUT_VERIFICATION_PENDING') return true;
   if (value?.code) return false;
   return value?.name === 'TimeoutError' || value instanceof TypeError || value?.status === 429 || Number(value?.status) >= 500;
 };
