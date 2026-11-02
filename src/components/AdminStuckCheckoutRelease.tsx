@@ -9,6 +9,7 @@ export function AdminStuckCheckoutRelease({ userId, orderId, onReleased }: { use
   return <details className="mt-3 rounded-lg border border-rose-400 bg-slate-950 p-3 text-slate-100">
     <summary className="cursor-pointer font-bold">שחרור מבוקר של בקשה תקועה — מנהל בלבד</summary>
     <p className="my-2">אין שחרור אוטומטי בגלל כשל אימות. הפעולה אינה מבטלת הוראות או דפים ברווחית. יש להשלים בירור מול רווחית שהדף הישן לא נוצר, בוטל או פג ואינו מאפשר תשלום, ושאין חיוב או הוראה עבור הבקשה.</p>
+    <p className="my-2">בבקשה משפחתית, השחרור יחסום רק את פריט התשלום שנבחר וישאיר תשלומים והוראות של שאר בני המשפחה ללא שינוי. לא מסמנים כאן מנוי כשולם.</p>
     <button type="button" disabled={busy} className="min-h-11 w-full rounded-lg border border-amber-400 p-2" onClick={async () => {
       setBusy(true); setPreview(null); setMessage(''); setPassword('');
       try { const result = await releaseStuckRecurringCheckout({ action: 'preview', userId, orderId }); setPreview(result); setMessage(result.message); }

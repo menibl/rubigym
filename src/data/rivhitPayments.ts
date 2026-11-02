@@ -194,7 +194,16 @@ const familySplitAction = async (action: string, batchId: string, extra: Record<
 };
 
 export const continueFamilySplitPayment = async (batchId: string, userId: string, returnedItemId?: string, options: { signal?: AbortSignal; onRetry?: (attempt: number) => void } = {}) => {
-  if (returnedItemId) await retryPaymentApproval(() => familySplitAction('verify', batchId, { itemId: returnedItemId }, options.signal), options);
+  if (returnedItemId) {
+    try { await retryPaymentApproval(() => familySplitAction('verify', batchId, { itemId: returnedItemId }, options.signal), options); }
+    catch (error) {
+      if ((error as Error & { code?: string }).code !== 'SPLIT_ITEM_CANCELLED') throw error;
+      clearPendingRivhitPayment(); clearRivhitReturnParams();
+      window.dispatchEvent(new Event('baly:refresh-billing'));
+      window.alert('בקשת התשלום הזאת שוחררה על ידי המנהל. יש לבחור מסלולים מחדש, ולא להמשיך בדף הישן.');
+      return;
+    }
+  }
   if (options.signal?.aborted) return;
   if (returnedItemId) window.dispatchEvent(new Event('baly:refresh-billing'));
   clearRivhitReturnParams();
@@ -206,15 +215,16 @@ export const continueFamilySplitPayment = async (batchId: string, userId: string
     return;
   }
   const items: FamilySplitItem[] = batch.items;
-  const next = items.find(item => !['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status));
+  const next = items.find(item => !['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status));
   if (!next) throw new Error('לא נמצא מסלול להשלמת התשלום.');
-  const summary = items.map(item => ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status)
+  const summary = items.map(item => item.status === 'CANCELLED' ? `${item.memberName} — ${item.label}: הבקשה בוטלה באישור מנהל, ללא חיוב`
+    : ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status)
     ? `${item.memberName} — ${item.label}: כבר טופל, ללא חיוב נוסף כעת`
     : `${item.memberName} — ${item.label}: ₪${item.amount} ${item.recurring ? 'לכל חודש, 12 חיובים; המחיר לאחר ההנחה קבוע לכל הסדרה' : 'חד־פעמי'}${item.groupLines ? '\n' + item.groupLines.map(line => `  ${line.memberName} — ${line.label}: ₪${line.amount}${item.recurring ? ' לחודש' : ' חד־פעמי'}`).join('\n') : ''}`).join('\n');
   if (!window.confirm(`${batch.message}\n\n${summary}\n\nלהמשיך למסלול של ${next.memberName}: ${next.label}, ₪${next.amount}?`)) {
     // Only an entirely undispatched quote can be discarded. Already created
     // orders remain resumable; cancellation here never cancels Rivhit contracts.
-    if (items.every(item => ['READY', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status))) await familySplitAction('cancel', batchId);
+    if (items.every(item => ['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status))) await familySplitAction('cancel', batchId);
     return;
   }
   const checkout = await familySplitAction('create', batchId, { itemId: next.id, acknowledged: true });
