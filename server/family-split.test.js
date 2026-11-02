@@ -56,6 +56,13 @@ test('an abandoned family page with empty sale details resumes the same page; a 
   const quote = await (await f.quote()).json();
   const input = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
   const first = await (await f.post('family-split/create', input)).json();
+  const recoverable = await (await f.post('checkout-recovery', { action: 'status' })).json();
+  assert.equal(recoverable.items.length, 1); assert.equal(recoverable.items[0].kind, 'FAMILY');
+  assert.equal(recoverable.items[0].id, quote.batchId);
+  assert.ok(!JSON.stringify(recoverable).includes(first.paymentReference));
+  f.authenticate('child');
+  assert.deepEqual((await (await f.post('checkout-recovery', { action: 'status' })).json()).items, []);
+  f.authenticate('payer');
   const original = f.env.RIVHIT_FETCH;
   f.env.RIVHIT_FETCH = async (url, options) => url.endsWith('/SaleDetails') ? Response.json({ Status: 0, data: [] })
     : url.endsWith('/RecurringSaleList') ? Response.json({ RecurringSales: [] }) : original(url, options);

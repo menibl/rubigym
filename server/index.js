@@ -10,6 +10,7 @@ import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
 import { discoverTodayRecurring, publicRecovery } from './bulk-recurring-recovery.js';
 import { discoverApprovedSetup } from './recurring-setup-discovery.js';
 import { continuationSale, checkNoActiveContinuation } from './checkout-continuation.js';
+import { canRestartUndispatched, ownedRecoveryCheckouts, recoveryItems } from './checkout-recovery.js';
 import { checkStuckCheckout, releaseStuckCheckout } from './stuck-checkout-release.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, updateRecurringCheckout, releaseUndispatchedRecurringCheckout } from './recurring-checkout.js';
 import { familySplitLines, groupFamilyRecurringLines, groupedReceiptPlans, publicFamilySplit, changeFamilySplit } from './family-split.js';
@@ -1296,7 +1297,20 @@ const resumeRecurringPayment = async (request, env, body, reservation, splitLine
     if (Number(sale.TransactionStatus) === 0 && (sale.Token || sale.AuthNum || sale.CardNum || sale.TransactionCardNum)) return review('רווחית מחזירה נתוני עסקה ללא אישור הוראת קבע תואם. נדרשת בדיקת מנהל לפני תשלום נוסף.', 'CONTINUATION_CARD_WITHOUT_SERIES');
     if (incomplete) {
       if (!saved?.url) return review('פרטי העסקה עדיין חסרים ואין קישור מקורי שמור לשחזור. נדרש טיפול מנהל, ללא פתיחת בקשה נוספת.', 'CONTINUATION_ORIGINAL_PAGE_MISSING');
-      await checkNoActiveContinuation({ payload: current.payload, order, groupToken: env.RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN, post: discoveryPostFor(env) });
+      try {
+        await checkNoActiveContinuation({ payload: current.payload, order, groupToken: env.RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN, post: discoveryPostFor(env) });
+      } catch (error) {
+        if (error.code !== 'CONTINUATION_ACTIVE_SERIES') throw error;
+        // The hosted-page receipt may lag behind an already-approved setup.
+        // Recover only through the existing strict ownership/calendar/history
+        // verification. An unmatched active series still blocks the old page.
+        const approved = await discoverApprovedSetup(env, order, discoveryPostFor(env)).catch(() => null);
+        if (!approved) throw error;
+        await persistVerifiedPurchase(env, approved.order, approved.payment);
+        await persistVerifiedDiscountUsage(env, approved.order, approved.payment);
+        return json({ completed: true, recurringPending: approved.payment.recurringPending,
+          message: 'הוראת הקבע הקיימת אומתה והמנוי סונכרן. לא נפתח דף תשלום נוסף.' }, 200, headers);
+      }
     }
     if (repeatedMonthlyPayments(current.payload, { userId: reservation.userId, membershipType: order.m }).length) return review('כבר תועד החודש תשלום עבור המסלול או מסלול הכולל אותו. אין להמשיך בדף ישן לפני בדיקת מנהל, כדי למנוע תשלום כפול.');
     if (!saved) {
@@ -1312,6 +1326,7 @@ const resumeRecurringPayment = async (request, env, body, reservation, splitLine
     const paymentReference = await createPaymentReference(reference.o, reference.p, reference.q, env);
     return json({ url: saved.url, paymentReference, resumed: true,
       resumeSummary: { amount: Number(order.a), membershipType: order.m, mode: order.d, discountCode: order.c || null,
+        purchaseVariant: order.v, familyMembersCount: order.f, familyName: order.fn, familyBillingMode: order.fm,
         label: current.payload.settings?.membershipPlans?.find(plan => plan.id === order.m)?.label || order.m,
         endsAt: order.re, familyMemberPlans: order.fp },
       familyMemberPlans: order.fp }, 200, headers);
@@ -1323,7 +1338,7 @@ const resumeRecurringPayment = async (request, env, body, reservation, splitLine
       CONTINUATION_AMOUNT_MISMATCH: 'הסכום שחזר מרווחית שונה מהסכום שאושר בבקשה המקורית. לא נפתח חיוב נוסף.',
       CONTINUATION_PHONE_MISSING: 'חסר מספר טלפון תקין בפרופיל לצורך בדיקה בטוחה. יש לעדכן טלפון אצל המנהל ואז לנסות שוב.',
       CONTINUATION_OWNER_MISSING: 'חסר פרופיל של אחד מבני המשפחה שבבקשה. יש לפנות למנהל.',
-      CONTINUATION_ACTIVE_SERIES: 'נמצאה הוראת קבע פעילה באחד הטלפונים המשויכים. יש לסנכרן את ההוראה אצל המנהל לפני המשך; לא נפתח חיוב נוסף.',
+      CONTINUATION_ACTIVE_SERIES: 'נמצאה הוראת קבע פעילה שעדיין לא ניתן לשייך בוודאות לבקשה הזאת או לרכישה אחרת. הבקשה נשמרה לבדיקה; אין להזין אשראי מחדש או לפתוח חיוב נוסף.',
       CONTINUATION_LIST_INVALID: 'רווחית לא החזירה רשימת הוראות מלאה במבנה מוכר. הבקשה נשמרה להמשך ולא נפתח חיוב נוסף.',
       CONTINUATION_LIST_UNAVAILABLE: 'בדיקת הוראות הקבע ברווחית אינה זמינה כרגע. הבקשה נשמרה להמשך; יש לנסות שוב בהמשך.',
       CONTINUATION_PROVIDER_STATUS: 'רווחית דחתה את בדיקת פרטי הבקשה השמורה. אין בכך אישור לדחיית כרטיס; נדרשת בדיקת מנהל.',
@@ -1331,6 +1346,34 @@ const resumeRecurringPayment = async (request, env, body, reservation, splitLine
     };
     return review(Object.hasOwn(descriptions, reasonCode) ? descriptions[reasonCode] : 'לא ניתן לאמת או לשחזר כרגע את הבקשה הקיימת. לא נפתח חיוב נוסף. יש לנסות שוב או לפנות למנהל.', reasonCode);
   }
+};
+
+const handleCheckoutRecovery = async (request, env) => {
+  const headers = corsHeaders(request, env);
+  const identity = await getAuthenticatedSession(request, env.STATE_STORE);
+  if (!identity || identity.club_id !== (env.CLUB_ID || 'baly-wellness')) return json({ message: 'יש להתחבר לחשבון כדי להמשיך תשלום.' }, 403, headers);
+  const body = await request.json();
+  const state = await env.STATE_STORE.getClubState(identity.club_id);
+  if (!state?.payload?.users?.some(user => user.id === identity.user_id)) return json({ message: 'החשבון לא נמצא.' }, 404, headers);
+  if (body.action === 'status') {
+    const batch = (await env.STATE_STORE.getFamilySplitCheckout?.(identity.club_id, identity.user_id))?.payload;
+    return json({ items: recoveryItems(state.payload, identity.user_id, batch) }, 200, headers);
+  }
+  const item = ownedRecoveryCheckouts(state.payload, identity.user_id).find(row => row.orderId === body.orderId);
+  if (!item) return json({ message: 'הבקשה אינה פתוחה או אינה שייכת לחשבון המחובר. יש לרענן את הרשימה.' }, 404, headers);
+  if (body.action === 'restart') {
+    if (body.confirmUndispatched !== true || !canRestartUndispatched(item)) return json({ message: 'אי אפשר להתחיל מחדש: הבקשה נשלחה לרווחית או שמצבה עדיין לא ידוע. אפשר לנסות להמשיך את הבקשה המקורית.' }, 409, headers);
+    const released = await releaseUndispatchedRecurringCheckout(env.STATE_STORE, identity.club_id, item.userId, item.orderId,
+      identity.user_id, 'CUSTOMER_RESTART_VERIFIED_NEVER_DISPATCHED');
+    return json({ released, message: released ? 'שוחררה בקשה שלא נשלחה לרווחית. אפשר לבחור מסלול מחדש; לא בוצע חיוב.'
+      : 'מצב הבקשה השתנה ולא שוחררה חסימה. לא נפתח חיוב נוסף.' }, released ? 200 : 409, headers);
+  }
+  if (body.action !== 'resume') return json({ message: 'פעולה לא מוכרת.' }, 400, headers);
+  requirePaymentEnv(env);
+  // Read/verify and re-open the ORIGINAL page only; safe for bounded retries.
+  // Never route this operation through create/GetUrl or accept a client URL.
+  return resumeRecurringPayment(request, env, { userId: identity.user_id,
+    mode: item.orderSnapshot?.d === 'ADDON' ? 'ADDON' : 'PRIMARY' }, item);
 };
 
 const handleCreatePayment = async (request, env, splitLine) => {
@@ -2750,6 +2793,7 @@ const handleApi = async (request, env, url) => {
       return json({ ok: true, payment: updatedPayment }, 200, headers);
     }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/discount/validate') return await handleValidateDiscount(request, env);
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/checkout-recovery') return await handleCheckoutRecovery(request, env);
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/create') return await handleCreatePayment(request, env);
     if (request.method === 'POST' && /^\/api\/payments\/rivhit\/family-split\/(status|create|verify|cancel)$/.test(url.pathname)) return await handleFamilySplit(request, env, url.pathname.split('/').pop());
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/verify') return await handleVerifyPayment(request, env);
