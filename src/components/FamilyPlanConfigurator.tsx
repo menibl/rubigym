@@ -11,6 +11,7 @@ import {
   familyPlanCatalog,
   familyMemberPlanPrice,
   familyPurchaseAmount,
+  selectFamilyAdditionalPlan,
   resizeFamilyPlans
 } from '../data/familyMembership';
 import { billingPeriodLabel } from '../data/membershipBilling';
@@ -54,7 +55,7 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
 
   return <section className="space-y-4 rounded-2xl border border-slate-600 bg-slate-950 p-4 text-slate-100" dir="rtl">
     <div className="flex items-center gap-2"><Users size={18} className="text-amber-200" /><strong className="text-sm text-amber-100">בחירת מבנה המנוי המשפחתי</strong></div>
-    <p className="rounded-xl bg-indigo-900 p-3 text-sm text-white"><strong>משפחתי מותאם</strong> — מסלול ראשי ותוספות לכל בן משפחה. {recurringSelections.length ? 'מסלולים מתחדשים וחד־פעמיים משולמים בנפרד.' : 'תשלום חד־פעמי מאוחד.'}</p>
+    <p className="rounded-xl bg-indigo-900 p-3 text-sm text-white"><strong>משפחתי מותאם</strong> — מסלול אחד או יותר לכל בן משפחה. אפשר לרכוש אימונים אישיים או זוגיים בלבד, ללא מנוי Open Gym או קבוצתי. {recurringSelections.length ? 'מסלולים מתחדשים וחד־פעמיים משולמים בנפרד.' : 'תשלום חד־פעמי מאוחד.'}</p>
 
     <label className="block text-xs font-bold text-slate-700">מספר בני משפחה
       <select value={count} onChange={event => changeCount(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5">
@@ -113,7 +114,7 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
             {!included && <p className="mt-2 text-sm">לא יחויב ולא יופעל מסלול חדש. זכויות ששולמו והתחייבויות קיימות נשארות ללא שינוי; ללא מנוי תקף לא ניתן להירשם לאימון.</p>}
             {onRequestFreeze && member && !frozen && <button type="button" disabled={Boolean(member.membershipFreezeRequestedAt)} className="mt-2 rounded-lg border px-3 py-2 text-sm" onClick={() => onRequestFreeze(member.id)}>{member.membershipFreezeRequestedAt ? 'בקשת הקפאה ממתינה לאישור מנהל' : 'בקשת הקפאה לחודש מהמנהל'}</button>}
           </div>}
-          {included && <label className="text-sm font-bold text-slate-900">מסלול<select value={plan.membershipType} onChange={event => {
+          {included && <label className="text-sm font-bold text-slate-900">מסלול לתשלום — אפשר גם אישי או זוגי בלבד<select value={plan.membershipType} onChange={event => {
             const membershipType = event.target.value as MembershipType;
             const usesCard = membershipType === MembershipType.PERSONAL_TRAINING || membershipType === MembershipType.DUO_TRAINING;
             updatePlan(index, { membershipType, trainingSessionsCount: usesCard ? 10 : undefined,
@@ -126,7 +127,7 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
           {included && isTrainingCard && <label className="text-[11px] font-bold text-slate-600">מספר אימונים<input type="number" min={1} max={50} value={plan.trainingSessionsCount || 1} onChange={event => updatePlan(index, { trainingSessionsCount: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label>}
           {included && <fieldset className="sm:col-span-3 rounded-xl bg-slate-950 p-3 text-slate-100">
             <legend className="rounded-lg bg-slate-950 px-2 text-sm font-bold">מסלולים נוספים — {plan.memberName}</legend>
-            <p className="mb-2 text-xs text-slate-300">אפשר לסמן כמה תוספות, כגון תוכנית אימון ותוכנית תזונה.</p>
+            <p className="mb-2 text-xs text-slate-300">אפשר לסמן כמה מסלולים, כגון אימונים אישיים, תוכנית אימון ותוכנית תזונה. אין חובה לבחור מנוי נוסף; הבחירה הראשונה תשמש כמסלול לתשלום.</p>
             {(plan.additionalPlans || []).filter(item => !memberCatalog.some(config => config.id === item.membershipType && config.category === 'ADD_ON')).map(item => <div key={item.membershipType} role="alert" className="mb-2 rounded-lg border border-amber-400 p-2 text-sm">
               המסלול {membershipPlans.find(config => config.id === item.membershipType)?.label || item.membershipType} אינו זמין לרכישה או אינו מתאים לגיל.
               <button type="button" className="mr-2 min-h-11 underline" onClick={() => updatePlan(index, { additionalPlans: (plan.additionalPlans || []).filter(other => other.membershipType !== item.membershipType) })}>הסר תוספת</button>
@@ -136,9 +137,8 @@ export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ 
               const training = [MembershipType.PERSONAL_TRAINING, MembershipType.DUO_TRAINING].includes(config.id as MembershipType);
               return <div key={config.id} className="rounded-lg border border-slate-700 p-2">
                 <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
-                  <input type="checkbox" className="h-5 w-5 shrink-0" checked={Boolean(selected)} onChange={event => updatePlan(index, { additionalPlans: event.target.checked
-                    ? [...(plan.additionalPlans || []), { membershipType: config.id as MembershipType, trainingSessionsCount: training ? 1 : undefined }]
-                    : (plan.additionalPlans || []).filter(item => item.membershipType !== config.id) })} />
+                  <input type="checkbox" className="h-5 w-5 shrink-0" checked={Boolean(selected)} onChange={event => updatePlan(index, selectFamilyAdditionalPlan(plan,
+                    { membershipType: config.id as MembershipType, trainingSessionsCount: training ? 1 : undefined }, event.target.checked))} />
                   <span>{config.label} — ₪{config.price} · {billingPeriodLabel(config)}</span>
                 </label>
                 {selected && training && <label className="block text-xs">מספר אימונים — {config.label}<input type="number" min={1} max={50} value={selected.trainingSessionsCount || 1} onChange={event => updatePlan(index, { additionalPlans: (plan.additionalPlans || []).map(item => item.membershipType === config.id

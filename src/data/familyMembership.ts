@@ -23,6 +23,24 @@ export const CUSTOM_FAMILY_PLAN_OPTIONS = [
   ...CURRENT_MEMBERSHIP_ADD_ONS
 ].filter(type => type !== MembershipType.FAMILY_MEMBERSHIP);
 
+// A catalog "add-on" can also be the only purchase for a family member.
+// Use the existing first-plan receipt shape, without inventing a gym membership.
+export const selectFamilyAdditionalPlan = (
+  plan: FamilyMemberPlanSelection,
+  selection: NonNullable<FamilyMemberPlanSelection['additionalPlans']>[number],
+  checked: boolean
+): FamilyMemberPlanSelection => {
+  if (checked && !plan.membershipType) return {
+    ...plan,
+    membershipType: selection.membershipType,
+    trainingSessionsCount: selection.trainingSessionsCount,
+    additionalPlans: (plan.additionalPlans || []).filter(item => item.membershipType !== selection.membershipType)
+  };
+  return { ...plan, additionalPlans: checked
+    ? [...(plan.additionalPlans || []).filter(item => item.membershipType !== selection.membershipType), selection]
+    : (plan.additionalPlans || []).filter(item => item.membershipType !== selection.membershipType) };
+};
+
 export const resizeFamilyPlans = (
   plans: FamilyMemberPlanSelection[],
   count: number,

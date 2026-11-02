@@ -40,6 +40,40 @@ function fixture(paid = 280) {
   return { post, request, store, claims, state: () => state, calls: () => providerCalls, amount: () => amount, asManager: () => { role = 'MANAGER'; } };
 }
 
+test('default combined family payment accepts only personal sessions for a child and leaves the payer untouched', async () => {
+  const f = fixture();
+  f.state().payload.settings = { membershipPlans: [{ id: 'PERSONAL_TRAINING', label: 'Personal only', active: true,
+    price: 200, category: 'ADD_ON', billingPeriod: 'SESSION_PACK', paymentMode: 'ONE_TIME', supportsTrainingCard: true }] };
+  f.state().payload.users[1].registrationPaymentPending = true;
+  const originalPayer = structuredClone(f.state().payload.users[0]);
+  f.request.familyMemberPlans = [
+    { memberId: 'payer', memberName: 'Payer', participation: 'SKIP', membershipType: '' },
+    { memberId: 'child', memberName: 'Child', participation: 'INCLUDED', membershipType: 'PERSONAL_TRAINING', trainingSessionsCount: 3 }
+  ];
+  const response = await f.post('create', { ...f.request, quoteOnly: true });
+  assert.equal(response.status, 200, await response.clone().text());
+  const quote = await response.json();
+  assert.equal(quote.amountDue, 600);
+  assert.equal(quote.creditAmount, 0);
+  assert.equal(f.state().payload.users[1].registrationPaymentPending, true);
+  const created = await f.post('create', { ...f.request, quoteKey: quote.quoteKey });
+  assert.equal(created.status, 200, await created.clone().text());
+  const checkout = await created.json();
+  for (let i = 0; i < 2; i++) assert.equal((await f.post('verify', { paymentReference: checkout.paymentReference })).status, 200);
+  const child = f.state().payload.users[1];
+  assert.equal(child.membershipType, 'PERSONAL_TRAINING');
+  assert.equal(child.personalTrainingRemaining, 3);
+  assert.equal(child.membershipStatus, 'ACTIVE');
+  assert.equal(child.registrationPaymentPending, false);
+  assert.ok(!(child.secondaryMemberships || []).includes('OPEN_GYM'));
+  const payer = f.state().payload.users[0];
+  for (const field of ['membershipType', 'membershipStatus', 'membershipExpiry', 'personalTrainingRemaining', 'duoTrainingRemaining', 'secondaryMemberships']) {
+    assert.deepEqual(payer[field], originalPayer[field], field);
+  }
+  assert.equal(f.calls(), 1);
+  assert.equal(f.state().payload.payments.length, 2); // Original payer receipt plus the new family receipt.
+});
+
 test('family manual checkout cannot charge an existing recurring member again', async () => {
   const f = fixture();
   f.state().payload.payments[0].providerRecurringSaleId = 'active-series';
