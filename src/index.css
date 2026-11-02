@@ -2038,8 +2038,12 @@ option {
     background: var(--app-bg);
   }
 
+  /* Keep legal links reachable above the fixed trainee navigation and iOS safe area. */
+  .role-trainee .app-footer {
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+  }
+
   .role-trainee #role-switcher-container,
-  .role-trainee .app-footer,
   .role-trainee .trainee-profile-panel {
     display: none !important;
   }
