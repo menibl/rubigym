@@ -64,6 +64,70 @@ test('back from unpaid page and retry resumes the exact same hosted page across 
   assert.ok(!JSON.stringify([...f.rows.values()]).includes('fixture-private'));
 });
 
+test('incomplete pre-card SaleDetails resumes only the encrypted original page after a complete negative lookup', async () => {
+  for (const shape of ['empty', 'missing-order', 'zero-transaction']) {
+    const f = fixture(); f.edit(payload => { payload.users[0].phone = '0541234567'; });
+    const first = await (await f.create()).json();
+    const original = f.env.RIVHIT_FETCH;
+    f.env.RIVHIT_FETCH = async (url, init) => {
+      if (url.endsWith('/RecurringSaleList')) { f.calls.push({ url, body: JSON.parse(init.body) }); return Response.json({ RecurringSales: [] }); }
+      const response = await original(url, init);
+      if (!url.endsWith('/SaleDetails')) return response;
+      const result = await response.json();
+      if (shape === 'empty') result.data = [];
+      if (shape === 'missing-order') delete result.data[0].Custom1;
+      if (shape === 'zero-transaction') result.data[0].TransactionAmount = 0;
+      return Response.json(result);
+    };
+    const response = await f.create();
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal((await response.json()).url, first.url);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/RecurringSaleList')).length, 1);
+    assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT'); assert.deepEqual(f.state().payload.payments, []);
+  }
+});
+
+test('incomplete details cannot resume through an active series, missing phone, malformed list or provider outage', async () => {
+  for (const scenario of ['active', 'missing-phone', 'invalid', 'outage']) {
+    const f = fixture(); f.edit(payload => { payload.users[0].phone = scenario === 'missing-phone' ? '' : '0541234567'; });
+    await f.create();
+    const original = f.env.RIVHIT_FETCH;
+    f.env.RIVHIT_FETCH = async (url, init) => {
+      if (url.endsWith('/SaleDetails')) return Response.json({ Status: 0, data: [] });
+      if (url.endsWith('/RecurringSaleList')) {
+        if (scenario === 'outage') throw new Error('fixture-timeout');
+        return Response.json(scenario === 'invalid' ? {} : { RecurringSales: [{ RecurringSaleId: '11111111-1111-4111-8111-111111111111', IsActive: true }] });
+      }
+      return original(url, init);
+    };
+    const response = await f.create(); assert.equal(response.status, 409);
+    assert.match((await response.json()).reasonCode, /^CONTINUATION_/);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+    assert.deepEqual(f.state().payload.payments, []);
+  }
+});
+
+test('gross TransactionAmount takes precedence over a net Amount; explicit order/amount conflicts still block', async () => {
+  for (const mismatch of [null, 'amount', 'order']) {
+    const f = fixture(); const first = await (await f.create()).json();
+    const original = f.env.RIVHIT_FETCH;
+    f.env.RIVHIT_FETCH = async (url, init) => {
+      const response = await original(url, init);
+      if (!url.endsWith('/SaleDetails')) return response;
+      const result = await response.json(); result.data[0].Amount = 237.29;
+      if (mismatch === 'amount') result.data[0].TransactionAmount = 999;
+      if (mismatch === 'order') result.data[0].Custom1 = 'different-order';
+      return Response.json(result);
+    };
+    const response = await f.create(); assert.equal(response.status, mismatch ? 409 : 200);
+    const outcome = await response.json();
+    if (mismatch) assert.equal(outcome.reasonCode, mismatch === 'amount' ? 'CONTINUATION_AMOUNT_MISMATCH' : 'CONTINUATION_ORDER_MISMATCH');
+    else assert.equal(outcome.url, first.url);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  }
+});
+
 test('legacy request recovers the same page from its original signed browser reference, not another GetUrl', async () => {
   const f = fixture(); const first = await (await f.create()).json(); f.rows.clear();
   f.edit(payload => { delete payload.recurringCheckouts[0].stage; delete payload.recurringCheckouts[0].requestDispatchedAt; });

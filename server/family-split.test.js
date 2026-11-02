@@ -13,6 +13,38 @@ const members = [
   { memberId: 'child', memberName: 'Child Example', membershipType: 'GROUP_ANNUAL', participation: 'INCLUDED' }
 ];
 
+test('an abandoned family page with empty sale details resumes the same page; a released line cannot replay', async () => {
+  const f = fixture(true); f.state().payload.users[0].phone = '0541234567';
+  const quote = await (await f.quote()).json();
+  const input = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+  const first = await (await f.post('family-split/create', input)).json();
+  const original = f.env.RIVHIT_FETCH;
+  f.env.RIVHIT_FETCH = async (url, options) => url.endsWith('/SaleDetails') ? Response.json({ Status: 0, data: [] })
+    : url.endsWith('/RecurringSaleList') ? Response.json({ RecurringSales: [] }) : original(url, options);
+  const resumed = await f.post('family-split/create', input); assert.equal(resumed.status, 200, await resumed.clone().text());
+  assert.equal((await resumed.json()).url, first.url);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  const record = await f.env.STATE_STORE.getFamilySplitCheckout('test', 'payer');
+  record.payload.items[0].status = 'CANCELLED';
+  await f.env.STATE_STORE.putFamilySplitCheckout('test', 'payer', record.payload, record.revision);
+  assert.equal((await f.post('family-split/create', input)).status, 409);
+  assert.equal((await f.post('family-split/verify', input)).status, 409);
+  assert.deepEqual(f.state().payload.payments, []);
+});
+
+test('released family items allow a fresh quote without replacing another dispatched item', async () => {
+  for (const otherStatus of ['READY', 'PAGE']) {
+    const f = fixture(true); const old = await (await f.quote({ familyPaymentGrouping: 'SEPARATE' })).json();
+    const record = await f.env.STATE_STORE.getFamilySplitCheckout('test', 'payer');
+    record.payload.items[0].status = 'CANCELLED'; record.payload.items[1].status = otherStatus;
+    await f.env.STATE_STORE.putFamilySplitCheckout('test', 'payer', record.payload, record.revision);
+    const next = await (await f.quote({ familyPaymentGrouping: 'SEPARATE' })).json();
+    if (otherStatus === 'READY') assert.notEqual(next.batchId, old.batchId);
+    else assert.equal(next.batchId, old.batchId);
+    assert.equal(f.calls.length, 0);
+  }
+});
+
 test('two family members and two additions use exactly one recurring page and one manual page', async () => {
   const f = fixture(true);
   f.state().payload.nutritionPlans = [{ id: 'n1', traineeId: 'payer', isPaid: false }, { id: 'n2', traineeId: 'child', isPaid: false }];
