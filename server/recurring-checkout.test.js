@@ -64,6 +64,136 @@ test('back from unpaid page and retry resumes the exact same hosted page across 
   assert.ok(!JSON.stringify([...f.rows.values()]).includes('fixture-private'));
 });
 
+test('self-service status and resume use the authenticated owner and the original encrypted page only', async () => {
+  const f = fixture(); const first = await (await f.create()).json();
+  const status = await f.post('checkout-recovery', { action: 'status', userId: 'someone-else' });
+  assert.equal(status.status, 200);
+  const result = await status.json(); assert.equal(result.items.length, 1);
+  const item = result.items[0]; assert.equal(item.canRestart, false);
+  const redacted = JSON.stringify(result);
+  for (const privateValue of [first.paymentReference, first.url, 'fixture-private']) assert.ok(!redacted.includes(privateValue));
+  f.actor('m');
+  assert.deepEqual((await (await f.post('checkout-recovery', { action: 'status', userId: 'u' })).json()).items, []);
+  assert.equal((await f.post('checkout-recovery', { action: 'resume', orderId: item.id, userId: 'u' })).status, 404);
+  f.actor('u');
+  const resumed = await f.post('checkout-recovery', { action: 'resume', orderId: item.id,
+    userId: 'someone-else', url: 'https://attacker.invalid/', planAmount: 1 });
+  assert.equal(resumed.status, 200, await resumed.clone().text());
+  assert.equal((await resumed.json()).url, first.url);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.equal(f.state().payload.payments.length, 0);
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+  assert.equal((await f.post('checkout-recovery', { action: 'restart', orderId: item.id, confirmUndispatched: true })).status, 409);
+  f.submitted(0);
+  const approved = await f.post('checkout-recovery', { action: 'resume', orderId: item.id });
+  assert.equal((await approved.json()).completed, true);
+  assert.deepEqual((await (await f.post('checkout-recovery', { action: 'status' })).json()).items, []);
+  assert.equal(f.state().payload.users[0].recurringMemberships.OPEN_GYM.status, 'PENDING_FIRST_CHARGE');
+  assert.equal(f.state().payload.payments.length, 0);
+});
+
+test('customer restart releases only a proven never-dispatched reservation, then permits a fresh checkout', async () => {
+  const f = fixture();
+  f.edit(payload => { payload.recurringCheckouts = [{ orderId: 'never-sent', userId: 'u', membershipType: 'OPEN_GYM',
+    stage: 'RESERVED', dispatchedAt: '2020-01-01T00:00:00Z', endsAt: '2099-01-01',
+    orderSnapshot: { o: 'never-sent', u: 'u', m: 'OPEN_GYM', rc: 1 } }]; });
+  const status = await (await f.post('checkout-recovery', { action: 'status' })).json();
+  assert.equal(status.items[0].canRestart, true);
+  assert.equal((await f.post('checkout-recovery', { action: 'restart', orderId: 'never-sent' })).status, 409);
+  const response = await f.post('checkout-recovery', { action: 'restart', orderId: 'never-sent', confirmUndispatched: true });
+  assert.equal(response.status, 200);
+  assert.equal(f.state().payload.recurringCheckouts[0].cancelledBy, 'u');
+  assert.equal(f.state().payload.recurringCheckouts[0].stage, 'RELEASED_UNDISPATCHED');
+  assert.equal(f.calls.length, 0);
+  assert.equal((await f.create()).status, 200);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+});
+
+test('an existing authenticated account can resume its historical registration checkout without registering again', async () => {
+  const f = fixture(); const first = await (await f.create({ mode: 'REGISTRATION' })).json();
+  const orderId = f.state().payload.recurringCheckouts[0].orderId;
+  const response = await f.post('checkout-recovery', { action: 'resume', orderId });
+  assert.equal(response.status, 200, await response.clone().text());
+  const result = await response.json();
+  assert.equal(result.url, first.url); assert.equal(result.resumeSummary.mode, 'REGISTRATION');
+  f.submitted(0);
+  const approved = await f.post('checkout-recovery', { action: 'resume', orderId });
+  assert.equal(approved.status, 200, await approved.clone().text());
+  assert.equal((await approved.json()).completed, true);
+  assert.equal(f.state().payload.users[0].membershipStatus, 'ACTIVE');
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+});
+
+test('a concurrent dispatch wins over customer restart and does not release the request', async () => {
+  const f = fixture();
+  f.edit(payload => { payload.recurringCheckouts = [{ orderId: 'race', userId: 'u', membershipType: 'OPEN_GYM',
+    stage: 'RESERVED', dispatchedAt: '2020-01-01T00:00:00Z', endsAt: '2099-01-01',
+    orderSnapshot: { o: 'race', u: 'u', m: 'OPEN_GYM', rc: 1 } }]; });
+  const put = f.store.putClubState; let race = true;
+  f.store.putClubState = async (club, payload, revision) => {
+    if (!race) return put(club, payload, revision);
+    race = false;
+    const latest = structuredClone(f.state().payload);
+    latest.recurringCheckouts[0].stage = 'DISPATCHED'; latest.recurringCheckouts[0].requestDispatchedAt = new Date().toISOString();
+    await put(club, latest, revision);
+    return { conflict: true };
+  };
+  assert.equal((await f.post('checkout-recovery', { action: 'restart', orderId: 'race', confirmUndispatched: true })).status, 409);
+  assert.equal(f.state().payload.recurringCheckouts[0].cancelledAt, undefined);
+  assert.equal(f.state().payload.recurringCheckouts[0].stage, 'DISPATCHED');
+  assert.equal(f.calls.length, 0);
+});
+
+test('self-service continuation ignores only a verified series for another family beneficiary', async () => {
+  const f = fixture(); const first = await (await f.create()).json();
+  const seriesId = '11111111-1111-4111-8111-111111111111';
+  const orderId = f.state().payload.recurringCheckouts[0].orderId;
+  f.edit(payload => {
+    payload.users[0].phone = '0541234567';
+    payload.users.push({ id: 'child', recurringMemberships: { GROUP_ANNUAL: { seriesId, orderId: 'old-child',
+      status: 'ACTIVE', endsAt: '2099-01-01', approvedAt: '2026-01-01T12:00:00Z', events: ['PAID:fixture:1'] } } });
+    payload.recurringCheckouts.push({ orderId: 'old-child', userId: 'child', membershipType: 'GROUP_ANNUAL',
+      recurringSaleId: seriesId, endsAt: '2099-01-01', orderSnapshot: { o: 'old-child', u: 'u', bu: 'child', m: 'GROUP_ANNUAL', re: '2099-01-01', rc: 1 } });
+  });
+  const original = f.env.RIVHIT_FETCH;
+  f.env.RIVHIT_FETCH = async (url, init) => url.endsWith('/SaleDetails') ? Response.json({ Status: 0, data: [] })
+    : url.endsWith('/RecurringSaleList') ? Response.json({ RecurringSales: [{ RecurringSaleId: seriesId, IsActive: true }] }) : original(url, init);
+  const resumed = await f.post('checkout-recovery', { action: 'resume', orderId });
+  assert.equal(resumed.status, 200, await resumed.clone().text());
+  assert.equal((await resumed.json()).url, first.url);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.deepEqual(f.state().payload.payments, []);
+});
+
+test('an approved setup with empty page details synchronizes only with strict provider card and ownership evidence', async () => {
+  for (const cardApproved of [true, false]) {
+    const f = fixture();
+    f.edit(payload => { payload.users[0].phone = '0541234567'; });
+    await f.create();
+    const checkout = f.state().payload.recurringCheckouts[0];
+    const seriesId = '11111111-1111-4111-8111-111111111111';
+    const original = f.env.RIVHIT_FETCH;
+    f.env.RIVHIT_FETCH = async (url, init) => {
+      if (url.endsWith('/SaleDetails')) return Response.json({ Status: 0, data: [] });
+      if (url.endsWith('/RecurringSaleList')) return Response.json({ RecurringSales: [{ RecurringSaleId: seriesId, IsActive: true }] });
+      if (url.endsWith('/RecurringSaleDetails')) return Response.json({ Amount: checkout.orderSnapshot.a, PhoneNumber: '0541234567',
+        Token: cardApproved ? 'fixture-card-proof' : null, AutoCharge: true, IsActive: true, Currency: 1, ProRata: false,
+        RecurringCycle: 3, RecurringDay: 1, RecurringStep: 1, RecurringSaleCount: 12, ChargeCount: 0,
+        CreationDate: checkout.dispatchedAt,
+        EndDate: new Date(Date.UTC(Number(checkout.endsAt.slice(0, 4)), Number(checkout.endsAt.slice(5, 7)) - 2, 1)).toISOString(),
+        IpnUrl: 'https://club.test/api/payments/rivhit/webhook' });
+      if (url.endsWith('/RecurringSaleHistory')) return Response.json({ RecurringSaleHistoryList: [] });
+      return original(url, init);
+    };
+    const response = await f.post('checkout-recovery', { action: 'resume', orderId: checkout.orderId });
+    assert.equal(response.status, cardApproved ? 200 : 409, await response.clone().text());
+    if (cardApproved) assert.equal((await response.json()).completed, true);
+    assert.equal(f.state().payload.users[0].membershipStatus, cardApproved ? 'ACTIVE' : 'DEBT');
+    assert.equal(f.state().payload.payments.length, 0);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  }
+});
+
 test('incomplete pre-card SaleDetails resumes only the encrypted original page after a complete negative lookup', async () => {
   for (const shape of ['empty', 'missing-order', 'zero-transaction']) {
     const f = fixture(); f.edit(payload => { payload.users[0].phone = '0541234567'; });
