@@ -13,6 +13,44 @@ const members = [
   { memberId: 'child', memberName: 'Child Example', membershipType: 'GROUP_ANNUAL', participation: 'INCLUDED' }
 ];
 
+test('a family member can pay for only personal or duo sessions without any gym subscription', async () => {
+  for (const type of ['PERSONAL_TRAINING', 'DUO_TRAINING']) {
+    const f = fixture();
+    const state = f.state().payload;
+    state.settings.membershipPlans.push({ id: type, label: type, price: 100, active: true, category: 'ADD_ON',
+      billingPeriod: 'SESSION_PACK', paymentMode: 'ONE_TIME', supportsTrainingCard: true });
+    state.users[0].registrationPaymentPending = true;
+    const originalChild = structuredClone(state.users[1]);
+    const response = await f.quote({ familyPaymentGrouping: 'SEPARATE', familyMemberPlans: [
+      { memberId: 'payer', memberName: 'Payer Example', participation: 'INCLUDED', membershipType: type, trainingSessionsCount: 6 },
+      { memberId: 'child', memberName: 'Child Example', participation: 'SKIP', membershipType: '' }
+    ] });
+    assert.equal(response.status, 200, await response.clone().text());
+    const quote = await response.json();
+    assert.equal(quote.items.length, 1);
+    assert.equal(quote.items[0].membershipType, type);
+    assert.equal(quote.items[0].amount, 540); // Six sessions, configured unit price, existing 10% coupon.
+    assert.equal(quote.items[0].recurring, false);
+    assert.equal(state.users[0].registrationPaymentPending, true); // Quote is not proof of payment.
+    const request = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+    assert.equal((await f.post('family-split/create', request)).status, 200);
+    const verified = await f.post('family-split/verify', request);
+    assert.equal(verified.status, 200, await verified.clone().text());
+    assert.equal((await f.post('family-split/verify', request)).status, 200); // Replays do not add more credit.
+    const payer = f.state().payload.users[0];
+    assert.equal(payer.membershipType, type);
+    assert.equal(payer.membershipStatus, 'ACTIVE');
+    assert.equal(payer.registrationPaymentPending, false);
+    assert.equal(payer[type === 'PERSONAL_TRAINING' ? 'personalTrainingRemaining' : 'duoTrainingRemaining'], 6);
+    assert.ok(!(payer.secondaryMemberships || []).includes('OPEN_GYM'));
+    assert.deepEqual(f.state().payload.users[1], originalChild);
+    assert.equal(f.state().payload.payments.length, 1);
+    assert.equal(f.state().payload.payments[0].amount, 540);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+    assert.equal(f.calls.find(call => call.url.endsWith('/GetUrl')).body.CreateRecurringSale, false);
+  }
+});
+
 test('an abandoned family page with empty sale details resumes the same page; a released line cannot replay', async () => {
   const f = fixture(true); f.state().payload.users[0].phone = '0541234567';
   const quote = await (await f.quote()).json();
