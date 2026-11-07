@@ -330,10 +330,16 @@ const normalizeFamilyPlans = (plans, catalog) => {
 
 const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
   if (body.individualSelections !== undefined) {
-    if (body.mode !== 'PRIMARY' || !Array.isArray(body.individualSelections) || body.individualSelections.length < 2 || body.individualSelections.length > 21
+    if (!['PRIMARY', 'ADDON'].includes(body.mode) || !Array.isArray(body.individualSelections) || body.individualSelections.length < 2 || body.individualSelections.length > 21
       || body.individualSelections[0]?.membershipType !== body.membershipType) throw new Error('INVALID_MEMBERSHIP');
     const [primary, ...additions] = body.individualSelections;
     const familyMemberPlans = normalizeFamilyPlans([{ ...primary, memberId: body.userId, additionalPlans: additions }], catalog);
+    // An add-on basket must never smuggle a primary subscription into an
+    // ADDON purchase. Every line remains an addition when approval is applied.
+    if (body.mode === 'ADDON' && body.individualSelections.some(selection => {
+      const plan = planPrice(selection.membershipType, catalog).plan;
+      return plan ? plan.category !== 'ADD_ON' : !['WORKOUT_COACHING', 'WORKOUT_PLAN', 'NUTRITION_COACHING', 'NUTRITION_PLAN', 'PERSONAL_TRAINING', 'DUO_TRAINING'].includes(selection.membershipType);
+    })) throw new Error('INVALID_MEMBERSHIP');
     return { individual: true, familyMemberPlans, recurring: familyRecurringSelections(familyMemberPlans, catalog).length > 0 };
   }
   if (body.familyMembersCount || body.membershipType === 'FAMILY_MEMBERSHIP') {
@@ -1112,7 +1118,7 @@ const handleValidateDiscount = async (request, env) => {
 };
 
 const prepareFamilySplit = async (request, env, body, purchase, state) => {
-  if (body.mode !== 'PRIMARY') return json({ message: 'יש להשלים הרשמה ולשייך את בני המשפחה לפני תשלום מפוצל.' }, 422, corsHeaders(request, env));
+  if (body.mode !== 'PRIMARY' && !(purchase.individual && body.mode === 'ADDON')) return json({ message: 'יש להשלים הרשמה ולשייך את בני המשפחה לפני תשלום מפוצל.' }, 422, corsHeaders(request, env));
   if (purchase.recurring) {
     if (String(env.RIVHIT_ENABLE_FAMILY_SPLIT_RECURRING).toLowerCase() !== 'true') return json({ code: 'FAMILY_SPLIT_DISABLED', message: 'תשלום משפחתי מפוצל בהוראת קבע טרם הופעל. לא נוצר חיוב.' }, 503, corsHeaders(request, env));
     if (String(env.RIVHIT_ENABLE_RECURRING).toLowerCase() !== 'true') return json({ code: 'RECURRING_DISABLED', message: 'הוראות הקבע עדיין לא הופעלו בשרת. לא נוצר חיוב.' }, 503, corsHeaders(request, env));
@@ -1129,6 +1135,7 @@ const prepareFamilySplit = async (request, env, body, purchase, state) => {
         timestamp: item.dispatchedAt, isMock: rivhitEnvironment(env) !== 'production' })));
   try { lines = familySplitLines(members, state.payload.settings.membershipPlans, [...(state.payload.payments || []), ...pendingSeries], discount, rivhitEnvironment(env) === 'production'); }
   catch (error) { return json({ message: error.message === 'SPLIT_ZERO_AMOUNT' ? 'הנחה שמאפסת מסלול אינה נתמכת בתשלום מפוצל. יש לפנות למנהל.' : 'מסלולי החיוב אינם תקינים.' }, 422, corsHeaders(request, env)); }
+  if (purchase.individual && body.mode === 'ADDON') lines = lines.map(line => ({ ...line, mode: 'ADDON' }));
   const grouping = body.familyPaymentGrouping === 'SEPARATE' ? 'SEPARATE' : 'COMBINED';
   lines = groupFamilyRecurringLines(lines, grouping);
   if (lines.some(line => line.groupLines?.length > 30)) return json({ message: 'הבחירה גדולה מדי לחיוב מאוחד אחד. יש לבחור תשלום נפרד או לפנות למנהל; לא נפתח חיוב.' }, 422, corsHeaders(request, env));
@@ -1389,7 +1396,7 @@ const handleCreatePayment = async (request, env, splitLine) => {
   if (invalidYouthPurchase(ageState?.payload, body, splitLine)) {
     return json({ code: 'YOUTH_PLAN_AGE_MISMATCH', message: 'מסלול נוער מיועד עד גיל 18 כולל. יש לעדכן תאריך לידה תקין ולבחור מסלול המתאים לגיל של המתאמן. לא נפתחה בקשת תשלום.' }, 422, corsHeaders(request, env));
   }
-  if (!splitLine && (body.membershipType === 'FAMILY_MEMBERSHIP' || body.individualSelections) && body.mode === 'PRIMARY' && body.quoteOnly && env.STATE_STORE?.getFamilySplitCheckout) {
+  if (!splitLine && ((body.membershipType === 'FAMILY_MEMBERSHIP' && body.mode === 'PRIMARY') || (body.individualSelections && ['PRIMARY', 'ADDON'].includes(body.mode))) && body.quoteOnly && env.STATE_STORE?.getFamilySplitCheckout) {
     const previous = (await env.STATE_STORE.getFamilySplitCheckout(env.CLUB_ID || 'baly-wellness', body.userId)).payload;
     const releasedUndispatched = previous?.items.some(item => item.status === 'CANCELLED')
       && previous.items.every(item => ['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status));

@@ -809,7 +809,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         phone: activeUser.phone,
         membershipType: selectedMembershipPurchase,
         mode: membershipPurchaseMode,
-        individualSelections: membershipPurchaseMode === 'PRIMARY' && checkoutAdditions.length ? [
+        individualSelections: checkoutAdditions.length ? [
           { membershipType: selectedMembershipPurchase, trainingSessionsCount: selectedMembershipUsesTrainingCard ? trainingCardSize : undefined },
           ...checkoutAdditions
         ] : undefined,
@@ -2413,8 +2413,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <strong className="text-xl text-amber-800">₪{applySelectedDiscount(selectedMembershipAmount)} · {billingPeriodLabel(selectedMembershipConfig)}</strong>
                 </div>
                 <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
-                  {membershipPurchaseMode === 'PRIMARY' && <fieldset className="rounded-xl border border-slate-600 bg-slate-950 p-4 text-slate-100">
+                  <fieldset className="rounded-xl border border-slate-600 bg-slate-950 p-4 text-slate-100">
                     <legend className="px-2 font-bold">תוספות לאותה רכישה</legend>
+                    {membershipPurchaseMode === 'ADDON' && <p className="mb-3 text-sm">אפשר לרכוש אישי וזוגי יחד, עם כמות נפרדת לכל שירות. אין צורך במנוי Open Gym והמנוי הקיים לא ישתנה.</p>}
                     <p className="mb-3 text-sm">בחרו הכול לפני התשלום. הוראות קבע תואמות ישולמו יחד, ותוספות חד־פעמיות בתשלום מאוחד נפרד לאחריהן.</p>
                     {membershipAddOns.filter(plan => plan.id !== selectedMembershipPurchase).map(plan => {
                       const selected = checkoutAdditions.find(item => item.membershipType === plan.id);
@@ -2427,7 +2428,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       </div>;
                     })}
                     {!!checkoutAdditions.length && <p className="mt-3 font-bold">מחיר הבחירה לפני הנחה: ₪{(selectedMembershipAmount + checkoutAdditions.reduce((sum, item) => sum + (membershipPlanConfigs.find(plan => plan.id === item.membershipType)?.price || 0) * (item.trainingSessionsCount || 1), 0)).toLocaleString('he-IL')} — הפירוט לפי סוג חיוב יוצג לפני המעבר לרווחית.</p>}
-                  </fieldset>}
+                  </fieldset>
                   {selectedMembershipUsesTrainingCard && (
                     <label className="text-xs font-bold text-slate-700">בחרו גודל כרטיסייה
                       <select value={trainingCardSize} onChange={event => setTrainingCardSize(Number(event.target.value) as TrainingCardSize)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3">
