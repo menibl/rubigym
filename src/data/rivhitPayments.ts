@@ -96,7 +96,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
   if (!apiBase) throw new Error('שירות התשלום עדיין לא הוגדר בשרת.');
   let quoteKey: string | undefined;
   let upgradeQuoteKey: string | undefined;
-  if ((request.membershipType === 'FAMILY_MEMBERSHIP' || request.individualSelections?.length) && request.mode === 'PRIMARY') {
+  if ((request.membershipType === 'FAMILY_MEMBERSHIP' && request.mode === 'PRIMARY') || (request.individualSelections?.length && ['PRIMARY', 'ADDON'].includes(request.mode))) {
     const quoteResponse = await fetch(`${apiBase}/api/payments/rivhit/create`, {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...request, registrationDraft: undefined, quoteOnly: true, unifiedCheckout: true })

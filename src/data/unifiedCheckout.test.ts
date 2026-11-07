@@ -6,7 +6,8 @@ test('individual checkout offers additions before payment and uses the existing 
   const dashboard = readFileSync(new URL('../components/TraineeDashboard.tsx', import.meta.url), 'utf8');
   const payments = readFileSync(new URL('./rivhitPayments.ts', import.meta.url), 'utf8');
   assert.match(dashboard, /תוספות לאותה רכישה/);
-  assert.match(dashboard, /individualSelections: membershipPurchaseMode === 'PRIMARY' && checkoutAdditions.length/);
+  assert.match(dashboard, /individualSelections: checkoutAdditions.length/);
+  assert.match(dashboard, /mode: membershipPurchaseMode/);
   assert.match(dashboard, /\.\.\.checkoutAdditions/);
   assert.match(payments, /request.individualSelections\?\.length/);
   assert.match(payments, /unifiedCheckout: true/);
