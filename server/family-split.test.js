@@ -133,6 +133,59 @@ test('an individual selects a primary plan and additions together without creati
   assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 2);
 });
 
+test('personal and duo add-on basket uses one manual page and preserves the primary subscription', async () => {
+  for (const hasPrimary of [true, false]) {
+    const f = fixture(); const state = f.state().payload;
+    state.settings.membershipPlans.push(...['PERSONAL_TRAINING', 'DUO_TRAINING'].map((id, index) => ({
+      id, label: id, price: index ? 150 : 100, active: true, category: 'ADD_ON',
+      billingPeriod: 'SESSION_PACK', paymentMode: 'ONE_TIME', supportsTrainingCard: true
+    })));
+    const user = state.users[0];
+    delete user.familyId; delete user.isFamilyPayer;
+    user.membershipType = hasPrimary ? 'GROUP_ANNUAL' : undefined;
+    user.membershipStatus = hasPrimary ? 'ACTIVE' : 'DEBT';
+    user.membershipExpiry = hasPrimary ? '2027-01-01' : undefined;
+    user.personalTrainingRemaining = 2; user.duoTrainingRemaining = 1;
+    const before = structuredClone(user), sibling = structuredClone(state.users[1]);
+    const response = await f.post('create', { userId: 'payer', membershipType: 'PERSONAL_TRAINING', mode: 'ADDON', quoteOnly: true,
+      discountCode: 'SAVE10', individualSelections: [
+        { membershipType: 'PERSONAL_TRAINING', trainingSessionsCount: 6 },
+        { membershipType: 'DUO_TRAINING', trainingSessionsCount: 4 }
+      ], planAmount: 1 });
+    assert.equal(response.status, 200, await response.clone().text());
+    const quote = await response.json(); assert.equal(quote.items.length, 1);
+    assert.equal(quote.items[0].amount, 1080);
+    assert.ok(quote.items[0].groupLines.every(line => line.mode === 'ADDON'));
+    const input = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+    assert.equal((await f.post('family-split/create', input)).status, 200);
+    assert.deepEqual(f.state().payload.users[0], before, 'a hosted page alone grants nothing');
+    assert.equal((await f.post('family-split/verify', input)).status, 200);
+    assert.equal((await f.post('family-split/verify', input)).status, 200);
+    const updated = f.state().payload.users[0];
+    for (const key of ['membershipType', 'membershipStatus', 'membershipExpiry']) assert.equal(updated[key], before[key]);
+    assert.equal(updated.personalTrainingRemaining, 8); assert.equal(updated.duoTrainingRemaining, 5);
+    assert.deepEqual(updated.secondaryMemberships, ['PERSONAL_TRAINING', 'DUO_TRAINING']);
+    assert.deepEqual(f.state().payload.users[1], sibling);
+    assert.equal(f.state().payload.payments.length, 1);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+    assert.equal(f.calls.find(call => call.url.endsWith('/GetUrl')).body.CreateRecurringSale, false);
+  }
+});
+
+test('an add-on basket rejects primary plans, duplicates and forged session counts before dispatch', async () => {
+  for (const selection of [
+    [{ membershipType: 'OPEN_GYM' }, { membershipType: 'NUTRITION_PLAN' }],
+    [{ membershipType: 'NUTRITION_PLAN' }, { membershipType: 'NUTRITION_PLAN' }],
+    [{ membershipType: 'NUTRITION_PLAN' }, { membershipType: 'DUO_TRAINING', trainingSessionsCount: 51 }]
+  ]) {
+    const f = fixture();
+    f.state().payload.settings.membershipPlans.push({ id: 'DUO_TRAINING', label: 'Duo', price: 150, active: true, category: 'ADD_ON', billingPeriod: 'SESSION_PACK' });
+    assert.equal((await f.post('create', { userId: 'payer', membershipType: selection[0].membershipType,
+      mode: 'ADDON', quoteOnly: true, individualSelections: selection })).status, 400);
+    assert.equal(f.calls.length, 0);
+  }
+});
+
 test('return verification recovers an approved series when SaleDetails has incomplete recurring receipt fields', async () => {
   for (const approved of [true, false]) {
     const f = fixture(true);
