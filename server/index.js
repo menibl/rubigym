@@ -10,7 +10,7 @@ import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
 import { discoverTodayRecurring, publicRecovery } from './bulk-recurring-recovery.js';
 import { discoverApprovedSetup } from './recurring-setup-discovery.js';
 import { continuationSale, checkNoActiveContinuation } from './checkout-continuation.js';
-import { canRestartUndispatched, ownedRecoveryCheckouts, recoveryItems } from './checkout-recovery.js';
+import { autoReleaseUndispatched, canRestartUndispatched, ownedRecoveryCheckouts, recoveryItems } from './checkout-recovery.js';
 import { checkStuckCheckout, releaseStuckCheckout } from './stuck-checkout-release.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, updateRecurringCheckout, releaseUndispatchedRecurringCheckout } from './recurring-checkout.js';
 import { familySplitLines, groupFamilyRecurringLines, groupedReceiptPlans, publicFamilySplit, changeFamilySplit } from './family-split.js';
@@ -1376,6 +1376,15 @@ const handleCheckoutRecovery = async (request, env) => {
       : 'מצב הבקשה השתנה ולא שוחררה חסימה. לא נפתח חיוב נוסף.' }, released ? 200 : 409, headers);
   }
   if (body.action !== 'resume') return json({ message: 'פעולה לא מוכרת.' }, 400, headers);
+  if (canRestartUndispatched(item)) {
+    const released = await autoReleaseUndispatched(env.STATE_STORE, identity.club_id, identity.user_id,
+      { ...state.payload, recurringCheckouts: [item] });
+    if (released.includes(item.orderId)) return json({ released: true,
+      message: 'שוחררה אוטומטית בקשה שבוודאות לא נשלחה לרווחית. אפשר לבחור מסלול ולשלם מחדש; לא בוצע חיוב.' }, 200, headers);
+    // A concurrent dispatch/storage write may have won. Re-read rather than
+    // continuing from the stale RESERVED snapshot or issuing another request.
+    return json({ code: 'CHECKOUT_STATE_CHANGED', message: 'מצב הבקשה השתנה בזמן הבדיקה. יש לנסות להמשיך שוב; לא נפתח חיוב נוסף.' }, 409, headers);
+  }
   requirePaymentEnv(env);
   // Read/verify and re-open the ORIGINAL page only; safe for bounded retries.
   // Never route this operation through create/GetUrl or accept a client URL.
@@ -1388,13 +1397,16 @@ const handleCreatePayment = async (request, env, splitLine) => {
   const body = await request.json();
   if (body.mode !== 'REGISTRATION') {
     const identity = await getAuthenticatedSession(request, env.STATE_STORE);
-    if (!identity || identity.user_id !== body.userId) {
+    if (!identity || identity.user_id !== body.userId || identity.club_id !== (env.CLUB_ID || 'baly-wellness')) {
       return json({ message: 'לא ניתן ליצור תשלום עבור משתמש אחר.' }, 403, corsHeaders(request, env));
     }
   }
   const ageState = env.STATE_STORE?.getClubState ? await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness') : null;
   if (invalidYouthPurchase(ageState?.payload, body, splitLine)) {
     return json({ code: 'YOUTH_PLAN_AGE_MISMATCH', message: 'מסלול נוער מיועד עד גיל 18 כולל. יש לעדכן תאריך לידה תקין ולבחור מסלול המתאים לגיל של המתאמן. לא נפתחה בקשת תשלום.' }, 422, corsHeaders(request, env));
+  }
+  if (!splitLine && body.mode !== 'REGISTRATION' && ageState?.payload?.users?.some(user => user.id === body.userId)) {
+    await autoReleaseUndispatched(env.STATE_STORE, env.CLUB_ID || 'baly-wellness', body.userId, ageState.payload);
   }
   if (!splitLine && ((body.membershipType === 'FAMILY_MEMBERSHIP' && body.mode === 'PRIMARY') || (body.individualSelections && ['PRIMARY', 'ADDON'].includes(body.mode))) && body.quoteOnly && env.STATE_STORE?.getFamilySplitCheckout) {
     const previous = (await env.STATE_STORE.getFamilySplitCheckout(env.CLUB_ID || 'baly-wellness', body.userId)).payload;

@@ -30,6 +30,7 @@ test('customer recovery UI uses server-owned orders, original references, explic
   assert.match(resume, /sessionStorage.setItem\(PENDING_PAYMENT_KEY/);
   assert.match(resume, /resumedAuthenticatedRegistration: summary.mode === 'REGISTRATION'/);
   assert.match(resume, /window.location.assign\(result.url\)/);
+  assert.match(resume, /if \(result.completed \|\| result.released\)/);
   assert.match(component, /if \(isPagesDemoMode\(\)\) return;/);
   assert.match(component, /continueFamilySplitPayment\(item.id, userId/);
   assert.match(component, /item.canRestart &&/);

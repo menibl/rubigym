@@ -1,3 +1,5 @@
+import { releaseUndispatchedRecurringCheckout } from './recurring-checkout.js';
+
 const handled = new Set(['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED']);
 export const ownedRecoveryCheckouts = (payload, payerId) => (payload.recurringCheckouts || []).filter(item =>
   !item.cancelledAt && !item.orderSnapshot?.bs && (item.orderSnapshot?.u || item.userId) === payerId
@@ -9,6 +11,19 @@ export const ownedRecoveryCheckouts = (payload, payerId) => (payload.recurringCh
 export const canRestartUndispatched = (item, now = Date.now()) => Boolean(item.orderSnapshot?.o === item.orderId
   && !item.orderSnapshot.bs && !item.orderSnapshot.gp && !item.cancelledAt && item.stage === 'RESERVED'
   && !item.requestDispatchedAt && !item.recurringSaleId && now - Date.parse(item.dispatchedAt) > 5 * 60_000);
+
+// Invoked only on the authenticated payer's explicit payment/continuation
+// action, never by passive status reads. CAS rechecks dispatch and private-page
+// storage; provider absence, browser Back and request age alone are not proof.
+export async function autoReleaseUndispatched(store, clubId, payerId, payload, now = Date.now()) {
+  const candidates = ownedRecoveryCheckouts(payload, payerId).filter(item => canRestartUndispatched(item, now)).slice(0, 20);
+  const released = [];
+  for (const item of candidates) {
+    if (await releaseUndispatchedRecurringCheckout(store, clubId, item.userId, item.orderId, payerId,
+      'AUTO_RETRY_VERIFIED_NEVER_DISPATCHED', now)) released.push(item.orderId);
+  }
+  return released;
+}
 
 // Redacted metadata only. Original provider URLs and private references are
 // returned only by the separately authenticated, order-specific resume action.
