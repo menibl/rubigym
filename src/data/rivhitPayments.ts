@@ -295,7 +295,7 @@ export const resumeSavedCheckout = async (orderId: string, userId: string, optio
   const result = await retryPaymentApproval(() => checkoutRecovery('resume', orderId, options.signal),
     { ...options, delays: [3000, 5000, 10000] });
   if (options.signal?.aborted) return;
-  if (result.completed) {
+  if (result.completed || result.released) {
     clearPendingRivhitPayment(); clearRivhitReturnParams();
     window.dispatchEvent(new Event('baly:refresh-billing'));
     window.alert(result.message || 'הבקשה סונכרנה. לא נפתח חיוב נוסף.');

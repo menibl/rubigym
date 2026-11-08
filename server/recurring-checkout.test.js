@@ -109,6 +109,81 @@ test('customer restart releases only a proven never-dispatched reservation, then
   assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
 });
 
+test('payment retry automatically releases a proven never-dispatched reservation without manager action', async () => {
+  const f = fixture();
+  f.edit(payload => { payload.recurringCheckouts = [{ orderId: 'never-sent', userId: 'u', membershipType: 'OPEN_GYM',
+    stage: 'RESERVED', dispatchedAt: '2020-01-01T00:00:00Z', endsAt: '2099-01-01',
+    orderSnapshot: { o: 'never-sent', u: 'u', m: 'OPEN_GYM', rc: 1 } }]; });
+  const response = await f.create();
+  assert.equal(response.status, 200, await response.clone().text());
+  const old = f.state().payload.recurringCheckouts.find(item => item.orderId === 'never-sent');
+  assert.equal(old.stage, 'RELEASED_UNDISPATCHED');
+  assert.equal(old.releaseReason, 'AUTO_RETRY_VERIFIED_NEVER_DISPATCHED');
+  assert.equal(old.cancelledBy, 'u');
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.equal(f.state().payload.payments.length, 0);
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+});
+
+test('continuation of a never-dispatched reservation releases it automatically without creating a provider page', async () => {
+  const f = fixture();
+  f.edit(payload => { payload.recurringCheckouts = [{ orderId: 'not-sent', userId: 'u', membershipType: 'OPEN_GYM',
+    stage: 'RESERVED', dispatchedAt: '2020-01-01T00:00:00Z', endsAt: '2099-01-01',
+    orderSnapshot: { o: 'not-sent', u: 'u', m: 'OPEN_GYM', rc: 1 } }]; });
+  // A passive read still never changes the reservation.
+  await f.post('checkout-recovery', { action: 'status' });
+  assert.equal(f.state().payload.recurringCheckouts[0].cancelledAt, undefined);
+  const response = await f.post('checkout-recovery', { action: 'resume', orderId: 'not-sent' });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).released, true);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.state().payload.recurringCheckouts[0].stage, 'RELEASED_UNDISPATCHED');
+});
+
+test('automatic release never trusts an unknown, fresh, dispatched, linked or stored-page reservation', async () => {
+  for (const variation of ['unknown', 'fresh', 'dispatched', 'linked', 'stored', 'family', 'group', 'contract', 'receipt', 'other-owner']) {
+    const f = fixture();
+    f.edit(payload => {
+      const item = { orderId: 'unsafe', userId: 'u', membershipType: 'OPEN_GYM', stage: 'RESERVED',
+        dispatchedAt: '2020-01-01T00:00:00Z', endsAt: '2099-01-01',
+        orderSnapshot: { o: 'unsafe', u: 'u', m: 'OPEN_GYM', rc: 1 } };
+      if (variation === 'unknown') delete item.stage;
+      if (variation === 'fresh') item.dispatchedAt = new Date().toISOString();
+      if (variation === 'dispatched') item.requestDispatchedAt = '2020-01-01T00:00:00Z';
+      if (variation === 'linked') item.recurringSaleId = 'some-series';
+      if (variation === 'family') item.orderSnapshot.bs = 'batch';
+      if (variation === 'group') item.orderSnapshot.gp = [{ memberId: 'u', membershipType: 'OPEN_GYM' }];
+      if (variation === 'contract') payload.users[0].recurringMemberships = { OPEN_GYM: { orderId: 'unsafe', status: 'FAILED' } };
+      if (variation === 'receipt') payload.payments.push({ recurringOrderId: 'unsafe', status: 'PAID' });
+      if (variation === 'other-owner') item.orderSnapshot.u = 'someone-else';
+      payload.recurringCheckouts = [item];
+    });
+    if (variation === 'stored') f.rows.set('unsafe', { user_id: 'u', encrypted_checkout: 'unreadable-but-present' });
+    await f.create();
+    assert.equal(f.state().payload.recurringCheckouts[0].cancelledAt, undefined, variation);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 0, variation);
+  }
+});
+
+test('automatic payment retry cannot release a reservation that concurrently starts dispatch', async () => {
+  const f = fixture();
+  f.edit(payload => { payload.recurringCheckouts = [{ orderId: 'race-auto', userId: 'u', membershipType: 'OPEN_GYM',
+    stage: 'RESERVED', dispatchedAt: '2020-01-01T00:00:00Z', endsAt: '2099-01-01',
+    orderSnapshot: { o: 'race-auto', u: 'u', m: 'OPEN_GYM', rc: 1 } }]; });
+  const put = f.store.putClubState; let race = true;
+  f.store.putClubState = async (club, payload, revision) => {
+    if (!race) return put(club, payload, revision);
+    race = false;
+    const latest = structuredClone(f.state().payload);
+    Object.assign(latest.recurringCheckouts[0], { stage: 'DISPATCHED', requestDispatchedAt: new Date().toISOString() });
+    await put(club, latest, revision);
+    return { conflict: true };
+  };
+  const response = await f.create(); assert.equal(response.status, 409);
+  assert.equal(f.state().payload.recurringCheckouts[0].cancelledAt, undefined);
+  assert.equal(f.calls.length, 0);
+});
+
 test('an existing authenticated account can resume its historical registration checkout without registering again', async () => {
   const f = fixture(); const first = await (await f.create({ mode: 'REGISTRATION' })).json();
   const orderId = f.state().payload.recurringCheckouts[0].orderId;
