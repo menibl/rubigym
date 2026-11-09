@@ -91,6 +91,7 @@ test('verified registration phone creates a durable blocked account and session'
   assert.equal(state.payload.users[0].name, 'Completed Trainee');
   assert.equal(state.payload.users[0].registrationIncomplete, false);
   assert.ok(state.payload.users[0].registrationCompletedAt);
+  assert.equal(state.payload.users[0].registrationVerifiedAt, payload.user.registrationVerifiedAt);
   assert.equal(accounts.at(-1).profile.registrationIncomplete, false);
 });
 
@@ -139,6 +140,8 @@ test('family registration creates separate login accounts without storing plaint
   assert.equal(state.payload.users.some(user => 'password' in user), false);
   assert.equal(accounts.every(account => account.passwordHash && !account.passwordHash.includes('password')), true);
   assert.equal(accounts.every(account => account.profile && !('password' in account.profile)), true);
+  assert.ok(state.payload.users.every(user => Number.isFinite(Date.parse(user.registrationCompletedAt))));
+  assert.ok(accounts.every(account => Number.isFinite(Date.parse(account.profile.registrationCompletedAt))));
   assert.deepEqual(accounts.map(account => account.profile.name), ['Parent Example', 'Child Example']);
   assert.deepEqual(accounts.map(account => account.profile.email), ['parent@example.com', 'parent@example.com']);
 });

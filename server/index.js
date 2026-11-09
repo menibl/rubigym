@@ -2122,7 +2122,10 @@ const handleApi = async (request, env, url) => {
           return json({ message: 'שם המשתמש, האימייל או הטלפון כבר רשומים.' }, 409, headers);
         }
       }
-      let safeUser = stripCredentials({ ...user, recurringMemberships: undefined, registrationIncomplete: false, registrationCompletedAt: new Date().toISOString() });
+      const previousRegistration = state.payload.users?.find(candidate => candidate.id === user.id);
+      let safeUser = stripCredentials({ ...user, recurringMemberships: undefined, registrationIncomplete: false,
+        registrationVerifiedAt: previousRegistration?.registrationVerifiedAt,
+        registrationCompletedAt: previousRegistration?.registrationCompletedAt || new Date().toISOString() });
       let registrationPayment = body.payment;
       let recurringRegistration;
       if (env.RIVHIT_GROUP_PRIVATE_TOKEN && registrationPayment) {
@@ -2144,7 +2147,11 @@ const handleApi = async (request, env, url) => {
       }
       if (!registrationPayment) safeUser = unpaidRegistration(safeUser);
       else safeUser = { ...safeUser, ...calendarTerm(safeUser.membershipType) };
-      const safeFamilyUsers = familyUsers.map(candidate => registrationPayment ? { ...stripCredentials(candidate), recurringMemberships: undefined, ...calendarTerm(candidate.membershipType) } : unpaidRegistration({ ...stripCredentials(candidate), recurringMemberships: undefined }));
+      const safeFamilyUsers = familyUsers.map(candidate => {
+        const registered = { ...stripCredentials(candidate), recurringMemberships: undefined,
+          registrationCompletedAt: new Date().toISOString(), registrationVerifiedAt: undefined };
+        return registrationPayment ? { ...registered, ...calendarTerm(candidate.membershipType) } : unpaidRegistration(registered);
+      });
       let nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
         users: [safeUser, ...safeFamilyUsers, ...(state.payload.users || []).filter(candidate => !registrations.some(registration => registration.id === candidate.id))],
@@ -2201,6 +2208,7 @@ const handleApi = async (request, env, url) => {
       const familyName = payer.familyName || String(candidate.familyName || `משפחת ${payer.name}`).slice(0, 100);
       const safeUser = {
         ...stripCredentials(candidate),
+        registrationCompletedAt: new Date().toISOString(), registrationVerifiedAt: undefined,
         recurringMemberships: undefined,
         familyId, familyName, familyPayerId: payer.id, isFamilyPayer: false,
         membershipType: hasPaidSlot ? 'FAMILY_MEMBERSHIP' : candidate.membershipType,
