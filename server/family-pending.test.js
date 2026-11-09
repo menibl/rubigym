@@ -20,6 +20,7 @@ test('standalone paid payer can add a pending member without changing the existi
   }), { STATE_STORE: store, CLUB_ID: 'test' });
   assert.equal(response.status, 201);
   const child = state.payload.users.find(user => user.id === 'child');
+  assert.ok(Number.isFinite(Date.parse(child.registrationCompletedAt)));
   assert.equal(child.familyPaymentPending, true);
   assert.equal(child.membershipStatus, 'DEBT');
   assert.equal(child.personalTrainingRemaining, 0);
