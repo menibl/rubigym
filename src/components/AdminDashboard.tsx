@@ -15,6 +15,7 @@ import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
 import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
+import { TraineeDates } from './TraineeDates';
 import { adminMembershipSummary } from '../../shared/admin-membership-summary.js';
 import { TraineeMembershipStatus } from './TraineeMembershipStatus';
 import { offlinePaymentRecord } from '../../shared/offline-payment.js';
@@ -1451,6 +1452,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td data-label="פרטים אישיים" className="p-3 text-slate-600">
                           <div>טלפון: {u.phone || 'לא הוזן'}</div>
                           <div className="text-[10px]">גיל: {u.age || 'לא הוגדר'} | מין: {getGenderLabel(u.gender)}</div>
+                          <TraineeDates user={u} />
                         </td>
                         <td data-label="מסלולים ומשפחה" className="p-3 font-medium">
                           <div>
