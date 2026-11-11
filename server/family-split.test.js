@@ -159,6 +159,7 @@ test('personal and duo add-on basket uses one manual page and preserves the prim
     const input = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
     assert.equal((await f.post('family-split/create', input)).status, 200);
     assert.deepEqual(f.state().payload.users[0], before, 'a hosted page alone grants nothing');
+    for (const plan of f.state().payload.settings.membershipPlans) plan.price = 9999;
     assert.equal((await f.post('family-split/verify', input)).status, 200);
     assert.equal((await f.post('family-split/verify', input)).status, 200);
     const updated = f.state().payload.users[0];
@@ -167,6 +168,11 @@ test('personal and duo add-on basket uses one manual page and preserves the prim
     assert.deepEqual(updated.secondaryMemberships, ['PERSONAL_TRAINING', 'DUO_TRAINING']);
     assert.deepEqual(f.state().payload.users[1], sibling);
     assert.equal(f.state().payload.payments.length, 1);
+    const breakdown = f.state().payload.payments[0].purchaseBreakdown;
+    assert.deepEqual(breakdown.lines.map(line => line.quantity), [6, 4]);
+    assert.deepEqual(breakdown.lines.map(line => line.unitPrice), [100, 150]);
+    assert.equal(breakdown.discountAmount, 120);
+    assert.equal(breakdown.total, 1080);
     assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
     assert.equal(f.calls.find(call => call.url.endsWith('/GetUrl')).body.CreateRecurringSale, false);
   }

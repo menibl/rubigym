@@ -51,6 +51,7 @@ import {
   verifyPassword
 } from './auth.js';
 import { invoiceDescription } from '../shared/invoice-description.js';
+import { purchaseBreakdown } from './purchase-breakdown.js';
 import { sameProviderPayment } from '../shared/payment-ledger.js';
 
 const RIVHIT_TEST_BASE_URL = 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc';
@@ -365,7 +366,7 @@ const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
       label = `משפחתי מותאם – חיוב מאוחד עבור ${count} מתאמנים`;
     } else throw new Error('INVALID_FAMILY_BILLING_MODE');
     const familyRecurring = mode === 'ANNUAL_BY_SIZE' || familyRecurringSelections(familyMemberPlans, catalog).length > 0;
-    return { amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: familyRecurring, recurringRequired: familyRecurring, recurringMonths: familyRecurring ? 12 : 0 };
+    return { baseAmount, amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label, familyBillingMode: mode, familyMemberPlans, billingPeriod: mode === 'ANNUAL_BY_SIZE' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY', termMonths: mode === 'ANNUAL_BY_SIZE' ? 12 : 1, recurring: familyRecurring, recurringRequired: familyRecurring, recurringMonths: familyRecurring ? 12 : 0 };
   }
   if (body.purchaseVariant) {
     const variant = trainingCardVariants[body.purchaseVariant];
@@ -373,11 +374,12 @@ const resolvePurchase = (body, catalog = [], availableDiscountCodes = []) => {
     const { plan, price } = planPrice(body.membershipType, catalog);
     const sessions = Number(String(body.purchaseVariant).split('_')[1]);
     const baseAmount = plan ? price * sessions : variant.amount;
-    return { ...variant, amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label: plan?.label || variant.label, billingPeriod: 'SESSION_PACK', includedSessions: sessions, termMonths: 1 };
+    return { ...variant, baseAmount, amount: applyDiscount(baseAmount, body.discountCode, availableDiscountCodes), label: plan?.label || variant.label, billingPeriod: 'SESSION_PACK', includedSessions: sessions, termMonths: 1 };
   }
   const { plan, price } = planPrice(body.membershipType, catalog);
   const billingPeriod = normalizedBillingPeriod(plan);
   return {
+    baseAmount: price,
     amount: applyDiscount(price, body.discountCode, availableDiscountCodes),
     label: plan?.label || membershipLabels[body.membershipType] || String(body.membershipType),
     billingPeriod,
@@ -478,6 +480,7 @@ const createSignedOrder = async (body, env, purchase) => {
     bs: purchase.familySplitBatchId,
     bi: purchase.familySplitItemId,
     gp: purchase.groupLines,
+    bd: purchase.breakdown,
     m: body.membershipType,
     d: body.mode,
     v: body.purchaseVariant || undefined,
@@ -894,6 +897,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     }));
     if (matching.length) {
       const enrich = existing => ({ ...existing, provider: 'RIVHIT', providerSaleId: payment.saleId || existing.providerSaleId,
+        purchaseBreakdown: existing.purchaseBreakdown || order.bd,
         providerTransactionId: payment.providerHistoryVerified ? existing.providerTransactionId || payment.transactionId : payment.transactionId,
         ...(payment.recoveryDiscountUnknown ? {} : { discountCode: normalizeDiscountCode(order.c) || null, discountAmount: order.da }),
         paymentMethod: payment.last4Digits ? `RIVHIT iCredit •••• ${payment.last4Digits}` : existing.paymentMethod });
@@ -950,6 +954,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
         traineeId: order.gp ? order.u : userId,
         traineeName: order.gp ? state.payload.users.find(member => member.id === order.u)?.name || user.name : user.name,
         amount: Number(order.a),
+        purchaseBreakdown: order.bd,
         familyPackageAmount: order.fa,
         familyPartialPurchase: Boolean(order.fp?.some(plan => plan.participation && plan.participation !== 'INCLUDED')),
         familyMemberPlans: order.gp ? groupedReceiptPlans(order.gp) : order.fp,
@@ -1570,6 +1575,7 @@ const handleCreatePayment = async (request, env, splitLine) => {
   }
   const { amount } = purchase;
   const providerAmount = rivhitChargeAmount(amount, env);
+  purchase.breakdown = purchaseBreakdown(body, purchase, checkoutState?.payload?.settings?.membershipPlans || []);
   const signedOrder = await createSignedOrder(body, env, purchase);
   if (purchase.recurring && (!env.STATE_STORE?.getRecurringContinuation || !env.STATE_STORE?.saveRecurringContinuation)) return json({ message: 'שמירת המשך התשלום אינה זמינה. לא נפתח דף תשלום; יש לפנות למנהל.' }, 503, corsHeaders(request, env));
   if (purchase.recurring && !await reserveRecurringCheckout(env, decodePayload(signedOrder.split('.')[0]))) {
@@ -2137,6 +2143,7 @@ const handleApi = async (request, env, url) => {
         const { paymentReference: _reference, ...receipt } = registrationPayment;
         registrationPayment = { ...receipt, id: `payment-rivhit-${verified.payment.transactionId}`, traineeId: user.id,
           discountCode: normalizeDiscountCode(verified.order.c) || null,
+          purchaseBreakdown: verified.order.bd,
           familyMemberPlans: verified.order.fp,
           amount: verified.order.a, status: 'PAID', membershipTypePurchased: verified.order.m,
           provider: 'RIVHIT', providerSaleId: verified.payment.saleId, providerTransactionId: verified.payment.transactionId,
