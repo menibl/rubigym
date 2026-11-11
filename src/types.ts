@@ -787,6 +787,16 @@ export interface Announcement {
 }
 
 export interface Payment {
+  purchaseBreakdown?: {
+    version: number;
+    lines: { memberId?: string; memberName?: string; membershipType: string; label?: string; quantity?: number;
+      unitPrice?: number; baseAmount?: number; discountAmount?: number; netAmount?: number }[];
+    subtotal?: number; discountAmount?: number; creditAmount?: number; total: number;
+  };
+  discountAmount?: number;
+  familyPackageAmount?: number;
+  familyCreditAmount?: number;
+  upgradeCreditAmount?: number;
   discountCode?: string | null;
   familyMemberPlans?: FamilyMemberPlanSelection[];
   paymentReference?: string;

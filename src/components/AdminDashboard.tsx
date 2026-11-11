@@ -15,6 +15,7 @@ import { AdminTrainingCardEditor } from './AdminTrainingCardEditor';
 import { updateTrainingCard } from '../../shared/training-card.js';
 import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
+import { PaymentPurchaseDetails } from './PaymentPurchaseDetails';
 import { TraineeDates } from './TraineeDates';
 import { adminMembershipSummary } from '../../shared/admin-membership-summary.js';
 import { TraineeMembershipStatus } from './TraineeMembershipStatus';
@@ -1826,6 +1827,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <th className="p-3">תאריך רכישה</th>
                       <th className="p-3">אמצעי תשלום</th>
                       <th className="p-3">סטטוס</th>
+                      <th className="p-3">פירוט הרכישה</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1844,6 +1846,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {p.status === 'REFUNDED' ? 'הוחזר' : p.status === 'PENDING' ? 'ממתין' : p.isMock ? 'בדיקה' : 'שולם'}
                           </span>
                         </td>
+                        <td className="p-3"><PaymentPurchaseDetails payment={p} /></td>
                       </tr>
                     ))}
                   </tbody>
