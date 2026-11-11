@@ -8,6 +8,8 @@ import { familyMemberSurname, missingFamilyMemberFields } from '../utils/familyM
 import { User, UserRole, MembershipType, MembershipStatus, Gender, DiscountCode } from '../types';
 import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
 import { HealthDeclarationForm, HealthDeclarationResult } from './HealthDeclarationForm';
+import { AdminMedicalCertificate } from './AdminMedicalCertificate';
+import { medicalRecords } from '../../shared/medical-certificate.js';
 import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords';
 import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
 
@@ -305,24 +307,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
     setShowHealthDeclaration(false);
     if (result.requiresMedicalCertificate) onMedicalCertificateSubmitted?.(result.medicalCertificateFileName);
-    setMsg(result.signed
+    setMsg(!result.requiresMedicalCertificate
       ? { type: 'success', text: 'הצהרת הבריאות נחתמה מחדש ותוקפה הוארך בשנה.' }
       : { type: 'error', text: 'השאלון נשמר. נדרשת תעודה רפואית ואישור המועדון לפני כניסה לאימונים.' });
-  };
-
-  const handleApproveMedicalCertificate = () => {
-    const updated: User = {
-      ...currentUser,
-      healthDeclarationSigned: true,
-      healthDeclarationMedicalCertificateApproved: true,
-      healthDeclarationDate: new Date().toISOString().split('T')[0],
-      healthDeclarationHistory: currentUser.healthDeclarationHistory?.map((record, index) => index === 0
-        ? { ...record, signed: true, medicalCertificateApproved: true }
-        : record)
-    };
-    onUpdateUser(updated);
-    onUpdateAllUsers?.(allUsers.map(user => user.id === updated.id ? updated : user));
-    setMsg({ type: 'success', text: 'קבלת התעודה הרפואית אושרה והצהרת הבריאות הופעלה לשנה.' });
   };
 
   const handleEnableFamilyAccount = () => {
@@ -604,14 +591,14 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 <p className="text-[11px] text-emerald-800">
                   חתימה אחרונה: {currentUser.healthDeclarationDate || 'לא נחתמה'}. הצהרה חסרה או ישנה משנה חוסמת הרשמה לכל אימון.
                 </p>
-                <button
+                {!isAdminMode && <button
                   type="button"
                   onClick={() => setShowHealthDeclaration(current => !current)}
                   className="px-3 py-2 rounded-lg bg-emerald-700 text-white font-bold text-[11px]"
                 >
                   חתימה מחדש על הצהרת הבריאות
-                </button>
-                {showHealthDeclaration && (
+                </button>}
+                {!isAdminMode && showHealthDeclaration && (
                   <div className="mt-3 rounded-2xl bg-slate-950 p-4">
                     <HealthDeclarationForm
                       fullName={currentUser.name}
@@ -620,11 +607,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     />
                   </div>
                 )}
-                {isAdminMode && currentUser.healthDeclarationRequiresMedicalCertificate && !currentUser.healthDeclarationMedicalCertificateApproved && (
-                  <button type="button" onClick={handleApproveMedicalCertificate} className="mr-2 rounded-lg bg-amber-600 px-3 py-2 text-[11px] font-bold text-white">
-                    אישור מנהל: התקבלה תעודה רפואית תקפה
-                  </button>
-                )}
+                {isAdminMode && medicalRecords(currentUser)[0] &&
+                  <AdminMedicalCertificate user={currentUser} record={medicalRecords(currentUser)[0]} />}
               </div>
 
               <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 space-y-3">
@@ -896,7 +880,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                                   setSubHealthApproved(result.signed);
                                   if (result.signed) {
                                     setShowSubHealthForm(false);
-                                    setMsg({ type: 'success', text: 'הצהרת הבריאות של בן המשפחה נשמרה.' });
+                                    setMsg({ type: 'success', text: result.requiresMedicalCertificate
+                                      ? 'הצהרת בן המשפחה נשמרה. ניתן להמשיך לתשלום; הרשמה לאימונים תיפתח לאחר אישור רפואי של המנהל.'
+                                      : 'הצהרת הבריאות של בן המשפחה נשמרה.' });
                                   } else {
                                     setMsg({ type: 'error', text: 'נדרשת תעודה רפואית עבור בן המשפחה לפני הפעלת החשבון.' });
                                   }

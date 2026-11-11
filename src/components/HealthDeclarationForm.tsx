@@ -51,11 +51,13 @@ export const HealthDeclarationForm: React.FC<HealthDeclarationFormProps> = ({
   const [medicalCertificateFileName, setMedicalCertificateFileName] = useState('');
   const [medicalCertificateDataUrl, setMedicalCertificateDataUrl] = useState('');
   const [error, setError] = useState('');
+  const [readingFile, setReadingFile] = useState(false);
   const requiresMedicalCertificate = useMemo(() => Object.values(answers).includes('YES'), [answers]);
   const allAnswered = QUESTIONS.every(question => answers[question.id]);
   const isMinor = age > 0 && age < 18;
 
   const handleSubmit = () => {
+    if (readingFile) return setError('יש להמתין לסיום העלאת האישור.');
     if (!allAnswered) return setError('יש לענות כן או לא על כל שאלות השאלון הרפואי.');
     if (!signatureName.trim() || !declarationApproved) return setError('יש להזין שם מלא ולאשר את ההצהרה והחתימה.');
     if (isMinor && (!parentName.trim() || !/^\d{9}$/.test(parentIdNumber.replace(/\D/g, '')) || !parentConsent)) return setError('למתאמן שטרם מלאו לו 18 נדרשים שם הורה, מספר תעודת זהות בן 9 ספרות ואישור הורה.');
@@ -69,7 +71,7 @@ export const HealthDeclarationForm: React.FC<HealthDeclarationFormProps> = ({
       requiresMedicalCertificate,
       medicalCertificateFileName: requiresMedicalCertificate ? medicalCertificateFileName : undefined,
       medicalCertificateDataUrl: requiresMedicalCertificate ? medicalCertificateDataUrl : undefined,
-      signed: !requiresMedicalCertificate
+      signed: true
     });
   };
 
@@ -137,28 +139,33 @@ export const HealthDeclarationForm: React.FC<HealthDeclarationFormProps> = ({
 
       {requiresMedicalCertificate && (
         <div className="health-medical-upload">
-          <div className="health-certificate-warning"><AlertTriangle size={18} /><span>סימון תשובה חיובית מחייב הצגת תעודה רפואית ואישור המועדון. עד לאישור התעודה, ההרשמה והכניסה לאימונים יישארו חסומות.</span></div>
+          <div className="health-certificate-warning"><AlertTriangle size={18} /><span>אפשר להשלים רישום ותשלום. סימון תשובה חיובית מחייב אישור רפואי ובדיקת המועדון; הרשמה לאימונים וכניסה אליהם יישארו חסומות עד לאישור.</span></div>
           <label className="health-upload-button">
             <FileUp size={18} />
             <span>{medicalCertificateFileName || 'העלאת צילום אישור רופא (PDF או תמונה)'}</span>
             <input
               type="file"
               accept="application/pdf,image/png,image/jpeg,image/webp"
+              disabled={readingFile}
               onChange={event => {
                 const file = event.target.files?.[0];
                 if (!file) return;
-                if (file.size > 5 * 1024 * 1024) {
-                  setError('גודל אישור הרופא המרבי הוא 5MB.');
+                if (file.size > 5 * 1024 * 1024 || !['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+                  setError('יש לבחור PDF או תמונת PNG, JPEG או WebP בגודל עד 5MB.');
                   return;
                 }
+                setReadingFile(true);
                 const reader = new FileReader();
                 reader.onload = () => {
+                  setReadingFile(false);
                   if (typeof reader.result === 'string') {
                     setMedicalCertificateFileName(file.name);
                     setMedicalCertificateDataUrl(reader.result);
                     setError('');
                   }
                 };
+                reader.onerror = () => { setReadingFile(false); setError('קריאת האישור נכשלה. יש לבחור את הקובץ שוב.'); };
+                reader.onabort = reader.onerror;
                 reader.readAsDataURL(file);
               }}
             />
@@ -167,7 +174,8 @@ export const HealthDeclarationForm: React.FC<HealthDeclarationFormProps> = ({
         </div>
       )}
       {error && <div className="health-form-error">{error}</div>}
-      <button type="button" className="health-submit" onClick={handleSubmit}>
+      {readingFile && <p role="status">קורא את האישור…</p>}
+      <button type="button" className="health-submit" disabled={readingFile} onClick={handleSubmit}>
         {requiresMedicalCertificate ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
         {requiresMedicalCertificate ? 'שמירת השאלון והעברה לבדיקת המועדון' : submitLabel}
       </button>

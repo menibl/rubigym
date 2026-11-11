@@ -16,12 +16,16 @@ test('standalone paid payer can add a pending member without changing the existi
   };
   const response = await worker.fetch(new Request('https://baly.test/api/auth/family-members', {
     method: 'POST', headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user: { id: 'child', name: 'Child Example', username: 'child', email: 'child@example.com', password: 'password-for-test', role: 'TRAINEE', familyId: 'fam-payer', familyPayerId: 'payer', membershipType: 'OPEN_GYM', membershipStatus: 'ACTIVE', nutritionPlanPaid: true, personalTrainingRemaining: 999 } }),
+    body: JSON.stringify({ user: { id: 'child', name: 'Child Example', username: 'child', email: 'child@example.com', password: 'password-for-test', role: 'TRAINEE', familyId: 'fam-payer', familyPayerId: 'payer', membershipType: 'OPEN_GYM', membershipStatus: 'ACTIVE', nutritionPlanPaid: true, personalTrainingRemaining: 999,
+      healthDeclarationSigned: true, healthDeclarationAnswers: { heart: 'YES' }, healthDeclarationRequiresMedicalCertificate: true, healthDeclarationMedicalCertificateApproved: true } }),
   }), { STATE_STORE: store, CLUB_ID: 'test' });
   assert.equal(response.status, 201);
   const child = state.payload.users.find(user => user.id === 'child');
   assert.ok(Number.isFinite(Date.parse(child.registrationCompletedAt)));
   assert.equal(child.familyPaymentPending, true);
+  assert.equal(child.healthDeclarationSigned, true);
+  assert.equal(child.healthDeclarationRequiresMedicalCertificate, true);
+  assert.equal(child.healthDeclarationMedicalCertificateApproved, false);
   assert.equal(child.membershipStatus, 'DEBT');
   assert.equal(child.personalTrainingRemaining, 0);
   assert.equal(child.nutritionPlanPaid, false);

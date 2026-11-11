@@ -2,6 +2,7 @@ import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from 'node:util';
 import { fitsSessionAge, isYouthSession } from '../shared/youth-session.js';
 import { paymentPending } from '../shared/registration-status.js';
+import { medicalRecords, mergeOwnHealthReview, pendingMedicalReview } from '../shared/medical-certificate.js';
 import { homeGroupSessions } from '../shared/group-program-access.js';
 import { validReminderDate } from '../shared/payment-reminder-policy.js';
 import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
@@ -178,8 +179,8 @@ const selfEditableFields = new Set([
   'healthDeclarationSigned', 'healthDeclarationDate', 'healthDeclarationAnswers',
   'healthDeclarationParentName', 'healthDeclarationParentId',
   'healthDeclarationRequiresMedicalCertificate', 'healthDeclarationMedicalCertificateFileName',
-  'healthDeclarationMedicalCertificateDataUrl', 'healthDeclarationMedicalCertificateApproved',
-  'healthDeclarationMedicalCertificateApprovedAt', 'healthDeclarationMedicalCertificateApprovedBy',
+  'healthDeclarationMedicalCertificateDataUrl', 'healthDeclarationSignatureName', 'healthDeclarationSignatureUrl',
+  'healthDeclarationParentConsent', 'healthDeclarationParentIdNumber',
   'agreementSigned', 'agreementSignedAt', 'pushNotificationsEnabled', 'workoutRemindersEnabled',
   'managerPushNotificationsEnabled'
 ]);
@@ -261,7 +262,19 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     incoming.users = incoming.users.map(user => {
       const previous = current.users.find(member => member.id === user.id);
       const setting = key => Object.hasOwn(user, key) ? user[key] : previous?.[key];
-      return { ...user, recurringMemberships: previous?.recurringMemberships, paymentReminderExempt: setting('paymentReminderExempt') === true,
+      const sameDeclaration = previous && previous.healthDeclarationDate === user.healthDeclarationDate;
+      const originalHealth = previous ? Object.fromEntries([...new Set([...Object.keys(user), ...Object.keys(previous)])]
+        .filter(key => key.startsWith('healthDeclaration')).map(key => [key, previous[key]])) : {};
+      return { ...user, recurringMemberships: previous?.recurringMemberships,
+        healthDeclarationMedicalCertificateApproved: sameDeclaration ? previous.healthDeclarationMedicalCertificateApproved : false,
+        healthDeclarationMedicalCertificateApprovedAt: sameDeclaration ? previous.healthDeclarationMedicalCertificateApprovedAt : undefined,
+        healthDeclarationMedicalCertificateApprovedBy: sameDeclaration ? previous.healthDeclarationMedicalCertificateApprovedBy : undefined,
+        ...(sameDeclaration && previous.healthDeclarationMedicalCertificateApproved ? { healthDeclarationSigned: previous.healthDeclarationSigned } : {}),
+        ...originalHealth,
+        // Signed declarations and medical review are not editable via profile saves.
+        // In particular, a stale manager tab must never erase a reviewed upload.
+        healthDeclarationHistory: previous ? medicalRecords(previous) : pendingMedicalReview(user).healthDeclarationHistory,
+        paymentReminderExempt: setting('paymentReminderExempt') === true,
         paymentReminderUntil: validReminderDate(setting('paymentReminderUntil')) ? setting('paymentReminderUntil') : undefined,
         paymentReminderExpiry: validReminderDate(setting('paymentReminderExpiry')) ? setting('paymentReminderExpiry') : undefined };
     });
@@ -288,6 +301,9 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
   const unpaid = (actor && paymentPending(actor)) || (actor?.membershipStatus === 'DEBT' && !actor?.offlinePaymentApproved)
     || (actor?.isMembershipFrozen && (!actor.membershipFrozenUntil || actor.membershipFrozenUntil >= today));
+  const medicalPending = Boolean(actor && (actor.healthDeclarationRequiresMedicalCertificate
+    || Object.values(actor.healthDeclarationAnswers || {}).includes('YES')) && !actor.healthDeclarationMedicalCertificateApproved);
+  const bookingBlocked = unpaid || medicalPending;
   const mergeFreezeRequest = (user, requested) => {
     const timestamp = Date.parse(requested.membershipFreezeRequestedAt || '');
     if (!user.membershipFreezeRequestedAt && Number.isFinite(timestamp) && timestamp <= Date.now()
@@ -305,7 +321,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     const updated = { ...user };
     for (const field of selfEditableFields) if (field in requested) updated[field] = requested[field];
     if (canManageFamily && !user.familyPaymentPending && !user.registrationPaymentPending) for (const field of familyEditableFields) if (field in requested) updated[field] = requested[field];
-    return mergeFreezeRequest(updated, requested);
+    return mergeFreezeRequest(mergeOwnHealthReview(user, updated, requested), requested);
   }).map(user => {
     if (!canManageFamily || user.id === userId || user.familyId !== actor.familyId) return user;
     const requested = incoming.users.find(candidate => candidate.id === user.id) || {};
@@ -318,7 +334,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     .filter(user => user.role === 'TRAINEE' && user.familyPayerId === userId)
     .map(user => {
       const { paymentReminderExempt: _exempt, paymentReminderUntil: _until, paymentReminderExpiry: _expiry, recurringMemberships: _recurring, ...member } = user;
-      return stripCredentials(member);
+      return stripCredentials(pendingMedicalReview(member));
     });
   const ownNewMessages = (incoming.messages || []).filter(message => message.senderId === userId);
   const existingMessageIds = new Set((current.messages || []).map(message => message.id));
@@ -330,14 +346,14 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
       ? { ...message, read: true }
       : message);
   // QR arrivals are server-authoritative: a forged log must not skip card debit.
-  const ownNewAttendance = unpaid ? [] : (incoming.attendanceLogs || []).filter(log => log.traineeId === userId
+  const ownNewAttendance = bookingBlocked ? [] : (incoming.attendanceLogs || []).filter(log => log.traineeId === userId
     && !log.unscheduled && !String(log.id || '').startsWith('arrival-') && !String(log.targetId || '').startsWith('drop-in-'));
   const existingAttendanceIds = new Set((current.attendanceLogs || []).map(log => log.id));
   return {
     ...current,
     users: [...nextUsers, ...newFamilyMembers],
-    sessions: unpaid ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId, current.users.find(user => user.id === userId)),
-    openGymSessions: unpaid ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId, current.attendanceLogs, actor),
+    sessions: bookingBlocked ? current.sessions : mergeOwnBooking(current.sessions, incoming.sessions, userId, actor),
+    openGymSessions: bookingBlocked ? current.openGymSessions : mergeOwnOpenGymBooking(current.openGymSessions, incoming.openGymSessions, userId, current.attendanceLogs, actor),
     messages: [...messagesWithReadReceipts, ...ownNewMessages.filter(message => !existingMessageIds.has(message.id))],
     attendanceLogs: [...(current.attendanceLogs || []), ...ownNewAttendance.filter(log => !existingAttendanceIds.has(log.id))],
     traineeProfiles: [
