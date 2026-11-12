@@ -69,6 +69,14 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   return result as T;
 };
 
+export async function manageMedicalCertificate(body: { userId: string; recordId: string; action: 'upload' | 'approve';
+  expectedDocumentId?: string; document?: { fileName: string; dataUrl: string } }) {
+  if (isPagesDemoMode()) throw new Error('ניהול אישורים רפואיים זמין באתר המועדון המחובר לשרת, לא בסביבת ההדגמה.');
+  const result = await request<{ user: User; revision: number }>('/api/admin/medical-certificate', { method: 'POST', body: JSON.stringify(body) });
+  window.dispatchEvent(new Event('baly:refresh-billing'));
+  return result.user;
+}
+
 export type ClubStateEnvelope = { payload: Record<string, unknown>; revision: number; updated_at?: string };
 
 export type ArrivalChoice = {

@@ -667,7 +667,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 </div>
                 <button type="button" className={`auth-health-launch ${healthApproved ? 'complete' : ''}`} onClick={() => setShowHealthDeclaration(current => !current)}>
                   <HeartPulse size={18} />
-                  <span><strong>{healthApproved ? 'הצהרת הבריאות נחתמה' : 'מילוי וחתימה על הצהרת הבריאות'}</strong><small>{healthApproved ? 'ההצהרה בתוקף לשנה' : 'שאלון רפואי לפי הטופס המצורף'}</small></span>
+                  <span><strong>{healthApproved ? 'הצהרת הבריאות נחתמה' : 'מילוי וחתימה על הצהרת הבריאות'}</strong><small>{healthApproved ? healthDeclaration?.requiresMedicalCertificate ? 'ממתין לאישור רפואי — ניתן להמשיך ברישום ובתשלום' : 'ההצהרה בתוקף לשנה' : 'שאלון רפואי לפי הטופס המצורף'}</small></span>
                   <CheckCircle2 size={18} />
                 </button>
                 {showHealthDeclaration && (
@@ -680,7 +680,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                       if (result.signed) {
                         setShowHealthDeclaration(false);
                         setError('');
-                        setNotice('הצהרת הבריאות נחתמה ונשמרה בהצלחה.');
+                        setNotice(result.requiresMedicalCertificate ? 'ההצהרה נחתמה. ניתן להמשיך ברישום ובתשלום; אימונים ייפתחו רק לאחר אישור רפואי של המועדון.' : 'הצהרת הבריאות נחתמה ונשמרה בהצלחה.');
                       } else {
                         setError('נדרשת תעודה רפואית ואישור המועדון לפני שניתן להשלים את ההרשמה.');
                       }

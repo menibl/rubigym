@@ -289,6 +289,8 @@ export enum MuscleGroup {
 }
 
 export interface HealthDeclarationRecord {
+  medicalCertificateUploads?: { id: string; fileName: string; dataUrl: string; uploadedAt: string; uploadedBy: string }[];
+  medicalCertificateAudit?: { action: 'UPLOAD' | 'APPROVE'; documentId: string; at: string; by: string }[];
   id: string;
   signedAt: string;
   validUntil: string;
@@ -324,6 +326,8 @@ export interface User {
   healthDeclarationAnswers?: Record<string, 'YES' | 'NO'>;
   healthDeclarationRequiresMedicalCertificate?: boolean;
   healthDeclarationMedicalCertificateApproved?: boolean;
+  healthDeclarationMedicalCertificateApprovedAt?: string;
+  healthDeclarationMedicalCertificateApprovedBy?: string;
   healthDeclarationParentConsent?: boolean;
   healthDeclarationParentName?: string;
   healthDeclarationParentIdNumber?: string;

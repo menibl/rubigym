@@ -52,6 +52,8 @@ import {
 } from './auth.js';
 import { invoiceDescription } from '../shared/invoice-description.js';
 import { purchaseBreakdown } from './purchase-breakdown.js';
+import { reviewMedicalCertificate } from './medical-certificate.js';
+import { pendingMedicalReview } from '../shared/medical-certificate.js';
 import { sameProviderPayment } from '../shared/payment-ledger.js';
 
 const RIVHIT_TEST_BASE_URL = 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc';
@@ -2129,9 +2131,9 @@ const handleApi = async (request, env, url) => {
         }
       }
       const previousRegistration = state.payload.users?.find(candidate => candidate.id === user.id);
-      let safeUser = stripCredentials({ ...user, recurringMemberships: undefined, registrationIncomplete: false,
+      let safeUser = stripCredentials(pendingMedicalReview({ ...user, recurringMemberships: undefined, registrationIncomplete: false,
         registrationVerifiedAt: previousRegistration?.registrationVerifiedAt,
-        registrationCompletedAt: previousRegistration?.registrationCompletedAt || new Date().toISOString() });
+        registrationCompletedAt: previousRegistration?.registrationCompletedAt || new Date().toISOString() }));
       let registrationPayment = body.payment;
       let recurringRegistration;
       if (env.RIVHIT_GROUP_PRIVATE_TOKEN && registrationPayment) {
@@ -2155,8 +2157,8 @@ const handleApi = async (request, env, url) => {
       if (!registrationPayment) safeUser = unpaidRegistration(safeUser);
       else safeUser = { ...safeUser, ...calendarTerm(safeUser.membershipType) };
       const safeFamilyUsers = familyUsers.map(candidate => {
-        const registered = { ...stripCredentials(candidate), recurringMemberships: undefined,
-          registrationCompletedAt: new Date().toISOString(), registrationVerifiedAt: undefined };
+        const registered = pendingMedicalReview({ ...stripCredentials(candidate), recurringMemberships: undefined,
+          registrationCompletedAt: new Date().toISOString(), registrationVerifiedAt: undefined });
         return registrationPayment ? { ...registered, ...calendarTerm(candidate.membershipType) } : unpaidRegistration(registered);
       });
       let nextPayload = appendUserChangeMessages(state.payload, {
@@ -2213,7 +2215,7 @@ const handleApi = async (request, env, url) => {
         && payer.familyBillingMode !== 'CUSTOM_COMBINED' && familyMembers.length < Number(payer.familyMembersCount || 0);
       const familyId = payer.familyId || `fam-${payer.id}`;
       const familyName = payer.familyName || String(candidate.familyName || `משפחת ${payer.name}`).slice(0, 100);
-      const safeUser = {
+      const safeUser = pendingMedicalReview({
         ...stripCredentials(candidate),
         registrationCompletedAt: new Date().toISOString(), registrationVerifiedAt: undefined,
         recurringMemberships: undefined,
@@ -2224,7 +2226,7 @@ const handleApi = async (request, env, url) => {
         familyPaymentPending: !hasPaidSlot,
         secondaryMemberships: [], nutritionPlanPaid: false, requestedWorkoutPlan: false,
         personalTrainingRemaining: 0, duoTrainingRemaining: 0, offlinePaymentApproved: false,
-      };
+      });
       const nextPayload = appendUserChangeMessages(state.payload, {
         ...state.payload,
         users: [safeUser, ...(state.payload.users || []).map(existing => existing.id === payer.id
@@ -2235,6 +2237,25 @@ const handleApi = async (request, env, url) => {
       await env.STATE_STORE.upsertAccount(await accountFromUser(identity.session.club_id, safeUser, candidate.password));
       await notifyStateChange(state.payload, nextPayload, identity.session.club_id);
       return json({ user: safeUser, revision: saved.revision }, 201, headers);
+    }
+    if (url.pathname === '/api/admin/medical-certificate' && request.method === 'POST') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'נדרשת הרשאת מנהל.' }, 403, headers);
+      const body = await request.json();
+      try {
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+          const user = state?.payload?.users?.find(member => member.id === body.userId && member.role === 'TRAINEE');
+          if (!user) return json({ message: 'המתאמן לא נמצא.' }, 404, headers);
+          const updated = reviewMedicalCertificate(user, body, { id: identity.account.user_id });
+          if (updated === user) return json({ user, revision: state.revision }, 200, headers);
+          const result = await env.STATE_STORE.putClubState(identity.session.club_id, { ...state.payload,
+            users: state.payload.users.map(member => member.id === user.id ? updated : member) }, state.revision);
+          if (!result.conflict) return json({ user: updated, revision: result.revision }, 200, headers);
+        }
+        return json({ message: 'הנתונים השתנו. יש לרענן ולנסות שוב.' }, 409, headers);
+      } catch (error) { return json({ message: error.status ? error.message : 'שמירת האישור הרפואי נכשלה.' }, error.status || 500, headers); }
     }
     if (url.pathname === '/api/push/public-key' && request.method === 'GET') {
       return isPushConfigured(env)
