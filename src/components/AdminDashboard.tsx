@@ -16,6 +16,8 @@ import { updateTrainingCard } from '../../shared/training-card.js';
 import { approveOfflinePayment, revokeOfflinePayment, clearManualPaymentPending } from '../../shared/registration-status.js';
 import { TraineePaymentSummary } from './TraineePaymentSummary';
 import { PaymentPurchaseDetails } from './PaymentPurchaseDetails';
+import { AdminMedicalCertificate } from './AdminMedicalCertificate';
+import { medicalRecords } from '../../shared/medical-certificate.js';
 import { TraineeDates } from './TraineeDates';
 import { adminMembershipSummary } from '../../shared/admin-membership-summary.js';
 import { TraineeMembershipStatus } from './TraineeMembershipStatus';
@@ -301,22 +303,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const healthRecords = users.filter(user => user.role === UserRole.TRAINEE).flatMap(user => {
-    const records = user.healthDeclarationHistory?.length ? user.healthDeclarationHistory : user.healthDeclarationDate ? [{
-      id: `legacy-${user.id}`,
-      signedAt: `${user.healthDeclarationDate}T00:00:00.000Z`,
-      validUntil: (() => { const date = new Date(`${user.healthDeclarationDate}T00:00:00`); date.setFullYear(date.getFullYear() + 1); return date.toISOString().split('T')[0]; })(),
-      signed: Boolean(user.healthDeclarationSigned),
-      answers: user.healthDeclarationAnswers,
-      requiresMedicalCertificate: user.healthDeclarationRequiresMedicalCertificate,
-      medicalCertificateApproved: user.healthDeclarationMedicalCertificateApproved,
-      parentConsent: user.healthDeclarationParentConsent,
-      parentName: user.healthDeclarationParentName,
-      parentIdNumber: user.healthDeclarationParentIdNumber,
-      signatureName: user.healthDeclarationSignatureName,
-      signatureUrl: user.healthDeclarationSignatureUrl,
-      medicalCertificateFileName: user.healthDeclarationMedicalCertificateFileName,
-      medicalCertificateDataUrl: user.healthDeclarationMedicalCertificateDataUrl
-    }] : [];
+    const records = medicalRecords(user);
     return records.map(record => ({ user, record }));
   }).sort((a, b) => b.record.signedAt.localeCompare(a.record.signedAt));
 
@@ -324,23 +311,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const traineesRequiringHealthDeclaration = users.filter(user => {
     if (user.role !== UserRole.TRAINEE) return false;
     const latest = healthRecords.find(item => item.user.id === user.id)?.record;
-    return !latest?.signed || latest.validUntil < today || (latest.requiresMedicalCertificate && !latest.medicalCertificateApproved);
+    return !latest || !(latest.signed || (latest.medicalCertificateApproved && latest.signatureName)) || latest.validUntil < today || (latest.requiresMedicalCertificate && !latest.medicalCertificateApproved);
   }).length;
-
-  const approveMedicalCertificate = (userId: string, recordId: string) => {
-    onUpdateUsers(users.map(user => {
-      if (user.id !== userId) return user;
-      const updatedHistory = (user.healthDeclarationHistory || []).map(record => record.id === recordId
-        ? { ...record, signed: true, medicalCertificateApproved: true }
-        : record);
-      const isLatest = updatedHistory[0]?.id === recordId || (!user.healthDeclarationHistory?.length && recordId === `legacy-${user.id}`);
-      return {
-        ...user,
-        healthDeclarationHistory: updatedHistory.length ? updatedHistory : user.healthDeclarationHistory,
-        ...(isLatest ? { healthDeclarationSigned: true, healthDeclarationMedicalCertificateApproved: true } : {})
-      };
-    }));
-  };
 
   const handleAddCoach = (event: React.FormEvent) => {
     event.preventDefault();
@@ -995,8 +967,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-100">
                   <table className="w-full min-w-[760px] text-right text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-600"><tr><th className="p-3">מתאמן</th><th className="p-3">חתימה</th><th className="p-3">תוקף</th><th className="p-3">שאלון</th><th className="p-3">אישור רפואי</th><th className="p-3">סטטוס</th></tr></thead><tbody>{healthRecords.map(({ user, record }) => {
                     const yesAnswers = Object.values(record.answers || {}).filter(answer => answer === 'YES').length;
-                    const valid = record.signed && record.validUntil >= today && (!record.requiresMedicalCertificate || record.medicalCertificateApproved);
-                    return <tr key={`${user.id}-${record.id}`} className="border-t border-slate-100"><td className="p-3"><strong className="block text-slate-900">{user.name}</strong><span className="text-[10px] text-slate-500">{user.phone}</span>{record.parentName && <small className="block text-slate-400">הורה: {record.parentName} · {record.parentIdNumber || 'ללא ת.ז.'}</small>}</td><td className="p-3">{new Date(record.signedAt).toLocaleDateString('he-IL')}<small className="block text-slate-400">{record.signatureName || 'חתימה דיגיטלית'}</small></td><td className="p-3 font-mono">{record.validUntil}</td><td className="p-3">{Object.keys(record.answers || {}).length} תשובות · {yesAnswers} כן</td><td className="p-3">{record.requiresMedicalCertificate ? <div className="space-y-1">{record.medicalCertificateDataUrl ? <a href={record.medicalCertificateDataUrl} download={record.medicalCertificateFileName || 'medical-certificate'} className="block font-bold text-sky-700 underline">צפייה במסמך</a> : <span className="text-rose-700">טרם הועלה מסמך</span>}{record.medicalCertificateApproved ? <span className="text-emerald-700">אושר</span> : record.medicalCertificateDataUrl ? <button type="button" onClick={() => approveMedicalCertificate(user.id, record.id)} className="rounded-lg bg-amber-500 px-2 py-1 text-[10px] font-black text-slate-950">אישור מנהל</button> : <span className="text-amber-700">ממתין</span>}</div> : 'לא נדרש'}</td><td className="p-3"><span className={`rounded-full px-2 py-1 text-[10px] font-black ${valid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{valid ? 'תקף' : 'חסום'}</span></td></tr>;
+                    const valid = (record.signed || (record.medicalCertificateApproved && Boolean(record.signatureName))) && record.validUntil >= today && (!record.requiresMedicalCertificate || record.medicalCertificateApproved);
+                    return <tr key={`${user.id}-${record.id}`} className="border-t border-slate-100">
+                      <td className="p-3"><strong className="block text-slate-900">{user.name}</strong><span className="text-[10px] text-slate-500">{user.phone}</span>{record.parentName && <small className="block text-slate-400">הורה: {record.parentName} · {record.parentIdNumber || 'ללא ת.ז.'}</small>}</td>
+                      <td className="p-3">{new Date(record.signedAt).toLocaleDateString('he-IL')}<small className="block text-slate-400">{record.signatureName || 'חתימה דיגיטלית'}</small></td>
+                      <td className="p-3 font-mono">{record.validUntil}</td><td className="p-3">{Object.keys(record.answers || {}).length} תשובות · {yesAnswers} כן</td>
+                      <td className="p-3">{record.requiresMedicalCertificate ? <AdminMedicalCertificate user={user} record={record} /> : 'לא נדרש'}</td>
+                      <td className="p-3"><span className={`rounded-full px-2 py-1 text-[10px] font-black ${valid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{valid ? 'תקף' : 'חסום'}</span></td>
+                    </tr>;
                   })}{healthRecords.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">אין הצהרות מתועדות.</td></tr>}</tbody></table>
                 </div>
               </div>
