@@ -64,6 +64,46 @@ test('back from unpaid page and retry resumes the exact same hosted page across 
   assert.ok(!JSON.stringify([...f.rows.values()]).includes('fixture-private'));
 });
 
+test('back before card entry with WCF empty GUIDs and zero amount resumes without a phone-wide search or another page', async () => {
+  const f = fixture(); const first = await (await f.create()).json(); const original = f.env.RIVHIT_FETCH;
+  f.env.RIVHIT_FETCH = async (url, init) => {
+    const result = await original(url, init);
+    if (!url.endsWith('/SaleDetails')) return result;
+    const body = await result.json();
+    Object.assign(body.data[0], { TransactionStatus: null, TransactionAmount: 0, Token: '00000000-0000-0000-0000-000000000000',
+      RecurringId: '00000000-0000-0000-0000-000000000000', TransactionId: '00000000-0000-0000-0000-000000000000', AuthNum: null, CardNum: null });
+    return Response.json(body);
+  };
+  for (let index = 0; index < 3; index++) {
+    const response = await f.create(); assert.equal(response.status, 200, await response.clone().text());
+    assert.equal((await response.json()).url, first.url);
+  }
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.equal(f.state().payload.payments.length, 0);
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+});
+
+test('a completion or release arriving during provider lookup cannot return the stale payment page', async () => {
+  for (const kind of ['completed', 'released']) {
+    const f = fixture(); await f.create(); const original = f.env.RIVHIT_FETCH;
+    f.env.RIVHIT_FETCH = async (url, init) => {
+      const result = await original(url, init);
+      if (url.endsWith('/SaleDetails')) f.edit(payload => {
+        const item = payload.recurringCheckouts[0];
+        if (kind === 'released') item.cancelledAt = new Date().toISOString();
+        else payload.users[0].recurringMemberships = { OPEN_GYM: { orderId: item.orderId, endsAt: item.endsAt, status: 'PENDING_FIRST_CHARGE' } };
+      });
+      return result;
+    };
+    const response = await f.create(); const result = await response.json();
+    assert.equal(response.status, kind === 'completed' ? 200 : 409);
+    assert.equal(result.url, undefined);
+    if (kind === 'completed') assert.equal(result.completed, true);
+    else assert.equal(result.reasonCode, 'CONTINUATION_STATE_CHANGED');
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  }
+});
+
 test('self-service status and resume use the authenticated owner and the original encrypted page only', async () => {
   const f = fixture(); const first = await (await f.create()).json();
   const status = await f.post('checkout-recovery', { action: 'status', userId: 'someone-else' });
@@ -288,7 +328,7 @@ test('incomplete pre-card SaleDetails resumes only the encrypted original page a
     assert.equal(response.status, 200, await response.clone().text());
     assert.equal((await response.json()).url, first.url);
     assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
-    assert.equal(f.calls.filter(call => call.url.endsWith('/RecurringSaleList')).length, 1);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/RecurringSaleList')).length, shape === 'zero-transaction' ? 0 : 1);
     assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT'); assert.deepEqual(f.state().payload.payments, []);
   }
 });
