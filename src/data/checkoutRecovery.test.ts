@@ -36,7 +36,7 @@ test('customer recovery UI uses server-owned orders, original references, explic
   assert.match(component, /item.canRestart &&/);
   assert.match(component, /window.confirm/);
   const membershipTab = dashboard.slice(dashboard.indexOf("{activeTab === 'membership' &&"));
-  assert.match(membershipTab, /<PendingCheckoutRecovery key=\{activeUser.id\} userId=\{activeUser.id\}/);
+  assert.match(membershipTab, /<PendingCheckoutRecovery key=\{`\$\{activeUser.id\}-\$\{checkoutReturn\}`\} userId=\{activeUser.id\}/);
   assert.equal((dashboard.match(/<PendingCheckoutRecovery /g) || []).length, 1);
   assert.match(dashboard, /pending.mode === 'REGISTRATION' && !pending.resumedAuthenticatedRegistration/);
   assert.match(gateway, /if \(pending.resumedAuthenticatedRegistration\) \{\s*setScreen\('login'\)/);

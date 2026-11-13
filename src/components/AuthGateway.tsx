@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
+import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { canPurchasePlan } from '../../shared/youth-plan.js';
 import {
   ArrowLeft,
@@ -131,6 +132,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
   const [discountValidating, setDiscountValidating] = useState(false);
   const [paymentStarting, setPaymentStarting] = useState(false);
+  useEffect(() => onPaymentPageReturn(() => setPaymentStarting(false)), []);
   const [authPending, setAuthPending] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState(resumeUser ? 'ההרשמה שלך התחילה ונשמרה. יש להשלים את הפרטים ולבחור מסלול לפני הכניסה לאפליקציה.' : '');

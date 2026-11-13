@@ -4,6 +4,13 @@ const phone = value => String(value || '').replace(/\D/g, '').replace(/^00972/, 
 const groups = new Set(['CORE_GROUPS', 'GROUP_MONTHLY', 'GROUP_ANNUAL', 'FAMILY_MEMBERSHIP', 'YOUTH_ONCE_WEEKLY', 'YOUTH_TWICE_WEEKLY', 'DEDICATED_GROUP_HALF_YEAR', 'WEIGHT_LOSS_HALF_YEAR', 'POSTPARTUM_HALF_YEAR']);
 const linesFor = order => order.gp || [{ memberId: order.bu || order.u, membershipType: order.m }];
 
+// WCF SaleDetails contains nullable fields and empty GUID defaults before card
+// entry. Number(null) === 0 and Boolean(emptyGuid) === true are not approvals.
+export const hasProviderValue = value => value !== undefined && value !== null && value !== false && value !== 0
+  && !['', '0', 'null', 'undefined', '00000000-0000-0000-0000-000000000000'].includes(String(value).trim().toLowerCase());
+export const hasContinuationCardEvidence = sale => ['Token', 'AuthNum', 'CardNum', 'TransactionCardNum', 'ReceiptURL', 'DocumentURL']
+  .some(key => hasProviderValue(sale[key])) || Number(sale.ReceiptNum) > 0 || Number(sale.DocumentNum) > 0;
+
 // Ignore only an already VERIFIED, server-owned instruction for a disjoint
 // purchase. A phone match, a different amount/name, or a provider UUID alone is
 // not proof that a series is unrelated to the page being resumed.
@@ -42,7 +49,11 @@ export function continuationSale(result, signedOrder, expectedAmount) {
   const custom = sale.Custom1;
   if (custom !== undefined && custom !== null && custom !== '' && String(custom) !== signedOrder) fail('CONTINUATION_ORDER_MISMATCH');
   if (amount !== undefined && (!Number.isFinite(Number(amount)) || (Number(amount) !== 0 && Number(amount) !== expectedAmount))) fail('CONTINUATION_AMOUNT_MISMATCH');
-  return { sale, incomplete: !sale.SaleId || !custom || amount === undefined || Number(amount) === 0 };
+  const unsubmitted = Boolean(hasProviderValue(sale.SaleId) && custom === signedOrder
+    && Object.hasOwn(sale, 'TransactionStatus') && sale.TransactionStatus === null
+    && !hasContinuationCardEvidence(sale) && !hasProviderValue(sale.RecurringId) && !hasProviderValue(sale.RecurringSaleId)
+    && !hasProviderValue(sale.TransactionId) && !hasProviderValue(sale.TransactionDateTime));
+  return { sale, unsubmitted, incomplete: !hasProviderValue(sale.SaleId) || !custom || amount === undefined || Number(amount) === 0 };
 }
 
 // Missing SaleDetails is not absence. Only a server-held original page plus a
@@ -61,8 +72,11 @@ export async function checkNoActiveContinuation({ payload, order, groupToken, po
     catch { fail('CONTINUATION_LIST_UNAVAILABLE'); }
     if (!result || (result.Status !== undefined && (result.Status === null || result.Status === '' || typeof result.Status === 'boolean' || Number(result.Status) !== 0))
       || (result.error_code !== undefined && (result.error_code === null || result.error_code === '' || typeof result.error_code === 'boolean' || Number(result.error_code) !== 0))) fail('CONTINUATION_LIST_UNAVAILABLE');
-    const raw = (result.data || result.Data || result).RecurringSales;
-    const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : null;
+    const data = result.data || result.Data || result;
+    const raw = data.RecurringSales;
+    // The official WCF schema declares RecurringSales as nillable. An explicit
+    // null collection is distinct from a missing/malformed response property.
+    const list = raw === null && Object.hasOwn(data, 'RecurringSales') ? [] : Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : null;
     if (!list || list.length > 100 || list.some(row => !uuid(row?.RecurringSaleId) || typeof row.IsActive !== 'boolean')
       || new Set(list.map(row => row.RecurringSaleId.toLowerCase())).size !== list.length) fail('CONTINUATION_LIST_INVALID');
     if (list.some(row => row.IsActive && !verifiedUnrelatedSeries(payload, order, row.RecurringSaleId))) fail('CONTINUATION_ACTIVE_SERIES');

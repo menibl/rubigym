@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isPagesDemoMode } from '../data/appMode';
+import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { continueFamilySplitPayment, listRecoverableCheckouts, restartUndispatchedCheckout, resumeSavedCheckout, type RecoverableCheckout } from '../data/rivhitPayments';
 
 export function PendingCheckoutRecovery({ userId }: { userId: string }) {
@@ -8,6 +9,7 @@ export function PendingCheckoutRecovery({ userId }: { userId: string }) {
   const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const actionController = useRef<AbortController | null>(null);
+  useEffect(() => onPaymentPageReturn(() => { actionController.current?.abort(); setBusy(false); setMessage(''); setRefresh(value => value + 1); }), []);
   useEffect(() => () => actionController.current?.abort(), [userId]);
   useEffect(() => {
     if (isPagesDemoMode()) return;

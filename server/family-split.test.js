@@ -467,6 +467,27 @@ test('unknown provider failure never retries GetUrl or silently moves to another
   assert.equal(attempts, 1);
 });
 
+test('family retry recovers encrypted original page even if its journal checkout write was lost', async () => {
+  for (const status of ['REVIEW', 'DISPATCHING']) {
+    const f = fixture(); const quote = await (await f.quote()).json();
+    const line = quote.items.find(item => item.recurring);
+    const input = { batchId: quote.batchId, itemId: line.id, acknowledged: true };
+    const first = await (await f.post('family-split/create', input)).json();
+    const sale = f.signed.get('sale-1');
+    Object.assign(sale, { RecurringId: '00000000-0000-0000-0000-000000000000', Token: '00000000-0000-0000-0000-000000000000',
+      TransactionStatus: null, TransactionAmount: 0, TransactionParamJ: undefined });
+    const journalLine = f.journal().payload.items.find(item => item.id === line.id);
+    delete journalLine.checkout; journalLine.status = status;
+    const response = await f.post('family-split/create', input);
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal((await response.json()).url, first.url);
+    assert.equal(f.journal().payload.items.find(item => item.id === line.id).status, 'PAGE');
+    assert.equal(f.journal().payload.items.find(item => item.id === line.id).checkout.url, first.url);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+    assert.equal(f.state().payload.payments.length, 0);
+  }
+});
+
 test('existing recurring, current-month manual receipts and excluded members are not charged again', () => {
   const receipts = [
     { traineeId: 'child', membershipTypePurchased: 'GROUP_ANNUAL', status: 'PAID', timestamp: new Date().toISOString(), providerRecurringSaleId: 'existing' },

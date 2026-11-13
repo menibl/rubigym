@@ -9,7 +9,7 @@ import { applyRecurringMembershipEvent, rivhitChargeDate } from '../shared/recur
 import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
 import { discoverTodayRecurring, publicRecovery } from './bulk-recurring-recovery.js';
 import { discoverApprovedSetup } from './recurring-setup-discovery.js';
-import { continuationSale, checkNoActiveContinuation } from './checkout-continuation.js';
+import { continuationSale, checkNoActiveContinuation, hasProviderValue, hasContinuationCardEvidence } from './checkout-continuation.js';
 import { autoReleaseUndispatched, canRestartUndispatched, ownedRecoveryCheckouts, recoveryItems } from './checkout-recovery.js';
 import { checkStuckCheckout, releaseStuckCheckout } from './stuck-checkout-release.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, updateRecurringCheckout, releaseUndispatchedRecurringCheckout } from './recurring-checkout.js';
@@ -1196,19 +1196,32 @@ const handleFamilySplit = async (request, env, action) => {
   }
   if (batch.items.some(item => item.recurring) && String(env.RIVHIT_ENABLE_FAMILY_SPLIT_RECURRING).toLowerCase() !== 'true') return json({ code: 'FAMILY_SPLIT_DISABLED', message: 'תשלום משפחתי מפוצל אינו פעיל. לא נפתח דף סליקה חדש.' }, 503, corsHeaders(request, env));
   if (['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(line.status)) return json({ message: 'המסלול כבר טופל. לא נפתח חיוב נוסף.' }, 409, corsHeaders(request, env));
-  if (line.checkout) {
+  // Recover from the authoritative reservation even if the browser response or
+  // the family journal write was lost after GetUrl succeeded. Do not issue a
+  // second page for a REVIEW/DISPATCHING family line with a saved original page.
+  if (line.checkout || line.recurring) {
     if (line.recurring) {
       const latest = await env.STATE_STORE.getClubState(clubId);
       const pending = openRecurringCheckout(latest.payload, line.memberId, line.membershipType);
+      if (pending && (pending.orderSnapshot?.bs !== batch.id || pending.orderSnapshot?.bi !== line.id)) return json({
+        message: 'קיימת בקשה אחרת למסלול. יש להמשיך את הבקשה המקורית של המשלם; לא נפתח דף נוסף.' }, 409, corsHeaders(request, env));
       if (pending) {
-        const resumed = await resumeRecurringPayment(request, env, { userId: payerId, mode: line.mode, pendingPaymentReference: line.checkout.paymentReference }, pending, { familySplitBatchId: batch.id, familySplitItemId: line.id });
+        const resumed = await resumeRecurringPayment(request, env, { userId: payerId, mode: line.mode, pendingPaymentReference: line.checkout?.paymentReference }, pending, { familySplitBatchId: batch.id, familySplitItemId: line.id });
         const result = await resumed.json();
-        if (result.completed) await changeFamilySplit(env.STATE_STORE, clubId, payerId, current => ({ ...current,
-          items: current.items.map(item => item.id === line.id ? { ...item, status: result.recurringPending ? 'SETUP' : 'PAID' } : item) }));
+        if (resumed.ok) {
+          const synced = await changeFamilySplit(env.STATE_STORE, clubId, payerId, current => current.id !== batch.id || current.cancelled ? null : ({ ...current,
+            items: current.items.map(item => item.id === line.id && !['PAID', 'SETUP', 'CANCELLED'].includes(item.status)
+              ? { ...item, status: result.completed ? result.recurringPending ? 'SETUP' : 'PAID' : 'PAGE',
+                ...(result.url && result.paymentReference ? { checkout: result } : {}) } : item) }));
+          const freshLine = synced.items.find(item => item.id === line.id);
+          if (synced.id !== batch.id || synced.cancelled || freshLine?.status === 'CANCELLED') return json({ message: 'הבקשה בוטלה בזמן הבדיקה. לא נפתח דף נוסף.' }, 409, corsHeaders(request, env));
+          if (!result.completed && ['PAID', 'SETUP'].includes(freshLine?.status)) return json({ completed: true, recurringPending: freshLine.status === 'SETUP', batchId: batch.id, itemId: line.id }, 200, corsHeaders(request, env));
+        }
         return json({ ...result, batchId: batch.id, itemId: line.id }, resumed.status, corsHeaders(request, env));
       }
+      if (line.checkout) return json({ message: 'לא נמצאה הרשומה המקורית של הוראת הקבע. נדרשת בדיקה לפני המשך; לא נפתח חיוב נוסף.' }, 409, corsHeaders(request, env));
     }
-    return json({ ...line.checkout, batchId: batch.id, itemId: line.id }, 200, corsHeaders(request, env));
+    if (line.checkout) return json({ ...line.checkout, batchId: batch.id, itemId: line.id }, 200, corsHeaders(request, env));
   }
   if (line.status !== 'READY') return json({ message: 'המסלול כבר טופל או דורש בירור. לא נפתח חיוב נוסף.' }, 409, corsHeaders(request, env));
   if (body.acknowledged !== true) return json({ message: 'יש לאשר את הסכום ואת אופן התשלום.' }, 409, corsHeaders(request, env));
@@ -1300,9 +1313,9 @@ const resumeRecurringPayment = async (request, env, body, reservation, splitLine
     if (order.o !== reservation.orderId || (order.bu || order.u) !== reservation.userId || order.u !== body.userId || order.m !== reservation.membershipType || order.re !== reservation.endsAt || order.rc !== 1) return review('הבקשה השמורה אינה תואמת למשתמש או למסלול. לא נפתח חיוב נוסף.');
     if (order.re <= clubDate()) return review('תקופת הבקשה הישנה הסתיימה. נדרשת בדיקת מנהל מול רווחית לפני החלפת הדף; לא נפתח חיוב נוסף.');
     const result = await rivhitPost('/SaleDetails', { SalePrivateToken: reference.p }, env);
-    const { sale, incomplete } = continuationSale(result, reference.o, signedOrderChargeAmount(order));
-    const seriesId = sale.RecurringId || sale.RecurringSaleId;
-    if (seriesId && seriesId !== '00000000-0000-0000-0000-000000000000') {
+    const { sale, incomplete, unsubmitted } = continuationSale(result, reference.o, signedOrderChargeAmount(order));
+    const seriesId = [sale.RecurringId, sale.RecurringSaleId].find(hasProviderValue);
+    if (hasProviderValue(seriesId)) {
       const verified = await verifyPaymentWithSetupDiscovery(referenceValue, env, true);
       await persistVerifiedPurchase(env, verified.order, verified.payment);
       await persistVerifiedDiscountUsage(env, verified.order, verified.payment);
@@ -1311,8 +1324,8 @@ const resumeRecurringPayment = async (request, env, body, reservation, splitLine
     }
     // A record/transaction UUID can exist before the customer types a card.
     // Card/approval evidence without a matching recurring series requires review.
-    if (Number(sale.TransactionStatus) === 0 && (sale.Token || sale.AuthNum || sale.CardNum || sale.TransactionCardNum)) return review('רווחית מחזירה נתוני עסקה ללא אישור הוראת קבע תואם. נדרשת בדיקת מנהל לפני תשלום נוסף.', 'CONTINUATION_CARD_WITHOUT_SERIES');
-    if (incomplete) {
+    if ((sale.TransactionStatus == null || Number(sale.TransactionStatus) === 0) && hasContinuationCardEvidence(sale)) return review('רווחית מחזירה נתוני עסקה ללא אישור הוראת קבע תואם. נדרשת בדיקת מנהל לפני תשלום נוסף.', 'CONTINUATION_CARD_WITHOUT_SERIES');
+    if (incomplete && !unsubmitted) {
       if (!saved?.url) return review('פרטי העסקה עדיין חסרים ואין קישור מקורי שמור לשחזור. נדרש טיפול מנהל, ללא פתיחת בקשה נוספת.', 'CONTINUATION_ORIGINAL_PAGE_MISSING');
       try {
         await checkNoActiveContinuation({ payload: current.payload, order, groupToken: env.RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN, post: discoveryPostFor(env) });
@@ -1329,7 +1342,18 @@ const resumeRecurringPayment = async (request, env, body, reservation, splitLine
           message: 'הוראת הקבע הקיימת אומתה והמנוי סונכרן. לא נפתח דף תשלום נוסף.' }, 200, headers);
       }
     }
-    if (repeatedMonthlyPayments(current.payload, { userId: reservation.userId, membershipType: order.m }).length) return review('כבר תועד החודש תשלום עבור המסלול או מסלול הכולל אותו. אין להמשיך בדף ישן לפני בדיקת מנהל, כדי למנוע תשלום כפול.');
+    // A webhook or manager may have completed/released the request while the
+    // provider read was in flight. Never reopen from that stale snapshot.
+    const fresh = await env.STATE_STORE.getClubState(clubId);
+    const freshReservation = fresh?.payload.recurringCheckouts?.find(item => item.orderId === reservation.orderId);
+    if (!freshReservation || freshReservation.cancelledAt) return review('מצב הבקשה השתנה. יש לרענן את הבחירה; לא נפתח דף תשלום נוסף.', 'CONTINUATION_STATE_CHANGED');
+    const targets = order.gp || [{ memberId: order.bu || order.u, membershipType: order.m }];
+    const linked = targets.map(target => fresh.payload.users?.find(user => user.id === target.memberId)?.recurringMemberships?.[target.membershipType]);
+    if (linked.every(contract => contract?.orderId === order.o && !contract.cancelledAt && ['ACTIVE', 'PENDING_FIRST_CHARGE'].includes(contract.status) && contract.endsAt > clubDate())) return json({
+      completed: true, recurringPending: linked.some(contract => contract.status === 'PENDING_FIRST_CHARGE'), message: 'הבקשה כבר אושרה בזמן הבדיקה. לא נפתח דף תשלום נוסף.' }, 200, headers);
+    if (linked.some(contract => contract?.orderId === order.o) || freshReservation.recurringSaleId
+      || fresh.payload.payments?.some(payment => payment.recurringOrderId === order.o)) return review('התקבל עדכון תשלום לבקשה. נדרשת השלמת האימות ולא פתיחת דף נוסף.', 'CONTINUATION_STATE_CHANGED');
+    if (targets.some(target => repeatedMonthlyPayments(fresh.payload, { userId: target.memberId, membershipType: target.membershipType }).length)) return review('כבר תועד החודש תשלום עבור המסלול או מסלול הכולל אותו. אין להמשיך בדף ישן לפני בדיקת מנהל, כדי למנוע תשלום כפול.');
     if (!saved) {
       // This URL shape is documented in GetUrl. Both identifiers come from
       // the signed browser reference and provider response, not from user text.

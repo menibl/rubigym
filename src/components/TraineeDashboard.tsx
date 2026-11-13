@@ -5,6 +5,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
+import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { activePlanExpiry, emptyFamilyPurchase } from '../data/membershipRenewal';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
 import { hasActiveWorkoutGymMembership } from '../../shared/workout-gym-access.js';
@@ -175,6 +176,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [membershipPurchaseMode, setMembershipPurchaseMode] = useState<'PRIMARY' | 'ADDON'>('PRIMARY');
   const [trainingCardSize, setTrainingCardSize] = useState<TrainingCardSize>(1);
   const [paymentStarting, setPaymentStarting] = useState(false);
+  const [checkoutReturn, setCheckoutReturn] = useState(0);
+  useEffect(() => onPaymentPageReturn(() => { setPaymentStarting(false); setCheckoutReturn(value => value + 1); }), []);
   useEffect(() => {
     if (activeTab !== 'membership' || !selectedMembershipPurchase) return;
     const timeout = window.setTimeout(() => {
@@ -2344,7 +2347,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {activeTab === 'membership' && (
           <div className="space-y-6">
             <RecurringMembershipNotice user={activeUser} plans={membershipPlanConfigs} />
-            <PendingCheckoutRecovery key={activeUser.id} userId={activeUser.id} />
+            <PendingCheckoutRecovery key={`${activeUser.id}-${checkoutReturn}`} userId={activeUser.id} />
             {activeUser.registrationPaymentPending && <p role="alert" className="rounded-xl border border-amber-400/40 bg-zinc-900 p-4 text-amber-200">החשבון שלך נרשם בהצלחה, אך התשלום עדיין לא הושלם. יש לבחור מסלול ולהשלים תשלום כדי להירשם לאימונים.</p>}
             <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
               <button className="text-xs text-amber-300 mb-4" onClick={() => { setSelectedMembershipPurchase(null); setActiveTab('profile'); }}>
