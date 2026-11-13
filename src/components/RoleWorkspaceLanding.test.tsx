@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RoleWorkspaceLanding } from './RoleWorkspaceLanding';
-import { Gender, MembershipType, UserRole, type User, type OpenGymSession, type TrainingSession } from '../types';
+import { Gender, MembershipType, UserRole, type User, type OpenGymSession, type TrainingSession, type Announcement } from '../types';
 
 const trainee = { id: 'trainee', name: 'Test', role: UserRole.TRAINEE, membershipType: MembershipType.OPEN_GYM } as User;
 const openGym = { id: 'open', date: '2099-10-02', timeSlot: '10:15-11:00', registeredUsers: ['trainee'], maxParticipants: 10 } as OpenGymSession;
@@ -66,4 +66,22 @@ test('home separates next booking from nearest eligible group program', () => {
   assert.match(html, /תוכנית האימון הקרוב של הקבוצה/);
   assert.match(html, /הקבוצה הקרובה · 2099-01-01/);
   assert.doesNotMatch(html, /עדיין לא שובצה תוכנית/);
+});
+
+test('actual app home renders matching club announcements before greeting and actions', () => {
+  const announcements = [{ id: 'ann', title: 'עדכון חשוב למועדון', content: 'פרטי העדכון', createdBy: 'Manager', creatorRole: UserRole.MANAGER,
+    date: '2026-11-13', targetGender: Gender.ALL, targetMembershipTypes: [MembershipType.OPEN_GYM] }] as Announcement[];
+  const user = { ...trainee, membershipType: MembershipType.WORKOUT_COACHING, secondaryMemberships: [MembershipType.OPEN_GYM] };
+  const html = renderToStaticMarkup(<RoleWorkspaceLanding activeUser={user} openGymSessions={[]} announcements={announcements} onSelect={() => {}} onOpenProfile={() => {}} />);
+  assert.ok(html.indexOf('עדכון חשוב למועדון') < html.indexOf('שלום Test'));
+  assert.ok(html.indexOf('עדכון חשוב למועדון') < html.indexOf('סריקת ברקוד לכניסה'));
+  assert.equal((html.match(/עדכון חשוב למועדון/g) || []).length, 1);
+  assert.match(html, /כל ההודעות \(1\)/);
+});
+
+test('actual manager home offers unchecked SMS option but coach home cannot enable it', () => {
+  const html = render({ ...trainee, role: UserRole.MANAGER }, []);
+  assert.match(html, /שלח הודעה זאת גם ב־SMS/);
+  assert.doesNotMatch(html, /type="checkbox"[^>]*checked/);
+  assert.doesNotMatch(render({ ...trainee, role: UserRole.COACH }, []), /שלח הודעה זאת גם ב־SMS/);
 });

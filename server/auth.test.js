@@ -19,7 +19,7 @@ test('password hashes verify without storing plaintext', async () => {
 test('trainee payload excludes other trainees private records', () => {
   const payload = {
     users: [
-      { id: 't1', role: 'TRAINEE', name: 'One', email: 'one@example.com', password: 'secret' },
+      { id: 't1', role: 'TRAINEE', name: 'One', email: 'one@example.com', password: 'secret', membershipType: 'OPEN_GYM', membershipStatus: 'ACTIVE', membershipExpiry: '2099-01-01' },
       { id: 't2', role: 'TRAINEE', name: 'Two', email: 'two@example.com' },
       { id: 'm1', role: 'MANAGER', name: 'Manager', email: 'manager@example.com' }
     ],

@@ -24,6 +24,9 @@ import { HomeMembershipSummary } from './HomeMembershipSummary';
 import { nextBookedSession } from '../data/nextBookedSession';
 import { homeGroupSessions } from '../../shared/group-program-access.js';
 import { primaryMembershipExpired } from '../data/membershipRenewal';
+import { HomeClubAnnouncements } from './HomeClubAnnouncements';
+import { matchesAnnouncement } from '../../shared/announcement-audience.js';
+import { publishClubAnnouncement } from '../data/clubServer';
 
 export type WorkspaceView =
   | 'CLUB_MANAGEMENT'
@@ -85,6 +88,11 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementContent, setAnnouncementContent] = useState('');
   const [editingAnnouncementId, setEditingAnnouncementId] = useState('');
+  const [showAllHomeNotices, setShowAllHomeNotices] = useState(false);
+  const [sendAnnouncementSms, setSendAnnouncementSms] = useState(false);
+  const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
+  const [announcementNotice, setAnnouncementNotice] = useState('');
+  const [announcementDraftId, setAnnouncementDraftId] = useState(() => `ann-${crypto.randomUUID()}`);
 
   const roleLabel = activeUser.role === UserRole.MANAGER
     ? 'מנהל המועדון'
@@ -129,17 +137,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
       ];
 
   const targetedAnnouncements = useMemo(() => announcements
-    .filter(announcement => {
-      if (announcement.targetGender !== Gender.ALL && announcement.targetGender !== activeUser.gender) return false;
-      if (announcement.targetAgeMin && activeUser.age < announcement.targetAgeMin) return false;
-      if (announcement.targetAgeMax && activeUser.age > announcement.targetAgeMax) return false;
-      if (
-        announcement.targetMembershipTypes?.length
-        && activeUser.membershipType
-        && !announcement.targetMembershipTypes.includes(activeUser.membershipType)
-      ) return false;
-      return true;
-    })
+    .filter(announcement => matchesAnnouncement(activeUser, announcement))
     .sort((a, b) => b.date.localeCompare(a.date)), [activeUser, announcements]);
 
   const incomingStaffMessages = useMemo(() => messages
@@ -219,32 +217,42 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5), [announcements]);
 
-  const saveClubAnnouncement = (event: React.FormEvent) => {
+  const saveClubAnnouncement = async (event: React.FormEvent) => {
     event.preventDefault();
     const title = announcementTitle.trim();
     const content = announcementContent.trim();
-    if (!title || !content || !onUpdateAnnouncements) return;
+    if (!title || !content || !onUpdateAnnouncements || publishingAnnouncement) return;
+    if (sendAnnouncementSms && !editingAnnouncementId && !window.confirm('לפרסם ולשלוח הודעת SMS לכל המתאמנים הרשומים בעלי מספר תקין? ייתכן חיוב עבור כמה מקטעים. מספר משותף יקבל הודעה אחת בלבד.')) return;
+    setPublishingAnnouncement(true); setAnnouncementNotice('');
+    try {
     if (editingAnnouncementId) {
       onUpdateAnnouncements(announcements.map(announcement => announcement.id === editingAnnouncementId
         ? { ...announcement, title, content, createdBy: activeUser.name, creatorRole: activeUser.role as UserRole.MANAGER | UserRole.COACH, date: new Date().toISOString().split('T')[0] }
         : announcement));
     } else {
-      onUpdateAnnouncements([{
-        id: `announcement-${Date.now()}`,
+      const draft: Announcement = {
+        id: announcementDraftId,
         title,
         content,
         createdBy: activeUser.name,
         creatorRole: activeUser.role as UserRole.MANAGER | UserRole.COACH,
         date: new Date().toISOString().split('T')[0],
         targetGender: Gender.ALL
-      }, ...announcements]);
+      };
+      const saved = sendAnnouncementSms ? await publishClubAnnouncement(draft, true) : draft;
+      onUpdateAnnouncements([saved, ...announcements.filter(item => item.id !== saved.id)]);
+      setAnnouncementNotice(saved.smsRequested ? `פורסם. ${saved.smsQueuedCount || 0} מספרים בתור SMS; ${saved.smsMissingPhoneCount || 0} ללא מספר תקין. שליחה לספק אינה אישור מסירה.` : 'ההודעה פורסמה.');
     }
+    } catch (error) { setAnnouncementNotice(error instanceof Error ? error.message : 'פרסום ההודעה נכשל.'); return; }
+    finally { setPublishingAnnouncement(false); }
+    setSendAnnouncementSms(false); setAnnouncementDraftId(`ann-${crypto.randomUUID()}`);
     setAnnouncementTitle('');
     setAnnouncementContent('');
     setEditingAnnouncementId('');
   };
 
   const startEditingAnnouncement = (announcement: Announcement) => {
+    setSendAnnouncementSms(false);
     setEditingAnnouncementId(announcement.id);
     setAnnouncementTitle(announcement.title);
     setAnnouncementContent(announcement.content);
@@ -252,6 +260,7 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
 
   return (
     <section className="workspace-landing mobile-role-home" dir="rtl">
+      {isTrainee && <HomeClubAnnouncements announcements={targetedAnnouncements} expanded={showAllHomeNotices} onShowAll={() => setShowAllHomeNotices(value => !value)} />}
       {isTrainee && primaryMembershipExpired(activeUser) && <section role="alert" aria-label="המנוי פג תוקף" className="mb-4 rounded-2xl border-2 border-amber-400 bg-slate-950 p-5 text-amber-100">
         <h2 className="text-xl font-black">המנוי פג תוקף</h2>
         <p className="my-2">כדי להירשם לאימונים יש לחדש את המסלול. חידוש אינו מתבצע עד להשלמת התהליך.</p>
@@ -349,35 +358,24 @@ export const RoleWorkspaceLanding: React.FC<RoleWorkspaceLandingProps> = ({
 
 
       <section className="role-home-communications">
-        {isTrainee ? (
-          <>
-            <section className="role-home-panel">
-              <div className="role-home-panel-title"><Bell size={20} /><div><h3>הודעות המערכת</h3><p>עדכונים מצוות המועדון</p></div></div>
-              <div className="role-home-feed">
-                {targetedAnnouncements.slice(0, 3).map(announcement => (
-                  <article key={announcement.id}>
-                    <div><span>{announcement.createdBy}</span><time>{announcement.date}</time></div>
-                    <h4>{announcement.title}</h4>
-                    <p>{announcement.content}</p>
-                  </article>
-                ))}
-                {targetedAnnouncements.length === 0 && <div className="role-home-empty">אין כרגע הודעות חדשות.</div>}
-              </div>
-            </section>
-
-          </>
-        ) : (
+        {isTrainee ? null : (
           <>
             <section className="role-home-panel">
               <div className="role-home-panel-title"><Megaphone size={20} /><div><h3>הודעות המועדון</h3><p>פרסום, עריכה ומחיקה</p></div></div>
               <form onSubmit={saveClubAnnouncement} className="role-home-announcement-form">
-                <input value={announcementTitle} onChange={event => setAnnouncementTitle(event.target.value)} placeholder="כותרת ההודעה" aria-label="כותרת הודעת מועדון" />
-                <textarea value={announcementContent} onChange={event => setAnnouncementContent(event.target.value)} placeholder="תוכן ההודעה לכל חברי המועדון..." rows={3} aria-label="תוכן הודעת מועדון" />
+                <input disabled={publishingAnnouncement} maxLength={200} value={announcementTitle} onChange={event => setAnnouncementTitle(event.target.value)} placeholder="כותרת ההודעה" aria-label="כותרת הודעת מועדון" />
+                <textarea disabled={publishingAnnouncement} maxLength={1000} value={announcementContent} onChange={event => setAnnouncementContent(event.target.value)} placeholder="תוכן ההודעה לכל חברי המועדון..." rows={3} aria-label="תוכן הודעת מועדון" />
+                {activeUser.role === UserRole.MANAGER && !editingAnnouncementId && <label className="flex min-h-11 items-start gap-3 text-sm text-white">
+                  <input type="checkbox" style={{ width: 20, height: 20 }} disabled={publishingAnnouncement} checked={sendAnnouncementSms} onChange={event => setSendAnnouncementSms(event.target.checked)} />
+                  <span>שלח הודעה זאת גם ב־SMS<small className="block text-slate-300">הודעות שירות מועדון בלבד. הודעה ארוכה יכולה לכלול כמה מקטעים בתשלום.</small></span>
+                </label>}
+                {editingAnnouncementId && <p className="text-xs text-slate-300">עריכה אינה שולחת SMS מחדש. לשליחה נוספת יש לפרסם הודעה חדשה.</p>}
                 <div>
-                  {editingAnnouncementId && <button type="button" className="secondary" onClick={() => { setEditingAnnouncementId(''); setAnnouncementTitle(''); setAnnouncementContent(''); }}>ביטול עריכה</button>}
-                  <button type="submit" disabled={!announcementTitle.trim() || !announcementContent.trim()}><Megaphone size={16} /> {editingAnnouncementId ? 'שמירת עדכון' : 'פרסום למועדון'}</button>
+                  {editingAnnouncementId && <button disabled={publishingAnnouncement} type="button" className="secondary" onClick={() => { setEditingAnnouncementId(''); setAnnouncementTitle(''); setAnnouncementContent(''); }}>ביטול עריכה</button>}
+                  <button type="submit" disabled={publishingAnnouncement || !announcementTitle.trim() || !announcementContent.trim()}><Megaphone size={16} /> {publishingAnnouncement ? 'מפרסם…' : editingAnnouncementId ? 'שמירת עדכון' : sendAnnouncementSms ? 'פרסום ושליחה גם ב־SMS' : 'פרסום למועדון'}</button>
                 </div>
               </form>
+              {announcementNotice && <p role="status">{announcementNotice}</p>}
               <div className="role-home-feed compact">
                 {latestClubAnnouncements.map(announcement => (
                   <article key={announcement.id}>
