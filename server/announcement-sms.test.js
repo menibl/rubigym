@@ -37,6 +37,7 @@ test('SMS targets same audience, secondary memberships, real age and unique norm
   assert.equal(matchesAnnouncement(trainee('x', '', { age: 50, birthDate: '2012-01-01' }), announcement, now), false);
   assert.equal(matchesAnnouncement(trainee('x', '', { birthDate: undefined, age: undefined }), announcement, now), false);
   assert.equal(matchesAnnouncement(trainee('x', '', { membershipType: undefined }), { targetGender: 'ALL', targetMembershipTypes: [] }, now), true);
+  assert.equal(matchesAnnouncement(trainee('x', '', { registrationIncomplete: true }), { targetGender: 'ALL' }, now), false);
 });
 test('SMS is opt-in, publication is idempotent, changes after publication cannot create a duplicate send', () => {
   const initial = queueAnnouncement(seed(), body, manager, now);

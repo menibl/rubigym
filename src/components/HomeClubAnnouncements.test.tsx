@@ -17,3 +17,9 @@ test('workout gate explains required gym membership, preserves purchased program
   assert.match(html, /נדרש מנוי כניסה בתוקף/); assert.match(html, /מנוי קבוצתי הכולל Open Gym/);
   assert.match(html, /אין צורך לרכוש אותה שוב/); assert.match(html, /לבחירת מנוי ותשלום/);
 });
+test('expanded notices show all older messages and a collapse action', () => {
+  const notices = Array.from({ length: 5 }, (_, index) => announcement(`notice-${index}`, '2026-11-13'));
+  const html = renderToStaticMarkup(<HomeClubAnnouncements announcements={notices} expanded onShowAll={() => {}} />);
+  assert.equal((html.match(/<article/g) || []).length, 5);
+  assert.match(html, /הצג פחות/);
+});

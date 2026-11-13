@@ -1,7 +1,7 @@
 import { membershipAge } from './youth-plan.js';
 
 export function matchesAnnouncement(user, announcement, now = new Date()) {
-  if (user?.role !== 'TRAINEE') return false;
+  if (user?.role !== 'TRAINEE' || user.registrationIncomplete) return false;
   if (announcement.targetGender && announcement.targetGender !== 'ALL' && user.gender !== announcement.targetGender) return false;
   const age = membershipAge(user, now);
   if (Number.isFinite(announcement.targetAgeMin) && (age === null || age < announcement.targetAgeMin)) return false;
