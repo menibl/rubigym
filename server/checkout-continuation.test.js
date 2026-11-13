@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkNoActiveContinuation, verifiedUnrelatedSeries } from './checkout-continuation.js';
+import { checkNoActiveContinuation, verifiedUnrelatedSeries, continuationSale, hasContinuationCardEvidence } from './checkout-continuation.js';
 
 const seriesId = '11111111-1111-4111-8111-111111111111';
 function fixture() {
@@ -42,4 +42,23 @@ test('malformed, partial or duplicate provider results never count as a clear se
     { RecurringSales: [{ RecurringSaleId: seriesId, IsActive: false }, { RecurringSaleId: seriesId, IsActive: true }] }]) {
     await assert.rejects(checkNoActiveContinuation({ ...fixture(), groupToken: 'fixture', post: async () => result }), /CONTINUATION_LIST_/);
   }
+});
+
+test('explicit nullable WCF recurring collection can resume the original page; absent collection still blocks', async () => {
+  await checkNoActiveContinuation({ ...fixture(), groupToken: 'fixture', post: async () => ({ RecurringSales: null }) });
+  await assert.rejects(checkNoActiveContinuation({ ...fixture(), groupToken: 'fixture', post: async () => ({}) }), /CONTINUATION_LIST_INVALID/);
+});
+
+test('nullable pre-card status and empty GUID tokens are not a card authorization', () => {
+  const sale = { Status: 0, SaleId: 'page-record', Custom1: 'signed', TransactionAmount: 0, TransactionStatus: null,
+    Token: '00000000-0000-0000-0000-000000000000', RecurringId: '00000000-0000-0000-0000-000000000000',
+    TransactionId: '00000000-0000-0000-0000-000000000000', AuthNum: null, CardNum: null };
+  assert.equal(continuationSale(sale, 'signed', 280).unsubmitted, true);
+  assert.equal(hasContinuationCardEvidence(sale), false);
+  for (const patch of [{ Token: 'actual-card-token' }, { AuthNum: '12345' }, { CardNum: '****1234' }, { ReceiptNum: 42 }]) {
+    assert.equal(hasContinuationCardEvidence({ ...sale, ...patch }), true);
+    assert.equal(continuationSale({ ...sale, ...patch }, 'signed', 280).unsubmitted, false);
+  }
+  assert.equal(continuationSale({ ...sale, TransactionStatus: 0 }, 'signed', 280).unsubmitted, false);
+  assert.equal(continuationSale({ Status: 0, data: [] }, 'signed', 280).unsubmitted, false);
 });
