@@ -5,6 +5,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
+import { hasActiveWorkoutGymMembership } from '../shared/workout-gym-access.js';
+import { WorkoutMembershipRequired } from './components/WorkoutMembershipRequired';
 import {
   User,
   TrainingSession,
@@ -137,6 +139,14 @@ export default function App() {
 
   // Active signed-in user
   const [activeUser, setActiveUser] = useState<User>(INITIAL_USERS[0]);
+  const [accessClock, setAccessClock] = useState(() => new Date());
+  useEffect(() => {
+    if (!isAuthenticated || activeUser.role !== UserRole.TRAINEE) return;
+    const refresh = () => { if (document.visibilityState !== 'hidden') setAccessClock(new Date()); };
+    const interval = window.setInterval(refresh, 60_000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.clearInterval(interval); document.removeEventListener('visibilitychange', refresh); };
+  }, [isAuthenticated, activeUser.role]);
 
   // State synchronization helper when switching user (so user details like debt, priority score are up to date)
   useEffect(() => {
@@ -626,6 +636,11 @@ export default function App() {
   }
 
   if (personalWorkoutDisplayId) {
+    if (activeUser.role === UserRole.TRAINEE && !hasActiveWorkoutGymMembership(activeUser, accessClock)) {
+      return <main className="min-h-screen bg-slate-950 p-6"><WorkoutMembershipRequired onCheckout={() => {
+        window.location.href = `${window.location.origin}${window.location.pathname}?workspace=my_membership`;
+      }} /></main>;
+    }
     const workoutPlan = workoutPlans.find(plan => plan.id === personalWorkoutDisplayId)
       || workoutPlans.find(plan => plan.traineeId === personalWorkoutDisplayId && !plan.sessionId)
       || workoutPlans.find(plan => plan.traineeId === personalWorkoutDisplayId);

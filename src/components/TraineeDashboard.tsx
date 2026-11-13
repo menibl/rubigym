@@ -7,6 +7,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
 import { activePlanExpiry, emptyFamilyPurchase } from '../data/membershipRenewal';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
+import { hasActiveWorkoutGymMembership } from '../../shared/workout-gym-access.js';
+import { matchesAnnouncement } from '../../shared/announcement-audience.js';
+import { WorkoutMembershipRequired } from './WorkoutMembershipRequired';
+import { HomeClubAnnouncements } from './HomeClubAnnouncements';
 import { uniquePayments } from '../../shared/payment-ledger.js';
 import { fitsSessionAge, isYouthSession, sessionAgeMax } from '../../shared/youth-session.js';
 import { canPurchasePlan } from '../../shared/youth-plan.js';
@@ -1294,25 +1298,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   // BULLETIN BOARD TARGET AUDIENCE FILTERS (Section 14)
-  const targetedAnnouncements = announcements.filter(ann => {
-    // 1. Gender Filter
-    if (ann.targetGender !== Gender.ALL && ann.targetGender !== activeUser.gender) {
-      return false;
-    }
-    // 2. Age Filter
-    if (ann.targetAgeMin && activeUser.age < ann.targetAgeMin) return false;
-    if (ann.targetAgeMax && activeUser.age > ann.targetAgeMax) return false;
-
-    // 3. Membership Type Filter
-    if (ann.targetMembershipTypes && activeUser.membershipType && !ann.targetMembershipTypes.includes(activeUser.membershipType)) {
-      return false;
-    }
-
-    return true;
-  });
-
-  const traineeWorkout = workoutPlans.find(wp => wp.traineeId === activeUser.id && !wp.sessionId)
-    || workoutPlans.find(wp => wp.traineeId === activeUser.id);
+  const targetedAnnouncements = announcements.filter(ann => matchesAnnouncement(activeUser, ann));
+  const hasWorkoutGymMembership = hasActiveWorkoutGymMembership(activeUser);
+  const traineeWorkout = hasWorkoutGymMembership ? (workoutPlans.find(wp => wp.traineeId === activeUser.id && !wp.sessionId)
+    || workoutPlans.find(wp => wp.traineeId === activeUser.id)) : undefined;
   const traineeNutrition = nutritionPlans.find(np => np.traineeId === activeUser.id);
   const hasWorkoutPlanAccess = Boolean(
     activeUser.secondaryMemberships?.includes(MembershipType.WORKOUT_COACHING) ||
@@ -1327,6 +1316,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     activeUser.secondaryMemberships?.includes(MembershipType.NUTRITION_PLAN)
   );
   const openPaidFeature = (tab: 'workout' | 'nutrition') => {
+    if (tab === 'workout' && !hasWorkoutGymMembership) { setActiveTab('workout'); return; }
     if (tab === 'workout' && !hasWorkoutPlanAccess) {
       openMembershipCheckout(MembershipType.WORKOUT_COACHING, 'ADDON');
       setActiveTab('membership');
@@ -1340,14 +1330,14 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     setActiveTab(tab);
   };
   useEffect(() => {
-    if (initialTab === 'workout' && !hasWorkoutPlanAccess) {
+    if (initialTab === 'workout' && hasWorkoutGymMembership && !hasWorkoutPlanAccess) {
       setSelectedMembershipPurchase(MembershipType.WORKOUT_COACHING);
       setMembershipPurchaseMode('ADDON');
       setActiveTab('membership');
     }
-  }, [hasWorkoutPlanAccess, initialTab]);
+  }, [hasWorkoutPlanAccess, hasWorkoutGymMembership, initialTab]);
   const openPersonalWorkoutDisplay = () => {
-    if (!traineeWorkout) return;
+    if (!traineeWorkout || !hasWorkoutGymMembership) return;
     const displayUrl = `${window.location.origin}${window.location.pathname}#personal-workout-display=${encodeURIComponent(activeUser.id)}`;
     window.open(displayUrl, '_blank', 'noopener,noreferrer');
   };
@@ -1678,6 +1668,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       <div className="trainee-content bg-white rounded-xl p-6 shadow-md border border-slate-100 min-h-[400px]">
         {activeTab === 'home' && (
           <div className="trainee-home">
+            <HomeClubAnnouncements announcements={targetedAnnouncements} onShowAll={() => setActiveTab('notices')} />
             <section className="home-greeting">
               <div>
                 <span>שלום, טוב לראות אותך</span>
@@ -1741,28 +1732,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </button>
             </section>
 
-            <section className="home-section">
-              <h3>
-                לוח מודעות
-                <button onClick={() => setActiveTab('notices')}>כל ההודעות</button>
-              </h3>
-              <div className="home-announcements">
-                {targetedAnnouncements.slice(0, 2).map(announcement => (
-                  <article key={announcement.id}>
-                    <div><span>{announcement.createdBy}</span><time>{announcement.date}</time></div>
-                    <h4>{announcement.title}</h4>
-                    <p>{announcement.content}</p>
-                  </article>
-                ))}
-                {targetedAnnouncements.length === 0 && (
-                  <article>
-                    <div><span>הנהלת המועדון</span><time>היום</time></div>
-                    <h4>הכול מוכן לאימון הבא</h4>
-                    <p>כאן יופיעו עדכונים אישיים והודעות חדשות מצוות המועדון.</p>
-                  </article>
-                )}
-              </div>
-            </section>
           </div>
         )}
         
@@ -2006,6 +1975,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         {/* TAB 3: WORKOUT PLANS WITH DEMO MEDIA & MUSCLE TARGETING */}
         {activeTab === 'workout' && (
           <div className="space-y-6">
+            {!hasWorkoutGymMembership ? <WorkoutMembershipRequired onCheckout={() => {
+              openMembershipCheckout(MembershipType.OPEN_GYM, 'PRIMARY'); setActiveTab('membership');
+            }} /> : <>
             <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div>
                 <h3 className="text-sm font-bold text-slate-800">תוכנית אימונים אישית</h3>
@@ -2170,6 +2142,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                 המאמן שלך לא הזין תרגילים בתוכנית שלך עדיין. שלח לו הודעה בצ'אט לזירוז!
               </div>
             )}
+            </>}
           </div>
         )}
 

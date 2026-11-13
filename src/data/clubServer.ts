@@ -77,6 +77,15 @@ export async function manageMedicalCertificate(body: { userId: string; recordId:
   return result.user;
 }
 
+export async function publishClubAnnouncement(announcement: import('../types').Announcement, sendSms: boolean) {
+  if (isPagesDemoMode()) throw new Error('שליחת SMS זמינה באתר המועדון המחובר לשרת בלבד. לא נשלחה הודעה.');
+  const result = await request<{ announcement: import('../types').Announcement }>('/api/admin/announcements', {
+    method: 'POST', body: JSON.stringify({ announcement, sendSms })
+  });
+  window.dispatchEvent(new Event('baly:refresh-billing'));
+  return result.announcement;
+}
+
 export type ClubStateEnvelope = { payload: Record<string, unknown>; revision: number; updated_at?: string };
 
 export type ArrivalChoice = {
