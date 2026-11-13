@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { UnpaidTraineesList } from './UnpaidTraineesList';
+import { activeDebtTrainees } from '../data/unpaidTrainees';
 import { publishClubAnnouncement } from '../data/clubServer';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
 import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
@@ -249,6 +251,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Search & Filters
   const [userSearch, setUserSearch] = useState('');
+  const [showUnpaidTrainees, setShowUnpaidTrainees] = useState(false);
+  const unpaidTriggerRef = useRef<HTMLButtonElement>(null);
+  const debtTrainees = activeDebtTrainees(users);
   const [showAddCoach, setShowAddCoach] = useState(false);
   const [newCoach, setNewCoach] = useState({ name: '', username: '', password: '', phone: '', email: '' });
   const [sessionSearch, setSessionSearch] = useState('');
@@ -1779,17 +1784,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="bg-rose-50 border border-rose-100 rounded-lg p-4 flex items-center justify-between">
+              <button type="button" ref={unpaidTriggerRef} aria-expanded={showUnpaidTrainees} aria-controls="finance-unpaid-list"
+                onClick={() => setShowUnpaidTrainees(value => !value)} className="rounded-lg border border-rose-400/40 bg-rose-950/40 p-4 text-right text-rose-100 flex items-center justify-between gap-3 hover:bg-rose-950/70 focus-visible:outline-2 focus-visible:outline-amber-400">
                 <div>
-                  <div className="text-xs text-rose-700">מתאמנים במצב חוב פעיל</div>
-                  <div className="text-2xl font-bold font-mono text-rose-950 mt-1">
-                    {users.filter(u => u.membershipStatus === MembershipStatus.DEBT).length}
+                  <div className="text-xs text-rose-200">מתאמנים במצב חוב פעיל</div>
+                  <div className="text-2xl font-bold font-mono text-rose-100 mt-1">
+                    {debtTrainees.length}
                   </div>
+                  <span className="mt-1 block text-xs text-rose-200 underline">{showUnpaidTrainees ? 'הסתר רשימת מתאמנים' : 'הצג רשימת מתאמנים'}</span>
                 </div>
-                <div className="bg-rose-500/20 text-rose-800 rounded-full p-2.5">
+                <div className="bg-rose-500/20 text-rose-200 rounded-full p-2.5">
                   <AlertTriangle size={24} />
                 </div>
-              </div>
+              </button>
 
               <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 flex items-center justify-between">
                 <div>
@@ -1805,6 +1812,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div>
+              {showUnpaidTrainees && <UnpaidTraineesList users={users} plans={settings.membershipPlans || []}
+                onClose={() => { setShowUnpaidTrainees(false); unpaidTriggerRef.current?.focus(); }}
+                onOpenUser={setEditingTraineeId} />}
               <AdminBulkRecurringRecovery />
               <RecurringFinanceStatus users={users} />
               <h3 className="text-sm font-semibold text-slate-800 mb-3">יומן עסקאות ותשלומים</h3>
