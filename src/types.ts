@@ -776,6 +776,9 @@ export interface Message {
 }
 
 export interface Announcement {
+  smsRequested?: boolean;
+  smsQueuedCount?: number;
+  smsMissingPhoneCount?: number;
   id: string;
   title: string;
   content: string;

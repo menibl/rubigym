@@ -1,6 +1,8 @@
 import webpush from 'web-push';
 import { sendWeeklyReminders } from './weekly-reminders.js';
 import { sendPaymentReminders } from './payment-reminders.js';
+import { sendAnnouncementSms } from './announcement-sms.js';
+import { matchesAnnouncement } from '../shared/announcement-audience.js';
 import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
 
 const reminderWindowMs = 10 * 60 * 1000;
@@ -182,14 +184,7 @@ export const dispatchStateChangePushes = async (store, env, clubId, before, afte
     const recipients = users.filter(user => {
       if (!pushEnabled(user)) return false;
       if (user.role !== 'TRAINEE') return true;
-      if (announcement.targetGender && announcement.targetGender !== 'ALL' && user.gender !== announcement.targetGender) return false;
-      if (Number.isFinite(announcement.targetAgeMin) && Number(user.age || 0) < announcement.targetAgeMin) return false;
-      if (Number.isFinite(announcement.targetAgeMax) && Number(user.age || 0) > announcement.targetAgeMax) return false;
-      if (announcement.targetMembershipTypes?.length) {
-        const memberships = new Set([user.membershipType, ...(user.secondaryMemberships || [])]);
-        if (!announcement.targetMembershipTypes.some(type => memberships.has(type))) return false;
-      }
-      return true;
+      return matchesAnnouncement(user, announcement);
     }).map(user => user.id);
     await sendPushToUsers(store, env, clubId, recipients, {
       title: cleanText(announcement.title, 'הודעה חדשה מהמועדון', 100),
@@ -298,7 +293,7 @@ export const startPushReminderScheduler = (store, env) => {
     if (running) return;
     running = true;
     try {
-      const results = await Promise.allSettled([sendUpcomingWorkoutReminders(store, env), sendWeeklyReminders(store, env, dispatchStateChangePushes), sendPaymentReminders(store, env, dispatchStateChangePushes)]);
+      const results = await Promise.allSettled([sendUpcomingWorkoutReminders(store, env), sendWeeklyReminders(store, env, dispatchStateChangePushes), sendPaymentReminders(store, env, dispatchStateChangePushes), sendAnnouncementSms(store, env)]);
       if (results.some(result => result.status === 'rejected')) console.error('Reminder scheduler task failed');
     } finally { running = false; }
   };

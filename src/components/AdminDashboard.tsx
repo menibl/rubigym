@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { publishClubAnnouncement } from '../data/clubServer';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
 import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
 import { AdminRecurringSync } from './AdminRecurringSync';
@@ -580,6 +581,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Form states for creating a new bulletin announcement
   const [showAnnForm, setShowAnnForm] = useState(false);
+  const [annSendSms, setAnnSendSms] = useState(false);
+  const [annPublishing, setAnnPublishing] = useState(false);
+  const [annMessage, setAnnMessage] = useState('');
+  const [annDraftId, setAnnDraftId] = useState(() => `ann-${crypto.randomUUID()}`);
   const [newAnn, setNewAnn] = useState({
     title: '',
     content: '',
@@ -653,10 +658,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Handle Announcement Creation
-  const handleCreateAnnouncement = (e: React.FormEvent) => {
+  const handleCreateAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (annPublishing) return;
+    if (annSendSms && !window.confirm('לפרסם ולשלוח את ההודעה גם ב־SMS למתאמנים בקהל שנבחר? ייתכן חיוב עבור כמה מקטעי SMS. מספרים משותפים יקבלו הודעה אחת בלבד.')) return;
     const announcement: Announcement = {
-      id: `ann-${Date.now()}`,
+      id: annDraftId,
       title: newAnn.title,
       content: newAnn.content,
       createdBy: activeUser.name,
@@ -668,7 +675,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       targetMembershipTypes: newAnn.targetMembershipTypes
     };
 
-    onUpdateAnnouncements([announcement, ...announcements]);
+    setAnnPublishing(true); setAnnMessage('');
+    try {
+      const saved = annSendSms ? await publishClubAnnouncement(announcement, true) : announcement;
+      onUpdateAnnouncements([saved, ...announcements.filter(item => item.id !== saved.id)]);
+      setAnnMessage(saved.smsRequested ? `ההודעה פורסמה. ${saved.smsQueuedCount || 0} מספרים הועברו לתור SMS; ${saved.smsMissingPhoneCount || 0} מתאמנים ללא מספר תקין. קבלה בספק אינה אישור מסירה למכשיר.` : 'ההודעה פורסמה באפליקציה.');
+    } catch (error) { setAnnMessage(error instanceof Error ? error.message : 'פרסום ההודעה נכשל.'); return; }
+    finally { setAnnPublishing(false); }
+    setAnnDraftId(`ann-${crypto.randomUUID()}`); setAnnSendSms(false);
     setShowAnnForm(false);
     // Reset
     setNewAnn({
@@ -1850,6 +1864,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {showAnnForm && (
               <form onSubmit={handleCreateAnnouncement} className="bg-slate-50 border border-slate-100 rounded-lg p-5 space-y-4" id="create-announcement-form">
+                <fieldset disabled={annPublishing} className="space-y-4">
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                   <h4 className="text-xs font-semibold text-slate-800">יצירת מודעה חדשה וקביעת קהלי יעד</h4>
                   <button type="button" onClick={() => setShowAnnForm(false)} className="text-slate-400 hover:text-slate-600 text-xs">ביטול</button>
@@ -1861,7 +1876,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input
                       type="text"
                       required
-                      placeholder="לדוגמה: 📢 מבצעים לחברים ותחרות סקווטים שבועית"
+                      maxLength={200}
+                      placeholder="לדוגמה: עדכון שעות הפעילות השבוע"
                       value={newAnn.title}
                       onChange={(e) => setNewAnn({ ...newAnn, title: e.target.value })}
                       className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
@@ -1888,6 +1904,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       rows={3}
                       placeholder="כתוב כאן את הודעת המועדון..."
                       value={newAnn.content}
+                      maxLength={1000}
                       onChange={(e) => setNewAnn({ ...newAnn, content: e.target.value })}
                       className="w-full border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-emerald-500"
                     />
@@ -1940,17 +1957,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
+                {activeUser.role === UserRole.MANAGER && <label className="flex min-h-11 items-start gap-3 rounded-xl bg-slate-950 p-4 text-sm text-white">
+                  <input type="checkbox" checked={annSendSms} onChange={event => setAnnSendSms(event.target.checked)} />
+                  <span>שלח הודעה זאת גם ב־SMS<small className="block text-slate-300">לקהל שנבחר, רק למספרים תקינים. הודעה ארוכה עשויה לכלול כמה מקטעים בתשלום. יש לשלוח רק הודעות שירות מועדון מותרות לנמענים המתאימים.</small></span>
+                </label>}
                 <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
                   <button
                     type="submit"
                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-4 rounded-lg"
                   >
-                    פרסם מודעה
+                    {annPublishing ? 'מפרסם…' : annSendSms ? 'פרסם ושלח גם ב־SMS' : 'פרסם מודעה'}
                   </button>
                 </div>
+                </fieldset>
               </form>
             )}
 
+            {annMessage && <p role="status" className="rounded-xl bg-slate-950 p-4 text-sm text-white">{annMessage}</p>}
             <div className="space-y-4">
               {announcements.map(ann => (
                 <div key={ann.id} className="border border-slate-150 rounded-xl p-4 bg-white relative hover:shadow-sm transition" id={`ann-item-${ann.id}`}>

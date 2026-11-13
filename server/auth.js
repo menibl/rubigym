@@ -7,6 +7,7 @@ import { homeGroupSessions } from '../shared/group-program-access.js';
 import { validReminderDate } from '../shared/payment-reminder-policy.js';
 import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
 import { recurringSessionBlocked } from '../shared/recurring-access.js';
+import { hasActiveWorkoutGymMembership } from '../shared/workout-gym-access.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -150,12 +151,14 @@ export const payloadForUser = (payload, userId, role) => {
     ...safe,
     coachArrivalApprovals: [],
     membershipReminderDeliveries: [],
+    announcementSmsDeliveries: [],
     recurringCheckouts: (safe.recurringCheckouts || []).filter(item => item.userId === userId || (familyId && safe.users.some(member => member.id === item.userId && member.familyId === familyId))),
     users: safe.users
       .filter(user => user.id === userId || user.role === 'MANAGER' || user.role === 'COACH' || (familyId && user.familyId === familyId))
       .map(user => user.id === userId || (familyId && user.familyId === familyId) ? user : publicStaff(user)),
     workoutPlans: (safe.workoutPlans || []).filter(plan =>
-      plan.traineeId === userId || assignedPersonalPlanIds.has(plan.id) || registeredSessionIds.has(plan.sessionId)
+      (plan.traineeId !== userId || hasActiveWorkoutGymMembership(currentUser))
+      && (plan.traineeId === userId || assignedPersonalPlanIds.has(plan.id) || registeredSessionIds.has(plan.sessionId))
     ),
     groupWorkoutPrograms: (safe.groupWorkoutPrograms || []).filter(program =>
       assignedGroupProgramIds.has(program.id) || registeredSessionIds.has(program.sessionId) || visibleGroupSessionIds.has(program.sessionId)
@@ -250,6 +253,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
   // exception endpoints, never by generic client state synchronization.
   incoming.coachArrivalApprovals = current.coachArrivalApprovals || [];
   incoming.membershipReminderDeliveries = current.membershipReminderDeliveries || [];
+  incoming.announcementSmsDeliveries = current.announcementSmsDeliveries || [];
   incoming.recurringCheckouts = current.recurringCheckouts || [];
   const protectedLogs = (current.attendanceLogs || []).filter(log => log.coachException);
   incoming.attendanceLogs = [...(incoming.attendanceLogs || []).filter(log => !log.coachException && !String(log.id).startsWith('arrival-exception-')), ...protectedLogs];
