@@ -490,6 +490,8 @@ export interface Exercise {
   sets: number;
   reps: string; // e.g., "12", "8-10", "1 min"
   weight?: string; // e.g., "15kg", "משקל גוף"
+  /** Optional per-trainee working values; never inferred from legacy timer defaults. */
+  workingValues?: { weightKg: string; restSeconds: string; revision: number };
   equipment?: string; // required equipment or machine, in Hebrew
   workDuration?: string; // e.g., "45 sec"
   restDuration?: string; // e.g., "60 sec"

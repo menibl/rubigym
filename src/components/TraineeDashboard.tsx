@@ -84,6 +84,7 @@ import {
 } from 'lucide-react';
 import { getGoogleCalendarLink, downloadIcsFile } from './CalendarSync';
 import { ExerciseMedia } from './ExerciseMedia';
+import { ExerciseWorkingValues } from './ExerciseWorkingValues';
 import { ClubArrivalScanner } from './ClubArrivalScanner';
 import {
   clearRivhitReturnParams,
@@ -2105,19 +2106,20 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                             <span className="font-bold font-mono text-slate-800 text-xs">{ex.reps}</span>
                           </div>
                           <div>
-                            <span className="text-[9px] text-slate-400 block font-sans">משקל</span>
-                            <span className="font-bold font-mono text-emerald-600 text-xs truncate">{ex.weight || 'גוף'}</span>
+                            <span className="text-[9px] text-slate-400 block font-sans">משקל מומלץ</span>
+                            <span className="font-bold font-mono text-emerald-600 text-xs truncate">{ex.weight || '—'}</span>
                           </div>
                           <div>
                             <span className="text-[9px] text-slate-400 block font-sans">זמן עבודה</span>
                             <span className="font-bold font-mono text-slate-800 text-xs">{ex.workDuration || '—'}</span>
                           </div>
                           <div>
-                            <span className="text-[9px] text-slate-400 block font-sans">זמן מנוחה</span>
+                            <span className="text-[9px] text-slate-400 block font-sans">מנוחה בטיימר</span>
                             <span className="font-bold font-mono text-slate-800 text-xs">{ex.restDuration || '—'}</span>
                           </div>
                         </div>
 
+                        <ExerciseWorkingValues key={`${traineeWorkout.id}-${ex.id}`} planId={traineeWorkout.id} exercise={ex} />
                         {ex.notes && (
                           <p className="text-xs text-slate-500 italic bg-amber-50/30 p-2.5 rounded border border-amber-100/30 mb-3">
                             💡 {ex.notes}
