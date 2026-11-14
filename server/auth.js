@@ -8,6 +8,7 @@ import { validReminderDate } from '../shared/payment-reminder-policy.js';
 import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
 import { recurringSessionBlocked } from '../shared/recurring-access.js';
 import { hasActiveWorkoutGymMembership } from '../shared/workout-gym-access.js';
+import { preserveExerciseWorkingValues } from '../shared/exercise-working-values.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -248,7 +249,7 @@ const mergeOwnOpenGymBooking = (currentItems = [], incomingItems = [], userId, a
 
 export const mergePayloadForUser = (currentPayload, incomingPayload, userId, role) => {
   const current = sanitizePayload(currentPayload);
-  const incoming = sanitizePayload(incomingPayload);
+  const incoming = preserveExerciseWorkingValues(current, sanitizePayload(incomingPayload));
   // Approval tokens and consumed audit logs are only created by authenticated
   // exception endpoints, never by generic client state synchronization.
   incoming.coachArrivalApprovals = current.coachArrivalApprovals || [];

@@ -56,6 +56,7 @@ import { reviewMedicalCertificate } from './medical-certificate.js';
 import { pendingMedicalReview } from '../shared/medical-certificate.js';
 import { queueAnnouncement } from './announcement-sms.js';
 import { preservePaidWorkoutPlan } from '../shared/workout-gym-access.js';
+import { updateExerciseWorkingValues } from '../shared/exercise-working-values.js';
 import { sameProviderPayment } from '../shared/payment-ledger.js';
 
 const RIVHIT_TEST_BASE_URL = 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc';
@@ -2498,6 +2499,23 @@ const handleApi = async (request, env, url) => {
         return json(scan ? { choices: scan.choices, error: scan.error } : arrivalResult(payload, identity.account.user_id, body), 200, headers);
       }
       return json({ message: 'היומן השתנה במקביל. יש לנסות שוב.' }, 409, headers);
+    }
+    if (url.pathname === '/api/workouts/exercise-values' && request.method === 'POST') {
+      const identity = await getIdentity();
+      if (!identity) return json({ message: 'יש להתחבר מחדש.' }, 401, headers);
+      const body = await request.json();
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const state = await loadClubState(identity.session.club_id);
+        if (!state) return json({ message: 'נתוני המועדון אינם זמינים.' }, 503, headers);
+        let payload;
+        try { payload = updateExerciseWorkingValues(state.payload, identity.account.user_id, body); }
+        catch (error) { return json({ message: error.message }, error.status || 400, headers); }
+        const saved = await env.STATE_STORE.putClubState(identity.session.club_id, payload, state.revision);
+        if (saved.conflict) continue;
+        const values = payload.workoutPlans.find(plan => plan.id === body.planId).exercises.find(ex => ex.id === body.exerciseId).workingValues;
+        return json({ workingValues: values }, 200, headers);
+      }
+      return json({ message: 'התוכנית עודכנה במקביל. יש לרענן ולנסות שוב.' }, 409, headers);
     }
     if (url.pathname === '/api/bookings/personal' && request.method === 'POST') {
       const identity = await getIdentity();

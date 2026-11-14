@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { WeeklyCalendar } from './WeeklyCalendar';
+import { ExerciseWorkingValues } from './ExerciseWorkingValues';
 import { savePersonalBooking } from '../data/clubServer';
 import { CreateSessionModal, CreateSessionData, createSessionsFromData } from './CreateSessionModal';
 import { EditSessionModal } from './EditSessionModal';
@@ -1954,6 +1955,7 @@ export const CoachDashboard: React.FC<CoachDashboardProps> = ({
                             </div>
                           </div>
 
+                          <ExerciseWorkingValues key={`${traineeWorkoutPlan.id}-${ex.id}`} planId={traineeWorkoutPlan.id} exercise={ex} />
                           {ex.notes && (
                             <p className="mb-2 rounded border border-zinc-700 bg-zinc-950 p-2 text-[11px] italic text-zinc-400">
                               💡 {ex.notes}

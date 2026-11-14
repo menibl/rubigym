@@ -3,6 +3,7 @@ import { isPagesDemoMode } from './appMode';
 import { createDemoPayload } from './demoData';
 import { deleteClubUser, removeDeletedUserData } from '../../shared/user-deletion.js';
 import { changePersonalBooking } from '../../shared/personal-booking.js';
+import { preserveExerciseWorkingValues, updateExerciseWorkingValues } from '../../shared/exercise-working-values.js';
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../../shared/club-check-in.js';
 import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoachArrival, recordCoachExceptionScan, redeemCoachArrivalApproval, coachArrivalResult, preserveCoachArrivalAudit } from '../../shared/coach-exception-arrival.js';
 
@@ -87,6 +88,18 @@ export async function publishClubAnnouncement(announcement: import('../types').A
 }
 
 export type ClubStateEnvelope = { payload: Record<string, unknown>; revision: number; updated_at?: string };
+
+export async function saveExerciseWorkingValues(input: { planId: string; exerciseId: string; weightKg: string; restSeconds: string; expectedRevision: number }) {
+  let result: { workingValues: NonNullable<import('../types').Exercise['workingValues']> };
+  if (isPagesDemoMode()) {
+    const state = readDemoState();
+    const payload = updateExerciseWorkingValues(state.payload, currentDemoUser()?.id, input);
+    writeDemoState({ payload, revision: state.revision + 1 });
+    result = { workingValues: payload.workoutPlans.find(plan => plan.id === input.planId)!.exercises.find(ex => ex.id === input.exerciseId)!.workingValues };
+  } else result = await request('/api/workouts/exercise-values', { method: 'POST', body: JSON.stringify(input) });
+  window.dispatchEvent(new Event('baly:refresh-billing'));
+  return result.workingValues;
+}
 
 export type ArrivalChoice = {
   key: string; type: 'SESSION' | 'OPEN_GYM'; targetId: string; title: string; time: string;
@@ -429,7 +442,7 @@ export const saveClubState = async (payload: Record<string, unknown>, expectedRe
       error.status = 409;
       throw error;
     }
-    const next = writeDemoState({ payload: removeDeletedUserData(preserveCoachArrivalAudit(current.payload, payload), current.payload.deletedUserIds || []), revision: current.revision + 1 });
+    const next = writeDemoState({ payload: removeDeletedUserData(preserveExerciseWorkingValues(current.payload, preserveCoachArrivalAudit(current.payload, payload)), current.payload.deletedUserIds || []), revision: current.revision + 1 });
     return { revision: next.revision };
   }
   return request<{ revision: number; generatedMessages?: import('../types').Message[] }>('/api/state', { method: 'PUT', body: JSON.stringify({ payload, expectedRevision }) });
