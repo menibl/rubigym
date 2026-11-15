@@ -77,6 +77,22 @@ test('an abandoned family page with empty sale details resumes the same page; a 
   assert.deepEqual(f.state().payload.payments, []);
 });
 
+test('family recurring page resumes after a SaleDetails status failure without another dispatch or granting members access', async () => {
+  const f = fixture(true); f.state().payload.users[0].phone = '0541234567';
+  const quote = await (await f.quote()).json();
+  const input = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+  const first = await (await f.post('family-split/create', input)).json();
+  const original = f.env.RIVHIT_FETCH;
+  f.env.RIVHIT_FETCH = async (url, options) => url.endsWith('/SaleDetails') ? Response.json({ Status: 1 })
+    : url.endsWith('/RecurringSaleList') ? Response.json({ RecurringSales: [] }) : original(url, options);
+  const response = await f.post('family-split/create', input);
+  assert.equal(response.status, 200, await response.clone().text());
+  const resumed = await response.json(); assert.equal(resumed.url, first.url); assert.equal(resumed.resumed, true);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.deepEqual(f.state().payload.payments, []);
+  assert.ok(f.state().payload.users.every(user => user.membershipStatus === 'DEBT'));
+});
+
 test('released family items allow a fresh quote without replacing another dispatched item', async () => {
   for (const otherStatus of ['READY', 'PAGE']) {
     const f = fixture(true); const old = await (await f.quote({ familyPaymentGrouping: 'SEPARATE' })).json();

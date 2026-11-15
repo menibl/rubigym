@@ -333,6 +333,64 @@ test('incomplete pre-card SaleDetails resumes only the encrypted original page a
   }
 });
 
+test('nonzero or missing SaleDetails API status resumes only original encrypted page after strict negative lookup', async () => {
+  for (const result of [{ Status: 1 }, { Status: -1, data: [] }, {}, { Status: null }, { Status: 0, error_code: 9 }]) {
+    const f = fixture(); f.edit(payload => { payload.users[0].phone = '0541234567'; });
+    const first = await (await f.create()).json(); const original = f.env.RIVHIT_FETCH;
+    f.env.RIVHIT_FETCH = async (url, init) => {
+      if (url.endsWith('/SaleDetails')) { f.calls.push({ url, body: JSON.parse(init.body) }); return Response.json(result); }
+      if (url.endsWith('/RecurringSaleList')) { f.calls.push({ url, body: JSON.parse(init.body) }); return Response.json({ RecurringSales: [] }); }
+      return original(url, init);
+    };
+    for (let retry = 0; retry < 2; retry++) {
+      const response = await f.create(); assert.equal(response.status, 200, await response.clone().text());
+      const resumed = await response.json(); assert.equal(resumed.url, first.url); assert.equal(resumed.resumed, true);
+    }
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/RecurringSaleList')).length, 2);
+    assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+    assert.deepEqual(f.state().payload.payments, []);
+    assert.ok(!f.state().payload.recurringCheckouts[0].cancelledAt);
+  }
+});
+
+test('failed details fallback blocks unknown inactive/active series, outages, card evidence and missing original URL', async () => {
+  for (const scenario of ['active', 'inactive', 'outage', 'invalid-list', 'card', 'no-url', 'wrong-order', 'wrong-amount']) {
+    const f = fixture(); f.edit(payload => { payload.users[0].phone = '0541234567'; });
+    const first = await (await f.create()).json(); const original = f.env.RIVHIT_FETCH;
+    if (scenario === 'no-url') f.rows.clear();
+    f.env.RIVHIT_FETCH = async (url, init) => {
+      if (url.endsWith('/SaleDetails')) return Response.json({ Status: 1, data: [scenario === 'card' ? { CardNum: '****1234' } : scenario === 'wrong-order' ? { Custom1: 'forged' } : scenario === 'wrong-amount' ? { Amount: 999 } : {}] });
+      if (url.endsWith('/RecurringSaleList')) {
+        if (scenario === 'outage') throw new Error('fixture-timeout');
+        return Response.json(scenario === 'invalid-list' ? {} : { RecurringSales: [{ RecurringSaleId: '11111111-1111-4111-8111-111111111111', IsActive: scenario !== 'inactive' }] });
+      }
+      return original(url, init);
+    };
+    const response = await f.create({ pendingPaymentReference: first.paymentReference });
+    assert.equal(response.status, 409, scenario);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+    assert.deepEqual(f.state().payload.payments, []);
+    assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+  }
+});
+
+test('release during failed-details lookup prevents stale original-page redirect', async () => {
+  const f = fixture(); f.edit(payload => { payload.users[0].phone = '0541234567'; }); await f.create();
+  const original = f.env.RIVHIT_FETCH;
+  f.env.RIVHIT_FETCH = async (url, init) => {
+    if (url.endsWith('/SaleDetails')) return Response.json({ Status: 1 });
+    if (url.endsWith('/RecurringSaleList')) {
+      f.edit(payload => { payload.recurringCheckouts[0].cancelledAt = new Date().toISOString(); });
+      return Response.json({ RecurringSales: [] });
+    }
+    return original(url, init);
+  };
+  const response = await f.create(); assert.equal(response.status, 409);
+  assert.equal((await response.json()).reasonCode, 'CONTINUATION_STATE_CHANGED');
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+});
+
 test('incomplete details cannot resume through an active series, missing phone, malformed list or provider outage', async () => {
   for (const scenario of ['active', 'missing-phone', 'invalid', 'outage']) {
     const f = fixture(); f.edit(payload => { payload.users[0].phone = scenario === 'missing-phone' ? '' : '0541234567'; });

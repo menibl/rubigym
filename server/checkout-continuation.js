@@ -56,10 +56,23 @@ export function continuationSale(result, signedOrder, expectedAmount) {
   return { sale, unsubmitted, incomplete: !hasProviderValue(sale.SaleId) || !custom || amount === undefined || Number(amount) === 0 };
 }
 
+// An API-level status failure is not a card decline and not proof of absence.
+// It may only lead to re-opening an encrypted ORIGINAL page after a separate,
+// complete negative series lookup. Conflicting identity/amount or any evidence
+// of submitted card/transaction data still blocks this fallback.
+export function unavailableContinuationSale(result, signedOrder, expectedAmount) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) fail('CONTINUATION_PROVIDER_SHAPE');
+  const parsed = continuationSale({ ...result, Status: 0, error_code: 0 }, signedOrder, expectedAmount);
+  const sale = parsed.sale;
+  if (hasContinuationCardEvidence(sale) || (sale.TransactionStatus !== undefined && sale.TransactionStatus !== null)
+    || ['RecurringId', 'RecurringSaleId', 'TransactionId', 'TransactionDateTime'].some(key => hasProviderValue(sale[key]))) fail('CONTINUATION_PROVIDER_STATUS');
+  return { sale, incomplete: true, unsubmitted: false, unavailable: true };
+}
+
 // Missing SaleDetails is not absence. Only a server-held original page plus a
 // complete search excluding verified disjoint purchases may be reopened;
 // never call GetUrl, cancel a sale, or treat missing details as approval here.
-export async function checkNoActiveContinuation({ payload, order, groupToken, post }) {
+export async function checkNoActiveContinuation({ payload, order, groupToken, post, requireNoUnknownSeries = false }) {
   if (!groupToken) fail('CONTINUATION_MERCHANT_MISSING');
   const ids = [...new Set([order.u, order.bu, ...(order.gp || []).map(line => line.memberId)].filter(Boolean))];
   const people = ids.map(id => payload.users?.find(user => user.id === id));
@@ -79,6 +92,6 @@ export async function checkNoActiveContinuation({ payload, order, groupToken, po
     const list = raw === null && Object.hasOwn(data, 'RecurringSales') ? [] : Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : null;
     if (!list || list.length > 100 || list.some(row => !uuid(row?.RecurringSaleId) || typeof row.IsActive !== 'boolean')
       || new Set(list.map(row => row.RecurringSaleId.toLowerCase())).size !== list.length) fail('CONTINUATION_LIST_INVALID');
-    if (list.some(row => row.IsActive && !verifiedUnrelatedSeries(payload, order, row.RecurringSaleId))) fail('CONTINUATION_ACTIVE_SERIES');
+    if (list.some(row => (row.IsActive || requireNoUnknownSeries) && !verifiedUnrelatedSeries(payload, order, row.RecurringSaleId))) fail('CONTINUATION_ACTIVE_SERIES');
   }
 }

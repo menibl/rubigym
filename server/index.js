@@ -9,7 +9,7 @@ import { applyRecurringMembershipEvent, rivhitChargeDate } from '../shared/recur
 import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
 import { discoverTodayRecurring, publicRecovery } from './bulk-recurring-recovery.js';
 import { discoverApprovedSetup } from './recurring-setup-discovery.js';
-import { continuationSale, checkNoActiveContinuation, hasProviderValue, hasContinuationCardEvidence } from './checkout-continuation.js';
+import { continuationSale, unavailableContinuationSale, checkNoActiveContinuation, hasProviderValue, hasContinuationCardEvidence } from './checkout-continuation.js';
 import { autoReleaseUndispatched, canRestartUndispatched, ownedRecoveryCheckouts, recoveryItems } from './checkout-recovery.js';
 import { checkStuckCheckout, releaseStuckCheckout } from './stuck-checkout-release.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, updateRecurringCheckout, releaseUndispatchedRecurringCheckout } from './recurring-checkout.js';
@@ -1314,7 +1314,19 @@ const resumeRecurringPayment = async (request, env, body, reservation, splitLine
     if (order.o !== reservation.orderId || (order.bu || order.u) !== reservation.userId || order.u !== body.userId || order.m !== reservation.membershipType || order.re !== reservation.endsAt || order.rc !== 1) return review('הבקשה השמורה אינה תואמת למשתמש או למסלול. לא נפתח חיוב נוסף.');
     if (order.re <= clubDate()) return review('תקופת הבקשה הישנה הסתיימה. נדרשת בדיקת מנהל מול רווחית לפני החלפת הדף; לא נפתח חיוב נוסף.');
     const result = await rivhitPost('/SaleDetails', { SalePrivateToken: reference.p }, env);
-    const { sale, incomplete, unsubmitted } = continuationSale(result, reference.o, signedOrderChargeAmount(order));
+    let parsed;
+    try { parsed = continuationSale(result, reference.o, signedOrderChargeAmount(order)); }
+    catch (error) {
+      if (error.code !== 'CONTINUATION_PROVIDER_STATUS') throw error;
+      const numericStatus = value => typeof value !== 'boolean' && value !== null && value !== '' && value !== undefined && Number.isFinite(Number(value)) ? Number(value) : 'missing-or-nonnumeric';
+      console.warn('RIVHIT checkout details status error', { providerStatus: numericStatus(result?.Status),
+        providerErrorCode: numericStatus(result?.error_code), orderId: reservation.orderId, originalPageSaved: Boolean(saved?.url) });
+      if (!saved?.url) throw error;
+      // No new GetUrl and no reservation release: only the authenticated,
+      // encrypted original URL can be resumed via the stricter lookup below.
+      parsed = unavailableContinuationSale(result, reference.o, signedOrderChargeAmount(order));
+    }
+    const { sale, incomplete, unsubmitted } = parsed;
     const seriesId = [sale.RecurringId, sale.RecurringSaleId].find(hasProviderValue);
     if (hasProviderValue(seriesId)) {
       const verified = await verifyPaymentWithSetupDiscovery(referenceValue, env, true);
@@ -1329,7 +1341,8 @@ const resumeRecurringPayment = async (request, env, body, reservation, splitLine
     if (incomplete && !unsubmitted) {
       if (!saved?.url) return review('פרטי העסקה עדיין חסרים ואין קישור מקורי שמור לשחזור. נדרש טיפול מנהל, ללא פתיחת בקשה נוספת.', 'CONTINUATION_ORIGINAL_PAGE_MISSING');
       try {
-        await checkNoActiveContinuation({ payload: current.payload, order, groupToken: env.RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN, post: discoveryPostFor(env) });
+        await checkNoActiveContinuation({ payload: current.payload, order, groupToken: env.RIVHIT_RECURRING_GROUP_PRIVATE_TOKEN,
+          post: discoveryPostFor(env), requireNoUnknownSeries: parsed.unavailable === true });
       } catch (error) {
         if (error.code !== 'CONTINUATION_ACTIVE_SERIES') throw error;
         // The hosted-page receipt may lag behind an already-approved setup.
