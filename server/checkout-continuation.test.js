@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkNoActiveContinuation, verifiedUnrelatedSeries, continuationSale, hasContinuationCardEvidence } from './checkout-continuation.js';
+import { checkNoActiveContinuation, verifiedUnrelatedSeries, continuationSale, unavailableContinuationSale, hasContinuationCardEvidence } from './checkout-continuation.js';
 
 const seriesId = '11111111-1111-4111-8111-111111111111';
 function fixture() {
@@ -61,4 +61,23 @@ test('nullable pre-card status and empty GUID tokens are not a card authorizatio
   }
   assert.equal(continuationSale({ ...sale, TransactionStatus: 0 }, 'signed', 280).unsubmitted, false);
   assert.equal(continuationSale({ Status: 0, data: [] }, 'signed', 280).unsubmitted, false);
+});
+
+test('provider status failure is only a candidate for strict original-page recovery, never payment approval', () => {
+  const result = { Status: 1, data: [] };
+  assert.throws(() => continuationSale(result, 'signed', 280), /CONTINUATION_PROVIDER_STATUS/);
+  assert.deepEqual(unavailableContinuationSale(result, 'signed', 280), { sale: {}, incomplete: true, unsubmitted: false, unavailable: true });
+  for (const patch of [{ CardNum: '****1234' }, { Token: 'card-token' }, { TransactionStatus: 0 }, { TransactionId: 'tx' }, { RecurringSaleId: seriesId }, { TransactionDateTime: '2026-11-01' }]) {
+    assert.throws(() => unavailableContinuationSale({ Status: 1, data: [patch] }, 'signed', 280), /CONTINUATION_PROVIDER_STATUS/);
+  }
+  assert.throws(() => unavailableContinuationSale({ Status: 1, Custom1: 'different' }, 'signed', 280), /CONTINUATION_ORDER_MISMATCH/);
+  assert.throws(() => unavailableContinuationSale({ Status: 1, Amount: 999 }, 'signed', 280), /CONTINUATION_AMOUNT_MISMATCH/);
+  for (const invalid of [null, true, [], { Status: 1, data: 'bad' }]) assert.throws(() => unavailableContinuationSale(invalid, 'signed', 280), /CONTINUATION_PROVIDER_SHAPE/);
+});
+
+test('unavailable details require no unknown series, including inactive historical instructions', async () => {
+  await checkNoActiveContinuation({ ...fixture(), groupToken: 'fixture', requireNoUnknownSeries: true, post: async () => ({ RecurringSales: [] }) });
+  const f = fixture(); f.payload.recurringCheckouts = [];
+  await assert.rejects(checkNoActiveContinuation({ ...f, groupToken: 'fixture', requireNoUnknownSeries: true,
+    post: async () => ({ RecurringSales: [{ RecurringSaleId: seriesId, IsActive: false }] }) }), /CONTINUATION_ACTIVE_SERIES/);
 });
