@@ -50,6 +50,54 @@ function fixture() {
     unavailable: () => { unavailable = true; }, failCreation: () => { failCreation = true; } };
 }
 
+test('automatic checkout preflight checks the original page without exposing it, charging or granting unpaid access', async () => {
+  const f = fixture(); const first = await (await f.create()).json();
+  const orderId = f.state().payload.recurringCheckouts[0].orderId;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await f.post('checkout-recovery', { action: 'check', orderId });
+    assert.equal(response.status, 200, await response.clone().text());
+    const checked = await response.json(); assert.equal(checked.phase, 'READY');
+    for (const value of [first.url, first.paymentReference, 'fixture-private']) assert.ok(!JSON.stringify(checked).includes(value));
+  }
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+  assert.deepEqual(f.state().payload.payments, []);
+  assert.ok(!f.state().payload.recurringCheckouts[0].cancelledAt);
+  f.actor('m');
+  assert.equal((await f.post('checkout-recovery', { action: 'check', orderId, userId: 'u' })).status, 404);
+  f.actor('u'); f.submitted(0);
+  const approved = await f.post('checkout-recovery', { action: 'check', orderId });
+  assert.equal((await approved.json()).phase, 'COMPLETED');
+  assert.equal(f.state().payload.users[0].recurringMemberships.OPEN_GYM.status, 'PENDING_FIRST_CHARGE');
+  assert.deepEqual(f.state().payload.payments, []); // Approved setup is not a paid receipt.
+  assert.equal((await (await f.post('checkout-recovery', { action: 'check', orderId })).json()).phase, 'COMPLETED');
+});
+
+test('automatic preflight tolerates pre-card provider status failure only after verified negative discovery', async () => {
+  const f = fixture(); f.edit(payload => { payload.users[0].phone = '0541234567'; });
+  await f.create(); const orderId = f.state().payload.recurringCheckouts[0].orderId;
+  const original = f.env.RIVHIT_FETCH;
+  f.env.RIVHIT_FETCH = async (url, init) => url.endsWith('/SaleDetails') ? Response.json({ Status: 1 })
+    : url.endsWith('/RecurringSaleList') ? Response.json({ RecurringSales: [] }) : original(url, init);
+  assert.equal((await (await f.post('checkout-recovery', { action: 'check', orderId })).json()).phase, 'READY');
+  f.env.RIVHIT_FETCH = async () => { throw new Error('fixture-provider-outage'); };
+  const blocked = await f.post('checkout-recovery', { action: 'check', orderId });
+  assert.equal(blocked.status, 409);
+  assert.equal((await blocked.json()).phase, undefined);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT');
+});
+
+test('automatic preflight never releases an undispatched reservation', async () => {
+  const f = fixture();
+  f.edit(payload => { payload.recurringCheckouts = [{ orderId: 'unsent', userId: 'u', membershipType: 'OPEN_GYM',
+    stage: 'RESERVED', dispatchedAt: '2020-01-01T00:00:00Z', endsAt: '2099-01-01',
+    orderSnapshot: { o: 'unsent', u: 'u', m: 'OPEN_GYM', rc: 1 } }]; });
+  const before = structuredClone(f.state());
+  assert.equal((await (await f.post('checkout-recovery', { action: 'check', orderId: 'unsent' })).json()).phase, 'NOT_SENT');
+  assert.deepEqual(f.state(), before); assert.equal(f.calls.length, 0);
+});
+
 test('back from unpaid page and retry resumes the exact same hosted page across browser restarts, without activation', async () => {
   const f = fixture(); const first = await (await f.create()).json();
   f.edit(payload => { payload.settings.membershipPlans[0].price = 500; });

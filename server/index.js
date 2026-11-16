@@ -10,6 +10,7 @@ import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
 import { discoverTodayRecurring, publicRecovery } from './bulk-recurring-recovery.js';
 import { discoverApprovedSetup } from './recurring-setup-discovery.js';
 import { continuationSale, unavailableContinuationSale, checkNoActiveContinuation, hasProviderValue, hasContinuationCardEvidence } from './checkout-continuation.js';
+import { checkoutPreflightTarget, publicCheckoutPreflight } from './checkout-preflight.js';
 import { autoReleaseUndispatched, canRestartUndispatched, ownedRecoveryCheckouts, recoveryItems } from './checkout-recovery.js';
 import { checkStuckCheckout, releaseStuckCheckout } from './stuck-checkout-release.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, updateRecurringCheckout, releaseUndispatchedRecurringCheckout } from './recurring-checkout.js';
@@ -1413,6 +1414,42 @@ const handleCheckoutRecovery = async (request, env) => {
   if (body.action === 'status') {
     const batch = (await env.STATE_STORE.getFamilySplitCheckout?.(identity.club_id, identity.user_id))?.payload;
     return json({ items: recoveryItems(state.payload, identity.user_id, batch) }, 200, headers);
+  }
+  if (body.action === 'check') {
+    // Bounded client preflight: verify existing work only. Never dispatch a
+    // checkout, release a reservation, or return a redirect from this action.
+    const batch = (await env.STATE_STORE.getFamilySplitCheckout?.(identity.club_id, identity.user_id))?.payload;
+    const target = checkoutPreflightTarget(state.payload, identity.user_id, body.orderId, batch);
+    if (!target) return json({ code: 'CHECKOUT_STATE_CHANGED', message: 'הבקשה אינה פתוחה בחשבון המחובר. יש לרענן את הרשימה.' }, 404, headers);
+    if (target.phase) return json({ phase: target.phase, ...(target.phase === 'COMPLETED'
+      ? { message: 'הבקשה כבר טופלה. יש לרענן את מצב המנוי לפני תשלום נוסף.' } : {}) }, 200, headers);
+    requirePaymentEnv(env);
+    if (target.oneOff) {
+      try {
+        const verified = await handleFamilySplit(new Request(request.url, { method: 'POST', headers: request.headers,
+          body: JSON.stringify(target.oneOff) }), env, 'verify');
+        if (!verified.ok) return json({ phase: 'REVIEW_REQUIRED', message: 'לא התקבל אישור לתשלום הקיים. הבקשה נשמרה לבדיקה, ללא חיוב חדש.' }, 200, headers);
+        const family = await verified.json();
+        return json({ phase: family.completed ? 'COMPLETED' : 'SAVED', synced: true, message: 'התשלום הקיים אומת וסונכרן. אפשר להמשיך לבחירות הבאות ללא תשלום חוזר על פריט זה.' }, 200, headers);
+      } catch (error) {
+        if (['RIVHIT_PAYMENT_FAILED', 'RIVHIT_PAYMENT_NOT_VERIFIED'].includes(error?.message)) return json({ phase: 'SAVED' }, 200, headers);
+        throw error;
+      }
+    }
+    const response = await resumeRecurringPayment(request, env, { userId: identity.user_id,
+      mode: target.reservation.orderSnapshot?.d === 'ADDON' ? 'ADDON' : 'PRIMARY' }, target.reservation, target.split);
+    const outcome = await response.json();
+    if (target.split && response.ok && outcome.completed) {
+      const updated = await changeFamilySplit(env.STATE_STORE, identity.club_id, identity.user_id, current =>
+        !current || current.id !== target.split.familySplitBatchId || current.cancelled ? null : ({ ...current,
+          items: current.items.map(line => line.id === target.split.familySplitItemId && !['PAID', 'SETUP', 'CANCELLED'].includes(line.status)
+            ? { ...line, status: outcome.recurringPending ? 'SETUP' : 'PAID' } : line) }));
+      const line = updated?.items?.find(line => line.id === target.split.familySplitItemId);
+      if (!line || updated.id !== target.split.familySplitBatchId || updated.cancelled || line.status === 'CANCELLED') return json({ phase: 'REVIEW_REQUIRED', message: 'הבחירה השתנתה במהלך הבדיקה. יש לרענן לפני המשך.' }, 200, headers);
+      return json({ phase: publicFamilySplit(updated).completed ? 'COMPLETED' : 'SAVED', synced: true,
+        message: 'ההוראה הקיימת אומתה וסונכרנה. אפשר להמשיך לבחירות הבאות ללא הקמת הוראה נוספת לפריט שאושר.' }, 200, headers);
+    }
+    return json(publicCheckoutPreflight(outcome, response.ok), response.status, headers);
   }
   const item = ownedRecoveryCheckouts(state.payload, identity.user_id).find(row => row.orderId === body.orderId);
   if (!item) return json({ message: 'הבקשה אינה פתוחה או אינה שייכת לחשבון המחובר. יש לרענן את הרשימה.' }, 404, headers);

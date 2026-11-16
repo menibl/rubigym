@@ -13,6 +13,98 @@ const members = [
   { memberId: 'child', memberName: 'Child Example', membershipType: 'GROUP_ANNUAL', participation: 'INCLUDED' }
 ];
 
+test('automatic family preflight never creates a page for a ready selection or accepts a different payer', async () => {
+  const f = fixture(true); const quote = await (await f.quote()).json();
+  assert.equal((await (await f.post('checkout-recovery', { action: 'check', orderId: quote.batchId })).json()).phase, 'NOT_SENT');
+  assert.equal(f.calls.length, 0);
+  f.authenticate('child');
+  assert.equal((await f.post('checkout-recovery', { action: 'check', orderId: quote.batchId, userId: 'payer' })).status, 404);
+  assert.equal(f.calls.length, 0);
+});
+
+test('automatic family preflight synchronizes only the verified existing line and preserves the next selection', async () => {
+  const f = fixture(true); const quote = await (await f.quote({ familyPaymentGrouping: 'SEPARATE' })).json();
+  const input = { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true };
+  const first = await (await f.post('family-split/create', input)).json();
+  const checked = await f.post('checkout-recovery', { action: 'check', orderId: quote.batchId });
+  assert.equal(checked.status, 200, await checked.clone().text());
+  const result = await checked.json(); assert.equal(result.phase, 'SAVED'); assert.equal(result.synced, true);
+  assert.ok(!JSON.stringify(result).includes(first.paymentReference)); assert.ok(!JSON.stringify(result).includes(first.url));
+  assert.equal(f.journal().payload.items[0].status, 'SETUP');
+  assert.equal(f.journal().payload.items[1].status, 'READY');
+  assert.equal(f.state().payload.users[0].recurringMemberships.OPEN_GYM.status, 'PENDING_FIRST_CHARGE');
+  assert.equal(f.state().payload.users[1].membershipStatus, 'DEBT');
+  assert.deepEqual(f.state().payload.payments, []);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.equal((await (await f.post('checkout-recovery', { action: 'check', orderId: quote.batchId })).json()).phase, 'NOT_SENT');
+});
+
+test('automatic family preflight checks a one-off original reference once without paying for the next member', async () => {
+  const f = fixture(); const quote = await (await f.quote()).json();
+  const first = await (await f.post('family-split/create', { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true })).json();
+  const response = await f.post('checkout-recovery', { action: 'check', orderId: quote.batchId });
+  assert.equal(response.status, 200, await response.clone().text());
+  const checked = await response.json(); assert.equal(checked.synced, true); assert.equal(checked.phase, 'SAVED');
+  assert.equal(f.journal().payload.items[0].status, 'PAID'); assert.equal(f.journal().payload.items[1].status, 'READY');
+  assert.equal(f.state().payload.payments.length, 1);
+  assert.ok(!JSON.stringify(checked).includes(first.paymentReference));
+  await f.post('checkout-recovery', { action: 'check', orderId: quote.batchId });
+  assert.equal(f.state().payload.payments.length, 1);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+});
+
+test('automatic family preflight recovers a lost journal page without creating or activating an unpaid instruction', async () => {
+  const f = fixture(true); f.state().payload.users[0].phone = '0541234567';
+  const quote = await (await f.quote()).json();
+  await f.post('family-split/create', { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true });
+  delete f.journal().payload.items[0].checkout; f.journal().payload.items[0].status = 'REVIEW';
+  const original = f.env.RIVHIT_FETCH;
+  f.env.RIVHIT_FETCH = async (url, init) => url.endsWith('/SaleDetails') ? Response.json({ Status: 1 })
+    : url.endsWith('/RecurringSaleList') ? Response.json({ RecurringSales: [] }) : original(url, init);
+  const response = await f.post('checkout-recovery', { action: 'check', orderId: quote.batchId });
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal((await response.json()).phase, 'READY');
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  assert.ok(f.state().payload.users.every(user => user.membershipStatus === 'DEBT'));
+});
+
+test('automatic family preflight distinguishes a completed combined setup from an unpaid one-off page', async () => {
+  const combined = fixture(true); const quote = await (await combined.quote()).json();
+  assert.equal(quote.items.length, 1);
+  await combined.post('family-split/create', { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true });
+  const complete = await combined.post('checkout-recovery', { action: 'check', orderId: quote.batchId });
+  assert.equal((await complete.json()).phase, 'COMPLETED');
+  assert.ok(combined.state().payload.users.every(user => user.recurringMemberships?.[user.membershipType]?.status === 'PENDING_FIRST_CHARGE'));
+  assert.equal(combined.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+  const unpaid = fixture(); const pending = await (await unpaid.quote()).json();
+  await unpaid.post('family-split/create', { batchId: pending.batchId, itemId: pending.items[0].id, acknowledged: true });
+  const original = unpaid.env.RIVHIT_FETCH;
+  unpaid.env.RIVHIT_FETCH = async (url, init) => url.endsWith('/Verify') ? Response.json({ Status: 'NOT_VERIFIED' }) : original(url, init);
+  const response = await unpaid.post('checkout-recovery', { action: 'check', orderId: pending.batchId });
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.notEqual((await response.json()).phase, 'COMPLETED');
+  assert.deepEqual(unpaid.state().payload.payments, []);
+  assert.equal(unpaid.journal().payload.items[0].status, 'PAGE');
+  assert.ok(unpaid.state().payload.users.every(user => user.membershipStatus === 'DEBT'));
+});
+
+test('a family selection replaced during automatic verification is never marked complete from a stale response', async () => {
+  const f = fixture(true); const quote = await (await f.quote()).json();
+  await f.post('family-split/create', { batchId: quote.batchId, itemId: quote.items[0].id, acknowledged: true });
+  const original = f.env.RIVHIT_FETCH;
+  f.env.RIVHIT_FETCH = async (url, init) => {
+    const result = await original(url, init);
+    if (url.endsWith('/SaleDetails')) f.journal().payload.id = 'replacement-batch';
+    return result;
+  };
+  const response = await f.post('checkout-recovery', { action: 'check', orderId: quote.batchId });
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal((await response.json()).phase, 'REVIEW_REQUIRED');
+  assert.equal(f.journal().payload.id, 'replacement-batch');
+  assert.equal(f.journal().payload.items[0].status, 'PAGE');
+  assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+});
+
 test('a family member can pay for only personal or duo sessions without any gym subscription', async () => {
   for (const type of ['PERSONAL_TRAINING', 'DUO_TRAINING']) {
     const f = fixture();

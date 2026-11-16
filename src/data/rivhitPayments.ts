@@ -258,14 +258,14 @@ export interface RecoverableCheckout {
   canRestart: boolean;
 }
 
-const checkoutRecovery = async (action: 'status' | 'resume' | 'restart', orderId?: string, signal?: AbortSignal) => {
+const checkoutRecovery = async (action: 'status' | 'check' | 'resume' | 'restart', orderId?: string, signal?: AbortSignal) => {
   const response = await fetch(`${paymentApiBase()}/api/payments/rivhit/checkout-recovery`, {
     method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, orderId, confirmUndispatched: action === 'restart' }), signal: approvalFetchSignal(signal)
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const temporary = action === 'resume' && ['CONTINUATION_LIST_UNAVAILABLE', 'CONTINUATION_PROVIDER_UNAVAILABLE',
+    const temporary = ['resume', 'check'].includes(action) && ['CONTINUATION_LIST_UNAVAILABLE', 'CONTINUATION_PROVIDER_UNAVAILABLE',
       'CONTINUATION_PROVIDER_STATUS', 'CONTINUATION_ACTIVE_SERIES', 'RIVHIT_UNAVAILABLE', 'RIVHIT_RECURRING_PENDING'].includes(result.reasonCode);
     throw Object.assign(new Error(result.message || 'בדיקת בקשת התשלום אינה זמינה כרגע. הבקשה נשמרה; לא נפתח חיוב נוסף.'),
       { code: temporary ? 'CHECKOUT_VERIFICATION_PENDING' : result.code, reasonCode: result.reasonCode, status: response.status });
@@ -280,6 +280,14 @@ export const listRecoverableCheckouts = async (signal?: AbortSignal): Promise<Re
     throw new Error('לא התקבלה רשימת בקשות תקינה. אין לפתוח חיוב נוסף לפני בדיקה.');
   }
   return result.items;
+};
+
+export type CheckoutPreflight = { phase: 'READY' | 'COMPLETED' | 'NOT_SENT' | 'SAVED' | 'REVIEW_REQUIRED'; message?: string; synced?: boolean };
+export const checkSavedCheckout = async (orderId: string, signal?: AbortSignal): Promise<CheckoutPreflight> => {
+  const result = await retryPaymentApproval(() => checkoutRecovery('check', orderId, signal), { signal, delays: [2000, 5000] });
+  if (!['READY', 'COMPLETED', 'NOT_SENT', 'SAVED', 'REVIEW_REQUIRED'].includes(result.phase)) throw new Error('לא התקבלה תשובה תקינה לבדיקת הבקשה. לא נפתח חיוב נוסף.');
+  if (result.synced || result.phase === 'COMPLETED') window.dispatchEvent(new Event('baly:refresh-billing'));
+  return result;
 };
 
 export const restartUndispatchedCheckout = async (orderId: string) => {
