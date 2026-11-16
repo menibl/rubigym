@@ -42,6 +42,129 @@ function fixture() {
     actor: value => { actor = value; }, provider: value => { provider = value; } };
 }
 
+function familyReleaseFixture() {
+  const f = fixture();
+  f.edit(p => {
+    Object.assign(p.users[0], { familyId: 'family', familyPayerId: 'payer' });
+    p.users.push({ id: 'payer', role: 'TRAINEE', isFamilyPayer: true, familyId: 'family', phone: '0529999999' },
+      { id: 'sibling', role: 'TRAINEE', familyId: 'family', familyPayerId: 'payer', phone: '0521111111',
+        recurringMemberships: { GROUP_ANNUAL: { orderId: 'sibling-order', seriesId: series, status: 'PENDING_FIRST_CHARGE',
+          endsAt: '2027-11-01', approvedAt: '2026-11-01T08:00:00Z', events: ['verified-setup'] } } });
+    Object.assign(p.recurringCheckouts[0].orderSnapshot, { u: 'payer', bu: 'u', re: '2027-11-01' });
+    p.recurringCheckouts.push({ userId: 'sibling', orderId: 'sibling-order', membershipType: 'GROUP_ANNUAL',
+      endsAt: '2027-11-01', recurringSaleId: series, orderSnapshot: { o: 'sibling-order', u: 'payer', bu: 'sibling',
+        m: 'GROUP_ANNUAL', rc: 1, re: '2027-11-01', a: 500 } });
+  });
+  f.provider({ RecurringSales: [{ RecurringSaleId: series.toUpperCase(), IsActive: true }] });
+  return f;
+}
+
+test('verified sibling instruction does not block audited release; no sibling contract, money or journal is changed', async () => {
+  const f = familyReleaseFixture();
+  const sibling = structuredClone(f.state().users.find(user => user.id === 'sibling'));
+  const other = structuredClone(f.state().recurringCheckouts[1]);
+  const before = structuredClone(f.state());
+  const response = await f.post({ action: 'preview' });
+  assert.equal(response.status, 200, await response.clone().text());
+  const preview = await response.json();
+  assert.match(preview.message, /רכישות נפרדות/);
+  assert.deepEqual(f.state(), before); // Preview does not release or activate anything.
+  assert.equal((await f.post(f.confirmation(preview))).status, 200);
+  assert.equal(f.state().recurringCheckouts[0].stage, 'RELEASED_MANAGER_REVIEW');
+  assert.deepEqual(f.state().recurringCheckouts[1], other);
+  assert.deepEqual(f.state().users.find(user => user.id === 'sibling'), sibling);
+  assert.equal(f.state().users[0].membershipStatus, 'DEBT'); assert.deepEqual(f.state().payments, []);
+  assert.deepEqual(f.state().recurringCheckouts[0].releaseEvidence.verifiedUnrelatedSeriesIds, [series]);
+  assert.equal(f.state().recurringCheckouts[0].releaseEvidence.evidenceSource, 'MANAGER_ATTESTATION_WITH_SCOPED_PROVIDER_LIST');
+  assert.deepEqual(f.calls.map(call => call.PhoneNumber).sort(), ['0529999999', '0529999999', '0541234567', '0541234567']);
+});
+
+test('unverified, ambiguous, different payer, overlapping and unlinked family instructions still block release', async () => {
+  const mutations = [
+    p => { delete p.users[2].isFamilyPayer; },
+    p => { p.users[2].role = 'MANAGER'; },
+    p => { p.users[3].role = 'MANAGER'; },
+    p => { p.users[0].familyId = 'different'; },
+    p => { p.users[3].familyId = 'different'; },
+    p => { p.users[3].familyPayerId = 'different'; },
+    p => { p.recurringCheckouts[1].orderSnapshot.u = 'different'; },
+    p => { p.recurringCheckouts[0].orderSnapshot.re = 'different'; },
+    p => { p.recurringCheckouts[1].cancelledAt = 'now'; },
+    p => { p.recurringCheckouts.push(structuredClone(p.recurringCheckouts[1])); },
+    p => { p.users[3].recurringMemberships.GROUP_ANNUAL.events = []; },
+    p => { delete p.users[3].recurringMemberships.GROUP_ANNUAL.approvedAt; },
+    p => { p.users[3].recurringMemberships.GROUP_ANNUAL.seriesId = 'different'; },
+    p => { p.users[3].recurringMemberships.GROUP_ANNUAL.orderId = 'different'; },
+    p => { p.users[3].recurringMemberships.GROUP_ANNUAL.status = 'PAYMENT_FAILED'; },
+    p => { p.users[3].recurringMemberships.GROUP_ANNUAL.cancelledAt = 'now'; },
+    p => { p.users[3].recurringMemberships.GROUP_ANNUAL.endsAt = 'different'; },
+    p => { p.recurringCheckouts[1].orderSnapshot.gp = [{ memberId: 'sibling', membershipType: 'GROUP_ANNUAL' }, { memberId: 'u', membershipType: 'NUTRITION_PLAN' }]; },
+    p => { p.recurringCheckouts[0].orderSnapshot.gp = [{ memberId: 'u', membershipType: 'OPEN_GYM' }, { memberId: 'sibling', membershipType: 'NUTRITION_PLAN' }]; }
+  ];
+  for (const mutate of mutations) {
+    const f = familyReleaseFixture(); f.edit(mutate); const before = structuredClone(f.state());
+    const result = await f.post({ action: 'preview' });
+    assert.equal(result.status, 409, await result.clone().text());
+    assert.equal((await result.json()).code, 'STUCK_ACTIVE_SERIES_FOR_OWNER');
+    assert.deepEqual(f.state(), before);
+  }
+});
+
+test('one known sibling series cannot hide an additional unknown/own active instruction or a partial list', async () => {
+  for (const provider of [
+    { RecurringSales: [{ RecurringSaleId: series, IsActive: true }, { RecurringSaleId: '22222222-2222-4222-8222-222222222222', IsActive: true }] },
+    { RecurringSales: [{ RecurringSaleId: series, IsActive: true }, { RecurringSaleId: series, IsActive: true }] },
+    { Status: null, RecurringSales: [{ RecurringSaleId: series, IsActive: true }] },
+    { Status: false, RecurringSales: [] }, { error_code: '', RecurringSales: [] }, { RecurringSales: null }
+  ]) {
+    const f = familyReleaseFixture(); f.provider(provider);
+    assert.equal((await f.post({ action: 'preview' })).status, 409);
+    assert.ok(!f.state().recurringCheckouts[0].cancelledAt);
+  }
+});
+
+test('loss of verified sibling linkage before confirmation or CAS blocks release', async () => {
+  const f = familyReleaseFixture(), preview = await (await f.post({ action: 'preview' })).json();
+  f.edit(p => { p.users[3].familyPayerId = 'other'; });
+  assert.equal((await f.post(f.confirmation(preview))).status, 409);
+  const race = familyReleaseFixture(), checked = await (await race.post({ action: 'preview' })).json();
+  const save = race.store.putClubState; let first = true;
+  race.store.putClubState = async (...args) => {
+    if (first) { first = false; race.edit(p => { p.users[3].recurringMemberships.GROUP_ANNUAL.status = 'PAYMENT_FAILED'; }); return { conflict: true }; }
+    return save(...args);
+  };
+  assert.equal((await race.post(race.confirmation(checked))).status, 409);
+  assert.ok(!race.state().recurringCheckouts[0].cancelledAt);
+});
+
+test('a sibling exception preserves other family journal items and still requires proof the old page is unusable', async () => {
+  const f = familyReleaseFixture();
+  f.edit(p => { Object.assign(p.recurringCheckouts[0].orderSnapshot, { bs: 'family-batch', bi: 'target-line' }); });
+  let revision = 1;
+  let batch = { id: 'family-batch', payerId: 'payer', items: [
+    { id: 'target-line', memberId: 'u', status: 'PAGE', checkout: { paymentReference: 'fixture-only-reference' } },
+    { id: 'sibling-line', memberId: 'sibling', status: 'SETUP', recurringSaleId: series }
+  ] };
+  f.store.getFamilySplitCheckout = async (_club, payerId) => {
+    assert.equal(payerId, 'payer'); return { payload: structuredClone(batch), revision };
+  };
+  f.store.putFamilySplitCheckout = async (_club, payerId, next, expected) => {
+    assert.equal(payerId, 'payer'); if (expected !== revision) return false;
+    batch = structuredClone(next); revision++; return true;
+  };
+  const siblingLine = structuredClone(batch.items[1]);
+  const response = await f.post({ action: 'preview' }); assert.equal(response.status, 200, await response.clone().text());
+  const preview = await response.json();
+  for (const patch of [{ oldPageUnusable: false }, { noChargeOrInstruction: false }, { password: '' }, { providerReference: '' }]) {
+    assert.equal((await f.post({ ...f.confirmation(preview), ...patch })).status, 400);
+    assert.equal(batch.items[0].status, 'PAGE');
+  }
+  assert.equal((await f.post(f.confirmation(preview))).status, 200);
+  assert.equal(batch.items[0].status, 'CANCELLED');
+  assert.deepEqual(batch.items[1], siblingLine);
+  assert.ok(!f.state().recurringCheckouts[1].cancelledAt);
+});
+
 test('preview never releases; explicit manager evidence/password releases only the local request and preserves history', async () => {
   const f = fixture(), before = JSON.stringify(f.state());
   const response = await f.post({ action: 'preview' }); assert.equal(response.status, 200);
