@@ -2704,7 +2704,9 @@ const handleApi = async (request, env, url) => {
           readSplit: env.STATE_STORE.getFamilySplitCheckout ? payerId => env.STATE_STORE.getFamilySplitCheckout(identity.session.club_id, payerId) : undefined });
         const confirmationKey = await sign(JSON.stringify({ clubId: identity.session.club_id, managerId: identity.session.user_id,
           userId: body.userId, orderId: body.orderId, checkedAt, fingerprint: context.fingerprint }), env.PAYMENT_SIGNING_SECRET);
-        if (body.action === 'preview') return json({ ok: true, confirmationKey, checkedAt, message: 'לא נמצאה הוראה פעילה בטלפונים שנבדקו. זו אינה הוכחה שהדף הישן אינו שמיש. נדרש אישור בירור מול רווחית לפני שחרור.' }, 200, headers);
+        if (body.action === 'preview') return json({ ok: true, confirmationKey, checkedAt, message: context.unrelatedSeriesIds.length
+          ? 'לא נמצאה הוראה פעילה בלתי משויכת לבקשה. הוראות מאומתות לרכישות נפרדות של בני משפחה אחרים הוחרגו ואינן מבוטלות. עדיין נדרש בירור שאין חיוב לבקשה ושהדף הישן אינו שמיש לפני שחרור.'
+          : 'לא נמצאה הוראה פעילה בטלפונים שנבדקו. זו אינה הוכחה שהדף הישן אינו שמיש. נדרש אישור בירור מול רווחית לפני שחרור.' }, 200, headers);
         if (confirmationKey !== body.confirmationKey) return json({ message: 'הבקשה השתנתה. יש לבדוק מחדש; לא שוחררה בקשה.' }, 409, headers);
         await releaseStuckCheckout(env.STATE_STORE, identity.session.club_id, body.userId, body.orderId,
           { managerId: identity.session.user_id, reason, providerReference, releasedAt: new Date().toISOString() }, context.fingerprint);
