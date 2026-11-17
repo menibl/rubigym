@@ -9,6 +9,7 @@ import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { activePlanExpiry, emptyFamilyPurchase } from '../data/membershipRenewal';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
 import { hasActiveWorkoutGymMembership } from '../../shared/workout-gym-access.js';
+import { hasPaidWorkoutPlanAccess } from '../../shared/paid-workout-access.js';
 import { matchesAnnouncement } from '../../shared/announcement-audience.js';
 import { WorkoutMembershipRequired } from './WorkoutMembershipRequired';
 import { HomeClubAnnouncements } from './HomeClubAnnouncements';
@@ -1308,6 +1309,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     || workoutPlans.find(wp => wp.traineeId === activeUser.id)) : undefined;
   const traineeNutrition = nutritionPlans.find(np => np.traineeId === activeUser.id);
   const hasWorkoutPlanAccess = Boolean(
+    hasPaidWorkoutPlanAccess(activeUser, payments) ||
     activeUser.secondaryMemberships?.includes(MembershipType.WORKOUT_COACHING) ||
     activeUser.secondaryMemberships?.includes(MembershipType.WORKOUT_PLAN) ||
     (activeUser.membershipType && MEMBERSHIP_TYPE_LABELS[activeUser.membershipType]?.includesWorkoutPlan &&
