@@ -16,12 +16,16 @@ export function FinanceSummary({ payments, users, now }: { payments: Payment[]; 
   const summary = financeSummary(payments, users, now || clock);
   const [year, month] = summary.month.split('-');
   return <section aria-label="סיכום כספים חודשי ומצטבר" className="space-y-4" dir="rtl">
-    <div className="grid gap-4 lg:grid-cols-2">
-      {([{ title: `החודש הנוכחי — ${month}/${year}`, value: summary.monthly }, { title: 'מצטבר — כל התקופה המתועדת', value: summary.lifetime }]).map(({ title, value }) => <article key={title} className="rounded-2xl border border-slate-600 bg-slate-900 p-5 text-slate-100">
-        <h3 className="text-lg font-black">{title}</h3>
-        <p className="mt-3 text-sm text-emerald-200">סה״כ תשלומים בסטטוס שולם — כל המקורות</p>
-        <p className="mt-1 text-3xl font-black"><bdi>{money(value.totalAmount)}</bdi></p>
-        <p className="mt-1 text-sm">{value.paidCount} עסקאות ששולמו</p>
+    <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {([{ title: `החודש הנוכחי — ${month}/${year}`, value: summary.monthly }, { title: 'מצטבר — כל התקופה המתועדת', value: summary.lifetime }]).map(({ title, value }) => <details key={title} aria-label={title} className="rounded-xl border border-slate-600 bg-slate-900 text-slate-100">
+        <summary className="cursor-pointer rounded-xl p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">
+          <span className="text-sm font-bold">{title}</span>
+          <span className="mt-2 block text-2xl font-black"><bdi>{money(value.totalAmount)}</bdi></span>
+          <span className="mt-1 block text-xs text-emerald-200">{value.paidCount} עסקאות ששולמו · לחיצה לפירוט</span>
+          {(value.invalidAmountCount > 0 || value.invalidPendingAmountCount > 0) && <span className="mt-1 block text-xs text-amber-200">קיימות רשומות עם סכום חסר — נדרש בירור בפירוט</span>}
+        </summary>
+        <div className="px-4 pb-4">
+        <p className="text-sm text-emerald-200">סה״כ תשלומים בסטטוס שולם — כל המקורות</p>
         <dl className="mt-4 space-y-3 border-t border-slate-600 pt-4 text-sm">
           <div><dt>סה״כ עסקאות מתועדות בתקופה — ללא בדיקות, כולל ממתינות והחזרים</dt><dd>{value.transactionCount}</dd></div>
           <div><dt>שולם ואושר ברווחית — לפי הרשומות שסונכרנו לאפליקציה</dt><dd><bdi>{money(value.rivhit.amount)}</bdi> · {value.rivhit.count} עסקאות</dd></div>
@@ -35,12 +39,17 @@ export function FinanceSummary({ payments, users, now }: { payments: Payment[]; 
         </dl>
         {value.invalidAmountCount > 0 && <p role="status" className="mt-3 text-sm text-amber-200">{value.invalidAmountCount} רשומות ״שולם״ לא נכללו בגלל סכום לא תקין; נדרש בירור.</p>}
         {value.invalidPendingAmountCount > 0 && <p role="status" className="mt-3 text-sm text-amber-200">{value.invalidPendingAmountCount} עסקאות ממתינות ללא סכום תקין נספרו אך סכומן לא חושב.</p>}
-      </article>)}
-    </div>
-    <p className="text-sm">החודש מחושב לפי מועד העסקה המתועד ושעון ישראל, מתחילת החודש ועד היום, ולפי סטטוס העסקאות כיום. שיוך לחודש הוא לפי מועד העסקה המקורי, לא מועד ההחזר או בדיקת הסנכרון. התצוגה מתחלפת אוטומטית ב־1 לחודש, ללא מחיקת היסטוריה. רשומות כפולות מאוחדות לפי מזהי עסקה.</p>
-    <p className="text-sm">עסקאות המסומנות כבדיקה אינן נכללות בסיכומים ({summary.excludedTestCount} רשומות הוחרגו). אישור חריג ללא תיעוד סכום אינו נחשב כסף ששולם. זהו סיכום תשלומים באפליקציה, לא דוח הפקדות לבנק. חיוב שקיים ברווחית אך טרם סונכרן אינו מופיע כאן כשולם; סכום ממתין אינו מעיד שהחיוב בוצע או נדחה.</p>
-    {summary.unassignedDateCount > 0 && <p role="status" className="text-sm text-amber-300">{summary.unassignedDateCount} עסקאות ללא תאריך תקין מופיעות במצטבר בלבד, ולא שויכו לחודש.</p>}
-    <div className="rounded-2xl border border-amber-400/50 bg-slate-900 p-4 text-slate-100">
+        </div>
+      </details>)}
+    <details aria-label="הוראות קבע בהמתנה" className="rounded-xl border border-amber-400/50 bg-slate-900 text-slate-100">
+      <summary className="cursor-pointer rounded-xl p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">
+        <span className="text-sm font-bold">בהמתנה — הוראות קבע {month}/{year}</span>
+        <span className="mt-2 block text-2xl font-black"><bdi>{money(summary.pendingRecurring.monthly.amount)}</bdi></span>
+        <span className="mt-1 block text-xs text-amber-200">{summary.pendingRecurring.monthly.count} הוראות · לא נכלל בשולם · לחיצה לפירוט</span>
+        {summary.pendingRecurring.current.unknownAmountCount > 0 && <span className="mt-1 block text-xs text-amber-200">קיימות הוראות ללא סכום חד־משמעי — נדרש בירור בפירוט</span>}
+        {summary.failedRecurringCount > 0 && <span className="mt-1 block text-xs text-red-200">{summary.failedRecurringCount} הוראות עם כשל חיוב מאומת</span>}
+      </summary>
+      <div className="px-4 pb-4">
       <h3 className="font-black">אישור חיובי הוראות קבע — מצב נוכחי, לא סכום ששולם</h3>
       <p className="mt-2">{summary.pendingRecurringCount} הוראות ממתינות לאישור חיוב · {summary.failedRecurringCount} הוראות עם כשל חיוב מאומת</p>
       <div className="mt-3 rounded-xl border border-amber-400/50 p-4">
@@ -67,6 +76,14 @@ export function FinanceSummary({ payments, users, now }: { payments: Payment[]; 
           <li>רק אישור חיוב בפועל יוצר רישום ששולם. הקמת הוראה בהמתנה אינה אישור חיוב; תקלה בבדיקה או היעדר תשובה אינם דחיית תשלום.</li>
         </ul>
       </details>
+      </div>
+    </details>
     </div>
+    <details className="rounded-xl border border-slate-700 p-3 text-sm">
+      <summary className="cursor-pointer font-bold">אופן חישוב הסיכומים והחרגת בדיקות</summary>
+      <p className="mt-3">החודש מחושב לפי מועד העסקה המתועד ושעון ישראל, מתחילת החודש ועד היום, ולפי סטטוס העסקאות כיום. שיוך לחודש הוא לפי מועד העסקה המקורי, לא מועד ההחזר או בדיקת הסנכרון. התצוגה מתחלפת אוטומטית ב־1 לחודש, ללא מחיקת היסטוריה. רשומות כפולות מאוחדות לפי מזהי עסקה.</p>
+      <p className="mt-3">עסקאות המסומנות כבדיקה אינן נכללות בסיכומים ({summary.excludedTestCount} רשומות הוחרגו). אישור חריג ללא תיעוד סכום אינו נחשב כסף ששולם. זהו סיכום תשלומים באפליקציה, לא דוח הפקדות לבנק. חיוב שקיים ברווחית אך טרם סונכרן אינו מופיע כאן כשולם; סכום ממתין אינו מעיד שהחיוב בוצע או נדחה.</p>
+    </details>
+    {summary.unassignedDateCount > 0 && <p role="status" className="text-sm text-amber-300">{summary.unassignedDateCount} עסקאות ללא תאריך תקין מופיעות במצטבר בלבד, ולא שויכו לחודש.</p>}
   </section>;
 }
