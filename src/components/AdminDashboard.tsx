@@ -34,6 +34,7 @@ import { CoachDashboard } from './CoachDashboard';
 import { CoachExceptionArrivalPanel } from './CoachExceptionArrivalPanel';
 import { InvoiceDescriptionSettings } from './InvoiceDescriptionSettings';
 import { uniquePayments } from '../../shared/payment-ledger.js';
+import { FinanceSummary } from './FinanceSummary';
 import {
   User,
   TrainingSession,
@@ -1772,17 +1773,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button type="button" disabled={billingPending || !billingPaymentId} onClick={reconcileSelectedPayment} className="min-h-11 rounded-xl bg-amber-300 px-4 text-sm font-black text-slate-950 disabled:opacity-40">השלמת פרטי העסקה שנבחרה מול רווחית</button>
                 <p className="mt-2 text-xs text-slate-300">לרשומות ישנות: בחרו עסקה למעלה ובדקו את מזהי הסליקה וספרות הכרטיס. אין חיוב או החזר ואין מחיקת היסטוריה.</p>
               </div>
-              <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-4 flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-emerald-700">סה"כ עסקאות ששולמו</div>
-                  <div className="text-2xl font-bold font-mono text-emerald-950 mt-1">
-                    ₪{displayedPayments.filter(payment => payment.status === 'PAID').reduce((acc, curr) => acc + curr.amount, 0)}
-                  </div>
-                </div>
-                <div className="bg-emerald-500/20 text-emerald-800 rounded-full p-2.5">
-                  <DollarSign size={24} />
-                </div>
-              </div>
+              <div className="md:col-span-3"><FinanceSummary payments={payments} users={users} /></div>
 
               <button type="button" ref={unpaidTriggerRef} aria-expanded={showUnpaidTrainees} aria-controls="finance-unpaid-list"
                 onClick={() => setShowUnpaidTrainees(value => !value)} className="rounded-lg border border-rose-400/40 bg-rose-950/40 p-4 text-right text-rose-100 flex items-center justify-between gap-3 hover:bg-rose-950/70 focus-visible:outline-2 focus-visible:outline-amber-400">
@@ -1800,7 +1791,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 flex items-center justify-between">
                 <div>
-                  <div className="text-xs text-slate-700">סה"כ עסקאות מתועדות</div>
+                  <div className="text-xs text-slate-700">עסקאות ביומן — כל התקופה (כולל בדיקות)</div>
                   <div className="text-2xl font-bold font-mono text-slate-950 mt-1">
                     {displayedPayments.length}
                   </div>
