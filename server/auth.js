@@ -8,6 +8,7 @@ import { validReminderDate } from '../shared/payment-reminder-policy.js';
 import { isCancelledOccurrence } from '../shared/scheduled-occurrence.js';
 import { recurringSessionBlocked } from '../shared/recurring-access.js';
 import { hasActiveWorkoutGymMembership } from '../shared/workout-gym-access.js';
+import { paidWorkoutPlanUntil } from '../shared/paid-workout-access.js';
 import { preserveExerciseWorkingValues } from '../shared/exercise-working-values.js';
 
 const scrypt = promisify(scryptCallback);
@@ -61,7 +62,7 @@ export const clearSessionCookie = `${sessionCookie}=; Path=/; HttpOnly; Secure; 
 
 export const stripCredentials = user => {
   if (!user || typeof user !== 'object') return user;
-  const { password: _password, passwordHash: _passwordHash, ...safe } = user;
+  const { password: _password, passwordHash: _passwordHash, workoutPlanPurchaseAccessUntil: _derivedWorkoutAccess, ...safe } = user;
   return safe;
 };
 
@@ -156,7 +157,8 @@ export const payloadForUser = (payload, userId, role) => {
     recurringCheckouts: (safe.recurringCheckouts || []).filter(item => item.userId === userId || (familyId && safe.users.some(member => member.id === item.userId && member.familyId === familyId))),
     users: safe.users
       .filter(user => user.id === userId || user.role === 'MANAGER' || user.role === 'COACH' || (familyId && user.familyId === familyId))
-      .map(user => user.id === userId || (familyId && user.familyId === familyId) ? user : publicStaff(user)),
+      .map(user => user.id === userId ? { ...user, workoutPlanPurchaseAccessUntil: paidWorkoutPlanUntil(user, safe.payments || []) }
+        : familyId && user.familyId === familyId ? user : publicStaff(user)),
     workoutPlans: (safe.workoutPlans || []).filter(plan =>
       (plan.traineeId !== userId || hasActiveWorkoutGymMembership(currentUser))
       && (plan.traineeId === userId || assignedPersonalPlanIds.has(plan.id) || registeredSessionIds.has(plan.sessionId))
