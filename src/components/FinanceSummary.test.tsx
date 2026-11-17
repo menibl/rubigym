@@ -15,7 +15,18 @@ test('finance cards clearly distinguish current month, lifetime, paid/manual/pen
   const html = renderToStaticMarkup(<FinanceSummary payments={payments} users={[]} now={new Date('2026-11-17T12:00:00Z')} />);
   for (const text of ['החודש הנוכחי — 11/2026', 'מצטבר — כל התקופה המתועדת', '₪700.00', '₪800.00', 'שולם ואושר ברווחית',
     'שולם ותועד ידנית — לא אישור רווחית', 'עסקאות רווחית מתועדות שממתינות לאישור', 'השרת סורק בכל דקה', 'בדיקה יומית', 'ללא מחיקת היסטוריה']) assert.ok(html.includes(text), text);
-  assert.ok(!html.includes('₪9,999')); assert.ok(!html.includes('₪999.00'));
+  assert.ok(!html.includes('₪9,999')); assert.ok(html.includes('₪999.00'));
+  assert.ok(html.includes('לפי הרשומות שסונכרנו לאפליקציה'));
+});
+
+test('outstanding family instruction has a separate monthly amount and beneficiary detail, never paid money', () => {
+  const contract = { seriesId: 'shared', status: 'PENDING_FIRST_CHARGE', endsAt: '2027-11-01', approvedAt: '2026-11-01T10:00:00Z', amount: 280, groupAmount: 560, groupSize: 2 };
+  const users = [{ id: 'a', name: 'First member', recurringMemberships: { OPEN_GYM: contract } },
+    { id: 'b', name: 'Second member', recurringMemberships: { OPEN_GYM: contract } }] as User[];
+  const html = renderToStaticMarkup(<FinanceSummary payments={[]} users={users} now={new Date('2026-11-17T12:00:00Z')} />);
+  for (const text of ['₪560.00', 'משויכות לחודש 11/2026', '1 הוראות', 'First member, Second member', 'טרם תועד אישור חיוב ראשון',
+    'אינו נכלל בסכום ששולם', 'חיוב שקיים ברווחית אך טרם סונכרן']) assert.ok(html.includes(text), text);
+  assert.ok(html.includes('0 עסקאות ששולמו'));
 });
 
 test('summary counts instructions, not beneficiaries, and shows failure separately from provider silence', () => {

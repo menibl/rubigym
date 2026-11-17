@@ -17,6 +17,8 @@ test('monthly and lifetime totals split approved Rivhit, recorded manual and unk
   assert.deepEqual(result.monthly.unclassified, { amount: 30, count: 1 });
   assert.equal(result.monthly.paidCount, 3); assert.equal(result.monthly.pendingCount, 2);
   assert.equal(result.monthly.rivhitPendingCount, 1); assert.equal(result.monthly.otherPendingCount, 1);
+  assert.equal(result.monthly.rivhitPendingAmount, 999); assert.equal(result.monthly.otherPendingAmount, 10);
+  assert.deepEqual(result.monthly.oneTimePaid, { amount: 500, count: 1 });
   assert.equal(result.monthly.refundedCount, 1); assert.equal(result.monthly.transactionCount, 6);
 });
 
@@ -68,4 +70,83 @@ test('family pending instructions count once, never as payments or all future ch
   const result = financeSummary([], users, now);
   assert.equal(result.pendingRecurringCount, 2); assert.equal(result.failedRecurringCount, 1);
   assert.equal(result.monthly.totalAmount, 0); assert.equal(result.monthly.transactionCount, 0);
+  assert.equal(result.pendingRecurring.current.amount, 2000);
+});
+
+test('pending journal amounts stay separate, use integer cents and do not include tests or duplicates', () => {
+  const result = financeSummary([paid('p', 0.1, { status: 'PENDING', providerSaleId: 'pending-sale' }),
+    paid('copy', 0.1, { status: 'PENDING', providerSaleId: 'pending-sale' }), paid('p2', 0.2, { status: 'PENDING' }),
+    paid('manual', 50, { status: 'PENDING', provider: 'MANUAL' }), paid('bad', '500', { status: 'PENDING' }),
+    paid('mock', 900, { status: 'PENDING', isMock: true }), paid('old', 100, { status: 'PENDING', date: '2026-10-01' })], [], now);
+  assert.equal(result.monthly.rivhitPendingAmount, 0.3);
+  assert.equal(result.monthly.otherPendingAmount, 50);
+  assert.equal(result.monthly.invalidPendingAmountCount, 1);
+  assert.equal(result.monthly.pendingCount, 4);
+  assert.equal(result.monthly.totalAmount, 0);
+  assert.equal(result.lifetime.rivhitPendingAmount, 100.3);
+});
+
+const pendingContract = patch => ({ seriesId: 'series', orderId: 'order', status: 'PENDING_FIRST_CHARGE',
+  approvedAt: '2026-11-01T10:00:00Z', endsAt: '2027-11-01', amount: 280, ...patch });
+const member = (id, contract) => ({ id, name: `Member ${id}`, recurringMemberships: { OPEN_GYM: contract } });
+
+test('monthly outstanding family amount is the single signed group amount even with incomplete beneficiaries', () => {
+  const group = pendingContract({ groupAmount: 1152, groupSize: 3, amount: 450 });
+  const users = [member('a', group), member('b', { ...group, seriesId: 'SERIES', amount: 252 })];
+  const before = structuredClone(users);
+  const result = financeSummary([], users, now);
+  assert.equal(result.pendingRecurring.monthly.count, 1);
+  assert.equal(result.pendingRecurring.monthly.amount, 1152);
+  assert.equal(result.pendingRecurring.current.amount, 1152);
+  assert.deepEqual(result.pendingRecurring.monthly.rows[0].names, ['Member a', 'Member b']);
+  assert.deepEqual(users, before);
+  assert.equal(result.monthly.totalAmount, 0);
+});
+
+test('current pending instructions are not all assigned to this month or multiplied by overdue months', () => {
+  const users = [member('a', pendingContract({ seriesId: 'new' })),
+    member('b', pendingContract({ seriesId: 'oct', approvedAt: '2026-10-01T10:00:00Z' })),
+    member('c', pendingContract({ seriesId: 'due', status: 'ACTIVE', paidUntil: '2026-11-01' })),
+    member('d', pendingContract({ seriesId: 'missing', approvedAt: undefined })),
+    member('e', pendingContract({ seriesId: 'future', approvedAt: '2026-12-01T10:00:00Z' }))];
+  const result = financeSummary([], users, now);
+  assert.equal(result.pendingRecurring.monthly.amount, 560);
+  assert.equal(result.pendingRecurring.monthly.count, 2);
+  assert.equal(result.pendingRecurring.otherPeriodCount, 3);
+  assert.equal(result.pendingRecurring.current.amount, 1400);
+  assert.equal(result.pendingRecurring.monthly.rows.find(row => row.key === 'series:due').kind, 'DUE_CHARGE');
+});
+
+test('conflicting family amounts or missing group totals are explicit unknowns, never guessed', () => {
+  for (const contracts of [
+    [pendingContract({ groupAmount: 1000, groupSize: 2 }), pendingContract({ groupAmount: 900, groupSize: 2 })],
+    [pendingContract({ groupSize: 2 })], [pendingContract({ amount: NaN })],
+    [pendingContract(), pendingContract()]
+  ]) {
+    const result = financeSummary([], contracts.map((contract, i) => member(String(i), contract)), now);
+    assert.equal(result.pendingRecurring.monthly.count, 1);
+    assert.equal(result.pendingRecurring.monthly.amount, 0);
+    assert.equal(result.pendingRecurring.monthly.unknownAmountCount, 1);
+    assert.equal(result.pendingRecurring.monthly.rows[0].amount, null);
+  }
+});
+
+test('verified current-month receipt prevents counting a stale instruction as still awaiting money', () => {
+  const users = [member('a', pendingContract())];
+  const result = financeSummary([paid('receipt', 280, { providerRecurringSaleId: 'SERIES', recurringChargeNumber: 1 })], users, now);
+  assert.equal(result.pendingRecurringCount, 0);
+  assert.deepEqual(result.monthly.recurringPaid, { amount: 280, count: 1 });
+  assert.equal(result.monthly.oneTimePaid.count, 0);
+  assert.equal(result.monthly.totalAmount, 280);
+  assert.equal(financeSummary([paid('test', 280, { providerRecurringSaleId: 'series', isMock: true })], users, now).pendingRecurringCount, 1);
+});
+
+test('failed, cancelled and sandbox instructions do not become outstanding money', () => {
+  const users = [member('a', pendingContract()), member('b', pendingContract({ status: 'PAYMENT_FAILED' })),
+    member('c', pendingContract({ seriesId: 'cancelled', cancelledAt: now.toISOString() })),
+    member('d', pendingContract({ seriesId: 'mock', isMock: true }))];
+  const result = financeSummary([], users, now);
+  assert.equal(result.pendingRecurringCount, 0);
+  assert.equal(result.pendingRecurring.current.amount, 0);
+  assert.equal(result.failedRecurringCount, 1);
 });
