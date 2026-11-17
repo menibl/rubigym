@@ -354,6 +354,7 @@ export interface User {
   membershipStatus?: MembershipStatus;
   familyPaymentPending?: boolean;
   membershipExpiry?: string; // ISO date string
+  workoutPlanPurchaseAccessUntil?: string; // Read-only server projection; never persisted from client state.
   membershipPlanExpiries?: Partial<Record<MembershipType, string>>;
   recurringMemberships?: Partial<Record<MembershipType, {
     seriesId: string; orderId: string; status: 'PENDING_FIRST_CHARGE' | 'ACTIVE' | 'PAYMENT_FAILED';
