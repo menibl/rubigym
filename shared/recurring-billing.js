@@ -22,13 +22,21 @@ export function recurringSchedule(now = new Date()) {
   }).formatToParts(now).map(part => [part.type, part.value]));
   const year = Number(parts.year), month = Number(parts.month);
   const end = new Date(Date.UTC(year, month + 11, 1));
+  // Debit timing is independent of calendar membership coverage. The provider
+  // supports days 1..28 only; late-month purchases start on next month's 1st.
+  const day = Number(parts.day);
+  const first = day > 28 ? new Date(Date.UTC(year, month, 1)) : new Date(Date.UTC(year, month - 1, day));
+  const debitDay = day > 28 ? 1 : day;
+  const start = `${String(first.getUTCDate()).padStart(2, '0')}-${String(first.getUTCMonth() + 1).padStart(2, '0')}-${first.getUTCFullYear()}`;
   return {
-    start: `${parts.day}-${parts.month}-${parts.year}`,
+    start,
+    billingDay: debitDay,
+    lastDebitAt: new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 11, debitDay)).toISOString().slice(0, 10),
     endsAt: end.toISOString().slice(0, 10),
     fields: {
       SaleType: 2, CreateRecurringSale: true, RecurringSaleCycle: 3,
-      RecurringSaleDay: 1, RecurringSaleStep: 1, RecurringSaleCount: 12,
-      RecurringSaleStartDate: `${parts.day}-${parts.month}-${parts.year}`,
+      RecurringSaleDay: debitDay, RecurringSaleStep: 1, RecurringSaleCount: 12,
+      RecurringSaleStartDate: start,
       RecurringSaleAutoCharge: true, RecurringSaleProRata: false
     }
   };

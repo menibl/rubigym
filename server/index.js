@@ -479,6 +479,8 @@ const sign = async (value, secret) => {
 const createSignedOrder = async (body, env, purchase) => {
   const { amount } = purchase;
   if (!['PRIMARY', 'ADDON', 'REGISTRATION'].includes(body.mode)) throw new Error('INVALID_MODE');
+  const createdAt = new Date();
+  const schedule = purchase.recurring ? recurringSchedule(createdAt) : null;
   const payload = encodePayload({
     o: crypto.randomUUID(),
     u: body.userId ? String(body.userId).slice(0, 100) : undefined,
@@ -506,10 +508,12 @@ const createSignedOrder = async (body, env, purchase) => {
     tm: purchase.termMonths,
     rr: purchase.recurring,
     rc: purchase.recurring ? 1 : undefined,
-    re: purchase.recurring ? recurringSchedule().endsAt : undefined,
+    re: schedule?.endsAt,
+    rd: schedule?.billingDay,
+    rs: schedule?.start,
     rm: purchase.recurringMonths,
     sc: purchase.includedSessions,
-    t: Date.now()
+    t: createdAt.getTime()
   });
   return `${payload}.${await sign(payload, env.PAYMENT_SIGNING_SECRET)}`;
 };
@@ -672,8 +676,8 @@ const verifiedRivhitPayment = async (paymentReference, env, allowExpired = false
   };
 };
 
-const recurringFieldsFor = purchase => {
-  return purchase.recurring ? recurringSchedule().fields : { CreateRecurringSale: false };
+const recurringFieldsFor = (purchase, order) => {
+  return purchase.recurring ? recurringSchedule(new Date(order.t)).fields : { CreateRecurringSale: false };
 };
 
 const discoveryPostFor = env => (path, data) => {
@@ -1580,7 +1584,10 @@ const handleCreatePayment = async (request, env, splitLine) => {
       return json({ code: 'RECURRING_ALREADY_ACTIVE', message: 'כבר קיימת הוראת קבע לחשבון הזה. יש לפנות למנהל לפני פתיחת הוראת קבע נוספת; לא נוצר חיוב.' }, 409, corsHeaders(request, env));
     }
     if (!(purchase.amount > 0)) return json({ message: 'הנחה מלאה אינה נתמכת ביצירת הוראת קבע. לא נוצר חיוב.' }, 422, corsHeaders(request, env));
-    if (body.recurringAcknowledged !== true) return json({ code: 'RECURRING_CONSENT_REQUIRED', message: `המסלול בהוראת קבע: ₪${purchase.amount} לכל חיוב, כולל החיוב הראשון. ${body.discountCode || purchase.discountCode ? 'ההנחה נשמרת לכל תקופת הוראת הקבע. ' : ''}12 חיובים בסך הכול, ב־1 בחודש, ללא חידוש אוטומטי. יש לבדוק את מועד החיוב הראשון בדף רווחית. תוקף ההתקשרות עד ${recurringSchedule().endsAt}. לאשר מעבר לדף הוראת הקבע?` }, 409, corsHeaders(request, env));
+    if (body.recurringAcknowledged !== true) {
+      const schedule = recurringSchedule();
+      return json({ code: 'RECURRING_CONSENT_REQUIRED', message: `המסלול בהוראת קבע: ₪${purchase.amount} לכל חיוב, כולל החיוב הראשון. ${body.discountCode || purchase.discountCode ? 'ההנחה נשמרת לכל תקופת הוראת הקבע. ' : ''}12 חיובים בסך הכול, ביום ${schedule.billingDay} בכל חודש, ללא חידוש אוטומטי. תאריך תחילת החיובים: ${schedule.start}; בקשה ב־29–31 מתחילה ב־1 בחודש הבא. תוקף המנוי נשאר קלנדרי עד ה־1 בחודש העוקב לחודש ששולם. תוקף ההתקשרות עד ${schedule.endsAt}. לאשר מעבר לדף הוראת הקבע?` }, 409, corsHeaders(request, env));
+    }
     purchase.recurringMonths = 12;
   }
   const repeatWarning = () => {
@@ -1719,7 +1726,7 @@ const handleCreatePayment = async (request, env, splitLine) => {
     Custom1: signedOrder,
     UniqueNum: crypto.randomUUID().replace(/-/g, '').slice(0, 20),
     Use3DS: String(env.RIVHIT_USE_3DS).toLowerCase() === 'true',
-    ...recurringFieldsFor(purchase)
+    ...recurringFieldsFor(purchase, recurringOrder)
   }, env);
   const status = Number(rivhitValue(createResult, 'Status', 'status'));
   const url = rivhitValue(createResult, 'URL', 'Url', 'url');

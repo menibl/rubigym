@@ -57,8 +57,8 @@ export function recurringSyncIdentity({ payload, userId, seriesId, details: deta
   const ownerPhones = [user.phone, payer?.phone].map(phone).filter(value => /^0\d{8,9}$/.test(value));
   if (!ownerPhones.includes(phone(details.PhoneNumber))) reject('מספר הטלפון ברווחית אינו תואם למתאמן או למשלם המשפחתי. אין לשייך הוראה לפי שם או אימייל בלבד.');
   if (details.IsActive !== true || details.AutoCharge !== true || Number(details.Currency) !== 1
-    || Number(details.RecurringCycle) !== 3 || Number(details.RecurringDay) !== 1 || Number(details.RecurringStep) !== 1
-    || Number(details.RecurringSaleCount) !== 12 || details.ProRata !== false) reject('תנאי ההוראה אינם תואמים לסדרה פעילה של 12 חיובים חודשיים ב־1 לחודש. נדרשת בדיקת מנהל מול רווחית.');
+    || Number(details.RecurringCycle) !== 3 || !Number.isInteger(Number(details.RecurringDay)) || Number(details.RecurringDay) < 1 || Number(details.RecurringDay) > 28 || Number(details.RecurringStep) !== 1
+    || Number(details.RecurringSaleCount) !== 12 || details.ProRata !== false) reject('תנאי ההוראה אינם תואמים לסדרה פעילה של 12 חיובים חודשיים. נדרשת בדיקת מנהל מול רווחית.');
   const creation = providerTime(details.CreationDate), ending = providerTime(details.EndDate);
   if (!creation) rejectDate('לא ניתן לקרוא את תאריך הקמת ההוראה שחזר מרווחית (CreationDate). אין פירוש הדבר שהמנוי הסתיים.', 'RIVHIT_CREATION_DATE_FORMAT', 'CreationDate', details.CreationDate);
   if (!ending) rejectDate('לא ניתן לקרוא את תאריך סיום ההוראה שחזר מרווחית (EndDate). אין פירוש הדבר שהמנוי הסתיים.', 'RIVHIT_END_DATE_FORMAT', 'EndDate', details.EndDate);
@@ -68,21 +68,36 @@ export function recurringSyncIdentity({ payload, userId, seriesId, details: deta
   const providerEndDate = clubDate(ending);
   // Rivhit EndDate can be the LAST debit date, whereas the saved signed re is
   // exclusive membership coverage. Do not blindly add a month: accept this
-  // interpretation only for day 1 of the final month of our original 12-month
-  // calendar schedule. Preserve exact-date legacy contracts without extending them.
+  // interpretation only for day 1 on legacy schedules, or the exact last debit
+  // of a new signed purchase-day schedule. Never extend calendar coverage.
   const scheduledEnd = recurringSchedule(creation).endsAt;
   const lastDebitCoverageEnd = providerEndDate.endsWith('-01') && nextMonthStart(providerEndDate) === scheduledEnd
     ? scheduledEnd : null;
   const coverageEnd = lastDebitCoverageEnd || providerEndDate;
-  if (coverageEnd <= clubDate(now)) rejectDate(`לפי תאריכי ההוראה, ההתקשרות הסתיימה בתאריך ${coverageEnd}. לא בוצע חידוש או חיוב נוסף.`, 'RIVHIT_CONTRACT_ENDED', 'EndDate', details.EndDate);
+  const purchaseSchedule = checkout => {
+    const snapshot = checkout.orderSnapshot;
+    if (snapshot?.rd === undefined || !Number.isFinite(snapshot.t)) return null;
+    const schedule = recurringSchedule(new Date(snapshot.t));
+    return snapshot.rd === schedule.billingDay && snapshot.rs === schedule.start
+      && snapshot.re === schedule.endsAt && checkout.endsAt === schedule.endsAt ? schedule : null;
+  };
+  const matchesProviderEnd = checkout => {
+    if (checkout.orderSnapshot?.rd === undefined) return checkout.endsAt === providerEndDate || checkout.endsAt === lastDebitCoverageEnd;
+    const schedule = purchaseSchedule(checkout);
+    return Boolean(schedule && (providerEndDate === schedule.lastDebitAt || providerEndDate === checkout.endsAt));
+  };
   const candidates = (payload.recurringCheckouts || []).filter(checkout => (checkout.userId === userId || checkout.orderSnapshot?.gp?.some(line => line.memberId === userId)) && !checkout.cancelledAt
-    && (checkout.endsAt === providerEndDate || checkout.endsAt === lastDebitCoverageEnd) && isCalendarMembership(checkout.membershipType)
+    && matchesProviderEnd(checkout) && isCalendarMembership(checkout.membershipType)
     && (!checkout.recurringSaleId || checkout.recurringSaleId.toLowerCase() === seriesId)
     && Number.isFinite(Date.parse(checkout.dispatchedAt)) && clubDate(new Date(checkout.dispatchedAt)) === clubDate(creation));
+  if (!candidates.length && coverageEnd <= clubDate(now)) rejectDate(`לפי תאריכי ההוראה, ההתקשרות הסתיימה בתאריך ${coverageEnd}. לא בוצע חידוש או חיוב נוסף.`, 'RIVHIT_CONTRACT_ENDED', 'EndDate', details.EndDate);
   if (candidates.length !== 1) reject(candidates.length ? 'נמצאו כמה בקשות הקמה מתאימות. אין לשייך אוטומטית; יש לסנכרן לפי SaleId.' : 'לא נמצאה בקשת הקמה שמורה התואמת למתאמן ולתאריכי ההוראה. יש לסנכרן לפי SaleId או לפנות לתמיכה.');
   const checkout = candidates[0], snapshot = checkout.orderSnapshot, endsAt = checkout.endsAt;
+  const newSchedule = purchaseSchedule(checkout);
+  if (Number(details.RecurringDay) !== (newSchedule?.billingDay ?? 1)) reject('יום החיוב ברווחית שונה מיום החיוב שאושר בבקשה המקורית. לא שונה דבר.');
   if (endsAt <= clubDate(now)) rejectDate(`ההתקשרות הסתיימה בתאריך ${endsAt}. לא בוצע חידוש או חיוב נוסף.`, 'RIVHIT_CONTRACT_ENDED', 'EndDate', details.EndDate);
-  const lastChargeDate = endsAt === lastDebitCoverageEnd ? providerEndDate : null;
+  const lastChargeDate = newSchedule ? providerEndDate === newSchedule.lastDebitAt ? providerEndDate : null
+    : endsAt === lastDebitCoverageEnd ? providerEndDate : null;
   const amount = Number(details.Amount), count = Number(details.ChargeCount);
   if (!(amount > 0) || !Number.isFinite(amount) || details.ChargeCount === null || details.ChargeCount === ''
     || typeof details.ChargeCount === 'boolean' || !Number.isInteger(count) || count < 0 || count > 12) reject('הסכום או מונה החיובים ברווחית אינם תקינים.');
