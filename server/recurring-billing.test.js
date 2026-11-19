@@ -27,6 +27,31 @@ test('J5 creation is not a paid receipt; reject failed and out-of-range charges'
   }
 });
 
+test('purchase-day debits roll 29..31 forward but never move calendar membership expiry', () => {
+  for (const [date, start, day, end, last] of [
+    ['2026-11-19', '19-11-2026', 19, '2027-11-01', '2027-10-19'],
+    ['2026-11-28', '28-11-2026', 28, '2027-11-01', '2027-10-28'],
+    ['2026-11-29', '01-12-2026', 1, '2027-11-01', '2027-11-01'],
+    ['2026-11-30', '01-12-2026', 1, '2027-11-01', '2027-11-01'],
+    ['2026-12-31', '01-01-2027', 1, '2027-12-01', '2027-12-01'],
+    ['2028-02-28', '28-02-2028', 28, '2029-02-01', '2029-01-28'],
+    ['2028-02-29', '01-03-2028', 1, '2029-02-01', '2029-02-01']
+  ]) {
+    const schedule = recurringSchedule(new Date(`${date}T10:00:00Z`));
+    assert.equal(schedule.start, start, date);
+    assert.equal(schedule.billingDay, day, date);
+    assert.equal(schedule.fields.RecurringSaleDay, day, date);
+    assert.equal(schedule.fields.RecurringSaleStartDate, start, date);
+    assert.equal(schedule.endsAt, end, date);
+    assert.equal(schedule.lastDebitAt, last, date);
+    assert.equal(schedule.fields.SaleType, 2);
+    assert.equal(schedule.fields.RecurringSaleCount, 12);
+    assert.equal(schedule.fields.RecurringSaleAutoCharge, true);
+  }
+  assert.equal(recurringSchedule(new Date('2026-11-18T22:30:00Z')).billingDay, 19);
+  assert.equal(recurringSchedule(new Date('2026-11-28T22:30:00Z')).start, '01-12-2026');
+});
+
 function fixture(extra = {}) {
   let state = { revision: 1, payload: {
     users: [{ id: 'trainee', name: 'Trainee', role: 'TRAINEE', membershipType: 'GROUP_MONTHLY', membershipStatus: 'DEBT' }],
@@ -138,6 +163,13 @@ test('separate hosted page; verified setup grants pending access, not a receipt;
   assert.equal(request.GroupPrivateToken, 'fixture-recurring-page');
   assert.equal(request.RecurringSaleCount, 12); assert.equal(request.NumberOfPayments, 1);
   assert.equal(request.SaleType, 2); assert.equal(request.Items[0].UnitPrice, 500);
+  const snapshot = f.state().payload.recurringCheckouts[0].orderSnapshot;
+  const expected = recurringSchedule(new Date(snapshot.t));
+  assert.equal(request.RecurringSaleDay, expected.billingDay);
+  assert.equal(request.RecurringSaleStartDate, expected.start);
+  assert.equal(snapshot.rd, expected.billingDay);
+  assert.equal(snapshot.rs, expected.start);
+  assert.equal(snapshot.re, expected.endsAt);
   assert.equal(f.state().payload.users[0].membershipStatus, 'DEBT'); // GetUrl alone never activates.
   const repeat = await f.create({ recurringAcknowledged: true });
   assert.equal(repeat.status, 200); assert.equal((await repeat.json()).completed, true);

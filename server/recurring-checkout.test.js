@@ -4,6 +4,7 @@ import worker, { inspectRecurringCheckout } from './index.js';
 import { reconcileRecurringDaily } from './recurring-reconciliation.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, releaseUndispatchedRecurringCheckout, updateRecurringCheckout } from './recurring-checkout.js';
 import { clubDate, nextMonthStart } from '../shared/membership-calendar.js';
+import { recurringSchedule } from '../shared/recurring-billing.js';
 
 function fixture() {
   let state = { revision: 1, payload: { users: [{ id: 'u', name: 'Test User', role: 'TRAINEE', membershipType: 'OPEN_GYM', membershipStatus: 'DEBT' },
@@ -341,9 +342,9 @@ test('an approved setup with empty page details synchronizes only with strict pr
       if (url.endsWith('/RecurringSaleList')) return Response.json({ RecurringSales: [{ RecurringSaleId: seriesId, IsActive: true }] });
       if (url.endsWith('/RecurringSaleDetails')) return Response.json({ Amount: checkout.orderSnapshot.a, PhoneNumber: '0541234567',
         Token: cardApproved ? 'fixture-card-proof' : null, AutoCharge: true, IsActive: true, Currency: 1, ProRata: false,
-        RecurringCycle: 3, RecurringDay: 1, RecurringStep: 1, RecurringSaleCount: 12, ChargeCount: 0,
+        RecurringCycle: 3, RecurringDay: checkout.orderSnapshot.rd, RecurringStep: 1, RecurringSaleCount: 12, ChargeCount: 0,
         CreationDate: checkout.dispatchedAt,
-        EndDate: new Date(Date.UTC(Number(checkout.endsAt.slice(0, 4)), Number(checkout.endsAt.slice(5, 7)) - 2, 1)).toISOString(),
+        EndDate: `${recurringSchedule(new Date(checkout.orderSnapshot.t)).lastDebitAt}T00:00:00Z`,
         IpnUrl: 'https://club.test/api/payments/rivhit/webhook' });
       if (url.endsWith('/RecurringSaleHistory')) return Response.json({ RecurringSaleHistoryList: [] });
       return original(url, init);

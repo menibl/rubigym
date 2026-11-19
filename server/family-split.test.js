@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './index.js';
 import { familySplitLines, groupFamilyRecurringLines } from './family-split.js';
+import { recurringSchedule } from '../shared/recurring-billing.js';
 
 const catalog = [
   { id: 'GROUP_ANNUAL', label: 'שנתי', price: 500, active: true, category: 'PRIMARY', billingPeriod: 'MONTHLY_ANNUAL_COMMITMENT', paymentMode: 'RECURRING' },
@@ -317,9 +318,9 @@ test('return verification recovers an approved series when SaleDetails has incom
       const operation = url.split('/').at(-1); paths.push(operation);
       if (operation === 'RecurringSaleList') return Response.json({ RecurringSales: approved ? [{ RecurringSaleId: seriesId, IsActive: true }] : [] });
       if (operation === 'RecurringSaleDetails') return Response.json({ Amount: checkout.orderSnapshot.a, PhoneNumber: '0541234567',
-        Token: 'fixture-only-card-proof', AutoCharge: true, IsActive: true, Currency: 1, ProRata: false, RecurringCycle: 3, RecurringDay: 1, RecurringStep: 1,
+        Token: 'fixture-only-card-proof', AutoCharge: true, IsActive: true, Currency: 1, ProRata: false, RecurringCycle: 3, RecurringDay: checkout.orderSnapshot.rd, RecurringStep: 1,
         RecurringSaleCount: 12, ChargeCount: 0, CreationDate: checkout.dispatchedAt,
-        EndDate: new Date(Date.UTC(Number(checkout.endsAt.slice(0, 4)), Number(checkout.endsAt.slice(5, 7)) - 2, 1)).toISOString(),
+        EndDate: `${recurringSchedule(new Date(checkout.orderSnapshot.t)).lastDebitAt}T00:00:00Z`,
         IpnUrl: 'https://club.test/api/payments/rivhit/webhook' });
       if (operation === 'RecurringSaleHistory') return Response.json({ RecurringSaleHistoryList: [] });
       return provider(url, options);

@@ -4,6 +4,7 @@ import { prepareRecurringIdSync, recurringId } from './recurring-id-sync.js';
 import { sameProviderPayment, uniquePayments } from '../shared/payment-ledger.js';
 import worker, { inspectRecurringCheckout } from './index.js';
 import { createHmac } from 'node:crypto';
+import { recurringSchedule } from '../shared/recurring-billing.js';
 
 const seriesId = '11111111-1111-4111-8111-111111111111'; // Fixture, never a live provider call.
 const now = new Date('2026-10-28T21:00:00Z');
@@ -18,6 +19,50 @@ export const syncFixture = () => ({ seriesId, userId: 'u', appUrl: 'https://club
   history: { error_code: 0, RecurringSaleHistoryList: [{ Amount: 280, ChargeDate: '28-10-2026',
     Timestamp: '2026-10-28T19:51:32Z', StatusCode: 3, StatusDescription: 'הצלחה', RivhitCode: 0,
     DocumentLink: 'https://api.rivhit.co.il/pdf/fixture/document/02_000001', TruncCardNum: '458000XXXX0222' }] } });
+
+function purchaseDayFixture(date = '2026-11-19') {
+  const f = syncFixture();
+  const created = new Date(`${date}T10:00:00Z`), schedule = recurringSchedule(created);
+  f.now = new Date(created.getTime() + 60_000);
+  Object.assign(f.details, { RecurringDay: schedule.billingDay, CreationDate: created.toISOString(),
+    EndDate: `${schedule.lastDebitAt}T00:00:00Z`, ChargeCount: 0 });
+  f.history.RecurringSaleHistoryList = [];
+  Object.assign(f.payload.recurringCheckouts[0], { endsAt: schedule.endsAt, dispatchedAt: created.toISOString(),
+    orderSnapshot: { o: 'o', u: 'u', m: 'OPEN_GYM', rc: 1, a: 280, re: schedule.endsAt,
+      rd: schedule.billingDay, rs: schedule.start, t: created.getTime() } });
+  return f;
+}
+
+test('new purchase-day series sync exact signed debit day without changing calendar expiry or legacy series', () => {
+  for (const date of ['2026-11-19', '2026-11-28', '2026-11-29', '2026-11-30', '2026-12-31', '2028-02-29']) {
+    const f = purchaseDayFixture(date), before = structuredClone(f);
+    const result = prepareRecurringIdSync(f);
+    assert.equal(result.order.rd, f.details.RecurringDay);
+    assert.equal(result.preview.endsAt, recurringSchedule(new Date(`${date}T10:00:00Z`)).endsAt);
+    assert.equal(result.preview.lastChargeDate, f.details.EndDate.slice(0, 10));
+    assert.deepEqual(result.payments, []);
+    assert.deepEqual(f, before);
+  }
+  assert.equal(prepareRecurringIdSync(syncFixture()).order.rd, undefined);
+  const legacy = syncFixture(); legacy.details.RecurringDay = 28;
+  assert.throws(() => prepareRecurringIdSync(legacy), /יום החיוב/);
+});
+
+test('new series rejects tampered debit day, start, calendar coverage and provider final debit', () => {
+  for (const mutate of [f => { f.details.RecurringDay = 1; }, f => { f.details.RecurringDay = 29; },
+    f => { f.payload.recurringCheckouts[0].orderSnapshot.rd = 1; },
+    f => { f.payload.recurringCheckouts[0].orderSnapshot.rs = '20-11-2026'; },
+    f => { f.details.EndDate = '2027-10-20T00:00:00Z'; },
+    f => { f.payload.recurringCheckouts[0].endsAt = '2027-12-01'; }]) {
+    const f = purchaseDayFixture(); mutate(f); assert.throws(() => prepareRecurringIdSync(f));
+  }
+  const f = purchaseDayFixture(); f.details.EndDate = '2027-11-01T00:00:00Z';
+  assert.equal(prepareRecurringIdSync(f).preview.endsAt, '2027-11-01');
+  const finalMonth = purchaseDayFixture(); finalMonth.now = new Date('2027-10-25T10:00:00Z');
+  assert.equal(prepareRecurringIdSync(finalMonth).preview.endsAt, '2027-11-01');
+  finalMonth.now = new Date('2027-11-01T10:00:00Z');
+  assert.throws(() => prepareRecurringIdSync(finalMonth), { code: 'RIVHIT_CONTRACT_ENDED' });
+});
 
 test('series UUID finds the saved plan and real documented charge without using catalog price or inventing SaleId', () => {
   const f = syncFixture(); const before = JSON.stringify(f);

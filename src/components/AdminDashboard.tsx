@@ -2079,7 +2079,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <select value={plan.paymentMode || (billingPeriodForPlan(plan) === 'MONTHLY_ANNUAL_COMMITMENT' ? 'RECURRING' : 'ONE_TIME')} onChange={event => updateMembershipPlan(plan.id, { paymentMode: event.target.value as 'ONE_TIME' | 'RECURRING', billingPeriod: event.target.value === 'RECURRING' ? 'MONTHLY_ANNUAL_COMMITMENT' : 'MONTHLY' })} className="mt-1 w-full rounded-lg bg-white px-2 py-2 text-xs text-slate-900">
                       <option value="ONE_TIME">תשלום חד־פעמי לחודש</option><option value="RECURRING">הוראת קבע — 12 חיובים חודשיים</option>
                     </select>
-                    <small className="block mt-1">בהוראת קבע המחיר הוא לחודש: חיוב ראשון כעת, הבאים ב־1 בחודש. חידוש רק באישור המשתמש.</small>
+                    <small className="block mt-1">בהוראת קבע המחיר הוא לחודש: חיוב לפי יום פתיחת בקשת התשלום; ב־29–31 מתחילים ב־1 בחודש הבא. תוקף המנוי קלנדרי עד ה־1 בחודש העוקב לחודש ששולם. חידוש רק באישור המשתמש.</small>
                   </label>}
                   {billingPeriodForPlan(plan) === 'SESSION_PACK' && <div className="md:col-start-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2">
                     <label className="text-[10px] font-bold text-slate-600">כמות אימונים<input type="number" min={1} max={100} value={plan.includedSessions || 1} onChange={event => updateMembershipPlan(plan.id, { includedSessions: Math.max(1, Number(event.target.value) || 1) })} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-900" /></label>
