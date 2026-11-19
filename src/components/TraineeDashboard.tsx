@@ -2422,7 +2422,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
                   </div>
                   {billingPeriodForPlan(selectedMembershipConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
-                    הוראת קבע בסך ₪{selectedMembershipPrice} לחודש: חיוב ראשון עבור החודש הנוכחי, ולאחריו בכל 1 בחודש. 12 חיובים בסך הכול. אין חידוש אוטומטי; חידוש דורש את אישורכם. לפני המעבר לתשלום יוצגו תנאי החיוב לאישור.
+                    הוראת קבע בסך ₪{selectedMembershipPrice} לחודש: 12 חיובים לפי יום פתיחת בקשת התשלום; בקשה ב־29–31 תחויב החל מ־1 בחודש הבא. תוקף המנוי נשאר עד ה־1 בחודש העוקב לחודש ששולם. אין חידוש אוטומטי; חידוש דורש את אישורכם. לפני המעבר לתשלום יוצגו המועדים לאישור.
                   </div>}
                   {!isRivhitConfigured() && (
                     <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">

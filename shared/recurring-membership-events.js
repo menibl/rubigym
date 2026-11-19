@@ -47,7 +47,8 @@ export function applyRecurringMembershipEvent(payload, order, payment, now = new
   if (!Number.isInteger(charge) || charge < 0 || charge > 12 || (kind === 'PAID' && charge < 1)) throw new Error('INVALID_RECURRING_MEMBERSHIP_EVENT');
   const started = new Date(Number(order.t));
   const [year, month] = clubDate(started).split('-').map(Number);
-  const fallback = new Date(Date.UTC(year, month + charge - 1, 1)).toISOString().slice(0, 10);
+  const deferredStart = order.rd !== undefined && Number(clubDate(started).slice(-2)) > 28 ? 1 : 0;
+  const fallback = new Date(Date.UTC(year, month + charge - 1 + deferredStart, 1)).toISOString().slice(0, 10);
   const paidUntil = kind === 'PAID' ? payment.providerChargeDate ? nextMonthStart(payment.providerChargeDate) : fallback : previous?.paidUntil;
   const contract = { ...previous, seriesId: payment.recurringSaleId, orderId: order.o,
     ...(order.groupSize ? { groupAmount: order.groupAmount, groupSize: order.groupSize, familyPayerId: order.u } : {}),

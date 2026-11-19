@@ -16,6 +16,22 @@ const fixture = () => ({ settings: { membershipPlans: [{ id: 'OPEN_GYM', label: 
   users: [{ id: 'u', name: 'User', role: 'TRAINEE', membershipType: 'OPEN_GYM', membershipStatus: 'DEBT', registrationPaymentPending: true },
     { id: 'manager', name: 'Manager', role: 'MANAGER' }, { id: 'coach', name: 'Coach', role: 'COACH' }], payments: [], messages: [] });
 
+test('purchase-day billing keeps paid membership calendar-based, including deferred late-month charges', () => {
+  for (const [created, rd, rs, paidOn, expiry] of [
+    ['2026-11-19', 19, '19-11-2026', '2026-11-19', '2026-12-01'],
+    ['2026-11-29', 1, '01-12-2026', '2026-12-01', '2027-01-01']
+  ]) {
+    const signed = { ...order, t: Date.parse(`${created}T10:00:00Z`), rd, rs, re: '2027-11-01' };
+    for (const useProviderDate of [true, false]) {
+      const payment = { ...paid(1), providerChargeDate: useProviderDate ? paidOn : undefined };
+      const payload = applyRecurringMembershipEvent(fixture(), signed, payment, new Date(`${paidOn}T12:00:00Z`));
+      assert.equal(payload.users[0].membershipExpiry, expiry);
+      assert.equal(payload.users[0].monthlyBillingDay, 1);
+      assert.equal(payload.users[0].recurringMemberships.OPEN_GYM.endsAt, '2027-11-01');
+    }
+  }
+});
+
 test('setup activates without a paid receipt and alerts trainee and all staff exactly once', () => {
   const initial = fixture(); const payload = applyRecurringMembershipEvent(initial, order, setup, now);
   const user = payload.users[0];
