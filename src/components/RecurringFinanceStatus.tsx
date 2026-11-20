@@ -7,7 +7,8 @@ export function RecurringFinanceStatus({ users, plans = [] }: { users: User[]; p
     .filter(([, contract]) => !contract.cancelledAt)
     .map(([type, contract]) => ({ user, type, contract })));
   if (!rows.length) return null;
-  return <section className="mb-6 space-y-2" aria-label="סטטוס אישור תשלומי הוראות קבע">
+  return <details className="mb-6 space-y-2 rounded-xl border border-slate-600 p-3" aria-label="סטטוס אישור תשלומי הוראות קבע">
+    <summary className="cursor-pointer text-sm font-bold">הוראות קבע — אישור תשלום · {new Set(rows.map(row => row.contract.seriesId)).size} הוראות</summary>
     <h3 className="text-sm font-bold">הוראות קבע — אישור תשלום</h3>
     <p className="text-xs">הוראה בהמתנה אינה קבלה על תשלום ואינה נכללת בסכומים ששולמו. רק דחייה מאומתת משהה את המסלול הרלוונטי.</p>
     <div className="overflow-x-auto"><table className="w-full text-right text-xs">
@@ -20,5 +21,5 @@ export function RecurringFinanceStatus({ users, plans = [] }: { users: User[]; p
         <td className="p-2"><bdi>{contract.endsAt}</bdi></td>
       </tr>)}</tbody>
     </table></div>
-  </section>;
+  </details>;
 }

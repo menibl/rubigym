@@ -59,6 +59,7 @@ import { queueAnnouncement } from './announcement-sms.js';
 import { preservePaidWorkoutPlan } from '../shared/workout-gym-access.js';
 import { updateExerciseWorkingValues } from '../shared/exercise-working-values.js';
 import { sameProviderPayment } from '../shared/payment-ledger.js';
+import { financeSyncTasks } from './finance-reconciliation.js';
 
 const RIVHIT_TEST_BASE_URL = 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc';
 const RIVHIT_PRODUCTION_BASE_URL = 'https://icredit.rivhit.co.il/API/PaymentPageRequest.svc';
@@ -1036,9 +1037,11 @@ export async function inspectRecurringCheckout(env, checkout) {
   const clubId = env.CLUB_ID || 'baly-wellness';
   let state = await env.STATE_STORE.getClubState(clubId);
   const current = state?.payload?.recurringCheckouts?.find(item => item.orderId === checkout.orderId);
-  if (!current || current.cancelledAt) return;
-  const saved = await readRecurringContinuation(env.STATE_STORE, env.PAYMENT_SIGNING_SECRET, clubId, current.orderId, current.userId);
+  if (!current || current.cancelledAt) throw new Error('CHECKOUT_UNAVAILABLE');
   let seriesId = current.recurringSaleId;
+  // A verified series has its own authoritative history. An expired original
+  // payment page must not prevent its subsequent receipt reconciliation.
+  const saved = !recurringId(seriesId) ? await readRecurringContinuation(env.STATE_STORE, env.PAYMENT_SIGNING_SECRET, clubId, current.orderId, current.userId) : null;
   if (saved?.paymentReference) {
     const reference = await verifyPaymentReference(saved.paymentReference, env, true);
     const signed = await verifySignedOrder(reference.o, env, true);
@@ -1051,12 +1054,12 @@ export async function inspectRecurringCheckout(env, checkout) {
   }
   if (!recurringId(seriesId) && current.orderSnapshot) {
     const recovered = await discoverApprovedSetup(env, current.orderSnapshot, discoveryPostFor(env));
-    if (!recovered) return;
+    if (!recovered) return { status: 'REVIEW', code: 'NO_VERIFIED_MATCH', message: 'לא נמצאה התאמה מאומתת. לא שונה דבר.' };
     await persistVerifiedPurchase(env, recovered.order, recovered.payment);
     await persistVerifiedDiscountUsage(env, recovered.order, recovered.payment);
     seriesId = recovered.payment.recurringSaleId;
   }
-  if (!recurringId(seriesId)) return;
+  if (!recurringId(seriesId)) return { status: 'REVIEW', code: 'NO_VERIFIED_MATCH', message: 'לא נמצאה התאמה מאומתת. לא שונה דבר.' };
   const details = await rivhitPost('/RecurringSaleDetails', { RecurringSaleId: seriesId }, env);
   let history;
   try { history = await rivhitPost('/RecurringSaleHistory', { RecurringSaleId: seriesId }, env); }
@@ -1068,6 +1071,8 @@ export async function inspectRecurringCheckout(env, checkout) {
   } else {
     await persistVerifiedPurchase(env, prepared.order, { saleId: `setup-${seriesId}`, recurringSaleId: seriesId, recurringChargeNumber: 0, recurringPending: true });
   }
+  return { successfulCharges: prepared.payments.length, nextChargeDate: prepared.preview.nextChargeDate,
+    status: prepared.payments.length ? 'VERIFIED' : 'PENDING' };
 }
 
 const persistVerifiedDiscountUsage = async (env, order, payment) => {
@@ -2766,6 +2771,58 @@ const handleApi = async (request, env, url) => {
           canRelease: item.stage === 'RESERVED' && !item.requestDispatchedAt && !item.recurringSaleId && Date.now() - Date.parse(item.dispatchedAt) > 5 * 60000 }));
       return json({ ok: true, items }, 200, headers);
     }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/full-sync') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
+      if (identity.session.club_id !== (env.CLUB_ID || 'baly-wellness')) return json({ message: 'הגדרות הסליקה אינן שייכות למועדון המחובר.' }, 403, headers);
+      requirePaymentEnv(env);
+      const body = await request.json();
+      const state = await loadClubState(identity.session.club_id);
+      const tasks = financeSyncTasks(state.payload);
+      if (body.action === 'list') return json({ tasks, startedAt: new Date().toISOString() }, 200, headers);
+      const task = body.action === 'sync' && tasks.find(item => item.id === body.taskId);
+      if (!task) return json({ message: 'הרשומה אינה זמינה לסנכרון. יש לרענן את הרשימה.' }, 409, headers);
+      const providerFetch = typeof env.RIVHIT_FETCH === 'function' ? env.RIVHIT_FETCH : fetch;
+      const deadline = AbortSignal.timeout(40_000);
+      const syncEnv = { ...env, CLUB_ID: identity.session.club_id,
+        RIVHIT_FETCH: (target, options) => providerFetch(target, { ...options, signal: AbortSignal.any([deadline, AbortSignal.timeout(10_000)]) }) };
+      try {
+        if (task.kind === 'UNLINKED') throw new Error('ORIGINAL_ORDER_MISSING');
+        if (task.kind === 'RECURRING') {
+          const checkout = state.payload.recurringCheckouts.find(item => item.orderId === task.orderId);
+          const result = await inspectRecurringCheckout(syncEnv, checkout);
+          return json({ ...task, ...result, checkedAt: new Date().toISOString() }, 200, headers);
+        }
+        const payment = state.payload.payments.find(item => item.id === task.paymentId);
+        let verified;
+        if (!payment.providerSaleId && payment.paymentReference?.includes('.')) verified = await verifiedRivhitPayment(payment.paymentReference, syncEnv, true);
+        else {
+          const saleId = payment.providerSaleId || payment.providerTransactionId || payment.id.replace(/^payment-rivhit-/, '');
+          const details = await rivhitPost('/SaleDetails', { SaleId: saleId }, syncEnv);
+          const sale = Array.isArray(details.data) ? details.data[0] : details.data || details.Data?.[0] || details;
+          if (Number(details.Status) !== 0 || String(sale?.SaleId) !== String(saleId)) throw new Error('SALE_NOT_VERIFIED');
+          const order = await verifySignedOrder(String(rivhitValue(sale, 'Custom1', 'custom1') || ''), syncEnv, true);
+          verified = { order, payment: await verifyWebhookSale({ ...sale, TransactionAmount: rivhitValue(sale, 'TransactionAmount', 'Amount', 'TotalAmount') }, order, syncEnv) };
+        }
+        if (verified.order.u !== payment.traineeId || Number(verified.order.a) !== Number(payment.amount)
+          || Boolean(payment.isMock) !== (rivhitEnvironment(syncEnv) !== 'production')) throw new Error('RECEIPT_MISMATCH');
+        const receipt = verified.payment;
+        if (receipt.recurringPending || receipt.recurringFailed || receipt.recurringSaleId) throw new Error('RECURRING_REVIEW_REQUIRED');
+        if (payment.status === 'PENDING') {
+          await persistVerifiedPurchase(syncEnv, verified.order, receipt);
+          await persistVerifiedDiscountUsage(syncEnv, verified.order, receipt);
+        } else await updatePersistedPayment(syncEnv, identity.session.club_id, payment.id, {
+          provider: 'RIVHIT', providerSaleId: receipt.saleId, providerTransactionId: receipt.transactionId,
+          providerDetailsVerifiedAt: new Date().toISOString()
+        });
+        return json({ ...task, status: 'VERIFIED', checkedAt: new Date().toISOString() }, 200, headers);
+      } catch (error) {
+        // A failed lookup never revokes access, cancels a request, or marks PAID.
+        return json({ ...task, status: 'REVIEW', checkedAt: new Date().toISOString(),
+          code: /^[A-Z_]{3,80}$/.test(error?.code || error?.message || '') ? (error.code || error.message) : 'VERIFICATION_REQUIRED',
+          message: 'הבדיקה לא הושלמה בבטחה. ייתכן שחלק מהנתונים המאומתים כבר סונכרנו; לא נוצר חיוב חדש. נדרש בירור.' }, 200, headers);
+      }
+    }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/recurring-recovery') {
       const identity = await getIdentity();
       if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
@@ -2877,7 +2934,7 @@ const handleApi = async (request, env, url) => {
       if (Boolean(payment.isMock) !== (rivhitEnvironment(env) !== 'production')) return json({ message: 'סביבת העסקה אינה תואמת לסביבת הסליקה הנוכחית.' }, 422, headers);
       let verified;
       try {
-        if (payment.paymentReference?.includes('.')) verified = await verifiedRivhitPayment(payment.paymentReference, env, true);
+        if (!payment.providerSaleId && payment.paymentReference?.includes('.')) verified = await verifiedRivhitPayment(payment.paymentReference, env, true);
         else {
           const candidateId = payment.providerSaleId || payment.providerTransactionId || String(payment.id).replace(/^payment-rivhit-/, '');
           const details = await rivhitPost('/SaleDetails', { SaleId: candidateId }, env);
