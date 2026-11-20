@@ -23,7 +23,8 @@ export function AdminBulkRecurringRecovery() {
   const [preview, setPreview] = useState<RecoveryPreview | null>(null);
   const [results, setResults] = useState<RecoveryItem[]>([]);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState('');
-  return <section className="mb-6 rounded-xl border border-amber-600 bg-slate-950 p-4 text-sm text-amber-100" aria-label="שחזור מרוכז של הוראות מהיום">
+  return <details className="mb-6 rounded-xl border border-amber-600 bg-slate-950 p-3 text-sm text-amber-100" aria-label="שחזור מרוכז של הוראות מהיום">
+    <summary className="cursor-pointer font-bold">סנכרון הוראות שנפתחו היום — פירוט וכלים</summary>
     <h3 className="font-bold">סנכרון מרוכז — הוראות קבע שנפתחו היום</h3>
     <p className="my-2">בדיקת הוראות קיימות ברווחית מול הבקשות שנשמרו באפליקציה. אין יצירת הוראה, חיוב או החזר. הקמת הוראה מאומתת פותחת הרשמה בהמתנה לחיוב הראשון; אינה יוצרת קבלה פיקטיבית.</p>
     <button type="button" disabled={busy} className="min-h-11 rounded-lg bg-amber-400 p-3 font-bold text-black disabled:opacity-50" onClick={async () => {
@@ -44,5 +45,5 @@ export function AdminBulkRecurringRecovery() {
     </div>}
     {results.map(item => <p key={item.orderId} className="mt-2">{item.name} — {reasons[item.code] || 'נדרש בירור'}</p>)}
     {message && <p role="status" className="mt-2">{message}</p>}
-  </section>;
+  </details>;
 }

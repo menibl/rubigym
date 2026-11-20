@@ -35,6 +35,7 @@ import { CoachExceptionArrivalPanel } from './CoachExceptionArrivalPanel';
 import { InvoiceDescriptionSettings } from './InvoiceDescriptionSettings';
 import { uniquePayments } from '../../shared/payment-ledger.js';
 import { FinanceSummary } from './FinanceSummary';
+import { AdminFullFinanceSync } from './AdminFullFinanceSync';
 import {
   User,
   TrainingSession,
@@ -1728,6 +1729,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {activeTab === 'payments' && (
           <div className="space-y-6">
             <section className="rounded-2xl border border-amber-300/40 bg-slate-950 p-4 text-white shadow-lg" aria-labelledby="billing-management-title">
+              <AdminFullFinanceSync />
+              <details className="mt-3"><summary className="cursor-pointer font-black">ניהול חיובים ומנויים — כלים ופעולות</summary>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 id="billing-management-title" className="text-base font-black">ניהול חיובים ומנויים</h3>
@@ -1767,11 +1770,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <FamilyCreditRecoveryControl key={billingPaymentId} paymentId={billingPaymentId} reason={billingReason} />
               {billingNotice && <p role="status" className="mt-3 rounded-lg bg-emerald-950 p-3 text-xs font-bold text-emerald-200">{billingNotice}</p>}
               {billingError && <p role="alert" className="mt-3 rounded-lg bg-rose-950 p-3 text-xs font-bold text-rose-200">{billingError}</p>}
+              </details>
             </section>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="md:col-span-3 rounded-xl border border-slate-600 bg-slate-900 p-4 text-white">
+                <details><summary className="cursor-pointer font-bold">השלמת פרטי עסקה ישנה</summary>
                 <button type="button" disabled={billingPending || !billingPaymentId} onClick={reconcileSelectedPayment} className="min-h-11 rounded-xl bg-amber-300 px-4 text-sm font-black text-slate-950 disabled:opacity-40">השלמת פרטי העסקה שנבחרה מול רווחית</button>
                 <p className="mt-2 text-xs text-slate-300">לרשומות ישנות: בחרו עסקה למעלה ובדקו את מזהי הסליקה וספרות הכרטיס. אין חיוב או החזר ואין מחיקת היסטוריה.</p>
+                </details>
               </div>
               <div className="md:col-span-3"><FinanceSummary payments={payments} users={users} /></div>
 
@@ -1789,17 +1795,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </button>
 
-              <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 flex items-center justify-between">
+              <details className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                <summary className="cursor-pointer">
                 <div>
                   <div className="text-xs text-slate-700">עסקאות ביומן — כל התקופה (כולל בדיקות)</div>
                   <div className="text-2xl font-bold font-mono text-slate-950 mt-1">
                     {displayedPayments.length}
                   </div>
                 </div>
-                <div className="bg-slate-500/20 text-slate-800 rounded-full p-2.5">
-                  <CreditCard size={24} />
-                </div>
-              </div>
+                </summary>
+                <p className="mt-2 text-xs text-slate-700">מספר רשומות היומן לאחר איחוד לפי מזהי עסקה. כולל בדיקות וממתינות — אינו מספר העסקאות ששולמו. פירוט מלא ביומן למטה.</p>
+              </details>
             </div>
 
             <div>
@@ -1808,7 +1814,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onOpenUser={setEditingTraineeId} />}
               <AdminBulkRecurringRecovery />
               <RecurringFinanceStatus users={users} />
-              <h3 className="text-sm font-semibold text-slate-800 mb-3">יומן עסקאות ותשלומים</h3>
+              <details className="rounded-xl border border-slate-600 p-3"><summary className="cursor-pointer text-sm font-bold">יומן עסקאות ותשלומים · {displayedPayments.length} רשומות</summary>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-right text-xs">
                   <thead>
@@ -1845,6 +1851,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </tbody>
                 </table>
               </div>
+              </details>
             </div>
           </div>
         )}

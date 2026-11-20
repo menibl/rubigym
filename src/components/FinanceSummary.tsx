@@ -18,13 +18,13 @@ export function FinanceSummary({ payments, users, now }: { payments: Payment[]; 
   return <section aria-label="סיכום כספים חודשי ומצטבר" className="space-y-4" dir="rtl">
     <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {([{ title: `החודש הנוכחי — ${month}/${year}`, value: summary.monthly }, { title: 'מצטבר — כל התקופה המתועדת', value: summary.lifetime }]).map(({ title, value }) => <details key={title} aria-label={title} className="rounded-xl border border-slate-600 bg-slate-900 text-slate-100">
-        <summary className="cursor-pointer rounded-xl p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">
+        <summary className="cursor-pointer rounded-xl p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">
           <span className="text-sm font-bold">{title}</span>
-          <span className="mt-2 block text-2xl font-black"><bdi>{money(value.totalAmount)}</bdi></span>
-          <span className="mt-1 block text-xs text-emerald-200">{value.paidCount} עסקאות ששולמו · לחיצה לפירוט</span>
+          <span className="mt-1 block text-xl font-black"><bdi>{money(value.totalAmount)}</bdi></span>
           {(value.invalidAmountCount > 0 || value.invalidPendingAmountCount > 0) && <span className="mt-1 block text-xs text-amber-200">קיימות רשומות עם סכום חסר — נדרש בירור בפירוט</span>}
         </summary>
         <div className="px-4 pb-4">
+        <p className="text-xs">{value.paidCount} עסקאות ששולמו · לחיצה לפירוט</p>
         <p className="text-sm text-emerald-200">סה״כ תשלומים בסטטוס שולם — כל המקורות</p>
         <dl className="mt-4 space-y-3 border-t border-slate-600 pt-4 text-sm">
           <div><dt>סה״כ עסקאות מתועדות בתקופה — ללא בדיקות, כולל ממתינות והחזרים</dt><dd>{value.transactionCount}</dd></div>
@@ -42,14 +42,14 @@ export function FinanceSummary({ payments, users, now }: { payments: Payment[]; 
         </div>
       </details>)}
     <details aria-label="הוראות קבע בהמתנה" className="rounded-xl border border-amber-400/50 bg-slate-900 text-slate-100">
-      <summary className="cursor-pointer rounded-xl p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">
+      <summary className="cursor-pointer rounded-xl p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">
         <span className="text-sm font-bold">בהמתנה — הוראות קבע {month}/{year}</span>
-        <span className="mt-2 block text-2xl font-black"><bdi>{money(summary.pendingRecurring.monthly.amount)}</bdi></span>
-        <span className="mt-1 block text-xs text-amber-200">{summary.pendingRecurring.monthly.count} הוראות · לא נכלל בשולם · לחיצה לפירוט</span>
+        <span className="mt-1 block text-xl font-black"><bdi>{money(summary.pendingRecurring.monthly.amount)}</bdi></span>
         {summary.pendingRecurring.current.unknownAmountCount > 0 && <span className="mt-1 block text-xs text-amber-200">קיימות הוראות ללא סכום חד־משמעי — נדרש בירור בפירוט</span>}
         {summary.failedRecurringCount > 0 && <span className="mt-1 block text-xs text-red-200">{summary.failedRecurringCount} הוראות עם כשל חיוב מאומת</span>}
       </summary>
       <div className="px-4 pb-4">
+      <p className="text-xs">{summary.pendingRecurring.monthly.count} הוראות · לא נכלל בשולם · לחיצה לפירוט</p>
       <h3 className="font-black">אישור חיובי הוראות קבע — מצב נוכחי, לא סכום ששולם</h3>
       <p className="mt-2">{summary.pendingRecurringCount} הוראות ממתינות לאישור חיוב · {summary.failedRecurringCount} הוראות עם כשל חיוב מאומת</p>
       <div className="mt-3 rounded-xl border border-amber-400/50 p-4">
