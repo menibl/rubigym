@@ -302,7 +302,7 @@ function httpFixture() {
   const preview = async () => {
     const response = await post(input); assert.equal(response.status, 200, await response.clone().text()); return response.json();
   };
-  return { f, calls, input, post, preview, state: () => state, asTrainee: () => { role = 'TRAINEE'; }, webhook: async () => {
+  return { f, calls, input, post, preview, state: () => state, setSale: value => { ipn = value; }, asTrainee: () => { role = 'TRAINEE'; }, webhook: async () => {
     const prepared = prepareRecurringIdSync({ ...f, payload: state.payload });
     const encoded = Buffer.from(JSON.stringify(prepared.order)).toString('base64url');
     const signed = `${encoded}.${createHmac('sha256', env.PAYMENT_SIGNING_SECRET).update(encoded).digest('base64url')}`;
@@ -342,6 +342,72 @@ test('confirmed zero-charge series activates pending access without fake paid ro
   assert.equal((await f.post({ ...f.input, action: 'confirm', confirmationKey: preview.confirmationKey })).status, 200);
   assert.equal(f.state().payload.payments.length, 0);
   assert.equal(f.state().payload.users[0].recurringMemberships.OPEN_GYM.status, 'PENDING_FIRST_CHARGE');
+});
+
+test('full finance sync is manager and club scoped, bounded to stored tasks and idempotent without provider mutations', async () => {
+  const f = httpFixture();
+  f.f.payload.recurringCheckouts[0].recurringSaleId = seriesId;
+  const list = await f.post({ action: 'list' }, 'admin/full-sync');
+  assert.equal(list.status, 200);
+  const manifest = await list.json(); assert.equal(manifest.tasks.length, 1);
+  const body = { action: 'sync', taskId: manifest.tasks[0].id };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await f.post(body, 'admin/full-sync'); assert.equal(response.status, 200);
+    assert.equal((await response.json()).status, 'VERIFIED');
+    assert.equal(f.state().payload.payments.length, 1);
+  }
+  assert.ok(f.calls.every(call => /\/(RecurringSaleDetails|RecurringSaleHistory)$/.test(call.url)));
+  assert.equal((await f.post({ action: 'sync', taskId: 'order:foreign' }, 'admin/full-sync')).status, 409);
+  f.asTrainee(); assert.equal((await f.post({ action: 'list' }, 'admin/full-sync')).status, 403);
+});
+
+test('full finance provider failure or zero-charge setup is never a paid receipt or an access rejection', async () => {
+  const f = httpFixture();
+  f.f.payload.recurringCheckouts[0].recurringSaleId = seriesId;
+  f.f.details.ChargeCount = 0; f.f.history.RecurringSaleHistoryList = [];
+  let response = await f.post({ action: 'sync', taskId: 'order:o' }, 'admin/full-sync');
+  assert.equal((await response.json()).status, 'PENDING'); assert.equal(f.state().payload.payments.length, 0);
+  const before = structuredClone(f.state()); f.f.details.IsActive = false;
+  response = await f.post({ action: 'sync', taskId: 'order:o' }, 'admin/full-sync');
+  assert.equal((await response.json()).status, 'REVIEW'); assert.deepEqual(f.state(), before);
+});
+
+test('known recurring series bypasses missing original continuation and uses authoritative series history', async () => {
+  const f = syncFixture(); f.payload.recurringCheckouts[0].recurringSaleId = seriesId;
+  let state = { payload: f.payload, revision: 1 };
+  const calls = [];
+  const result = await inspectRecurringCheckout({ CLUB_ID: 'test', PUBLIC_APP_URL: f.appUrl, RIVHIT_ENVIRONMENT: 'production',
+    STATE_STORE: { getClubState: async () => state, getRecurringContinuation: async () => { throw new Error('expired checkout must not block'); },
+      putClubState: async (_, payload) => { state = { payload, revision: state.revision + 1 }; return { conflict: false }; } },
+    RIVHIT_FETCH: async url => { calls.push(url); if (url.endsWith('/RecurringSaleDetails')) return Response.json(f.details);
+      if (url.endsWith('/RecurringSaleHistory')) return Response.json(f.history); throw new Error('unexpected provider operation'); }
+  }, f.payload.recurringCheckouts[0]);
+  assert.equal(result.status, 'VERIFIED'); assert.equal(state.payload.payments.length, 1); assert.equal(calls.length, 2);
+});
+
+test('full sync verifies immediate receipts against signed ownership and provider approval, never alters manual/test/refunded records', async () => {
+  const f = httpFixture();
+  const order = { u: 'u', m: 'WORKOUT_PLAN', a: 280, d: 'ADDON', t: Date.now(), o: 'one-time' };
+  const encoded = Buffer.from(JSON.stringify(order)).toString('base64url');
+  const custom = `${encoded}.${createHmac('sha256', 'fixture-signing-key').update(encoded).digest('base64url')}`;
+  const sale = { SaleId: 'one-time-sale', Custom1: custom, TransactionAmount: 280, TransactionStatus: 0, TransactionParamJ: 0 };
+  f.setSale(sale);
+  const payment = { id: 'payment-rivhit-one-time-sale', traineeId: 'u', providerSaleId: sale.SaleId, paymentReference: 'expired.page.reference', status: 'PAID', amount: 280, date: '2026-11-01' };
+  f.f.payload.payments.push(payment);
+  const body = { action: 'sync', taskId: `payment:${payment.id}` };
+  let response = await f.post(body, 'admin/full-sync');
+  assert.equal((await response.json()).status, 'VERIFIED'); assert.equal(f.state().payload.payments.length, 1);
+  assert.ok(f.state().payload.payments[0].providerDetailsVerifiedAt);
+  assert.equal((await f.post({ paymentId: payment.id }, 'admin/reconcile')).status, 200);
+  const before = structuredClone(f.state());
+  f.setSale({ ...sale, TransactionAmount: 999 });
+  response = await f.post(body, 'admin/full-sync'); assert.equal((await response.json()).status, 'REVIEW');
+  assert.deepEqual(f.state(), before);
+  for (const patch of [{ isMock: true }, { status: 'REFUNDED' }, { paymentMethod: 'עסקת בדיקה' }]) {
+    Object.assign(f.state().payload.payments[0], patch);
+    assert.equal((await f.post(body, 'admin/full-sync')).status, 409);
+  }
+  assert.ok(f.calls.every(call => /\/(SaleDetails|Verify)$/.test(call.url)));
 });
 
 test('HTTP preview accepts WCF dates, but invalid end date returns a precise safe diagnostic without a write', async () => {
