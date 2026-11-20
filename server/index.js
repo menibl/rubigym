@@ -2820,7 +2820,7 @@ const handleApi = async (request, env, url) => {
         // A failed lookup never revokes access, cancels a request, or marks PAID.
         return json({ ...task, status: 'REVIEW', checkedAt: new Date().toISOString(),
           code: /^[A-Z_]{3,80}$/.test(error?.code || error?.message || '') ? (error.code || error.message) : 'VERIFICATION_REQUIRED',
-          message: 'לא ניתן לאמת בבטחה. לא סומן כשולם ולא בוצע חיוב; נדרש בירור.' }, 200, headers);
+          message: 'הבדיקה לא הושלמה בבטחה. ייתכן שחלק מהנתונים המאומתים כבר סונכרנו; לא נוצר חיוב חדש. נדרש בירור.' }, 200, headers);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/recurring-recovery') {
