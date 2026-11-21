@@ -1,3 +1,5 @@
+import { summarizePulseemResponse } from './pulseem-diagnostics.js';
+
 const PULSEEM_SEND_SMS_URL = 'https://api.pulseem.com/api/v1/SmsApi/SendSms';
 const OTP_PURPOSES = new Set(['LOGIN', 'REGISTER']);
 const encoder = new TextEncoder();
@@ -62,14 +64,6 @@ const safeProviderText = value => String(value ?? '')
   .trim()
   .slice(0, 180);
 
-const pulseemResponseSummary = (response, responseBody, result) => ({
-  httpStatus: response.status,
-  responseType: Array.isArray(result) ? 'array' : result === null ? (responseBody ? 'text' : 'empty') : typeof result,
-  status: safeProviderText(providerField(result, ['status', 'state'])),
-  code: safeProviderText(providerField(result, ['code', 'errorcode', 'resultcode'])),
-  message: safeProviderText(providerField(result, ['message', 'errormessage', 'description']))
-});
-
 const pulseemExplicitlyFailed = (responseBody, result) => {
   const successFlag = providerField(result, ['success', 'issuccess', 'succeeded', 'ok']);
   if (successFlag === false || String(successFlag).toLowerCase() === 'false') return true;
@@ -120,8 +114,8 @@ export const sendPulseemSms = async ({ env, phone, text, reference, fetchImpl = 
   const responseBody = await response.text();
   let result = null;
   try { result = responseBody ? JSON.parse(responseBody) : null; } catch { /* Pulseem does not publish a response schema. */ }
-  const summary = pulseemResponseSummary(response, responseBody, result);
-  const explicitlyFailed = pulseemExplicitlyFailed(responseBody, result);
+  const summary = summarizePulseemResponse(response, responseBody, result, { apiKey, fromNumber, phone, text, reference });
+  const explicitlyFailed = pulseemExplicitlyFailed(responseBody, result) || summary.failureDetected;
   if (!response.ok || explicitlyFailed) throw Object.assign(new Error('SMS_PROVIDER_UNAVAILABLE'), { provider: summary });
   return { ok: true, provider: summary };
 };

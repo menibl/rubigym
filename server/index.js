@@ -55,7 +55,7 @@ import { invoiceDescription } from '../shared/invoice-description.js';
 import { purchaseBreakdown } from './purchase-breakdown.js';
 import { reviewMedicalCertificate } from './medical-certificate.js';
 import { pendingMedicalReview } from '../shared/medical-certificate.js';
-import { queueAnnouncement } from './announcement-sms.js';
+import { queueAnnouncement, queueAnnouncementSmsTest } from './announcement-sms.js';
 import { preservePaidWorkoutPlan } from '../shared/workout-gym-access.js';
 import { updateExerciseWorkingValues } from '../shared/exercise-working-values.js';
 import { sameProviderPayment } from '../shared/payment-ledger.js';
@@ -2327,6 +2327,26 @@ const handleApi = async (request, env, url) => {
       await env.STATE_STORE.upsertAccount(await accountFromUser(identity.session.club_id, safeUser, candidate.password));
       await notifyStateChange(state.payload, nextPayload, identity.session.club_id);
       return json({ user: safeUser, revision: saved.revision }, 201, headers);
+    }
+    if (url.pathname === '/api/admin/announcements/sms-test' && request.method === 'POST') {
+      if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'נדרשת הרשאת מנהל.' }, 403, headers);
+      const body = await request.json();
+      if (!env.PULSEEM_API_KEY || !env.PULSEEM_FROM_NUMBER) return json({ message: 'שירות SMS אינו מוגדר.' }, 503, headers);
+      try {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const state = await env.STATE_STORE.getClubState(identity.session.club_id);
+          const manager = state?.payload?.users?.find(user => user.id === identity.account.user_id);
+          if (!manager) return json({ message: 'המנהל לא נמצא.' }, 404, headers);
+          const result = queueAnnouncementSmsTest(state.payload, body, manager);
+          if (result.payload === state.payload) return json(result.preview, 200, headers);
+          const saved = await env.STATE_STORE.putClubState(identity.session.club_id, result.payload, state.revision);
+          if (saved.conflict) continue;
+          return json(result.preview, 201, headers);
+        }
+        return json({ message: 'הנתונים השתנו. יש לנסות שוב.' }, 409, headers);
+      } catch (error) { return json({ message: error.status ? error.message : 'בדיקת SMS נכשלה.' }, error.status || 500, headers); }
     }
     if (url.pathname === '/api/admin/announcements' && request.method === 'POST') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);

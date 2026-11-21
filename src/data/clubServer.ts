@@ -87,6 +87,15 @@ export async function publishClubAnnouncement(announcement: import('../types').A
   return result.announcement;
 }
 
+export type AnnouncementSmsTestResult = { title: string; text: string; phoneSuffix: string; fingerprint: string;
+  delivery: null | { status: string; providerReference: string | null; diagnostic?: { reason: string; httpStatus?: number;
+    code?: string; status?: string; message?: string; details?: { path?: string; code?: string; status?: string; message?: string }[]; truncated?: boolean } } };
+
+export async function announcementSmsTest(body: { announcementId: string; phone: string; action: 'preview' | 'send'; confirmed?: boolean; fingerprint?: string }) {
+  if (isPagesDemoMode()) throw new Error('בדיקת SMS זמינה באתר המועדון המחובר לשרת בלבד. לא נשלחה הודעה.');
+  return request<AnnouncementSmsTestResult>('/api/admin/announcements/sms-test', { method: 'POST', body: JSON.stringify(body) });
+}
+
 export type ClubStateEnvelope = { payload: Record<string, unknown>; revision: number; updated_at?: string };
 
 export async function saveExerciseWorkingValues(input: { planId: string; exerciseId: string; weightKg: string; restSeconds: string; expectedRevision: number }) {
