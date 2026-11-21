@@ -7,6 +7,7 @@ import React, { useRef, useState } from 'react';
 import { UnpaidTraineesList } from './UnpaidTraineesList';
 import { activeDebtTrainees } from '../data/unpaidTrainees';
 import { publishClubAnnouncement } from '../data/clubServer';
+import { AnnouncementSmsTest } from './AnnouncementSmsTest';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
 import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
 import { AdminRecurringSync } from './AdminRecurringSync';
@@ -2024,6 +2025,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       מנויים: {ann.targetMembershipTypes?.length === 5 ? 'הכל' : `${ann.targetMembershipTypes?.length} סוגים`}
                     </span>
                   </div>
+                  {activeUser.role === UserRole.MANAGER && <AnnouncementSmsTest announcementId={ann.id} />}
                 </div>
               ))}
             </div>
