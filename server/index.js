@@ -60,6 +60,8 @@ import { preservePaidWorkoutPlan } from '../shared/workout-gym-access.js';
 import { updateExerciseWorkingValues } from '../shared/exercise-working-values.js';
 import { sameProviderPayment } from '../shared/payment-ledger.js';
 import { financeSyncTasks } from './finance-reconciliation.js';
+import { proposeRecurringSchedule } from './recurring-schedule-approval.js';
+import { approvedRecurringSchedule, recurringServicePeriod, recurringCheckoutEnd } from '../shared/recurring-service-period.js';
 
 const RIVHIT_TEST_BASE_URL = 'https://testicredit.rivhit.co.il/API/PaymentPageRequest.svc';
 const RIVHIT_PRODUCTION_BASE_URL = 'https://icredit.rivhit.co.il/API/PaymentPageRequest.svc';
@@ -902,13 +904,16 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
     if (!state) throw new Error('CLUB_STATE_MISSING');
     const user = (state.payload.users || []).find(candidate => candidate.id === userId);
     if (!user) throw new Error('PAYMENT_USER_NOT_FOUND');
+    const schedule = order.rc === 1 ? approvedRecurringSchedule(state.payload, order.o, payment.recurringSaleId) : null;
+    const period = schedule ? recurringServicePeriod(schedule, Number(payment.recurringChargeNumber)) : null;
+    const serviceFields = period ? { recurringServiceMonth: period.month, recurringServiceExpiresAt: period.expiresAt, recurringScheduleApprovalId: schedule.id } : {};
     const matching = (state.payload.payments || []).filter(existing => sameProviderPayment(existing, {
       id: paymentId, provider: 'RIVHIT', isMock: rivhitEnvironment(env) !== 'production',
       providerSaleId: payment.saleId, providerTransactionId: payment.transactionId,
       providerRecurringSaleId: payment.recurringSaleId, recurringChargeNumber: payment.recurringChargeNumber
     }));
     if (matching.length) {
-      const enrich = existing => ({ ...existing, provider: 'RIVHIT', providerSaleId: payment.saleId || existing.providerSaleId,
+      const enrich = existing => ({ ...existing, ...serviceFields, provider: 'RIVHIT', providerSaleId: payment.saleId || existing.providerSaleId,
         purchaseBreakdown: existing.purchaseBreakdown || order.bd,
         providerTransactionId: payment.providerHistoryVerified ? existing.providerTransactionId || payment.transactionId : payment.transactionId,
         ...(payment.recoveryDiscountUnknown ? {} : { discountCode: normalizeDiscountCode(order.c) || null, discountAmount: order.da }),
@@ -963,6 +968,7 @@ const persistVerifiedPurchase = async (env, order, payment, fallbackUserId) => {
       }),
       payments: [{
         id: paymentId,
+        ...serviceFields,
         traineeId: order.gp ? order.u : userId,
         traineeName: order.gp ? state.payload.users.find(member => member.id === order.u)?.name || user.name : user.name,
         amount: Number(order.a),
@@ -1150,7 +1156,7 @@ const prepareFamilySplit = async (request, env, body, purchase, state) => {
     : validateFamilySelection(state.payload, body.userId, purchase.familyMemberPlans);
   const discount = findAvailableDiscount(state.payload.discountCodes || [], body.discountCode);
   let lines;
-  const pendingSeries = (state.payload.recurringCheckouts || []).filter(item => !item.cancelledAt && item.endsAt > clubDate())
+  const pendingSeries = (state.payload.recurringCheckouts || []).filter(item => !item.cancelledAt && recurringCheckoutEnd(item) > clubDate())
     .flatMap(item => (item.orderSnapshot?.gp || [{ memberId: item.userId, membershipType: item.membershipType }]).map(line =>
       ({ traineeId: line.memberId, membershipTypePurchased: line.membershipType, status: 'PAID', providerRecurringSaleId: item.recurringSaleId || item.orderId,
         timestamp: item.dispatchedAt, isMock: rivhitEnvironment(env) !== 'production' })));
@@ -2765,7 +2771,7 @@ const handleApi = async (request, env, url) => {
         return json({ ok: true, reasonCode: outcome.reasonCode, message: outcome.completed ? outcome.message : result.ok
           ? 'קיים דף תשלום שמור. המתאמן יכול ללחוץ שוב על תשלום כדי להמשיך באותו דף, ללא פתיחת בקשה חדשה.' : outcome.message }, 200, headers);
       }
-      const items = (state.payload.recurringCheckouts || []).filter(item => item.userId === target.id && !item.cancelledAt && (item.endsAt > clubDate() || !item.recurringSaleId))
+      const items = (state.payload.recurringCheckouts || []).filter(item => item.userId === target.id && !item.cancelledAt && (recurringCheckoutEnd(item) > clubDate() || !item.recurringSaleId))
         .map(item => ({ orderId: item.orderId, label: item.orderSnapshot?.gp ? 'הוראת קבע משפחתית מאוחדת' : state.payload.settings?.membershipPlans?.find(plan => plan.id === item.membershipType)?.label || item.membershipType,
           amount: item.orderSnapshot?.a, createdAt: item.dispatchedAt, stage: item.stage || 'LEGACY_UNKNOWN',
           canRelease: item.stage === 'RESERVED' && !item.requestDispatchedAt && !item.recurringSaleId && Date.now() - Date.parse(item.dispatchedAt) > 5 * 60000 }));
@@ -2874,6 +2880,51 @@ const handleApi = async (request, env, url) => {
         } catch { results.push({ orderId: entry.orderId, name: entry.name, status: 'REVIEW', code: 'APPLY_REQUIRES_REVIEW' }); }
       }
       return json({ ok: true, day: recovery.day, results, message: 'הסנכרון הסתיים. רק הוראות שאומתו עודכנו; לא נוצר חיוב חדש.' }, 200, headers);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/recurring-schedule') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER' || identity.session.club_id !== (env.CLUB_ID || 'baly-wellness')) return json({ message: 'הפעולה זמינה למנהל המועדון בלבד.' }, 403, headers);
+      requirePaymentEnv(env);
+      const body = await request.json(), seriesId = recurringId(body.recurringSaleId);
+      const checkedAt = body.action === 'preview' ? Date.now() : Number(body.checkedAt);
+      if (!seriesId || !['preview', 'confirm'].includes(body.action) || !Number.isFinite(checkedAt)
+        || checkedAt > Date.now() || Date.now() - checkedAt > 10 * 60_000) return json({ message: 'יש לבצע בדיקה מקדימה חדשה ולבחור הוראה קיימת.' }, 400, headers);
+      const state = await loadClubState(identity.session.club_id);
+      const fetcher = typeof env.RIVHIT_FETCH === 'function' ? env.RIVHIT_FETCH : fetch;
+      const boundedEnv = { ...env, RIVHIT_FETCH: (target, options) => fetcher(target, { ...options, signal: AbortSignal.timeout(10_000) }) };
+      try {
+        const details = await rivhitPost('/RecurringSaleDetails', { RecurringSaleId: seriesId }, boundedEnv);
+        const history = await rivhitPost('/RecurringSaleHistory', { RecurringSaleId: seriesId }, boundedEnv);
+        const { checkout, policy } = proposeRecurringSchedule({ payload: state.payload, userId: body.userId, seriesId, details,
+          anchorCharge: body.anchorCharge, serviceMonth: body.serviceMonth, reason: body.reason, managerId: identity.session.user_id, checkedAt });
+        const previousPolicyId = body.action === 'preview' ? checkout.scheduleApproval?.id || null : body.previousPolicyId || null;
+        if ((checkout.scheduleApproval?.id || null) !== previousPolicyId && checkout.scheduleApproval?.id !== body.confirmationKey) throw new Error('אישור אחר שינה את ההוראה. יש לבצע בדיקה חדשה.');
+        const prepared = prepareRecurringIdSync({ payload: state.payload, userId: body.userId, seriesId, details, history, appUrl: env.PUBLIC_APP_URL, scheduleApproval: policy });
+        const confirmationKey = await sign(JSON.stringify({ clubId: identity.session.club_id, managerId: identity.session.user_id, previousPolicyId, policy, prepared }), env.PAYMENT_SIGNING_SECRET);
+        const preview = { ...prepared.preview, providerEndDate: policy.providerEndDate, previousEndsAt: checkout.scheduleApproval?.coverageEndsAt || checkout.endsAt,
+          currentMembershipExpiry: state.payload.users.find(user => user.id === body.userId)?.membershipExpiry || null,
+          verifiedPaidUntil: prepared.payments.length ? recurringServicePeriod(policy, prepared.payments.length).expiresAt : null };
+        if (body.action === 'preview') return json({ ok: true, preview, checkedAt, previousPolicyId, confirmationKey }, 200, headers);
+        if (body.confirmationKey !== confirmationKey) return json({ message: 'נתוני ההוראה או החיובים השתנו. יש לבצע בדיקה חדשה; לא נוצר חיוב.' }, 409, headers);
+        let saved = false;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const latest = await loadClubState(identity.session.club_id);
+          const current = latest.payload.recurringCheckouts.find(item => item.orderId === checkout.orderId);
+          if (!current || current.cancelledAt || current.recurringSaleId !== seriesId) throw new Error('ההוראה השתנתה או בוטלה. לא ניתן לאשר את השינוי.');
+          if (current.scheduleApproval?.id === confirmationKey) { saved = true; break; }
+          if ((current.scheduleApproval?.id || null) !== previousPolicyId) throw new Error('אישור אחר שינה את ההוראה. יש לבצע בדיקה חדשה.');
+          const updated = { ...latest.payload, recurringCheckouts: latest.payload.recurringCheckouts.map(item => item === current ? { ...item,
+            scheduleApproval: { ...policy, id: confirmationKey }, scheduleApprovalHistory: [...(item.scheduleApprovalHistory || []), ...(item.scheduleApproval ? [item.scheduleApproval] : [])].slice(-12) } : item) };
+          if (!(await env.STATE_STORE.putClubState(identity.session.club_id, updated, latest.revision)).conflict) { saved = true; break; }
+        }
+        if (!saved) throw new Error('שמירת האישור לא הושלמה. ניתן לבצע בדיקה חוזרת ללא חיוב.');
+        const audit = { recoveryManagerId: identity.session.user_id, recoveryDiscountUnknown: prepared.discountUnknown };
+        if (prepared.payments.length) for (const payment of prepared.payments) await persistVerifiedPurchase(env, prepared.order, { ...payment, ...audit });
+        else await persistVerifiedPurchase(env, prepared.order, { saleId: `setup-${seriesId}`, recurringSaleId: seriesId, recurringChargeNumber: 0, recurringPending: true, ...audit });
+        return json({ ok: true, message: 'השינוי אושר באפליקציה ונשמר להמשך הסנכרון. רק חיובים שאומתו מקנים חודש ששולם. לא שונתה הוראה ברווחית ולא נוצר חיוב חדש.' }, 200, headers);
+      } catch (error) {
+        return json({ message: /^[\u0590-\u05ff]/.test(error?.message || '') ? error.message : 'לא ניתן להשלים את האישור. ייתכן שהאישור נשמר חלקית; יש לבדוק שוב. לא נוצר חיוב חדש.', code: error?.code, diagnostic: error?.diagnostic }, 422, headers);
+      }
     }
     if (request.method === 'POST' && url.pathname === '/api/payments/rivhit/admin/recurring-sync') {
       const identity = await getIdentity();

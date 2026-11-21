@@ -24,6 +24,7 @@ export function PaymentPurchaseDetails({ payment }: { payment: Payment }) {
   return <details className="min-w-64 max-w-lg rounded-lg border border-slate-600 p-2 text-slate-200" dir="rtl">
     <summary className="min-h-11 cursor-pointer font-bold">פירוט הרכישה — {payment.traineeName}</summary>
     <div className="mt-2 space-y-3 text-xs leading-relaxed">
+      {payment.recurringServiceMonth && <p>חודש השירות שאושר על ידי מנהל: <bdi>{payment.recurringServiceMonth}</bdi> · תוקף ששולם עד <bdi>{payment.recurringServiceExpiresAt}</bdi>. מועד החיוב הכספי לא שונה.</p>}
       <p>{snapshot ? 'מחירים שנשמרו בזמן הרכישה.' : 'פירוט היסטורי חלקי — מחירים חסרים אינם מחושבים לפי המחירון הנוכחי.'}</p>
       {lines.map((line, index) => <div key={index} className="rounded border border-slate-600 p-2">
         {line.memberName && <p className="font-bold">{line.memberName}</p>}

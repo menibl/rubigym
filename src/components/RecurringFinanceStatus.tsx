@@ -18,7 +18,7 @@ export function RecurringFinanceStatus({ users, plans = [] }: { users: User[]; p
         <td className="p-2">{plans.find(plan => plan.id === type)?.label || MEMBERSHIP_TYPE_LABELS[type as MembershipType]?.label || type}</td>
         <td className="p-2">₪{contract.amount}</td>
         <td className="p-2">{contract.status === 'PAYMENT_FAILED' ? 'תשלום נדחה — המסלול הושהה' : contract.endsAt <= clubDate() ? 'תקופת ההתקשרות הסתיימה' : contract.status === 'PENDING_FIRST_CHARGE' || !contract.paidUntil || contract.paidUntil <= clubDate() ? 'ממתין לאישור רווחית — המנוי פעיל' : 'אושר ברווחית'}</td>
-        <td className="p-2"><bdi>{contract.endsAt}</bdi></td>
+        <td className="p-2"><bdi>{contract.endsAt}</bdi>{contract.scheduleApprovalId && <p className="mt-1">יום חיוב שאושר: {contract.billingDay} · שיוך חיוב {contract.anchorCharge} לחודש <bdi>{contract.serviceMonth}</bdi> · תוקף חיוב מאומת: <bdi>{contract.paidUntil || 'טרם אושר'}</bdi></p>}</td>
       </tr>)}</tbody>
     </table></div>
   </details>;
