@@ -1,4 +1,5 @@
 import { clubDate } from '../shared/membership-calendar.js';
+import { recurringCheckoutEnd } from '../shared/recurring-service-period.js';
 
 const context = (clubId, orderId) => new TextEncoder().encode(JSON.stringify({ clubId, orderId }));
 const keyFor = async secret => crypto.subtle.importKey('raw', await crypto.subtle.digest('SHA-256',
@@ -31,7 +32,7 @@ export async function readRecurringContinuation(store, secret, clubId, orderId, 
 export const openRecurringCheckout = (payload, userId, type) => (payload.recurringCheckouts || []).find(item =>
   ((item.userId === userId && (!item.membershipType || item.membershipType === type))
     || item.orderSnapshot?.gp?.some(line => line.memberId === userId && line.membershipType === type)) && !item.cancelledAt
-    && (item.endsAt > clubDate() || !item.recurringSaleId));
+    && (recurringCheckoutEnd(item) > clubDate() || !item.recurringSaleId));
 
 export async function updateRecurringCheckout(store, clubId, orderId, transform) {
   for (let attempt = 0; attempt < 5; attempt++) {

@@ -1,0 +1,11 @@
+export const syncFixture = () => ({ seriesId: '11111111-1111-4111-8111-111111111111', userId: 'u', appUrl: 'https://club.test/', now: new Date('2026-10-28T21:00:00Z'),
+  payload: { users: [{ id: 'u', name: 'Test Trainee', role: 'TRAINEE', phone: '0541234567', membershipType: 'WORKOUT_PLAN', membershipStatus: 'ACTIVE' }],
+    settings: { membershipPlans: [{ id: 'OPEN_GYM', label: 'Open Gym', price: 500 }] },
+    recurringCheckouts: [{ userId: 'u', orderId: 'o', membershipType: 'OPEN_GYM', endsAt: '2027-10-01', dispatchedAt: '2026-10-28T09:32:47Z' }], payments: [] },
+  details: { Amount: 280, PhoneNumber: '+972541234567', AutoCharge: true, IsActive: true, Currency: 1, ProRata: false,
+    RecurringCycle: 3, RecurringDay: 1, RecurringStep: 1, RecurringSaleCount: 12, ChargeCount: 1,
+    CreationDate: '2026-10-28T12:32:47+03:00', EndDate: '2027-10-01T00:00:00+03:00', ChargeDate: '2026-11-01T00:00:00+02:00',
+    IpnUrl: 'https://club.test/api/payments/rivhit/webhook' },
+  history: { error_code: 0, RecurringSaleHistoryList: [{ Amount: 280, ChargeDate: '28-10-2026',
+    Timestamp: '2026-10-28T19:51:32Z', StatusCode: 3, StatusDescription: 'הצלחה', RivhitCode: 0,
+    DocumentLink: 'https://api.rivhit.co.il/pdf/fixture/document/02_000001', TruncCardNum: '458000XXXX0222' }] } });

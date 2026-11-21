@@ -361,6 +361,7 @@ export interface User {
     endsAt: string; amount: number; discountCode?: string | null; paidUntil?: string;
     approvedAt?: string; updatedAt?: string; lastPaidCharge?: number; lastFailedCharge?: number; lastFailureCode?: string; cancelledAt?: string;
     recoveredBy?: string; recoveredAt?: string; recoveryDiscountUnknown?: boolean;
+    scheduleApprovalId?: string; serviceMonth?: string; anchorCharge?: number; billingDay?: number;
       groupAmount?: number; groupSize?: number; familyPayerId?: string;
   }>>;
   membershipExpiryExclusive?: boolean; // Calendar memberships expire at the start of this date.
@@ -827,6 +828,9 @@ export interface Payment {
   providerSaleId?: string;
   providerTransactionId?: string;
   providerDetailsVerifiedAt?: string;
+  recurringServiceMonth?: string;
+  recurringServiceExpiresAt?: string;
+  recurringScheduleApprovalId?: string;
   providerRecurringSaleId?: string;
   recurringChargeNumber?: number;
   refundedAt?: string;
