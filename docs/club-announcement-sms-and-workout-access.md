@@ -18,4 +18,22 @@ Permanent database claims prevent duplicate sends across concurrent workers/rest
 
 Only appropriate club service notices should use this feature; it does not establish marketing consent. Long Hebrew messages can incur multiple SMS segments, disclosed before confirmation. No real SMS is sent by automated tests; they inject a synthetic provider.
 
+### Provider diagnostics
+
+New dispatch attempts store an optional `diagnostic` on the server-owned delivery record:
+`recordedAt`, `reason`, HTTP status (when received), and bounded/redacted provider
+`code`, `status`, `message`. The same fields are logged under
+`Club announcement SMS failed or unknown` / `Club announcement SMS accepted by provider`.
+No raw response, headers, credentials, recipient phone/hash, message body or arbitrary
+exception text is logged. Trainee state still excludes the outbox; generic client
+state updates cannot forge/erase these diagnostics. Transport/timeouts are distinguished
+from provider rejection; a missing provider code is not invented or interpreted as
+insufficient credit. Accepted is still not proof of handset delivery.
+
+Read-only operator lookup: `sudo /usr/local/sbin/gymflow-ops logs | grep -A 15 'Club announcement SMS' | tail -n 100`.
+Old failures have no recoverable provider diagnostic and are not retried by this update.
+A deliberate resend must be a separately confirmed new announcement; do not clear old
+claims or reset failed jobs. Deploy the diagnostic update before that send so its results
+are captured. This does not change SMS request parameters, targeting, billing or OTP behavior.
+
 Schema changes are optional JSON fields only, keeping the prior image/database compatible for rollback. An older image does not process this outbox and may omit unfamiliar fields on a state save; review pending jobs before rolling forward again. Permanent database claims must not be cleared when recovering the queue.
