@@ -1,6 +1,13 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { matchesAnnouncement } from '../shared/announcement-audience.js';
 import { normalizeIsraeliMobile, sendPulseemSms } from './sms-auth.js';
+import { redactPulseemText } from './pulseem-diagnostics.js';
+
+export function announcementProviderReference(job) {
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(job.providerReference || '')) return job.providerReference;
+  // Never assign a NEW provider identity to an old possibly-dispatched request.
+  return null;
+}
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 export function queueAnnouncement(payload, body, manager, now = new Date()) {
@@ -31,7 +38,7 @@ export function queueAnnouncement(payload, body, manager, now = new Date()) {
     if (!phone) { missingPhone++; continue; }
     const hash = createHash('sha256').update(phone).digest('hex');
     if (!deliveries.has(hash)) deliveries.set(hash, { id: `announcement-sms-${raw.id}-${hash}`, announcementId: raw.id,
-      userId: user.id, phone, status: 'PENDING', requestedBy: manager.id, requestedAt: now.toISOString(),
+      providerReference: randomUUID(), userId: user.id, phone, status: 'PENDING', requestedBy: manager.id, requestedAt: now.toISOString(),
       text: `BALY wellness\n${announcement.title}\n${announcement.content}` });
   }
   const saved = { ...announcement, smsRequestFingerprint: fingerprint, smsQueuedCount: deliveries.size, smsMissingPhoneCount: missingPhone };
@@ -39,23 +46,37 @@ export function queueAnnouncement(payload, body, manager, now = new Date()) {
     announcementSmsDeliveries: [...(payload.announcementSmsDeliveries || []), ...deliveries.values()] } };
 }
 
+// A deliberate one-recipient test is a separate delivery, not a retry/reset of
+// the audience outbox. One permanent key per announcement + normalized number.
+export function queueAnnouncementSmsTest(payload, body, manager, now = new Date()) {
+  const announcement = (payload.announcements || []).find(item => item.id === body?.announcementId);
+  if (!announcement) fail('המודעה לא נמצאה.', 404);
+  if (typeof announcement.title !== 'string' || !announcement.title.trim() || announcement.title.length > 200
+    || typeof announcement.content !== 'string' || !announcement.content.trim() || announcement.content.length > 1000) fail('נוסח המודעה אינו תקין לבדיקה.');
+  const phone = normalizeIsraeliMobile(body?.phone);
+  if (!phone) fail('יש להזין מספר נייד ישראלי תקין לבדיקה.');
+  if (!['preview', 'send'].includes(body?.action)) fail('פעולת בדיקה אינה תקינה.');
+  const text = `BALY wellness\n${announcement.title}\n${announcement.content}`;
+  const fingerprint = createHash('sha256').update(text).digest('hex');
+  const id = `announcement-sms-test-${announcement.id}-${createHash('sha256').update(phone).digest('hex')}`;
+  const existing = (payload.announcementSmsDeliveries || []).find(job => job.id === id);
+  const project = job => job ? { status: job.status, diagnostic: job.diagnostic, providerReference: announcementProviderReference(job) } : null;
+  const preview = { title: announcement.title, text, phoneSuffix: phone.slice(-4), fingerprint, delivery: project(existing) };
+  if (body.action === 'preview' || existing) return { payload, preview, reused: Boolean(existing) };
+  if (body.confirmed !== true || body.fingerprint !== fingerprint) fail('נדרש אישור הנוסח העדכני והמספר לפני שליחת בדיקה.', 409);
+  const job = { id, announcementId: announcement.id, userId: manager.id, phone, text,
+    providerReference: randomUUID(), testOnly: true, requestedBy: manager.id, requestedAt: now.toISOString(), status: 'PENDING' };
+  return { payload: { ...payload, announcementSmsDeliveries: [...(payload.announcementSmsDeliveries || []), job] },
+    preview: { ...preview, delivery: project(job) }, reused: false };
+}
+
 // Provider responses are untrusted: keep only bounded diagnostic fields, never
 // request bodies, headers, recipient details or arbitrary exception messages.
 function deliveryDiagnostic(error, result, env, job, failed) {
   const provider = error?.provider || result?.provider;
-  const redact = value => {
-    if (!['string', 'number', 'boolean'].includes(typeof value)) return '';
-    let text = String(value);
-    for (const secret of [env.PULSEEM_API_KEY, env.PULSEEM_FROM_NUMBER, job.phone,
-      job.phone && `972${job.phone.slice(1)}`, job.text, ...(job.text || '').split('\n')].filter(Boolean).map(value => String(value).trim()).filter(Boolean)) {
-      text = text.split(String(secret)).join('[redacted]');
-    }
-    return text.replace(/https?:\/\/\S+/gi, '[redacted-url]')
-      .replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '[redacted-email]')
-      .replace(/(?:\+?\d[\s().-]*){7,}/g, '[redacted-number]')
-      .replace(/[A-Za-z0-9_+\/-]{24,}={0,2}/g, '[redacted-token]')
-      .replace(/[\r\n\t]+/g, ' ').trim().slice(0, 180);
-  };
+  const context = { apiKey: env.PULSEEM_API_KEY, fromNumber: env.PULSEEM_FROM_NUMBER,
+    phone: job.phone, text: job.text, reference: announcementProviderReference(job) };
+  const redact = value => redactPulseemText(value, context, 180);
   const reason = !failed ? 'PROVIDER_ACCEPTED'
     : error?.provider ? 'PROVIDER_REJECTED'
       : ['AbortError', 'TimeoutError'].includes(error?.name) ? 'TIMEOUT_OR_ABORT'
@@ -63,7 +84,14 @@ function deliveryDiagnostic(error, result, env, job, failed) {
   return { recordedAt: new Date().toISOString(), reason,
     ...(Number.isInteger(provider?.httpStatus) && provider.httpStatus >= 100 && provider.httpStatus <= 599
       ? { httpStatus: provider.httpStatus } : {}),
-    code: redact(provider?.code), status: redact(provider?.status), message: redact(provider?.message) };
+    code: redact(provider?.code), status: redact(provider?.status), message: redact(provider?.message),
+    responseType: ['array', 'text', 'empty', 'object', 'string', 'boolean', 'number'].includes(provider?.responseType) ? provider.responseType : '',
+    fieldNames: (Array.isArray(provider?.fieldNames) ? provider.fieldNames : []).slice(0, 20).map(redact),
+    details: (Array.isArray(provider?.details) ? provider.details : []).slice(0, 12).map(detail => ({
+      path: redact(detail?.path), code: redact(detail?.code), status: redact(detail?.status), message: redact(detail?.message) })),
+    truncated: provider?.truncated === true || [provider?.code, provider?.status, provider?.message,
+      ...(Array.isArray(provider?.details) ? provider.details.flatMap(detail => [detail?.path, detail?.code, detail?.status, detail?.message]) : [])]
+      .some(value => typeof value === 'string' && value.length > 180) };
 }
 
 async function updateDelivery(store, clubId, id, status, onlyPending = false, diagnostic) {
@@ -91,6 +119,16 @@ export async function sendAnnouncementSms(store, env, sendSms = sendPulseemSms, 
         || !latest.payload.users?.some(item => item.id === job.userId)) {
         await updateDelivery(store, club.club_id, job.id, 'CANCELLED'); return;
       }
+      const reference = announcementProviderReference(job);
+      if (!reference) {
+        // Do not silently migrate/replay old audience requests during rollout,
+        // especially before the explicitly approved one-number test.
+        await updateDelivery(store, club.club_id, job.id, 'FAILED_OR_UNKNOWN', true, {
+          recordedAt: new Date().toISOString(), reason: 'LEGACY_REFERENCE_REVIEW_REQUIRED',
+          code: '', status: '', message: 'Legacy request retained without sending or resetting its claim.'
+        });
+        return;
+      }
       if (!await store.claimPushDelivery(club.club_id, job.id)) {
         // Another worker may be dispatching it. Never overwrite an existing result.
         const claimedAt = Date.parse(job.requestedAt);
@@ -100,11 +138,11 @@ export async function sendAnnouncementSms(store, env, sendSms = sendPulseemSms, 
       await updateDelivery(store, club.club_id, job.id, 'DISPATCHING');
       let status = 'ACCEPTED';
       let result; let error;
-      try { result = await sendSms({ env, phone: job.phone, text: job.text, reference: job.id }); }
+      try { result = await sendSms({ env, phone: job.phone, text: job.text, reference }); }
       catch (caught) { status = 'FAILED_OR_UNKNOWN'; error = caught; }
       const diagnostic = deliveryDiagnostic(error, result, env, job, status !== 'ACCEPTED');
       // Do not log the job/reference: it contains a hash of the phone number.
-      const entry = { announcementId: job.announcementId, status, diagnostic };
+      const entry = { announcementId: job.announcementId, testOnly: job.testOnly === true, status, diagnostic };
       if (status !== 'ACCEPTED') logger.warn?.('Club announcement SMS failed or unknown', entry);
       else logger.info?.('Club announcement SMS accepted by provider', entry);
       await updateDelivery(store, club.club_id, job.id, status, false, diagnostic);

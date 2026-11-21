@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { queueAnnouncement, sendAnnouncementSms } from './announcement-sms.js';
+import { announcementProviderReference, queueAnnouncement, queueAnnouncementSmsTest, sendAnnouncementSms } from './announcement-sms.js';
+import { sendPulseemSms } from './sms-auth.js';
 import { matchesAnnouncement } from '../shared/announcement-audience.js';
 import { mergePayloadForUser, payloadForUser } from './auth.js';
 import worker from './index.js';
@@ -25,6 +26,8 @@ function fixture(payload = seed(), role = 'MANAGER') {
     }
   };
   return { store, state: () => state, claims,
+    postTest: data => worker.fetch(new Request('https://club.test/api/admin/announcements/sms-test', { method: 'POST',
+      headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(data) }), { STATE_STORE: store, CLUB_ID: 'club', ...credentials }),
     post: data => worker.fetch(new Request('https://club.test/api/admin/announcements', { method: 'POST',
       headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(data) }), { STATE_STORE: store, CLUB_ID: 'club', ...credentials }) };
 }
@@ -148,4 +151,105 @@ test('an empty thrown error remains unknown, never accepted', async () => {
   assert.equal(entries.length, 2);
   assert.ok(api.state().payload.announcementSmsDeliveries.every(job =>
     job.status === 'FAILED_OR_UNKNOWN' && job.diagnostic.reason === 'TRANSPORT_OR_UNKNOWN'));
+});
+
+test('provider UUID is persisted independently of permanent claims and reused on publication replay', async () => {
+  const initial = queueAnnouncement(seed(), body, manager, now);
+  const replay = queueAnnouncement(initial.payload, body, manager, now);
+  const jobs = initial.payload.announcementSmsDeliveries;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  assert.ok(jobs.every(job => uuid.test(job.providerReference)));
+  assert.equal(new Set(jobs.map(job => job.providerReference)).size, 2);
+  assert.deepEqual(replay.payload.announcementSmsDeliveries, jobs);
+  const api = fixture(initial.payload); const sent = []; const quiet = {};
+  const send = async request => sent.push(request.reference);
+  await Promise.all([sendAnnouncementSms(api.store, credentials, send, quiet), sendAnnouncementSms(api.store, credentials, send, quiet)]);
+  await sendAnnouncementSms(api.store, credentials, send, quiet);
+  assert.deepEqual(sent.sort(), jobs.map(job => job.providerReference).sort());
+  assert.deepEqual([...api.claims].sort(), jobs.map(job => job.id).sort());
+  assert.ok(api.state().payload.announcementSmsDeliveries.every(job => job.status === 'ACCEPTED'));
+});
+
+test('legacy pending jobs are retained for review without minting new IDs, sending or clearing claims', async () => {
+  const payload = queueAnnouncement(seed(), body, manager, now).payload;
+  payload.announcementSmsDeliveries.forEach(job => { delete job.providerReference; });
+  const [job, old] = payload.announcementSmsDeliveries;
+  assert.equal(announcementProviderReference(job), null);
+  const api = fixture(payload); api.claims.add(old.id); const sent = [];
+  await sendAnnouncementSms(api.store, credentials, async request => sent.push(request.reference), {});
+  assert.deepEqual(sent, []);
+  await sendAnnouncementSms(api.store, credentials, async request => sent.push(request.reference), {});
+  assert.equal(sent.length, 0);
+  assert.ok(api.claims.has(old.id));
+  assert.ok(api.state().payload.announcementSmsDeliveries.every(job => job.status === 'FAILED_OR_UNKNOWN'
+    && job.diagnostic.reason === 'LEGACY_REFERENCE_REVIEW_REQUIRED'));
+});
+
+test('announcement sends UUID in both Pulseem fields and persists sanitized nested error details', async () => {
+  const api = fixture(queueAnnouncement(seed(), body, manager, now).payload); const requests = [];
+  await sendAnnouncementSms(api.store, credentials, request => sendPulseemSms({ ...request, fetchImpl: async (_url, init) => {
+    const data = JSON.parse(init.body); requests.push(data);
+    return new Response(JSON.stringify({ Status: 'Error', ErrorData: [{ ErrorCode: 'E_REFERENCE',
+      ErrorDescription: `Invalid reference ${data.sendId}; credential ${credentials.PULSEEM_API_KEY}` }] }), { status: 200 });
+  } }), {});
+  assert.equal(requests.length, 2);
+  for (const request of requests) {
+    assert.equal(request.sendId.length, 36);
+    assert.deepEqual(request.smsSendData.referenceList, [request.sendId]);
+  }
+  for (const job of api.state().payload.announcementSmsDeliveries) {
+    assert.equal(job.status, 'FAILED_OR_UNKNOWN');
+    assert.equal(job.diagnostic.code, 'E_REFERENCE');
+    assert.match(job.diagnostic.message, /Invalid reference/);
+    assert.ok(job.diagnostic.details.some(detail => detail.path === '$.errordata[0]'));
+    assert.equal(JSON.stringify(job.diagnostic).includes(credentials.PULSEEM_API_KEY), false);
+    assert.equal(JSON.stringify(job.diagnostic).includes(job.providerReference), false);
+  }
+});
+
+test('single-recipient test preview is read-only, confirmed send cannot publish or send to the audience', async () => {
+  const initial = queueAnnouncement(seed(), body, manager, now).payload;
+  const api = fixture(initial);
+  const input = { announcementId: announcement.id, phone: '0500000000' };
+  const previewResponse = await api.postTest({ ...input, action: 'preview' });
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json();
+  assert.equal(preview.delivery, null); assert.equal(preview.phoneSuffix, '0000');
+  assert.deepEqual(api.state().payload, initial);
+  assert.equal((await api.postTest({ ...input, action: 'send', confirmed: true, fingerprint: 'stale' })).status, 409);
+  const send = { ...input, action: 'send', confirmed: true, fingerprint: preview.fingerprint };
+  const responses = await Promise.all([api.postTest(send), api.postTest(send)]);
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 201]);
+  const after = api.state().payload;
+  assert.deepEqual(after.announcements, initial.announcements);
+  assert.deepEqual(after.announcementSmsDeliveries.slice(0, 2), initial.announcementSmsDeliveries);
+  assert.equal(after.announcementSmsDeliveries.length, 3);
+  const testJob = after.announcementSmsDeliveries[2];
+  assert.equal(testJob.phone, input.phone); assert.equal(testJob.testOnly, true); assert.equal(testJob.userId, manager.id);
+  // Existing audience jobs were already claimed: the test must not reset them.
+  initial.announcementSmsDeliveries.forEach(job => api.claims.add(job.id));
+  const sent = [];
+  await sendAnnouncementSms(api.store, credentials, async request => sent.push(request), {});
+  assert.equal(sent.length, 1); assert.equal(sent[0].phone, input.phone); assert.equal(sent[0].reference.length, 36);
+  const result = await (await api.postTest({ ...input, action: 'preview' })).json();
+  assert.equal(result.delivery.status, 'ACCEPTED');
+  assert.equal((await api.postTest(send)).status, 200);
+  assert.equal((await api.postTest({ ...send, phone: '+972500000000' })).status, 200);
+  await sendAnnouncementSms(api.store, credentials, async request => sent.push(request), {});
+  assert.equal(sent.length, 1);
+  const restarted = fixture(api.state().payload);
+  await sendAnnouncementSms(restarted.store, credentials, async request => sent.push(request), {});
+  assert.equal(sent.length, 1);
+});
+
+test('single-recipient test rejects non-managers, invalid phones and announcements from outside the club', async () => {
+  const initial = queueAnnouncement(seed(), body, manager, now).payload;
+  const input = { announcementId: announcement.id, phone: '0500000000', action: 'preview' };
+  for (const role of ['TRAINEE', 'COACH']) assert.equal((await fixture(initial, role).postTest(input)).status, 403);
+  const api = fixture(initial);
+  assert.equal((await api.postTest({ ...input, phone: 'invalid' })).status, 400);
+  assert.equal((await api.postTest({ ...input, announcementId: 'other-club' })).status, 404);
+  assert.equal((await api.postTest({ ...input, action: 'send' })).status, 409);
+  const prepared = queueAnnouncementSmsTest(initial, input, manager, now);
+  assert.equal(prepared.payload, initial);
 });
