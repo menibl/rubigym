@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { syncRivhitRecurring, syncRivhitRecurringId, type RecurringSyncPreview } from '../data/rivhitPayments';
+import { AdminRecurringScheduleApproval } from './AdminRecurringScheduleApproval';
 
-export function AdminRecurringSync({ userId }: { userId: string }) {
-  const [saleId, setSaleId] = useState('');
+export function AdminRecurringSync({ userId, knownSeriesIds = [] }: { userId: string; knownSeriesIds?: string[] }) {
+  const [saleId, setSaleId] = useState(knownSeriesIds.length === 1 ? knownSeriesIds[0] : '');
   const [identifierType, setIdentifierType] = useState<'RECURRING' | 'SALE'>('RECURRING');
   const [preview, setPreview] = useState<{ data: RecurringSyncPreview; key: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -10,6 +11,7 @@ export function AdminRecurringSync({ userId }: { userId: string }) {
   return <details className="w-full rounded-xl border border-slate-600 p-3 text-right text-sm">
     <summary className="cursor-pointer font-bold">סנכרון הוראת קבע קיימת מרווחית</summary>
     <p className="my-2">העתק את ״מזהה הו״ק״ מתוך הוראת הקבע ב־iCredit ← לוג ← יצירת הוראת קבע. זה אינו מזהה דף התשלום. פעולה זו בודקת ומסנכרנת בלבד — ללא חיוב או הקמת הוראה חדשה.</p>
+    {knownSeriesIds.length > 1 && <label className="block">הוראה שמורה של המתאמן<select value={knownSeriesIds.includes(saleId) ? saleId : ''} onChange={event => { setSaleId(event.target.value); setPreview(null); setMessage(''); }} className="my-2 min-h-11 w-full rounded-lg border border-slate-500 bg-slate-950 p-2 text-white"><option value="">בחירת הוראה שמורה או הזנת מזהה ידנית</option>{knownSeriesIds.map(id => <option key={id} value={id}>{id}</option>)}</select></label>}
     <label className="block">סוג המזהה<select value={identifierType} onChange={event => { setIdentifierType(event.target.value as 'RECURRING' | 'SALE'); setPreview(null); setMessage(''); }} className="my-2 min-h-11 w-full rounded-lg border border-slate-500 bg-slate-950 p-2 text-white"><option value="RECURRING">מזהה הוראת קבע מהלוג — מומלץ</option><option value="SALE">מזהה עסקה — SaleId</option></select></label>
     <label className="block">{identifierType === 'RECURRING' ? 'מזהה הוראת קבע — RecurringId' : 'מזהה עסקה — SaleId'}<input dir="ltr" value={saleId} maxLength={100} onChange={event => { setSaleId(event.target.value); setPreview(null); setMessage(''); }} className="my-2 min-h-11 w-full rounded-lg border border-slate-500 bg-slate-950 p-2 text-white" /></label>
     <button type="button" disabled={busy || !saleId.trim()} className="min-h-11 w-full rounded-lg bg-amber-400 p-2 font-bold text-black disabled:opacity-50" onClick={async () => {
@@ -39,6 +41,7 @@ export function AdminRecurringSync({ userId }: { userId: string }) {
         finally { setBusy(false); }
       }}>אישור שיוך ועדכון המנוי — ללא חיוב חדש</button>
     </section>}
+    {identifierType === 'RECURRING' && <AdminRecurringScheduleApproval key={saleId} userId={userId} seriesId={saleId} />}
     {message && <p role="status" className="mt-2 rounded-lg border border-amber-500 bg-slate-950 p-2 text-amber-100">{message}</p>}
   </details>;
 }

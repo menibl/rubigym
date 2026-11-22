@@ -1,6 +1,7 @@
 import { clubDate, nextMonthStart } from './membership-calendar.js';
 import { validReminderDate } from './payment-reminder-policy.js';
 import { membershipTypesForAccess } from './recurring-access.js';
+import { approvedRecurringSchedule, recurringServicePeriod } from './recurring-service-period.js';
 
 export function rivhitChargeDate(sale) {
   const value = String(sale?.TransactionDateTime || sale?.SaleTime || '');
@@ -38,9 +39,11 @@ export function applyRecurringMembershipEvent(payload, order, payment, now = new
   const historicalPaid = (payload.payments || []).filter(receipt => receipt.traineeId === userId && receipt.status === 'PAID'
     && receipt.providerRecurringSaleId === payment.recurringSaleId).map(receipt => Number(receipt.recurringChargeNumber) || 0);
   const paidCharge = Math.max(previous?.lastPaidCharge || 0, ...historicalPaid, 0);
+  const approval = approvedRecurringSchedule(payload, order.o, payment.recurringSaleId);
+  const policyChanged = approval && previous?.scheduleApprovalId !== approval.id;
   // The current paid receipt is appended before this projection. An equal paid
   // counter must still be applied once; failed/setup events cannot undo it.
-  if (previous?.events?.includes(eventKey) || (kind === 'PAID' && previous?.status === 'ACTIVE' && charge <= previous.lastPaidCharge)
+  if ((kind === 'PAID' && charge < paidCharge) || (!policyChanged && previous?.events?.includes(eventKey)) || (!policyChanged && kind === 'PAID' && previous?.status === 'ACTIVE' && charge <= previous.lastPaidCharge)
     || (kind === 'SETUP' && (paidCharge > 0 || previous?.status === 'PAYMENT_FAILED'))
     || (kind === 'FAILED' && paidCharge >= charge && paidCharge > 0)
     || (kind === 'PAID' && charge < Math.max(previous?.lastPaidCharge || 0, previous?.lastFailedCharge || 0))) return payload;
@@ -49,11 +52,14 @@ export function applyRecurringMembershipEvent(payload, order, payment, now = new
   const [year, month] = clubDate(started).split('-').map(Number);
   const deferredStart = order.rd !== undefined && Number(clubDate(started).slice(-2)) > 28 ? 1 : 0;
   const fallback = new Date(Date.UTC(year, month + charge - 1 + deferredStart, 1)).toISOString().slice(0, 10);
-  const paidUntil = kind === 'PAID' ? payment.providerChargeDate ? nextMonthStart(payment.providerChargeDate) : fallback : previous?.paidUntil;
+  const servicePeriod = approval ? recurringServicePeriod(approval, charge) : null;
+  const paidUntil = kind === 'PAID' ? servicePeriod?.expiresAt || (payment.providerChargeDate ? nextMonthStart(payment.providerChargeDate) : fallback) : previous?.paidUntil;
+  const contractEnd = approval?.coverageEndsAt || order.re;
   const contract = { ...previous, seriesId: payment.recurringSaleId, orderId: order.o,
     ...(order.groupSize ? { groupAmount: order.groupAmount, groupSize: order.groupSize, familyPayerId: order.u } : {}),
     status: kind === 'FAILED' ? 'PAYMENT_FAILED' : kind === 'SETUP' ? 'PENDING_FIRST_CHARGE' : 'ACTIVE',
-    endsAt: order.re, amount: Number(order.a), discountCode: order.c || null, paidUntil,
+    endsAt: contractEnd, amount: Number(order.a), discountCode: order.c || null, paidUntil,
+    ...(approval ? { scheduleApprovalId: approval.id, serviceMonth: approval.serviceMonth, anchorCharge: approval.anchorCharge, billingDay: approval.providerDay } : {}),
     recoveryDiscountUnknown: Boolean(previous?.recoveryDiscountUnknown && !order.c),
     approvedAt: previous?.approvedAt || (kind !== 'FAILED' ? now.toISOString() : undefined),
     lastPaidCharge: kind === 'PAID' ? Math.max(paidCharge, charge) : paidCharge,
@@ -73,7 +79,7 @@ export function applyRecurringMembershipEvent(payload, order, payment, now = new
       secondaryMemberships: retainPrimary ? [...new Set([...(user.secondaryMemberships || []), type])] : (user.secondaryMemberships || []).filter(item => item !== type),
       membershipPlanExpiries: { ...user.membershipPlanExpiries, [type]: term },
       ...(!retainPrimary ? { membershipExpiry: term, membershipExpiryExclusive: true, monthlyBillingDay: 1,
-        membershipCommitmentEndsAt: order.re, recurringBillingMonths: 12 } : {}) };
+        membershipCommitmentEndsAt: contractEnd, recurringBillingMonths: 12 } : {}) };
   } else if (!membershipTypesForAccess(updated).length) updated.membershipStatus = 'DEBT';
   const staff = (payload.users || []).filter(member => ['MANAGER', 'COACH'].includes(member.role));
   const sender = staff.find(member => member.role === 'MANAGER') || staff[0];

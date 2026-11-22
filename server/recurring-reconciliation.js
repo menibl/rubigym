@@ -1,4 +1,5 @@
 import { clubDate } from '../shared/membership-calendar.js';
+import { recurringCheckoutEnd } from '../shared/recurring-service-period.js';
 
 // Persistent per-request claims bound traffic across restarts and multiple
 // processes. No timer failure, timeout or absent receipt revokes access.
@@ -13,7 +14,7 @@ export async function reconcileRecurringDaily(store, env, inspect, now = new Dat
     const offset = checkouts.length ? (Math.floor(now.getTime() / 60_000) * 20) % checkouts.length : 0;
     for (const checkout of [...checkouts.slice(offset), ...checkouts.slice(0, offset)]) {
       if (checked >= 20 || Date.now() - started >= 45_000) return;
-      if (checkout.cancelledAt || checkout.endsAt <= day || (!checkout.orderSnapshot && !checkout.recurringSaleId)
+      if (checkout.cancelledAt || recurringCheckoutEnd(checkout) <= day || (!checkout.orderSnapshot && !checkout.recurringSaleId)
         || (checkout.stage === 'RESERVED' && !checkout.recurringSaleId)
         || !club.payload.users?.some(user => user.id === checkout.userId)) continue;
       const age = now.getTime() - Date.parse(checkout.dispatchedAt);

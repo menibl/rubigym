@@ -5,20 +5,10 @@ import { sameProviderPayment, uniquePayments } from '../shared/payment-ledger.js
 import worker, { inspectRecurringCheckout } from './index.js';
 import { createHmac } from 'node:crypto';
 import { recurringSchedule } from '../shared/recurring-billing.js';
+import { syncFixture } from './fixtures/recurring-sync.js';
 
 const seriesId = '11111111-1111-4111-8111-111111111111'; // Fixture, never a live provider call.
 const now = new Date('2026-10-28T21:00:00Z');
-export const syncFixture = () => ({ seriesId, userId: 'u', appUrl: 'https://club.test/', now,
-  payload: { users: [{ id: 'u', name: 'Test Trainee', role: 'TRAINEE', phone: '0541234567', membershipType: 'WORKOUT_PLAN', membershipStatus: 'ACTIVE' }],
-    settings: { membershipPlans: [{ id: 'OPEN_GYM', label: 'Open Gym', price: 500 }] },
-    recurringCheckouts: [{ userId: 'u', orderId: 'o', membershipType: 'OPEN_GYM', endsAt: '2027-10-01', dispatchedAt: '2026-10-28T09:32:47Z' }], payments: [] },
-  details: { Amount: 280, PhoneNumber: '+972541234567', AutoCharge: true, IsActive: true, Currency: 1, ProRata: false,
-    RecurringCycle: 3, RecurringDay: 1, RecurringStep: 1, RecurringSaleCount: 12, ChargeCount: 1,
-    CreationDate: '2026-10-28T12:32:47+03:00', EndDate: '2027-10-01T00:00:00+03:00', ChargeDate: '2026-11-01T00:00:00+02:00',
-    IpnUrl: 'https://club.test/api/payments/rivhit/webhook' },
-  history: { error_code: 0, RecurringSaleHistoryList: [{ Amount: 280, ChargeDate: '28-10-2026',
-    Timestamp: '2026-10-28T19:51:32Z', StatusCode: 3, StatusDescription: 'הצלחה', RivhitCode: 0,
-    DocumentLink: 'https://api.rivhit.co.il/pdf/fixture/document/02_000001', TruncCardNum: '458000XXXX0222' }] } });
 
 function purchaseDayFixture(date = '2026-11-19') {
   const f = syncFixture();
@@ -383,6 +373,48 @@ test('known recurring series bypasses missing original continuation and uses aut
       if (url.endsWith('/RecurringSaleHistory')) return Response.json(f.history); throw new Error('unexpected provider operation'); }
   }, f.payload.recurringCheckouts[0]);
   assert.equal(result.status, 'VERIFIED'); assert.equal(state.payload.payments.length, 1); assert.equal(calls.length, 2);
+});
+
+test('manager previews and approves existing schedule, reprojects verified historical receipts once, and daily/UUID sync keep service months', async () => {
+  const f = httpFixture(); f.f.payload.recurringCheckouts[0].recurringSaleId = seriesId;
+  f.f.details.RecurringDay = 22; f.f.details.EndDate = '2027-10-22T00:00:00+03:00';
+  const input = { userId: 'u', recurringSaleId: seriesId, anchorCharge: 2, serviceMonth: '2026-12', reason: 'שינוי מועד ושיוך לחודש הבא', action: 'preview' };
+  const before = structuredClone(f.state());
+  const response = await f.post(input, 'admin/recurring-schedule'); assert.equal(response.status, 200, await response.clone().text());
+  const preview = await response.json(); assert.deepEqual(f.state(), before);
+  assert.equal(preview.preview.serviceExpiry, '2027-01-01'); assert.equal(preview.preview.verifiedPaidUntil, '2026-12-01');
+  const confirm = { ...input, action: 'confirm', checkedAt: preview.checkedAt, previousPolicyId: preview.previousPolicyId, confirmationKey: preview.confirmationKey };
+  assert.equal((await f.post({ ...confirm, reason: 'סיבה אחרת ולא מאושרת' }, 'admin/recurring-schedule')).status, 409);
+  assert.deepEqual(f.state(), before);
+  const concurrent = await Promise.all([f.post(confirm, 'admin/recurring-schedule'), f.post(confirm, 'admin/recurring-schedule')]);
+  assert.ok(concurrent.every(result => result.status === 200));
+  assert.equal(f.state().payload.payments.length, 1); assert.equal(f.state().payload.payments[0].amount, 280);
+  assert.equal(f.state().payload.payments[0].recurringServiceMonth, '2026-11');
+  assert.equal(f.state().payload.payments[0].recurringServiceExpiresAt, '2026-12-01');
+  assert.equal(f.state().payload.users[0].recurringMemberships.OPEN_GYM.paidUntil, '2026-12-01');
+  const after = structuredClone(f.state());
+  assert.equal((await f.post(confirm, 'admin/recurring-schedule')).status, 200);
+  assert.deepEqual(f.state(), after, 'replay cannot duplicate money, notifications or history');
+  const synced = await f.preview(); assert.equal(synced.preview.serviceExpiry, '2027-01-01');
+  assert.equal((await f.post({ ...f.input, action: 'confirm', confirmationKey: synced.confirmationKey })).status, 200);
+  assert.equal(f.state().payload.payments.length, 1);
+  assert.ok(f.calls.every(call => /\/(RecurringSaleDetails|RecurringSaleHistory)$/.test(call.url)));
+  f.asTrainee(); assert.equal((await f.post(input, 'admin/recurring-schedule')).status, 403);
+});
+
+test('schedule confirmation rejects provider changes, unknown series, invalid terms and expired preview without granting access', async () => {
+  const f = httpFixture(); f.f.payload.recurringCheckouts[0].recurringSaleId = seriesId;
+  f.f.details.RecurringDay = 22; f.f.details.EndDate = '2027-10-22T00:00:00+03:00';
+  const input = { userId: 'u', recurringSaleId: seriesId, anchorCharge: 2, serviceMonth: '2026-12', reason: 'שינוי מועד חודש שירות', action: 'preview' };
+  const preview = await (await f.post(input, 'admin/recurring-schedule')).json();
+  const before = structuredClone(f.state()); f.f.details.RecurringDay = 21;
+  assert.equal((await f.post({ ...input, action: 'confirm', ...preview }, 'admin/recurring-schedule')).status, 409);
+  assert.deepEqual(f.state(), before);
+  f.f.details.IsActive = false;
+  const rejected = await f.post(input, 'admin/recurring-schedule'); assert.equal(rejected.status, 422);
+  const error = await rejected.json(); assert.deepEqual(error.diagnostic.fields, ['IsActive']);
+  assert.deepEqual(f.state(), before);
+  assert.equal((await f.post({ ...input, action: 'confirm', checkedAt: Date.now() - 11 * 60_000 }, 'admin/recurring-schedule')).status, 400);
 });
 
 test('full sync verifies immediate receipts against signed ownership and provider approval, never alters manual/test/refunded records', async () => {
