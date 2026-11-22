@@ -2,7 +2,8 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import worker, { inspectRecurringCheckout } from './index.js';
+import worker, { inspectRecurringCheckout, recurringCustomerPost } from './index.js';
+import { startRecurringCustomerNameSync } from './recurring-customer-sync.js';
 import { startRecurringReconciliation } from './recurring-reconciliation.js';
 import { createDatabaseStore } from './database.js';
 import { ensureInitialManager } from './auth.js';
@@ -19,6 +20,7 @@ const databaseStore = await createDatabaseStore(process.env.DATABASE_URL, proces
 await ensureInitialManager(databaseStore, process.env);
 startPushReminderScheduler(databaseStore, process.env);
 startRecurringReconciliation(databaseStore, process.env, inspectRecurringCheckout);
+startRecurringCustomerNameSync(databaseStore, process.env, recurringCustomerPost);
 
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],

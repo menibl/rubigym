@@ -578,6 +578,15 @@ const rivhitPost = async (path, body, env) => {
   return result;
 };
 
+export const recurringCustomerPost = (path, body, env) => {
+  if (!['/RecurringSaleDetails', '/RecurringSaleUpdateCustomer'].includes(path)) throw new Error('NAME_SYNC_OPERATION_NOT_ALLOWED');
+  const allowed = path === '/RecurringSaleDetails' ? ['RecurringSaleId'] : ['RecurringSaleId', 'CustomerFirstName', 'CustomerLastName'];
+  if (!body || Object.keys(body).some(key => !allowed.includes(key)) || allowed.some(key => typeof body[key] !== 'string' || !body[key].trim())) throw new Error('NAME_SYNC_FIELDS_NOT_ALLOWED');
+  requirePaymentEnv(env);
+  const providerFetch = typeof env.RIVHIT_FETCH === 'function' ? env.RIVHIT_FETCH : fetch;
+  return rivhitPost(path, body, { ...env, RIVHIT_FETCH: (url, options) => providerFetch(url, { ...options, signal: AbortSignal.timeout(8000) }) });
+};
+
 const createPaymentReference = async (order, privateSaleToken, publicSaleToken, env) => {
   const payload = encodePayload({ o: order, p: privateSaleToken, q: publicSaleToken, t: Date.now() });
   return `${payload}.${await sign(payload, env.PAYMENT_SIGNING_SECRET)}`;
