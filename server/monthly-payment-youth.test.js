@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 
 const now = new Date('2026-10-05T09:00:00Z');
 const receipt = (patch = {}) => ({ id: 'p', traineeId: 'u', status: 'PAID', date: '2026-10-02', membershipTypePurchased: 'GROUP_MONTHLY', ...patch });
-const payload = payments => ({ users: [{ id: 'u', name: 'מני' }, { id: 'v', name: 'בן משפחה' }], payments });
+const payload = payments => ({ users: [{ id: 'u', name: 'מני Test' }, { id: 'v', name: 'בן משפחה' }], payments });
 test('paid group renewals warn across monthly/annual/youth variants within club calendar month', () => {
   const matches = repeatedMonthlyPayments(payload([receipt()]), { userId: 'u', membershipType: 'GROUP_ANNUAL' }, {}, now);
   assert.equal(matches.length, 1);
@@ -65,7 +65,7 @@ test('payment API stops before provider dispatch until additional payment is exp
       getClubState: async () => ({ payload: payload([receipt({ date: clubDate() })]), revision: 1 }) },
     RIVHIT_FETCH: async () => { dispatches++; return Response.json({ Status: 0, URL: 'https://testicredit.rivhit.co.il/payment/test', PrivateSaleToken: 'fixture', PublicSaleToken: 'fixture-public' }); } };
   const request = acknowledgement => worker.fetch(new Request('https://club.test/api/payments/rivhit/create', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: 'baly_session=test' },
-    body: JSON.stringify({ userId: 'u', userName: 'מני', membershipType: 'GROUP_MONTHLY', mode: 'PRIMARY', repeatPaymentAcknowledged: acknowledgement }) }), env);
+    body: JSON.stringify({ userId: 'u', userName: 'מני Test', membershipType: 'GROUP_MONTHLY', mode: 'PRIMARY', repeatPaymentAcknowledged: acknowledgement }) }), env);
   const blocked = await request(false);
   assert.equal(blocked.status, 409); assert.equal((await blocked.json()).code, 'REPEAT_MONTHLY_PAYMENT'); assert.equal(dispatches, 0);
   const accepted = await request(true);

@@ -54,7 +54,7 @@ test('purchase-day debits roll 29..31 forward but never move calendar membership
 
 function fixture(extra = {}) {
   let state = { revision: 1, payload: {
-    users: [{ id: 'trainee', name: 'Trainee', role: 'TRAINEE', membershipType: 'GROUP_MONTHLY', membershipStatus: 'DEBT' }],
+    users: [{ id: 'trainee', name: 'Trainee Test', role: 'TRAINEE', membershipType: 'GROUP_MONTHLY', membershipStatus: 'DEBT' }],
     settings: { membershipPlans: [{ id: 'GROUP_MONTHLY', label: 'שנתי חודשי', price: 500, active: true, billingPeriod: 'MONTHLY_ANNUAL_COMMITMENT', paymentMode: 'RECURRING' }] },
     payments: [], messages: []
   } };
@@ -99,7 +99,7 @@ function fixture(extra = {}) {
   const post = (path, body) => worker.fetch(new Request(`https://club.test/api/payments/rivhit/${path}`, {
     method: 'POST', headers: { Cookie: 'baly_session=fixture', 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }), env);
-  const create = (patch = {}) => post('create', { userId: 'trainee', userName: 'Trainee', membershipType: 'GROUP_MONTHLY', mode: 'PRIMARY', ...patch });
+  const create = (patch = {}) => post('create', { userId: 'trainee', userName: 'Trainee Test', membershipType: 'GROUP_MONTHLY', mode: 'PRIMARY', ...patch });
   return { create, post, env, state: () => state, requests, charge: n => { charge = n; }, failure: n => { failure = n; },
     asManager: () => { role = 'MANAGER'; }, incomplete: () => { incomplete = true; }, unavailable: value => { providerUnavailable = value; }, webhook: (patch = {}) => post('webhook', { ...sale(), ...patch }) };
 }
@@ -158,8 +158,10 @@ test('background check cannot activate a checkout abandoned before provider setu
 
 test('separate hosted page; verified setup grants pending access, not a receipt; monthly receipts are idempotent', async () => {
   const f = fixture();
-  assert.equal((await f.create({ recurringAcknowledged: true })).status, 200);
+  assert.equal((await f.create({ recurringAcknowledged: true, userName: 'Cached Login' })).status, 200);
   const request = f.requests[0].body;
+  assert.equal(request.CustomerFirstName, 'Trainee');
+  assert.equal(request.CustomerLastName, 'Test');
   assert.equal(request.GroupPrivateToken, 'fixture-recurring-page');
   assert.equal(request.RecurringSaleCount, 12); assert.equal(request.NumberOfPayments, 1);
   assert.equal(request.SaleType, 2); assert.equal(request.Items[0].UnitPrice, 500);
@@ -193,6 +195,16 @@ test('separate hosted page; verified setup grants pending access, not a receipt;
   f.charge(13); assert.equal((await f.webhook()).status, 502); assert.equal(f.state().payload.payments.length, 2);
 });
 
+test('a legacy missing surname never recreates or changes an existing recurring page', async () => {
+  const f = fixture();
+  assert.equal((await f.create({ recurringAcknowledged: true })).status, 200);
+  f.state().payload.users[0].name = 'Legacy';
+  const response = await f.create({ recurringAcknowledged: true, userName: 'Different Login' });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).completed, true);
+  assert.equal(f.requests.filter(request => request.url.endsWith('/GetUrl')).length, 1);
+});
+
 test('concurrent checkout requests reserve one contract before provider dispatch', async () => {
   const f = fixture();
   const responses = await Promise.all([f.create({ recurringAcknowledged: true }), f.create({ recurringAcknowledged: true })]);
@@ -209,10 +221,10 @@ test('mixed family recurring checkout is blocked before quote, reservation or pr
         if (additional) f.state().payload.settings.membershipPlans[0].category = 'ADD_ON';
         f.state().payload.settings.membershipPlans.push({ id: 'OPEN_GYM', price: 280, active: true, billingPeriod: 'MONTHLY', paymentMode: 'ONE_TIME' });
         const before = JSON.stringify(f.state());
-        const recurringMember = { memberId: 'trainee', memberName: 'Trainee', membershipType: additional ? 'OPEN_GYM' : 'GROUP_MONTHLY',
+        const recurringMember = { memberId: 'trainee', memberName: 'Trainee Test', membershipType: additional ? 'OPEN_GYM' : 'GROUP_MONTHLY',
           ...(additional ? { additionalPlans: [{ membershipType: 'GROUP_MONTHLY' }] } : {}) };
         const response = await f.create({ membershipType: 'FAMILY_MEMBERSHIP', familyMembersCount: 2, familyBillingMode: 'CUSTOM_COMBINED',
-          familyMemberPlans: [recurringMember, { memberId: 'child', memberName: 'Child', membershipType: 'OPEN_GYM' }], quoteOnly, recurringAcknowledged: true });
+          familyMemberPlans: [recurringMember, { memberId: 'child', memberName: 'Child Test', membershipType: 'OPEN_GYM' }], quoteOnly, recurringAcknowledged: true });
         assert.equal(response.status, enabled === 'false' ? 503 : 422);
         assert.equal((await response.json()).code, enabled === 'false' ? 'RECURRING_DISABLED' : 'FAMILY_RECURRING_UNSUPPORTED');
         assert.equal(f.requests.length, 0);

@@ -9,6 +9,7 @@ import { activeDebtTrainees } from '../data/unpaidTrainees';
 import { publishClubAnnouncement } from '../data/clubServer';
 import { AnnouncementSmsTest } from './AnnouncementSmsTest';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
+import { hasFullPersonName } from '../../shared/person-name.js';
 import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
 import { AdminRecurringSync } from './AdminRecurringSync';
 import { AdminRecurringRequests } from './AdminRecurringRequests';
@@ -1448,6 +1449,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <div>
                             <div className="font-semibold text-slate-800 text-sm">{u.name}</div>
                             <div className="text-[10px] text-slate-400 font-mono">{u.email}</div>
+                            {!hasFullPersonName(u.name) && <button type="button" onClick={() => setEditingTraineeId(u.id)} className="mt-2 rounded-lg border border-amber-400 px-2 py-2 text-xs text-amber-500">חסר שם פרטי ומשפחה לחשבונית — עדכון פרטים</button>}
                           </div>
                         </td>
                         <td data-label="פרטים אישיים" className="p-3 text-slate-600">
@@ -1513,7 +1515,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td data-label="תוקף מנוי" className="p-3 text-slate-500 font-mono">{u.membershipExpiry || 'לא הוגדר'}</td>
                         <td data-label="פעולות ניהול" className="p-3 text-left">
                           <div className="flex flex-col gap-1 items-end">
-                            <button type="button" className="w-full rounded-xl bg-amber-400 px-3 py-3 font-bold text-black" onClick={() => setEditingTraineeId(u.id)}>עריכת פרטים ושיוך למשפחה</button>
+                            <button type="button" className="w-full rounded-xl bg-amber-400 px-3 py-3 font-bold text-black" onClick={() => setEditingTraineeId(u.id)}>עריכת פרטים, שם משתמש ושיוך למשפחה</button>
                             <details className="w-full rounded-xl border p-3 text-right"><summary className="cursor-pointer font-bold">פעולות מסלול, תשלום ומחיקה</summary><div className="mt-3 flex flex-col gap-2">
                             <DeleteUserControl user={u} users={users} manager={activeUser} />
                             <AdminRecurringSync userId={u.id} />

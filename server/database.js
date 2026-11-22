@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
+import { validateUsernameChange } from '../shared/username-change.js';
 
 const { Pool } = pg;
 
@@ -16,6 +17,30 @@ export const resolveDatabaseSsl = (databaseUrl, configuredMode) => {
   const hostname = new URL(databaseUrl).hostname.toLowerCase();
   return localDatabaseHosts.has(hostname) ? false : { rejectUnauthorized: false };
 };
+
+// Keep the login index and canonical profile together; never touch passwords,
+// sessions, payment records, or the provider's already-issued documents.
+export async function persistTraineeUsername(pool, clubId, userId, value) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query('SELECT payload FROM club_state WHERE club_id=$1 FOR UPDATE', [clubId]);
+    const payload = current.rows[0]?.payload;
+    const username = validateUsernameChange(payload?.users || [], userId, value);
+    const conflict = await client.query(`SELECT user_id FROM auth_accounts WHERE club_id=$1 AND user_id<>$2
+      AND (username_normalized=$3 OR email_normalized=$3 OR phone_normalized=$3)`, [clubId, userId, username.toLowerCase()]);
+    if (conflict.rowCount) throw new Error('שם המשתמש שייך לפרטי הכניסה של משתמש אחר.');
+    const account = await client.query(`UPDATE auth_accounts SET username_normalized=$3,
+      profile=jsonb_set(COALESCE(profile,'{}'::jsonb),'{username}',to_jsonb($4::text)),updated_at=now()
+      WHERE club_id=$1 AND user_id=$2 RETURNING user_id`, [clubId, userId, username.toLowerCase(), username]);
+    if (!account.rowCount) throw new Error('חשבון הכניסה של המתאמן לא נמצא.');
+    const updated = { ...payload, users: payload.users.map(user => user.id === userId ? { ...user, username } : user) };
+    await client.query('UPDATE club_state SET payload=$2,revision=revision+1,updated_at=now() WHERE club_id=$1', [clubId, updated]);
+    await client.query('COMMIT');
+    return { username };
+  } catch (error) { await client.query('ROLLBACK'); throw error; }
+  finally { client.release(); }
+}
 
 export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
   if (!databaseUrl) return null;
@@ -352,6 +377,9 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       await client.query('COMMIT');
       } catch (error) { await client.query('ROLLBACK'); throw error; }
       finally { client.release(); }
+    },
+    async renameTraineeUsername(clubId, userId, value) {
+      return persistTraineeUsername(pool, clubId, userId, value);
     },
     async updateAccountIdentity(clubId, user) {
       await pool.query(`UPDATE auth_accounts SET

@@ -32,6 +32,8 @@ const baseEnv = store => ({
 
 test('manager can safely enrich a historical provider alias without any charge, refund or entitlement changes', async () => {
   const fixture = await createFixture({ id: 'payment-rivhit-old', traineeId: 'trainee', amount: 280, isMock: true, status: 'PAID', paymentMethod: 'RIVHIT iCredit' });
+  fixture.state().payload.users.push({ id: 'trainee', name: 'Test Customer', role: 'TRAINEE' });
+  const originalUsers = structuredClone(fixture.state().payload.users);
   let signedOrder;
   const calls = [];
   const env = { ...baseEnv(fixture.store), RIVHIT_FETCH: async (url, init) => {
@@ -41,7 +43,7 @@ test('manager can safely enrich a historical provider alias without any charge, 
     if (url.endsWith('/Verify')) return Response.json({ Status: 'VERIFIED' });
     throw new Error('Unexpected financial operation');
   } };
-  await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: 'trainee', userName: 'Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' }) }), env);
+  await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: 'trainee', userName: 'Test Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' }) }), env);
   calls.length = 0;
   const response = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/admin/reconcile', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: fixture.cookie }, body: JSON.stringify({ paymentId: 'payment-rivhit-old' }) }), env);
   assert.equal(response.status, 200);
@@ -50,7 +52,7 @@ test('manager can safely enrich a historical provider alias without any charge, 
   assert.equal(payment.providerTransactionId, 'canonical-transaction');
   assert.equal(payment.amount, 280); assert.equal(payment.status, 'PAID');
   assert.deepEqual(calls, ['SaleDetails', 'Verify']); assert.equal(fixture.state().payload.payments.length, 1);
-  assert.deepEqual(fixture.state().payload.users, []);
+  assert.deepEqual(fixture.state().payload.users, originalUsers);
 });
 
 test('reconciliation requires a manager, and unverifiable historical records are not changed', async () => {

@@ -25,7 +25,7 @@ const rivhitFetch = async (url, init) => {
 
 for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER']) {
   test(`family payment persists identity and extra members remain pending payment: ${familyBillingMode}`, async () => {
-    let state = { revision: 1, payload: { users: [{ id: 'payer', name: 'Payer', role: 'TRAINEE', membershipType: 'OPEN_GYM' }], payments: [], messages: [], discountCodes: [{ id: 'discount', code: 'FAMILY10', discountPercent: 10, isSingleUse: false }] } };
+    let state = { revision: 1, payload: { users: [{ id: 'payer', name: 'Payer Test', role: 'TRAINEE', membershipType: 'OPEN_GYM' }], payments: [], messages: [], discountCodes: [{ id: 'discount', code: 'FAMILY10', discountPercent: 10, isSingleUse: false }] } };
     const store = {
       async getSession() { return { club_id: 'test', user_id: 'payer' }; },
       async getAccount() { return { user_id: 'payer', role: 'TRAINEE' }; },
@@ -41,9 +41,9 @@ for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER']) {
     const env = { STATE_STORE: store, CLUB_ID: 'test', RIVHIT_ENVIRONMENT: 'test', RIVHIT_GROUP_PRIVATE_TOKEN: 'test-group-token', RIVHIT_FETCH: rivhitFetch, PAYMENT_SIGNING_SECRET: 'family-test-signing-secret', PUBLIC_APP_URL: 'https://balywellness.test/' };
     const post = (path, body) => worker.fetch(new Request(`https://balywellness.test${path}`, { method: 'POST', headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
     const response = await post('/api/payments/rivhit/create', {
-      userId: 'payer', userName: 'Payer', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyMembersCount: 2, familyName: 'Family', familyBillingMode,
+      userId: 'payer', userName: 'Payer Test', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyMembersCount: 2, familyName: 'Family', familyBillingMode,
       discountCode: familyBillingMode === 'ANNUAL_BY_SIZE' ? 'family10' : undefined,
-      familyMemberPlans: [{ memberId: 'payer', memberName: 'Payer', membershipType: 'OPEN_GYM' }, { memberName: 'Member', membershipType: 'OPEN_GYM' }],
+      familyMemberPlans: [{ memberId: 'payer', memberName: 'Payer Test', membershipType: 'OPEN_GYM' }, { memberName: 'Member', membershipType: 'OPEN_GYM' }],
     });
     if (familyBillingMode === 'ANNUAL_BY_SIZE') {
       assert.equal(response.status, 503);
@@ -76,7 +76,7 @@ for (const familyBillingMode of ['ANNUAL_BY_SIZE', 'MONTHLY_PER_MEMBER']) {
 test('verified nutrition payment unlocks the purchased service and is idempotent', async () => {
   let state = {
     payload: {
-      users: [{ id: 'trainee-1', name: 'Trainee', role: 'TRAINEE', nutritionPlanPaid: false, secondaryMemberships: [] }],
+      users: [{ id: 'trainee-1', name: 'Trainee Test', role: 'TRAINEE', nutritionPlanPaid: false, secondaryMemberships: [] }],
       nutritionPlans: [{ id: 'nutrition-1', traineeId: 'trainee-1', isPaid: false, paymentStatus: 'UNPAID', price: 0 }],
       payments: []
     },
@@ -108,7 +108,7 @@ test('verified nutrition payment unlocks the purchased service and is idempotent
   const createResponse = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: auth.cookie, Origin: 'https://balywellness.test' },
-    body: JSON.stringify({ userId: 'trainee-1', userName: 'Trainee', membershipType: 'NUTRITION_COACHING', mode: 'ADDON' })
+    body: JSON.stringify({ userId: 'trainee-1', userName: 'Trainee Test', membershipType: 'NUTRITION_COACHING', mode: 'ADDON' })
   }), env);
   assert.equal(createResponse.status, 200);
   const checkout = await createResponse.json();
@@ -141,7 +141,7 @@ test('verified nutrition payment unlocks the purchased service and is idempotent
 test('verified non-nutrition purchase is persisted for staff alerts', async () => {
   let state = {
     payload: {
-      users: [{ id: 'trainee-2', name: 'Meni', role: 'TRAINEE', secondaryMemberships: [] }],
+      users: [{ id: 'trainee-2', name: 'Meni Test', role: 'TRAINEE', secondaryMemberships: [] }],
       nutritionPlans: [],
       payments: []
     },
