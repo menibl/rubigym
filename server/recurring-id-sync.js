@@ -54,7 +54,15 @@ export function recurringSyncIdentity({ payload, userId, seriesId, details: deta
   // A shared family email is not identity evidence. Require the beneficiary's
   // phone (or its actual family payer) AND the beneficiary's saved checkout.
   const payer = payload.users.find(member => member.id === user.familyPayerId);
-  const ownerPhones = [user.phone, payer?.phone].map(phone).filter(value => /^0\d{8,9}$/.test(value));
+  const assignment = payload.recurringInvoicePayers?.find(item => item.seriesId === seriesId);
+  const transfer = assignment && payload.familyPayerTransfers?.find(record => record.id === assignment.transferId);
+  const sourcePayer = assignment && payload.users.find(member => member.id === assignment.sourcePayerId);
+  const boundSource = (payload.recurringCheckouts || []).some(item => item.recurringSaleId?.toLowerCase() === seriesId
+    && item.orderSnapshot?.u === sourcePayer?.id && !item.cancelledAt);
+  const transferredSource = transfer?.toId === assignment?.invoicePayerId && transfer?.familyId === user.familyId
+    && transfer?.seriesIds?.includes(seriesId) && sourcePayer?.familyId === user.familyId && boundSource
+    ? sourcePayer : null;
+  const ownerPhones = [user.phone, payer?.phone, transferredSource?.phone].map(phone).filter(value => /^0\d{8,9}$/.test(value));
   if (!ownerPhones.includes(phone(details.PhoneNumber))) reject('מספר הטלפון ברווחית אינו תואם למתאמן או למשלם המשפחתי. אין לשייך הוראה לפי שם או אימייל בלבד.');
   if (details.IsActive !== true || details.AutoCharge !== true || Number(details.Currency) !== 1
     || Number(details.RecurringCycle) !== 3 || !Number.isInteger(Number(details.RecurringDay)) || Number(details.RecurringDay) < 1 || Number(details.RecurringDay) > 28 || Number(details.RecurringStep) !== 1

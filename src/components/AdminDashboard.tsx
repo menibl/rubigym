@@ -9,6 +9,7 @@ import { activeDebtTrainees } from '../data/unpaidTrainees';
 import { publishClubAnnouncement } from '../data/clubServer';
 import { AnnouncementSmsTest } from './AnnouncementSmsTest';
 import { AdminTraineeEditor } from './AdminTraineeEditor';
+import { AdminFamilyPayerTransfer } from './AdminFamilyPayerTransfer';
 import { hasFullPersonName } from '../../shared/person-name.js';
 import { AdminMembershipStatusEditor } from './AdminMembershipStatusEditor';
 import { AdminRecurringSync } from './AdminRecurringSync';
@@ -187,6 +188,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const displayedPayments = uniquePayments(payments) as Payment[];
   const [activeTab, setActiveTab] = useState<'sessions' | 'users' | 'programs' | 'records' | 'penalties' | 'payments' | 'announcements' | 'settings' | 'discounts'>('sessions');
   const [editingTraineeId, setEditingTraineeId] = useState<string | null>(null);
+  const [familyPayerEditorId, setFamilyPayerEditorId] = useState<string | null>(null);
   const currentPlans = (settings.membershipPlans?.length ? settings.membershipPlans : DEFAULT_MEMBERSHIP_PLAN_CONFIGS).filter(plan => plan.active && plan.id !== MembershipType.FAMILY_MEMBERSHIP);
   const [programSessionId, setProgramSessionId] = useState('');
   const [billingPaymentId, setBillingPaymentId] = useState('');
@@ -838,6 +840,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-100 overflow-hidden" id="admin-dashboard">
       {editingTraineeId && users.find(user => user.id === editingTraineeId) && <AdminTraineeEditor key={editingTraineeId} user={users.find(user => user.id === editingTraineeId)!} users={users} onSave={onUpdateUsers} onClose={() => setEditingTraineeId(null)} />}
+      {familyPayerEditorId && users.find(user => user.id === familyPayerEditorId) && <AdminFamilyPayerTransfer key={familyPayerEditorId} user={users.find(user => user.id === familyPayerEditorId)!} users={users} onClose={() => setFamilyPayerEditorId(null)} />}
       {/* Admin Tab Header */}
       <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-2">
@@ -1516,6 +1519,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td data-label="פעולות ניהול" className="p-3 text-left">
                           <div className="flex flex-col gap-1 items-end">
                             <button type="button" className="w-full rounded-xl bg-amber-400 px-3 py-3 font-bold text-black" onClick={() => setEditingTraineeId(u.id)}>עריכת פרטים, שם משתמש ושיוך למשפחה</button>
+                            {u.isFamilyPayer && u.familyId && <button type="button" className="w-full rounded-xl border border-amber-400 px-3 py-3 font-bold" onClick={() => setFamilyPayerEditorId(u.id)}>החלפת משלם משפחתי וחשבוניות</button>}
                             <details className="w-full rounded-xl border p-3 text-right"><summary className="cursor-pointer font-bold">פעולות מסלול, תשלום ומחיקה</summary><div className="mt-3 flex flex-col gap-2">
                             <DeleteUserControl user={u} users={users} manager={activeUser} />
                             <AdminRecurringSync userId={u.id} />

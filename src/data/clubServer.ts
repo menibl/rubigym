@@ -79,6 +79,23 @@ export async function manageMedicalCertificate(body: { userId: string; recordId:
   return result.user;
 }
 
+export type FamilyPayerTransferResult = {
+  preview?: { fromName: string; toName: string; members: { id: string; name: string }[];
+    instructions: { seriesId: string; amount: number; currentInvoiceName: string }[] };
+  token?: string;
+  transfer?: { id: string; fromName: string; toName: string; approvedAt: string; status: 'COMPLETE' | 'PENDING' | 'REVIEW_REQUIRED';
+    managementStatus: 'APPLIED' | 'REVIEW_REQUIRED';
+    series: { seriesId: string; status: string; code?: string; name?: string }[] } | null;
+};
+
+export async function manageFamilyPayerTransfer(body: { action: 'preview' | 'confirm' | 'status'; fromId?: string; toId?: string;
+  token?: string; confirmed?: boolean; userId?: string }) {
+  if (isPagesDemoMode()) throw new Error('העברת משלם ואימות הוראה קיימת זמינים באתר המחובר לשרת בלבד. לא בוצע שינוי.');
+  const result = await request<FamilyPayerTransferResult>('/api/admin/family-payer-transfer', { method: 'POST', body: JSON.stringify(body) });
+  if (body.action === 'confirm') window.dispatchEvent(new Event('baly:refresh-billing'));
+  return result;
+}
+
 export async function publishClubAnnouncement(announcement: import('../types').Announcement, sendSms: boolean) {
   if (isPagesDemoMode()) throw new Error('שליחת SMS זמינה באתר המועדון המחובר לשרת בלבד. לא נשלחה הודעה.');
   const result = await request<{ announcement: import('../types').Announcement }>('/api/admin/announcements', {
