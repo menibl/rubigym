@@ -139,6 +139,11 @@ export async function reconcileRecurringCustomerNames(store, env, post, now = ne
       ...(club.payload.recurringCheckouts || []).filter(item => !item.cancelledAt).map(item => recurringId(item.recurringSaleId)),
       ...(club.payload.users || []).flatMap(user => Object.values(user.recurringMemberships || {})).filter(contract => !contract.cancelledAt).map(contract => recurringId(contract.seriesId))
     ].filter(Boolean))];
+    // Explicit manager transfers precede daily backfill so an approved new
+    // invoice customer is not left behind the whole club's initial name audit.
+    const transferPending = id => Boolean(club.payload.recurringInvoicePayers?.some(item => item.seriesId === id)
+      && lastSync(club.payload, id)?.status !== 'SYNCED');
+    ids.sort((a, b) => Number(transferPending(b)) - Number(transferPending(a)));
     for (const id of ids) {
       if (checked >= 3 || Date.now() - started > 30_000) return;
       let desiredName;
