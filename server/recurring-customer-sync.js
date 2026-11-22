@@ -1,5 +1,6 @@
 import { invoiceCustomerName } from '../shared/person-name.js';
 import { recurringId } from './recurring-id-sync.js';
+import { createHash } from 'node:crypto';
 
 const phone = value => String(value || '').replace(/\D/g, '').replace(/^00972/, '0').replace(/^972/, '0');
 const sameName = (a, b) => String(a || '').trim().replace(/\s+/g, ' ') === String(b || '').trim().replace(/\s+/g, ' ');
@@ -17,16 +18,29 @@ export function recurringCustomerTarget(payload, seriesId) {
   const owners = [...new Set(checkouts.map(item => item.orderSnapshot?.u).filter(Boolean))];
   if (owners.length !== 1 || checkouts.some(item => !item.orderSnapshot?.u || item.orderSnapshot.o !== item.orderId)) throw new Error('NAME_SYNC_OWNER_REVIEW');
   const payer = payload.users?.find(user => user.id === owners[0]);
-  const customer = invoiceCustomerName(payload.users || [], owners[0]);
+  const assignment = payload.recurringInvoicePayers?.find(item => item.seriesId === seriesId);
+  let invoicePayerId = owners[0];
+  if (assignment) {
+    const approval = payload.familyPayerTransfers?.find(record => record.id === assignment.transferId);
+    const invoicePayer = payload.users?.find(user => user.id === assignment.invoicePayerId);
+    if (!approval || approval.toId !== assignment.invoicePayerId || approval.familyId !== assignment.familyId
+      || !approval.seriesIds?.includes(seriesId) || assignment.sourcePayerId !== owners[0]
+      || assignment.approvedPreviousName !== approval.providerNames?.[seriesId] || !/^[a-f0-9]{64}$/.test(approval.providerProofs?.[seriesId] || '')
+      || payer?.familyId !== assignment.familyId || invoicePayer?.familyId !== assignment.familyId || !invoicePayer.isFamilyPayer) throw new Error('NAME_SYNC_TRANSFER_REVIEW');
+    invoicePayerId = invoicePayer.id;
+  }
+  const customer = invoiceCustomerName(payload.users || [], invoicePayerId);
   if (!customer || customer.firstName.length > 20 || customer.lastName.length > 30) throw new Error('NAME_SYNC_FULL_NAME_REQUIRED');
   if (!/^0\d{8,9}$/.test(phone(payer.phone))) throw new Error('NAME_SYNC_OWNER_REVIEW');
   const contracts = (payload.users || []).flatMap(user => Object.values(user.recurringMemberships || {})
     .filter(contract => recurringId(contract.seriesId) === seriesId && !contract.cancelledAt));
   if (!contracts.length || contracts.some(contract => !checkouts.some(item => item.orderId === contract.orderId))) throw new Error('NAME_SYNC_BINDING_REVIEW');
-  return { payerId: payer.id, customer, ownerPhone: phone(payer.phone) };
+  return { payerId: payer.id, invoicePayerId, customer, ownerPhone: phone(payer.phone),
+    ...(assignment ? { approvedPreviousName: assignment.approvedPreviousName,
+      providerProof: payload.familyPayerTransfers.find(record => record.id === assignment.transferId).providerProofs?.[seriesId] } : {}) };
 }
 
-function providerDetails(response) {
+export function readRecurringCustomerDetails(response) {
   if (!succeeded(response)) throw new Error('NAME_SYNC_PROVIDER_UNAVAILABLE');
   const value = response.data || response.Data || response;
   const details = Array.isArray(value) ? value.length === 1 ? value[0] : null : value;
@@ -78,16 +92,23 @@ export async function syncRecurringCustomerName(store, clubId, seriesId, post, n
   try {
     const state = await store.getClubState(clubId);
     target = recurringCustomerTarget(state?.payload || {}, seriesId);
-    let details = providerDetails(await post('/RecurringSaleDetails', { RecurringSaleId: seriesId }));
+    let details = readRecurringCustomerDetails(await post('/RecurringSaleDetails', { RecurringSaleId: seriesId }));
     if (phone(details.PhoneNumber) !== target.ownerPhone) throw new Error('NAME_SYNC_OWNER_REVIEW');
     if (!details.IsActive) throw new Error('NAME_SYNC_INACTIVE');
+    const billingProof = value => createHash('sha256').update(JSON.stringify([
+      'Amount', 'Currency', 'Discount', 'AutoCharge', 'IsActive', 'RecurringCycle', 'RecurringDay',
+      'RecurringStep', 'RecurringSaleCount', 'RecurringOffset', 'StartDate', 'EndDate', 'Token'
+    ].map(key => [key, value[key] ?? null]))).digest('hex');
+    const beforeProof = billingProof(details);
+    if (target.providerProof && target.providerProof !== beforeProof) throw new Error('NAME_SYNC_BILLING_CHANGED_REVIEW');
     if (!sameName(details.CustomerFirstName, target.customer.firstName) || !sameName(details.CustomerLastName, target.customer.lastName)) {
       const previouslyVerified = lastSync(state.payload, seriesId)?.name;
       const providerName = `${details.CustomerFirstName} ${details.CustomerLastName}`;
       // A different person may have become the invoice customer directly at
       // iCredit. A phone match alone never authorizes reverting that transfer.
       if (!sameName(details.CustomerFirstName, target.customer.firstName)
-        && (!previouslyVerified || !sameName(previouslyVerified, providerName))) throw new Error('NAME_SYNC_PROVIDER_NAME_REVIEW');
+        && (!previouslyVerified || !sameName(previouslyVerified, providerName))
+        && (!target.approvedPreviousName || !sameName(target.approvedPreviousName, providerName))) throw new Error('NAME_SYNC_PROVIDER_NAME_REVIEW');
       const latest = await store.getClubState(clubId);
       const fresh = recurringCustomerTarget(latest.payload, seriesId);
       if (JSON.stringify(fresh) !== JSON.stringify(target)) throw new Error('NAME_SYNC_PROFILE_CHANGED');
@@ -95,7 +116,8 @@ export async function syncRecurringCustomerName(store, clubId, seriesId, post, n
         CustomerFirstName: target.customer.firstName, CustomerLastName: target.customer.lastName });
       if (!succeeded(result) || (result.Status === undefined && result.error_code === undefined)) throw new Error('NAME_SYNC_UPDATE_UNCONFIRMED');
       // A 200/Status=0 is not sufficient: verify what the provider stored.
-      details = providerDetails(await post('/RecurringSaleDetails', { RecurringSaleId: seriesId }));
+      details = readRecurringCustomerDetails(await post('/RecurringSaleDetails', { RecurringSaleId: seriesId }));
+      if (billingProof(details) !== beforeProof) throw new Error('NAME_SYNC_BILLING_CHANGED_REVIEW');
       if (phone(details.PhoneNumber) !== target.ownerPhone || !details.IsActive
         || !sameName(details.CustomerFirstName, target.customer.firstName) || !sameName(details.CustomerLastName, target.customer.lastName)) throw new Error('NAME_SYNC_UPDATE_UNCONFIRMED');
     }

@@ -21,6 +21,8 @@ import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { familySelectedPlans, familyPurchaseBenefits } from '../shared/family-multiple-plans.js';
 import { invoiceCustomerName, hasFullPersonName } from '../shared/person-name.js';
+import { prepareFamilyPayerTransfer } from '../shared/family-payer-transfer.js';
+import { transferFingerprint, inspectFamilyPayerTransfer } from './family-payer-transfer.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
 import { invalidYouthPurchase } from '../shared/youth-plan.js';
@@ -2630,6 +2632,71 @@ const handleApi = async (request, env, url) => {
       }
       return json({ message: 'היומן השתנה במקביל. יש לרענן ולנסות שוב.' }, 409, headers);
     }
+    if (url.pathname === '/api/admin/family-payer-transfer' && request.method === 'POST') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER' || identity.session.club_id !== clubId
+        || (origin && origin !== url.origin)) return json({ message: 'החלפת משלם משפחתי זמינה למנהל המועדון בלבד.' }, 403, headers);
+      const body = await request.json();
+      if (!['preview', 'confirm', 'status'].includes(body.action)) return json({ message: 'יש לבחור פעולה תקינה.' }, 400, headers);
+      const state = await env.STATE_STORE.getClubState(clubId);
+      const transferStatus = (payload, record) => {
+        if (!record) return { transfer: null };
+        const series = record.seriesIds.map(seriesId => {
+          const sync = payload.recurringCheckouts?.find(item => String(item.recurringSaleId).toLowerCase() === seriesId)?.customerNameSync;
+          return { seriesId, status: sync?.status || 'PENDING', code: sync?.code, name: sync?.name };
+        });
+        const managementApplied = payload.users?.some(user => user.id === record.toId && user.familyId === record.familyId && user.isFamilyPayer);
+        return { transfer: { id: record.id, fromName: record.fromName, toName: record.toName, approvedAt: record.approvedAt,
+          managementStatus: managementApplied ? 'APPLIED' : 'REVIEW_REQUIRED',
+          status: !managementApplied ? 'REVIEW_REQUIRED' : series.every(item => item.status === 'SYNCED') ? 'COMPLETE' : series.some(item => item.status === 'REVIEW_REQUIRED') ? 'REVIEW_REQUIRED' : 'PENDING', series } };
+      };
+      if (body.action === 'status') {
+        const user = state?.payload?.users?.find(member => member.id === body.userId);
+        if (!user?.familyId) return json({ transfer: null }, 200, headers);
+        return json(transferStatus(state.payload, [...(state.payload.familyPayerTransfers || [])].reverse().find(record => record.familyId === user.familyId)), 200, headers);
+      }
+      requirePaymentEnv(env);
+      if (!env.STATE_STORE.transferFamilyPayer || !env.STATE_STORE.withRecurringSeriesLocks) return json({ message: 'פעולת ההעברה אינה זמינה כעת.' }, 503, headers);
+      try {
+        if (body.action === 'preview') {
+          if (typeof body.fromId !== 'string' || typeof body.toId !== 'string') throw new Error('יש לבחור את ראש המשפחה ואת המשלם החדש.');
+          const plan = prepareFamilyPayerTransfer(state.payload, body.fromId, body.toId, clubDate());
+          const provider = await inspectFamilyPayerTransfer(state.payload, plan, (path, data) => recurringCustomerPost(path, data, env));
+          const claim = { id: crypto.randomUUID(), clubId, managerId: identity.account.user_id, fromId: plan.fromId, toId: plan.toId,
+            planHash: transferFingerprint(plan), providerNames: provider.providerNames, providerProofs: provider.providerProofs, expiresAt: Date.now() + 10 * 60_000 };
+          const encoded = encodePayload(claim);
+          return json({ preview: { fromName: plan.fromName, toName: plan.toName, members: plan.members, instructions: provider.instructions },
+            token: `${encoded}.${await sign(encoded, env.PAYMENT_SIGNING_SECRET)}` }, 200, headers);
+        }
+        if (body.confirmed !== true || typeof body.token !== 'string' || body.token.length > 32000) throw new Error('יש לאשר במפורש את התצוגה המקדימה.');
+        const [encoded, signature, extra] = body.token.split('.');
+        if (!encoded || !signature || extra || signature !== await sign(encoded, env.PAYMENT_SIGNING_SECRET)) throw new Error('האישור אינו תקין. יש לפתוח תצוגה מקדימה מחדש.');
+        const claim = decodePayload(encoded);
+        if (claim.clubId !== clubId || claim.managerId !== identity.account.user_id || !(claim.expiresAt > Date.now())
+          || claim.expiresAt > Date.now() + 10 * 60_000) throw new Error('האישור פג תוקף או אינו שייך למנהל הנוכחי.');
+        const existing = state.payload.familyPayerTransfers?.find(record => record.id === claim.id);
+        if (existing) return json(transferStatus(state.payload, existing), 200, headers);
+        const plan = prepareFamilyPayerTransfer(state.payload, claim.fromId, claim.toId, clubDate());
+        if (transferFingerprint(plan) !== claim.planHash) throw new Error('פרטי המשפחה השתנו. יש לפתוח תצוגה מקדימה מחדש.');
+        const locked = await env.STATE_STORE.withRecurringSeriesLocks(clubId, plan.instructions.map(item => item.seriesId), async () => {
+          const fresh = await env.STATE_STORE.getClubState(clubId);
+          const freshPlan = prepareFamilyPayerTransfer(fresh.payload, claim.fromId, claim.toId, clubDate());
+          if (transferFingerprint(freshPlan) !== claim.planHash) throw new Error('פרטי המשפחה השתנו. יש לפתוח תצוגה מקדימה מחדש.');
+          const provider = await inspectFamilyPayerTransfer(fresh.payload, freshPlan, (path, data) => recurringCustomerPost(path, data, env));
+          if (JSON.stringify(provider.providerProofs) !== JSON.stringify(claim.providerProofs) || JSON.stringify(provider.providerNames) !== JSON.stringify(claim.providerNames)) throw new Error('נתוני ההוראה השתנו ברווחית. יש לרענן את התצוגה המקדימה.');
+          const result = await env.STATE_STORE.transferFamilyPayer(clubId, claim);
+          const latest = await env.STATE_STORE.getClubState(clubId);
+          return transferStatus(latest.payload, result.record);
+        });
+        if (!locked.locked) throw new Error('מתבצע כעת סנכרון של אחת ההוראות. יש להמתין ולנסות שוב; לא בוצעה העברה.');
+        return json(locked.result, 200, headers);
+      } catch (error) {
+        const message = /^NAME_SYNC_/.test(error.message || '') || /^RIVHIT_/.test(error.message || '')
+          ? 'לא ניתן לאמת את פרטי ההוראה ברווחית. לא בוצעה העברה; יש לבדוק ולנסות שוב.'
+          : /[\u0590-\u05ff]/.test(error.message || '') ? error.message : 'לא ניתן להשלים את העברת המשלם. לא נוצר חיוב; יש לרענן ולבדוק את מצב ההעברה.';
+        return json({ message }, 409, headers);
+      }
+    }
     if (url.pathname === '/api/admin/trainee-username' && request.method === 'POST') {
       const identity = await getIdentity();
       if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'שינוי שם משתמש זמין למנהל בלבד.' }, 403, headers);
@@ -2664,7 +2731,9 @@ const handleApi = async (request, env, url) => {
       for (const candidate of incomingUsers) {
         if (!candidate?.password || candidate.password.length < 8) continue;
         const mayProvision = identity.account.role === 'MANAGER'
-          || (candidate.role === 'TRAINEE' && candidate.familyPayerId === identity.account.user_id);
+          || (candidate.role === 'TRAINEE' && candidate.familyPayerId === identity.account.user_id
+            && current.payload.users.some(user => user.id === identity.account.user_id && user.isFamilyPayer
+              && user.familyId && user.familyId === candidate.familyId));
         if (mayProvision) await env.STATE_STORE.upsertAccount(await accountFromUser(identity.session.club_id, candidate, candidate.password));
       }
       const mergedBeforeAudit = mergePayloadForUser(current.payload, body.payload, identity.account.user_id, identity.account.role);

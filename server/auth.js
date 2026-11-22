@@ -10,6 +10,7 @@ import { recurringSessionBlocked } from '../shared/recurring-access.js';
 import { hasActiveWorkoutGymMembership } from '../shared/workout-gym-access.js';
 import { paidWorkoutPlanUntil } from '../shared/paid-workout-access.js';
 import { preserveExerciseWorkingValues } from '../shared/exercise-working-values.js';
+import { preserveTransferredFamilyHeads } from '../shared/family-payer-transfer.js';
 
 const scrypt = promisify(scryptCallback);
 const sessionCookie = 'baly_session';
@@ -154,6 +155,8 @@ export const payloadForUser = (payload, userId, role) => {
     coachArrivalApprovals: [],
     membershipReminderDeliveries: [],
     announcementSmsDeliveries: [],
+    familyPayerTransfers: [],
+    recurringInvoicePayers: [],
     recurringCheckouts: (safe.recurringCheckouts || []).filter(item => item.userId === userId || (familyId && safe.users.some(member => member.id === item.userId && member.familyId === familyId))),
     users: safe.users
       .filter(user => user.id === userId || user.role === 'MANAGER' || user.role === 'COACH' || (familyId && user.familyId === familyId))
@@ -258,6 +261,8 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
   incoming.membershipReminderDeliveries = current.membershipReminderDeliveries || [];
   incoming.announcementSmsDeliveries = current.announcementSmsDeliveries || [];
   incoming.recurringCheckouts = current.recurringCheckouts || [];
+  incoming.familyPayerTransfers = current.familyPayerTransfers || [];
+  incoming.recurringInvoicePayers = current.recurringInvoicePayers || [];
   const protectedLogs = (current.attendanceLogs || []).filter(log => log.coachException);
   incoming.attendanceLogs = [...(incoming.attendanceLogs || []).filter(log => !log.coachException && !String(log.id).startsWith('arrival-exception-')), ...protectedLogs];
   const preserveSystemMessages = requestedMessages => {
@@ -285,7 +290,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
         paymentReminderUntil: validReminderDate(setting('paymentReminderUntil')) ? setting('paymentReminderUntil') : undefined,
         paymentReminderExpiry: validReminderDate(setting('paymentReminderExpiry')) ? setting('paymentReminderExpiry') : undefined };
     });
-    return { ...incoming, messages: preserveSystemMessages(incoming.messages) };
+    return preserveTransferredFamilyHeads(current, { ...incoming, messages: preserveSystemMessages(incoming.messages) });
   }
   if (role === 'COACH') {
     const allowed = new Set([
@@ -337,6 +342,7 @@ export const mergePayloadForUser = (currentPayload, incomingPayload, userId, rol
     return mergeFreezeRequest(updated, requested);
   });
   const newFamilyMembers = incoming.users
+    .filter(() => canManageFamily)
     .filter(user => !current.users.some(existing => existing.id === user.id))
     .filter(user => user.role === 'TRAINEE' && user.familyPayerId === userId)
     .map(user => {

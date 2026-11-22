@@ -33,6 +33,25 @@ function purchaseDayFixture(date = '2026-11-19') {
   return f;
 }
 
+test('approved family payer transfer preserves original provider-phone ownership for beneficiary reconciliation', () => {
+  const f = purchaseDayFixture();
+  const originalPhone = f.payload.users[0].phone;
+  Object.assign(f.payload.users[0], { phone: '0500000002', familyId: 'family', familyPayerId: 'new-head' });
+  f.payload.users.push({ id: 'old-head', name: 'Original Payer', phone: originalPhone, familyId: 'family', familyPayerId: 'new-head' },
+    { id: 'new-head', name: 'New Payer', phone: '0500000003', familyId: 'family', isFamilyPayer: true });
+  const checkout = f.payload.recurringCheckouts[0];
+  checkout.recurringSaleId = seriesId;
+  Object.assign(checkout.orderSnapshot, { u: 'old-head', bu: 'u' });
+  f.payload.recurringInvoicePayers = [{ seriesId, sourcePayerId: 'old-head', invoicePayerId: 'new-head', transferId: 'approved' }];
+  f.payload.familyPayerTransfers = [{ id: 'approved', familyId: 'family', toId: 'new-head', seriesIds: [seriesId] }];
+  const synced = prepareRecurringIdSync(f);
+  assert.equal(synced.order.u, 'old-head');
+  assert.equal(synced.order.bu, 'u');
+  assert.deepEqual(synced.payments, []);
+  f.payload.recurringInvoicePayers = [];
+  assert.throws(() => prepareRecurringIdSync(f), /הטלפון/);
+});
+
 test('new purchase-day series sync exact signed debit day without changing calendar expiry or legacy series', () => {
   for (const date of ['2026-11-19', '2026-11-28', '2026-11-29', '2026-11-30', '2026-12-31', '2028-02-29']) {
     const f = purchaseDayFixture(date), before = structuredClone(f);

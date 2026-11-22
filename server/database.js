@@ -1,6 +1,8 @@
 import pg from 'pg';
 import { deleteClubUser, removeDeletedUserData } from '../shared/user-deletion.js';
 import { validateUsernameChange } from '../shared/username-change.js';
+import { persistFamilyPayerTransfer } from './family-payer-transfer.js';
+import { hydrateFamilyTransferAudit, preserveTransferredFamilyHeads } from '../shared/family-payer-transfer.js';
 
 const { Pool } = pg;
 
@@ -55,6 +57,13 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       payload jsonb NOT NULL,
       revision bigint NOT NULL DEFAULT 1,
       updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS family_payer_transfer_audit (
+      club_id text NOT NULL,
+      transfer_id text NOT NULL,
+      record jsonb NOT NULL,
+      approved_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (club_id,transfer_id)
     );
     CREATE TABLE IF NOT EXISTS family_credit_claims (
       club_id text NOT NULL,
@@ -228,7 +237,10 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
     },
     async getClubState(clubId) {
       const result = await pool.query('SELECT payload, revision, updated_at FROM club_state WHERE club_id=$1', [clubId]);
-      return result.rows[0] || null;
+      const state = result.rows[0];
+      if (!state) return null;
+      const audit = await pool.query('SELECT record FROM family_payer_transfer_audit WHERE club_id=$1 ORDER BY approved_at,transfer_id', [clubId]);
+      return { ...state, payload: hydrateFamilyTransferAudit(state.payload, audit.rows.map(row => row.record)) };
     },
     async putClubState(clubId, payload, expectedRevision) {
       const client = await pool.connect();
@@ -242,11 +254,18 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
         }
         const nextRevision = revision + 1;
         if (current.rows[0]?.payload?.deletedUserIds?.length) payload = removeDeletedUserData(payload, current.rows[0].payload.deletedUserIds);
+        if (current.rows[0]?.payload) {
+          const audit = await client.query('SELECT record FROM family_payer_transfer_audit WHERE club_id=$1 ORDER BY approved_at,transfer_id', [clubId]);
+          const authoritative = hydrateFamilyTransferAudit(current.rows[0].payload, audit.rows.map(row => row.record));
+          if (authoritative.familyPayerTransfers?.length) payload = preserveTransferredFamilyHeads(authoritative, { ...payload,
+            familyPayerTransfers: authoritative.familyPayerTransfers, recurringInvoicePayers: authoritative.recurringInvoicePayers });
+        }
         await client.query(`INSERT INTO club_state (club_id,payload,revision) VALUES ($1,$2,$3)
           ON CONFLICT (club_id) DO UPDATE SET payload=EXCLUDED.payload,revision=EXCLUDED.revision,updated_at=now()`, [clubId, payload, nextRevision]);
         await client.query('COMMIT');
         return { conflict: false, revision: nextRevision };
-      } finally { client.release(); }
+      } catch (error) { await client.query('ROLLBACK'); throw error; }
+      finally { client.release(); }
     },
     async getLandingMedia(clubId, slot) {
       const result = await pool.query(
@@ -378,6 +397,27 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       } catch (error) { await client.query('ROLLBACK'); throw error; }
       finally { client.release(); }
     },
+    async transferFamilyPayer(clubId, command) {
+      return persistFamilyPayerTransfer(pool, clubId, command);
+    },
+    async withRecurringSeriesLocks(clubId, seriesIds, operation) {
+      const client = await pool.connect();
+      const locked = []; let discard = false;
+      try {
+        for (const id of [...new Set(seriesIds)].sort()) {
+          const result = await client.query('SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS locked', [`recurring-customer:${clubId}`, id]);
+          if (result.rows[0]?.locked !== true) return { locked: false };
+          locked.push(id);
+        }
+        return { locked: true, result: await operation() };
+      } finally {
+        for (const id of locked.reverse()) {
+          try { await client.query('SELECT pg_advisory_unlock(hashtext($1),hashtext($2))', [`recurring-customer:${clubId}`, id]); }
+          catch { discard = true; }
+        }
+        client.release(discard);
+      }
+    },
     async withRecurringSeriesLock(clubId, seriesId, operation) {
       const client = await pool.connect();
       let locked = false, discard = false;
@@ -492,7 +532,8 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
     },
     async getAllClubStates() {
       const result = await pool.query('SELECT club_id,payload FROM club_state');
-      return result.rows;
+      const audit = await pool.query('SELECT club_id,record FROM family_payer_transfer_audit ORDER BY approved_at,transfer_id');
+      return result.rows.map(row => ({ ...row, payload: hydrateFamilyTransferAudit(row.payload, audit.rows.filter(item => item.club_id === row.club_id).map(item => item.record)) }));
     },
     async close() { await pool.end(); }
   };
