@@ -361,6 +361,7 @@ export interface User {
     endsAt: string; amount: number; discountCode?: string | null; paidUntil?: string;
     approvedAt?: string; updatedAt?: string; lastPaidCharge?: number; lastFailedCharge?: number; lastFailureCode?: string; cancelledAt?: string;
     recoveredBy?: string; recoveredAt?: string; recoveryDiscountUnknown?: boolean;
+    customerNameSync?: { status: 'SYNCED' | 'PENDING' | 'RETRY' | 'REVIEW_REQUIRED'; code?: string; checkedAt: string; nextAttemptAt: string; name?: string };
       groupAmount?: number; groupSize?: number; familyPayerId?: string;
   }>>;
   membershipExpiryExclusive?: boolean; // Calendar memberships expire at the start of this date.

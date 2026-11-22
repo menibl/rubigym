@@ -378,6 +378,23 @@ export const createDatabaseStore = async (databaseUrl, databaseSsl) => {
       } catch (error) { await client.query('ROLLBACK'); throw error; }
       finally { client.release(); }
     },
+    async withRecurringSeriesLock(clubId, seriesId, operation) {
+      const client = await pool.connect();
+      let locked = false, discard = false;
+      try {
+        const result = await client.query('SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS locked', [`recurring-customer:${clubId}`, seriesId]);
+        locked = result.rows[0]?.locked === true;
+        if (!locked) return false;
+        await operation();
+        return true;
+      } finally {
+        if (locked) {
+          try { await client.query('SELECT pg_advisory_unlock(hashtext($1),hashtext($2))', [`recurring-customer:${clubId}`, seriesId]); }
+          catch { discard = true; }
+        }
+        client.release(discard);
+      }
+    },
     async renameTraineeUsername(clubId, userId, value) {
       return persistTraineeUsername(pool, clubId, userId, value);
     },
