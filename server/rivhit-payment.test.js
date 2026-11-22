@@ -5,7 +5,7 @@ import worker from './index.js';
 test('expired provider account is explained without marking a trainee subscription expired', async () => {
   const response = await worker.fetch(new Request('https://club.test/api/payments/rivhit/create', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'new-user', userName: 'Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+    body: JSON.stringify({ userId: 'new-user', userName: 'Test Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
   }), {
     RIVHIT_ENVIRONMENT: 'test', RIVHIT_GROUP_PRIVATE_TOKEN: 'test-token', PAYMENT_SIGNING_SECRET: 'test-signing-secret', PUBLIC_APP_URL: 'https://club.test/',
     RIVHIT_FETCH: async () => Response.json({ Status: 1, Message: 'Account has expired' })
@@ -81,7 +81,7 @@ test('RIVHIT production environment uses the production iCredit host', async () 
   const response = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
   }), env);
   assert.equal(response.status, 200);
   assert.equal(requestedUrl, 'https://icredit.rivhit.co.il/API/PaymentPageRequest.svc/GetUrl');
@@ -96,7 +96,7 @@ test('checkout accepts a manager-created discount from club state', async () => 
     PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
     PUBLIC_APP_URL: 'https://balywellness.com/',
     STATE_STORE: {
-      getClubState: async () => ({ payload: {
+      getClubState: async () => ({ payload: { users: [{ id: 'new-trainee', name: 'Test Customer' }],
         settings: { membershipPlans: [] },
         discountCodes: [{
           id: 'discount-welcome', code: 'WELCOME10', discountPercent: 10,
@@ -125,7 +125,7 @@ test('checkout accepts a manager-created discount from club state', async () => 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM',
+      userId: 'new-trainee', userName: 'בדיקה Test', membershipType: 'OPEN_GYM',
       mode: 'REGISTRATION', discountCode: 'welcome10'
     })
   }), env);
@@ -141,7 +141,7 @@ test('a used single-use discount is rejected before opening a payment page', asy
     PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
     PUBLIC_APP_URL: 'https://balywellness.com/',
     STATE_STORE: {
-      getClubState: async () => ({ payload: {
+      getClubState: async () => ({ payload: { users: [{ id: 'new-trainee', name: 'Test Customer' }],
         settings: { membershipPlans: [] },
         discountCodes: [{
           id: 'discount-used', code: 'ONCE50', discountPercent: 0, discountAmount: 50,
@@ -159,7 +159,7 @@ test('a used single-use discount is rejected before opening a payment page', asy
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM',
+      userId: 'new-trainee', userName: 'בדיקה Test', membershipType: 'OPEN_GYM',
       mode: 'REGISTRATION', discountCode: 'ONCE50'
     })
   }), env);
@@ -184,7 +184,7 @@ test('RIVHIT TEST checkout accepts a configured charge amount up to the sandbox 
   const response = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
   }), env);
   assert.equal(response.status, 200);
   assert.equal(providerRequest.Items[0].UnitPrice, 120);
@@ -204,7 +204,7 @@ test('RIVHIT provider rejection returns its safe diagnostic message', async () =
   const response = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
   }), env);
 
   assert.equal(response.status, 502);
@@ -225,7 +225,7 @@ test('RIVHIT non-JSON upstream failure remains a generic unavailable response', 
   const response = await worker.fetch(new Request('https://balywellness.test/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
   }), env);
 
   assert.equal(response.status, 502);
@@ -240,7 +240,7 @@ test('checkout uses the manager configured plan price and fixed period', async (
     PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
     PUBLIC_APP_URL: 'https://balywellness.com/',
     STATE_STORE: {
-      getClubState: async () => ({ payload: { settings: { membershipPlans: [{
+      getClubState: async () => ({ payload: { users: [{ id: 'new-trainee', name: 'Test Customer' }], settings: { membershipPlans: [{
         id: 'OPEN_GYM', label: 'Open Gym מעודכן', price: 777, active: true, billingPeriod: 'THREE_MONTHS'
       }] } } })
     },
@@ -252,7 +252,7 @@ test('checkout uses the manager configured plan price and fixed period', async (
   const response = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION', planAmount: 1 })
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION', planAmount: 1 })
   }), env);
   assert.equal(response.status, 200);
   assert.equal(providerRequest.Items[0].UnitPrice, 777);
@@ -269,7 +269,7 @@ test('annual recurring checkout requires the separate page and calendar verifica
     PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
     PUBLIC_APP_URL: 'https://balywellness.com/',
     STATE_STORE: {
-      getClubState: async () => ({ payload: { settings: { membershipPlans: [{
+      getClubState: async () => ({ payload: { users: [{ id: 'new-trainee', name: 'Test Customer' }], settings: { membershipPlans: [{
         id: 'GROUP_ANNUAL', label: 'קבוצתי שנתי', price: 525, active: true, billingPeriod: 'MONTHLY_ANNUAL_COMMITMENT'
       }] } } })
     },
@@ -281,7 +281,7 @@ test('annual recurring checkout requires the separate page and calendar verifica
   const response = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'GROUP_ANNUAL', mode: 'REGISTRATION' })
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה Test', membershipType: 'GROUP_ANNUAL', mode: 'REGISTRATION' })
   }), env);
   assert.equal(response.status, 503);
   assert.equal((await response.json()).code, 'RECURRING_NOT_READY');
@@ -297,7 +297,7 @@ test('monthly plan remains one-off even when the legacy recurring ENV is enabled
     PAYMENT_SIGNING_SECRET: 'rivhit-production-signing-secret-with-entropy',
     PUBLIC_APP_URL: 'https://balywellness.com/',
     STATE_STORE: {
-      getClubState: async () => ({ payload: { settings: { membershipPlans: [{
+      getClubState: async () => ({ payload: { users: [{ id: 'new-trainee', name: 'Test Customer' }], settings: { membershipPlans: [{
         id: 'OPEN_GYM', label: 'Open Gym חודשי', price: 310, active: true, billingPeriod: 'MONTHLY'
       }] } } })
     },
@@ -309,7 +309,7 @@ test('monthly plan remains one-off even when the legacy recurring ENV is enabled
   const response = await worker.fetch(new Request('https://balywellness.com/api/payments/rivhit/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
+    body: JSON.stringify({ userId: 'new-trainee', userName: 'בדיקה Test', membershipType: 'OPEN_GYM', mode: 'REGISTRATION' })
   }), env);
   assert.equal(response.status, 200);
   assert.equal(providerRequest.SaleType, 1);

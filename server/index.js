@@ -20,7 +20,7 @@ import { openGroupUpgradeQuote } from './open-group-upgrade.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
 import { familyPlanAmount } from '../shared/family-pricing.js';
 import { familySelectedPlans, familyPurchaseBenefits } from '../shared/family-multiple-plans.js';
-import { splitPersonName, hasFullPersonName } from '../shared/person-name.js';
+import { invoiceCustomerName, hasFullPersonName } from '../shared/person-name.js';
 import { changePersonalBooking } from '../shared/personal-booking.js';
 import { repeatedMonthlyPayments, repeatedPaymentMessage } from '../shared/monthly-payment-warning.js';
 import { invalidYouthPurchase } from '../shared/youth-plan.js';
@@ -719,11 +719,6 @@ const reserveRecurringCheckout = async (env, order) => {
     if (!saved.conflict) return true;
   }
   throw new Error('PAYMENT_STATE_CONFLICT');
-};
-
-const splitCustomerName = value => {
-  const { firstName, lastName } = splitPersonName(value);
-  return { firstName: firstName.slice(0, 20), lastName: lastName.slice(0, 30) };
 };
 
 const paymentReturnUrl = (request, env) => {
@@ -1534,6 +1529,10 @@ const handleCreatePayment = async (request, env, splitLine) => {
     }
     return json({ message: 'מסלול התשלום אינו מוכר.' }, 400, corsHeaders(request, env));
   }
+  const invoiceUsers = env.STATE_STORE?.getClubState ? checkoutState?.payload?.users || [] : undefined;
+  const customer = invoiceCustomerName(invoiceUsers, body.userId, body.userName);
+  if (!customer) return json({ code: 'INVOICE_FULL_NAME_REQUIRED', message: 'להפקת חשבונית יש להשלים שם פרטי ושם משפחה בפרטי הגורם המשלם (לא בשם המשתמש). לא נפתח דף תשלום חדש. ניתן לעדכן בפרופיל או לפנות למנהל.' }, 422, corsHeaders(request, env));
+  if (customer.firstName.length > 20 || customer.lastName.length > 30) return json({ code: 'INVOICE_NAME_TOO_LONG', message: 'השם לחשבונית ארוך מהמותר ברווחית (שם פרטי עד 20 תווים ושם משפחה עד 30). יש לפנות למנהל לעדכון; לא נפתח דף תשלום.' }, 422, corsHeaders(request, env));
   if (purchase.individual) {
     if (!env.STATE_STORE?.getFamilySplitCheckout || !checkoutState?.payload?.users?.some(user => user.id === body.userId)) return json({ message: 'יש להיכנס לחשבון כדי לשלם על הבחירה.' }, 403, corsHeaders(request, env));
     if (invalidYouthPurchase(checkoutState.payload, { membershipType: 'FAMILY_MEMBERSHIP', familyMemberPlans: purchase.familyMemberPlans })) return json({ code: 'YOUTH_PLAN_AGE_MISMATCH', message: 'אחד המסלולים אינו מתאים לגיל.' }, 422, corsHeaders(request, env));
@@ -1708,7 +1707,6 @@ const handleCreatePayment = async (request, env, splitLine) => {
   const failedUrl = new URL(paymentReturnUrl(request, env));
   failedUrl.searchParams.set('rivhit', 'failed');
   const webhookUrl = new URL('/api/payments/rivhit/webhook', request.url).toString();
-  const customer = splitCustomerName(body.userName);
   const recurringOrder = purchase.recurring ? decodePayload(signedOrder.split('.')[0]) : null;
   if (recurringOrder && !await updateRecurringCheckout(env.STATE_STORE, clubId, recurringOrder.o, item => !item.cancelledAt && item.stage === 'RESERVED'
     ? { ...item, stage: 'DISPATCHED', requestDispatchedAt: new Date().toISOString() } : null)) return json({ message: 'הבקשה שוחררה או השתנתה לפני ההפניה. לא נשלחה בקשה לרווחית.' }, 409, corsHeaders(request, env));
@@ -2622,6 +2620,16 @@ const handleApi = async (request, env, url) => {
         return json({ ok: true }, 200, headers);
       }
       return json({ message: 'היומן השתנה במקביל. יש לרענן ולנסות שוב.' }, 409, headers);
+    }
+    if (url.pathname === '/api/admin/trainee-username' && request.method === 'POST') {
+      const identity = await getIdentity();
+      if (!identity || identity.account.role !== 'MANAGER') return json({ message: 'שינוי שם משתמש זמין למנהל בלבד.' }, 403, headers);
+      if (identity.session.club_id !== clubId || (origin && origin !== url.origin)) return json({ message: 'יש לבצע את הפעולה מאתר המועדון.' }, 403, headers);
+      const body = await request.json();
+      if (typeof body.userId !== 'string' || typeof body.username !== 'string') return json({ message: 'יש לבחור מתאמן ושם משתמש.' }, 400, headers);
+      if (!env.STATE_STORE.renameTraineeUsername) return json({ message: 'שינוי שם משתמש אינו זמין כעת. יש לנסות שוב.' }, 503, headers);
+      try { return json(await env.STATE_STORE.renameTraineeUsername(clubId, body.userId, body.username), 200, headers); }
+      catch (error) { return json({ message: error.code === '23505' ? 'שם המשתמש כבר תפוס.' : 'לא ניתן לשנות את שם המשתמש. ודאו שהשם אינו תפוס ושהמתאמן קיים.' }, 409, headers); }
     }
     if (url.pathname === '/api/state' && request.method === 'GET') {
       if (!env.STATE_STORE) return json({ message: 'Database is not configured' }, 503, headers);

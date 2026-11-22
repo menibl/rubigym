@@ -6,6 +6,7 @@ import { changePersonalBooking } from '../../shared/personal-booking.js';
 import { preserveExerciseWorkingValues, updateExerciseWorkingValues } from '../../shared/exercise-working-values.js';
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../../shared/club-check-in.js';
 import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoachArrival, recordCoachExceptionScan, redeemCoachArrivalApproval, coachArrivalResult, preserveCoachArrivalAudit } from '../../shared/coach-exception-arrival.js';
+import { validateUsernameChange } from '../../shared/username-change.js';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -441,6 +442,16 @@ export const deleteServerUser = async (userId: string, password: string, success
     return;
   }
   await request('/api/admin/delete-user', { method: 'POST', body: JSON.stringify({ userId, password, successorId, confirm: true }) });
+};
+
+export const renameTraineeUsername = async (userId: string, username: string) => {
+  if (isPagesDemoMode()) {
+    const state = readDemoState();
+    const validated = validateUsernameChange(state.payload.users, userId, username);
+    writeDemoState({ ...state, revision: state.revision + 1, payload: { ...state.payload, users: (state.payload.users as User[]).map(user => user.id === userId ? { ...user, username: validated } : user) } });
+    return { username: validated };
+  }
+  return request<{ username: string }>('/api/admin/trainee-username', { method: 'POST', body: JSON.stringify({ userId, username }) });
 };
 
 export const saveClubState = async (payload: Record<string, unknown>, expectedRevision: number) => {

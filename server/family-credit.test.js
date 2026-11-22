@@ -6,8 +6,8 @@ import { familyCreditQuote } from './family-credit.js';
 
 function fixture(paid = 280) {
   let state = { revision: 1, payload: { users: [
-    { id: 'payer', name: 'Payer', role: 'TRAINEE', familyId: 'fam-payer', isFamilyPayer: true, membershipType: 'OPEN_GYM', membershipStatus: 'ACTIVE', membershipExpiry: '2099-12-31' },
-    { id: 'child', name: 'Child', role: 'TRAINEE', familyId: 'fam-payer', familyPayerId: 'payer', membershipType: 'OPEN_GYM', membershipStatus: 'DEBT', familyPaymentPending: true },
+    { id: 'payer', name: 'Payer Test', role: 'TRAINEE', familyId: 'fam-payer', isFamilyPayer: true, membershipType: 'OPEN_GYM', membershipStatus: 'ACTIVE', membershipExpiry: '2099-12-31' },
+    { id: 'child', name: 'Child Test', role: 'TRAINEE', familyId: 'fam-payer', familyPayerId: 'payer', membershipType: 'OPEN_GYM', membershipStatus: 'DEBT', familyPaymentPending: true },
   ], payments: [{ id: 'old', traineeId: 'payer', amount: paid, timestamp: new Date().toISOString(), status: 'PAID', membershipTypePurchased: 'OPEN_GYM', provider: 'RIVHIT', providerTransactionId: 'old-tx' }], messages: [] } };
   const claims = new Map();
   let providerCalls = 0;
@@ -29,6 +29,8 @@ function fixture(paid = 280) {
     if (url.endsWith('/GetUrl')) {
       providerCalls++; const body = JSON.parse(init.body); amount = body.Items[0].UnitPrice;
       assert.equal(body.CreateRecurringSale, false);
+      assert.equal(body.CustomerFirstName, 'Payer');
+      assert.equal(body.CustomerLastName, 'Test');
       return Response.json({ Status: 0, URL: 'https://icredit.rivhit.co.il/payment/example', PrivateSaleToken: 'private' });
     }
     if (url.endsWith('/SaleDetails')) return Response.json({ Status: 0, data: [{ SaleId: 'new-sale', TransactionId: 'new-tx', Amount: amount }] });
@@ -36,7 +38,7 @@ function fixture(paid = 280) {
     throw new Error('unexpected provider call');
   } };
   const post = (path, body) => worker.fetch(new Request(`https://baly.test/api/payments/rivhit/${path}`, { method: 'POST', headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
-  const request = { userId: 'payer', userName: 'Payer', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyMembersCount: 2, familyBillingMode: 'CUSTOM_COMBINED', familyMemberPlans: [{ memberId: 'payer', memberName: 'Payer', membershipType: 'OPEN_GYM' }, { memberId: 'child', memberName: 'Child', membershipType: 'OPEN_GYM' }] };
+  const request = { userId: 'payer', userName: 'Payer Test', membershipType: 'FAMILY_MEMBERSHIP', mode: 'PRIMARY', familyMembersCount: 2, familyBillingMode: 'CUSTOM_COMBINED', familyMemberPlans: [{ memberId: 'payer', memberName: 'Payer Test', membershipType: 'OPEN_GYM' }, { memberId: 'child', memberName: 'Child Test', membershipType: 'OPEN_GYM' }] };
   return { post, request, store, claims, state: () => state, calls: () => providerCalls, amount: () => amount, asManager: () => { role = 'MANAGER'; } };
 }
 
@@ -47,8 +49,8 @@ test('default combined family payment accepts only personal sessions for a child
   f.state().payload.users[1].registrationPaymentPending = true;
   const originalPayer = structuredClone(f.state().payload.users[0]);
   f.request.familyMemberPlans = [
-    { memberId: 'payer', memberName: 'Payer', participation: 'SKIP', membershipType: '' },
-    { memberId: 'child', memberName: 'Child', participation: 'INCLUDED', membershipType: 'PERSONAL_TRAINING', trainingSessionsCount: 3 }
+    { memberId: 'payer', memberName: 'Payer Test', participation: 'SKIP', membershipType: '' },
+    { memberId: 'child', memberName: 'Child Test', participation: 'INCLUDED', membershipType: 'PERSONAL_TRAINING', trainingSessionsCount: 3 }
   ];
   const response = await f.post('create', { ...f.request, quoteOnly: true });
   assert.equal(response.status, 200, await response.clone().text());
