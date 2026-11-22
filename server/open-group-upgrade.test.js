@@ -6,7 +6,7 @@ import { clubDate, nextMonthStart } from '../shared/membership-calendar.js';
 import { repairCalendarMemberships } from '../shared/membership-calendar.js';
 
 function fixture() {
-  let state = { revision: 1, payload: { users: [{ id: 'user', name: 'User', role: 'TRAINEE', membershipType: 'OPEN_GYM',
+  let state = { revision: 1, payload: { users: [{ id: 'user', name: 'User Test', role: 'TRAINEE', membershipType: 'OPEN_GYM',
     membershipStatus: 'ACTIVE', membershipExpiry: nextMonthStart(clubDate()), membershipExpiryExclusive: true }],
     settings: { membershipPlans: [{ id: 'GROUP_MONTHLY', label: 'Group', price: 500, billingPeriod: 'MONTHLY', active: true, category: 'PRIMARY' }] },
     payments: [{ id: 'old', traineeId: 'user', amount: 280, timestamp: new Date().toISOString(), status: 'PAID',
@@ -31,7 +31,7 @@ function fixture() {
       if (url.endsWith('/Verify')) return Response.json({ Status: 'VERIFIED' });
       throw new Error('unexpected provider call');
     } };
-  const request = { userId: 'user', userName: 'User', membershipType: 'GROUP_MONTHLY', mode: 'PRIMARY' };
+  const request = { userId: 'user', userName: 'User Test', membershipType: 'GROUP_MONTHLY', mode: 'PRIMARY' };
   const post = (path, body) => worker.fetch(new Request(`https://baly.test/api/payments/rivhit/${path}`, {
     method: 'POST', headers: { Cookie: 'baly_session=test', 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   }), env);

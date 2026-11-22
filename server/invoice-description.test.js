@@ -16,10 +16,10 @@ for (const mode of ['FIXED', 'PLAN_NAME']) test(`checkout uses manager invoice s
   let sent;
   const response = await worker.fetch(new Request('https://club.test/api/payments/rivhit/create', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'new', userName: 'בדיקה', mode: 'REGISTRATION', membershipType: 'OPEN_GYM', invoiceDescriptionText: 'לא מורשה' })
+    body: JSON.stringify({ userId: 'new', userName: 'בדיקה Test', mode: 'REGISTRATION', membershipType: 'OPEN_GYM', invoiceDescriptionText: 'לא מורשה' })
   }), {
     RIVHIT_ENVIRONMENT: 'production', RIVHIT_GROUP_PRIVATE_TOKEN: 'fixture-token', PAYMENT_SIGNING_SECRET: 'fixture-signing-secret', PUBLIC_APP_URL: 'https://club.test/',
-    STATE_STORE: { getClubState: async () => ({ payload: { settings: {
+    STATE_STORE: { getClubState: async () => ({ payload: { users: [{ id: 'new', name: 'Test Customer' }], settings: {
       invoiceDescriptionMode: mode, invoiceDescriptionText: 'שירותי ייעוץ ואימון',
       membershipPlans: [{ id: 'OPEN_GYM', label: 'מסלול פתוח', price: 280, active: true }]
     } } }) },

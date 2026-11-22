@@ -31,7 +31,7 @@ async function fixture() {
   };
   const response = await worker.fetch(new Request('https://club.test/api/payments/rivhit/create', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'trainee', userName: 'Test', mode: 'REGISTRATION', membershipType: 'OPEN_GYM' })
+    body: JSON.stringify({ userId: 'trainee', userName: 'Test Test', mode: 'REGISTRATION', membershipType: 'OPEN_GYM' })
   }), env);
   assert.equal(response.status, 200);
   return { env, payload: { SaleId: 'sale-1', Custom1: signedOrder, TransactionAmount: '1.00' },
