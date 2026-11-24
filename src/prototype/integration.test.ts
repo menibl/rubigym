@@ -42,3 +42,19 @@ test('frame sandbox and CSP block payments, network requests and form submission
   assert.match(entry,/if\(initialized/);
   assert.match(entry,/storageKey=\{`\$\{STORAGE_KEY\}:embedded:\$\{scope\}`\}/);
 });
+
+test('embedded questions and coupons advance with explicit buttons, never a sandbox-blocked form submit',()=>{
+  const chat=readFileSync(new URL('Conversation.tsx',import.meta.url),'utf8');
+  assert.doesNotMatch(chat,/<form\b|type="submit"|onSubmit=/);
+  assert.match(chat,/type="button" onClick=\{nextProfile\}/);
+  assert.match(chat,/e.key==='Enter'/);
+  assert.match(chat,/type="button" onClick=\{\(\)=>setD\(v=>\(\{\.\.\.v,discount:coupon\}\)\)\}/);
+});
+
+test('unknown demo phone stays on login and exposes a seeded demo account without touching live login behavior',()=>{
+  const auth=readFileSync(new URL('../components/AuthGateway.tsx',import.meta.url),'utf8');
+  const branch=auth.slice(auth.indexOf("if ('registrationRequired' in result"),auth.indexOf('if (!result.ok) return;',auth.indexOf("if ('registrationRequired' in result")));
+  assert.match(branch,/if \(STAGING_CONVERSATION_ENABLED\) \{[\s\S]*?setError\([\s\S]*?return;\s*\}/);
+  assert.match(branch,/setScreen\('register'\)/);
+  assert.match(auth,/מילוי חשבון מתאמן לדוגמה — ללא SMS אמיתי/);
+});

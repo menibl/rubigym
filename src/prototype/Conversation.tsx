@@ -108,7 +108,7 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
     {edit && <button className="text-button" onClick={()=>setD(v=>({...v,member:i,step:'plans',accepted:false}))}>עריכת מסלולים</button>}
   </article>;
   const textField = (key: 'firstName'|'lastName'|'username'|'email'|'birth'|'phone',label: string,type='text') => <label className="field-label">{label}
-    <input type={type} value={m[key]} autoComplete="off" maxLength={key==='phone' ? 10:120}
+    <input type={type} value={m[key]} autoComplete="off" maxLength={key==='phone' ? 10:['firstName','lastName'].includes(key) ? 60:120}
       min={type==='date' ? '1900-01-01':undefined} max={type==='date' ? new Date().toISOString().slice(0,10):undefined}
       inputMode={key==='phone' ? 'tel':key==='email' ? 'email':undefined}
       onInput={e=>update({[key]:e.currentTarget.value})} onChange={e=>update({[key]:e.target.value})}/>
@@ -138,7 +138,7 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
             {d.family && <label className="field-label">שם המשפחה / שם החשבון המשפחתי<input maxLength={80} value={d.familyName} onChange={e=>setD(v=>({...v,familyName:e.target.value}))} placeholder="משפחת לדוגמה"/></label>}
             <button className="primary" onClick={()=>go('name')}>המשך לפרטים ←</button>
           </>}
-          {profileSteps.includes(d.step) && <form onSubmit={e=>{e.preventDefault();nextProfile();}}>
+          {profileSteps.includes(d.step) && <div role="group" aria-label="תשובה לשאלה" onKeyDown={e=>{if(e.key==='Enter' && e.target instanceof HTMLInputElement){e.preventDefault();nextProfile();}}}>
             {d.step==='name' && <>{textField('firstName','שם פרטי לדוגמה')}{textField('lastName','שם משפחה לדוגמה')}{d.member>0 && <p className="muted">שם המשפחה הושלם מראש; אפשר לשנות אותו.</p>}</>}
             {d.step==='birth' && textField('birth','תאריך לידה לדוגמה','date')}
             {d.step==='gender' && <label className="field-label">מין<select value={m.gender} onChange={e=>update({gender:e.target.value})}><option value="">בחירה</option><option value="male">זכר</option><option value="female">נקבה</option></select></label>}
@@ -166,8 +166,8 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
               <label className="extra"><input type="checkbox" checked={m.push} onChange={e=>update({push:e.target.checked,reminders:e.target.checked ? m.reminders:false})}/><span>הדמיית בחירה בקבלת התראות PUSH</span></label>
               <label className="extra"><input type="checkbox" disabled={!m.push} checked={m.reminders} onChange={e=>update({reminders:e.target.checked})}/><span>תזכורות לפני אימון — ללא התראות אמיתיות</span></label>
             </>}
-            <button className="primary" type="submit">{d.step==='consent' ? (d.flow==='profile' ? 'סיום עדכון הפרטים המדומה':'המשך לבחירת מסלול ←'):'ממשיכים ←'}</button>
-          </form>}
+            <button className="primary" type="button" onClick={nextProfile}>{d.step==='consent' ? (d.flow==='profile' ? 'סיום עדכון הפרטים המדומה':'המשך לבחירת מסלול ←'):'ממשיכים ←'}</button>
+          </div>}
           {d.step==='account' && <>
             <p className="info">{embedded ? 'אלה המשתמש ובני המשפחה מתוך החשבון בסביבת הבדיקות. הנתונים מוצגים לקריאה בלבד.':'חשבון משפחתי לדוגמה לאחר רישום.'} כל הפעולות כאן מדומות ואינן משנות מנויים או הוראות קבע.</p>
             <div className="account-members">{d.members.map((person,i)=><article key={i}><h3>{person.name}</h3><p>{person.currentPlans || selection(person)}</p><p className="muted">{person.currentExpiry ? `תוקף כפי שמופיע בחשבון: ${person.currentExpiry} · סטטוס: ${person.currentStatus}`:`מנוי דמה בתוקף עד 01/12/${currentYear}`}</p><div className="action-grid">
@@ -188,7 +188,7 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
             {d.flow==='add' && <p className="info">משלמים רק עבור בן המשפחה החדש. המסלולים וההוראות של בני המשפחה שכבר רשומים נשארים ללא שינוי.</p>}
             {d.flow==='extras' && <p className="info">התשלום המדומה הוא על התוספות שבחרתם בלבד, ולא על המנוי הקיים.</p>}
             {d.family && d.flow==='register' && <fieldset className="info"><legend>אופן התשלום — ראש המשפחה משלם</legend><label className="extra"><input type="radio" name="billing" checked={d.billing==='combined'} onChange={()=>setD(v=>({...v,billing:'combined'}))}/><span>איחוד מסלולים חדשים באותה תקופה ותנאי חיוב</span></label><label className="extra"><input type="radio" name="billing" checked={d.billing==='separate'} onChange={()=>setD(v=>({...v,billing:'separate'}))}/><span>בנפרד לכל בן משפחה / מסלול</span></label></fieldset>}
-            <form className="coupon" onSubmit={e=>{e.preventDefault();setD(v=>({...v,discount:coupon}));}}><label htmlFor="coupon">קוד הנחה לדוגמה: DEMO10</label><div><input id="coupon" value={coupon} maxLength={30} onChange={e=>setCoupon(e.target.value)}/><button className="secondary" type="submit">הפעלה</button></div></form>
+            <div className="coupon" role="group" aria-label="קוד הנחה" onKeyDown={e=>{if(e.key==='Enter' && e.target instanceof HTMLInputElement){e.preventDefault();setD(v=>({...v,discount:coupon}));}}}><label htmlFor="coupon">קוד הנחה לדוגמה: DEMO10</label><div><input id="coupon" value={coupon} maxLength={30} onChange={e=>setCoupon(e.target.value)}/><button className="secondary" type="button" onClick={()=>setD(v=>({...v,discount:coupon}))}>הפעלה</button></div></div>
             {d.discount && <p className="info">{total.discount ? 'הופעלה הנחת דמה של 10% על השירותים החד־פעמיים בלבד.':'קוד הדמה לא זוהה או שאין שירות חד־פעמי להנחה.'}</p>}
             <dl className="totals"><div><dt>חיוב חודשי לדוגמה</dt><dd>{money(total.monthly)}</dd></div><div><dt>שירותים חד־פעמיים</dt><dd>{money(total.once)}</dd></div>{total.discount>0 && <div><dt>הנחת דמה</dt><dd>−{money(total.discount)}</dd></div>}<div className="grand"><dt>סך התשלום הראשון בהדמיה</dt><dd>{money(total.due)}</dd></div></dl>
             <p className="muted">{d.billing==='separate' && d.family ? 'הדמיית תשלום נפרד לכל בחירה.':total.monthly>0 && total.once>0 ? 'יוצגו שני שלבים: הוראת קבע למסלולים החודשיים, ואז תשלום חד־פעמי לתוספות.':'יוצג שלב תשלום מדומה אחד.'} אין חיוב, זיכוי או החלפה של הוראות קיימות.</p>
@@ -210,7 +210,7 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
         </div>
         {error && <p className="error" role="alert">{error}</p>}
         {!['welcome','done'].includes(d.step) && !(embedded && ['account','kind'].includes(d.step)) && <button className="text-button back" onClick={back}>→ חזרה לשלב הקודם</button>}
-        <footer>סביבת בדיקות בלבד · הבחירה אינה נשלחת למועדון{embedded && <button className="text-button" onClick={()=>{if(window.confirm('למחוק את טיוטת ההדמיה ולהתחיל מחדש?')) setD(readDraft(JSON.stringify(baseline)));}}>התחלת ההדמיה מחדש</button>}</footer>
+        <footer>סביבת בדיקות בלבד · הבחירה אינה נשלחת למועדון{embedded && d.step!=='done' && <button className="text-button" onClick={()=>{if(window.confirm('למחוק את טיוטת ההדמיה ולהתחיל מחדש?')) setD(readDraft(JSON.stringify(baseline)));}}>התחלת ההדמיה מחדש</button>}</footer>
       </section>
     </main>
   </div>;
