@@ -281,6 +281,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     try {
       const result = await onRequestPhoneCode(phone, 'LOGIN');
       if ('registrationRequired' in result && result.registrationRequired) {
+        if (STAGING_CONVERSATION_ENABLED) {
+          setError('הטלפון אינו נמצא בנתוני ההדגמה של סביבת הבדיקות. החשבון באתר הפעיל אינו מועתק לכאן. אפשר להשתמש בכפתור חשבון המתאמן לדוגמה או לבחור הרשמה במפורש.');
+          return;
+        }
         setRegisterPhone(phone);
         setRegisterStep(1);
         setScreen('register');
@@ -609,6 +613,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
             <h1>כניסה לחשבון</h1>
             <p>בחרו את הדרך הנוחה להיכנס.</p>
             {demoMode && <div className="auth-message notice">סביבת הדגמה — פרטי הכניסה של רובי כבר מולאו. אפשר גם להיכנס בטלפון 054-6995885 עם הקוד 1111.</div>}
+            {STAGING_CONVERSATION_ENABLED && <button type="button" className="auth-text-link" onClick={()=>{setLoginMethod('phone');setPhone('0541111111');setOtp('');setOtpSent(false);setError('');setNotice('מולא טלפון של מתאמן לדוגמה. לחצו על שליחת קוד; הקוד המדומה הוא 1111 ולא יישלח SMS אמיתי.');}}>מילוי חשבון מתאמן לדוגמה — ללא SMS אמיתי</button>}
             <div className="auth-method-tabs">
               <button className={loginMethod === 'phone' ? 'active' : ''} onClick={() => { setLoginMethod('phone'); resetMessages(); }}>
                 <Phone size={16} /> טלפון ו־SMS

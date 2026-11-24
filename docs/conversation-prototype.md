@@ -15,6 +15,14 @@ This is a fictional UX experiment integrated into the existing Pages application
 
 Local integrated preview: build Pages with public demo build settings, then open the existing app at `/rubigym/` (not the standalone prototype HTML). Demo manager login is the existing prefilled login. To inspect a trainee, use a seeded demo trainee's phone and the existing demo OTP shown in the UI. Do not use real credentials or request real SMS.
 
+## Integrated form regression and login clarity
+
+The first embedded release blocked native form submission through its sandbox. That also prevented React `onSubmit` from advancing questions (and applying coupons). All prototype form containers are now explicit UI groups with `type=button` actions and Enter-key handling. The sandbox and CSP remain restrictive; no `allow-forms` permission or network permission was added. Tests reject native forms/submit buttons in the chat.
+
+The Pages demo has no production accounts. Previously an unknown phone automatically switched login into registration. In this experiment, it now stays on login with an explicit demo-only message. A seeded-trainee fill button offers `0541111111`; the existing Pages OTP is `1111`, not a real SMS. Live login behavior is unchanged.
+
+Browser regression on 2026-11-24 (embedded, not standalone): reproduced both original failures on published staging; then tested the repaired local Pages build through adult name/date/gender/phone/OTP/credentials, medical-pending simulation, terms, primary/addons, second family member with optional blank phone and minor parent acknowledgement, standalone personal+pair packages, combined summary, coupon, payment return, reload/resume and simulated completion. Verified unknown demo phone stays on login, seeded trainee login, and membership renewal/change/cancel/freeze simulations. No real account, SMS or provider request was created.
+
 - Only `pnpm run build:pages` emits `conversation-prototype.html` and its entry.
 - `pnpm run build` (production) does not include the prototype entry or its assets. The legacy entry's Pages-only link is compiled out.
 - The entry additionally permits only the repository's Pages hostname (`menibl.github.io`) and local preview hosts. Moving Pages files onto the production hostname does not enable it.
