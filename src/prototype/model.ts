@@ -10,7 +10,7 @@ export const extras = [
   { id: 'personal', label: '4 אימונים אישיים', price: 800 },
   { id: 'pair', label: '4 אימונים זוגיים', price: 600 },
 ] as const;
-export type Member = { name: string; firstName: string; lastName: string; email: string; username: string; birth: string; phone: string; gender: string; health: string; plan: string; extras: string[]; credentialsReady: boolean; agreement: boolean; push: boolean; reminders: boolean };
+export type Member = { name: string; firstName: string; lastName: string; email: string; username: string; birth: string; phone: string; gender: string; health: string; plan: string; extras: string[]; credentialsReady: boolean; agreement: boolean; push: boolean; reminders: boolean; currentPlans?:string;currentExpiry?:string;currentStatus?:string };
 export type Flow = 'register' | 'renew' | 'cancel' | 'add' | 'update' | 'extras' | 'freeze' | 'profile';
 export type Draft = { version: 1; flow: Flow; family: boolean; familyName: string; billing: 'combined' | 'separate'; members: Member[]; member: number; step: string; discount: string; accepted: boolean; fromAccount: boolean; purchaseExtras: string[] };
 export const blankMember = (): Member => ({ name: '', firstName:'', lastName:'', email:'', username:'', birth: '', phone: '', gender:'', health: '', plan: 'none', extras: [], credentialsReady:false,agreement:false,push:false,reminders:false });
@@ -37,7 +37,8 @@ export function readDraft(raw: string | null): Draft {
       purchaseExtras:Array.isArray(d.purchaseExtras) ? [...new Set<string>(d.purchaseExtras.filter((id: string)=>extras.some(e=>e.id===id)))]:[],
       members:d.members.map((m: Member) => ({ ...blankMember(),name:m.name,birth:m.birth,phone:m.phone,health:m.health,plan:m.plan,extras:m.extras,
         ...Object.fromEntries(['firstName','lastName','email','username','gender'].map(k => [k,typeof m[k as keyof Member] === 'string' ? String(m[k as keyof Member]).slice(0,120):''])),
-        credentialsReady:m.credentialsReady === true,agreement:m.agreement === true,push:m.push === true,reminders:m.reminders === true })),
+        credentialsReady:m.credentialsReady === true,agreement:m.agreement === true,push:m.push === true,reminders:m.reminders === true,
+        ...Object.fromEntries(['currentPlans','currentExpiry','currentStatus'].filter(k=>typeof m[k as keyof Member]==='string').map(k=>[k,String(m[k as keyof Member]).slice(0,600)])) })),
       discount: typeof d.discount === 'string' ? d.discount.slice(0,30) : '', accepted: d.accepted === true };
   } catch { return initialDraft(); }
 }

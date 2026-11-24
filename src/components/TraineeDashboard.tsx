@@ -5,6 +5,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
+import {STAGING_CONVERSATION_ENABLED} from '../prototype/integration';
+import {StagingConversationFrame} from './StagingConversationFrame';
 import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { activePlanExpiry, emptyFamilyPurchase } from '../data/membershipRenewal';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
@@ -171,7 +173,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   onHome,
   familyCheckoutRequest = 0
 }) => {
-  const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>(initialTab);
+  type TraineeTab = 'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership';
+  const [activeTab, setActiveTabState] = useState<TraineeTab>(STAGING_CONVERSATION_ENABLED && initialTab==='membership' ? 'home':initialTab);
+  const [stagingChatOpen,setStagingChatOpen] = useState(STAGING_CONVERSATION_ENABLED && initialTab==='membership');
+  const setActiveTab = (tab:TraineeTab) => {
+    if(STAGING_CONVERSATION_ENABLED && tab==='membership') {setStagingChatOpen(true);return;}
+    setActiveTabState(tab);
+  };
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
   const [checkoutAdditions, setCheckoutAdditions] = useState<{ membershipType: MembershipType; trainingSessionsCount?: number }[]>([]);
   useEffect(() => { setCheckoutAdditions([]); }, [selectedMembershipPurchase]);
@@ -414,6 +422,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   useEffect(() => {
+    if (STAGING_CONVERSATION_ENABLED) return;
     const returnStatus = new URLSearchParams(window.location.search).get('rivhit');
     if (!returnStatus) return;
     const pending = getPendingRivhitPayment();
@@ -1412,6 +1421,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   return (
     <div className="space-y-6 trainee-app" id="trainee-dashboard">
+      {STAGING_CONVERSATION_ENABLED && stagingChatOpen && <StagingConversationFrame mode="membership" activeUser={activeUser} users={users} onClose={()=>{setStagingChatOpen(false);if(initialTab==='membership') onHome?.();}} />}
       {/* Toast Feedback */}
       {feedbackMsg && (
         <div className={`p-4 rounded-xl shadow-lg border fixed bottom-6 left-6 z-50 flex items-center gap-2 max-w-sm transition-all duration-300 transform translate-y-0 ${

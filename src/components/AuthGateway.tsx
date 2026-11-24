@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import {STAGING_CONVERSATION_ENABLED} from '../prototype/integration';
+import {StagingConversationFrame} from './StagingConversationFrame';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
 import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { canPurchasePlan } from '../../shared/youth-plan.js';
@@ -202,6 +204,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   };
 
   useEffect(() => {
+    if (STAGING_CONVERSATION_ENABLED) return;
     const returnStatus = new URLSearchParams(window.location.search).get('rivhit');
     if (!returnStatus) return;
     const pending = getPendingRivhitPayment();
@@ -592,6 +595,9 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     }
   };
 
+  if (STAGING_CONVERSATION_ENABLED && screen === 'register') {
+    return <StagingConversationFrame mode="registration" onClose={() => openScreen('login')} />;
+  }
   return (
     <main className="auth-gateway" dir="rtl">
       <section className="auth-panel">
