@@ -10,3 +10,42 @@ select{width:100%;min-height:52px;background:#141720;color:#f0f0f5;border:1px so
 .info summary{cursor:pointer;min-height:44px;display:list-item;align-content:center}.health-demo~.field-label{margin-top:24px}
 @media(max-width:480px){.lab-header{gap:12px;padding:14px 16px}.lab-header .wordmark small{letter-spacing:1px}.lab-layout{margin:16px 12px}.conversation{padding:22px 16px}.conversation h2{font-size:21px}.journey h1{font-size:25px}.journey li{font-size:10px}.journey ol{gap:6px}.journey .save-note{line-height:1.6}.journey>.text-button{padding:8px 0}.demo-notice{margin:12px;font-size:11px}.extra{font-size:12px}.totals .grand{font-size:15px}.coupon>div{gap:8px}.coupon input{min-width:0}.member-list article{gap:8px;padding:13px}.primary,.secondary,.choice,.text-button{touch-action:manipulation;min-height:44px}}
 @media(max-width:350px){.action-grid{grid-template-columns:1fr}.journey li{font-size:9px}.journey li b{width:22px;height:22px}.lab-header>a{font-size:11px}.wordmark small{font-size:8px}}
+
+/* Embedded mobile is an app screen, not a desktop card nested inside a card. */
+.demo-notice{display:block}
+.demo-notice summary{cursor:pointer;min-height:44px;align-content:center;color:#ead298;font-weight:600}
+.demo-notice p{margin:8px 0 0;line-height:1.7}
+@media(max-width:600px){
+  .lab.embedded{min-height:100dvh;font-size:16px;padding-bottom:max(16px,env(safe-area-inset-bottom))}
+  .lab.embedded .demo-notice{margin:0;padding:0 16px;border:0;border-bottom:1px solid #665735;border-radius:0;font-size:13px}
+  .lab.embedded .lab-layout{margin:0;padding:0}
+  .lab.embedded .conversation{border:0;border-radius:0;padding:18px 16px 24px;background:transparent}
+  .lab.embedded .assistant-label{font-size:14px;gap:10px}
+  .lab.embedded .assistant-label small{font-size:13px}
+  .lab.embedded .assistant-icon{width:34px;height:34px;font-size:20px;border-radius:10px}
+  .lab.embedded .conversation h2{font-size:24px;line-height:1.4;margin:20px 0 12px}
+  .lab.embedded .context{font-size:14px;line-height:1.6;margin-bottom:16px}
+  .lab.embedded .answer-panel{margin-top:18px}
+  .lab.embedded .field-label{font-size:16px;line-height:1.6}
+  .lab.embedded input:not([type=checkbox]):not([type=radio]),.lab.embedded select{min-height:52px;font-size:16px}
+  .lab.embedded .choice{padding:14px 16px;font-size:16px}
+  .lab.embedded .choice strong{font-size:17px}
+  .lab.embedded .choice span,.lab.embedded .muted,.lab.embedded .info{font-size:15px;line-height:1.7}
+  .lab.embedded .info{padding:12px;margin:12px 0}
+  .lab.embedded .extra{font-size:16px;align-items:flex-start;gap:10px}
+  .lab.embedded .extra small,.lab.embedded .member-list p,.lab.embedded .member-list small{font-size:14px;line-height:1.6}
+  .lab.embedded .extra b{font-size:15px;white-space:nowrap}
+  .lab.embedded h3{font-size:18px}
+  .lab.embedded .account-members{gap:16px}
+  .lab.embedded .account-members>article{padding:14px}
+  .lab.embedded .account-members p{font-size:15px;line-height:1.7}
+  .lab.embedded .action-grid .secondary{font-size:15px;min-height:48px;padding:10px 8px}
+  .lab.embedded .primary,.lab.embedded .secondary{font-size:16px;min-height:52px}
+  .lab.embedded .text-button{font-size:15px;min-height:48px}
+  .lab.embedded .totals>div{font-size:16px;line-height:1.6;flex-wrap:wrap}
+  .lab.embedded .totals .grand{font-size:20px}
+  .lab.embedded .coupon label,.lab.embedded .health-demo li{font-size:15px}
+  .lab.embedded .health-demo b{font-size:14px}
+  .lab.embedded .error{font-size:15px;line-height:1.6}
+  .lab.embedded footer{font-size:13px;line-height:1.7}
+}

@@ -135,7 +135,7 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
 
   return <div className={`lab ${embedded ? 'embedded':''}`} dir="rtl">
     {!embedded && <header className="lab-header"><a href={`${import.meta.env?.BASE_URL || '/rubigym/'}index.html`}>← הממשק הקיים</a><span className="wordmark">BW <small>BALY WELLNESS</small></span><span className="lab-tag">מעבדת חוויית משתמש</span></header>}
-    <div className="demo-notice"><strong>אב־טיפוס · נתוני דמה בלבד</strong><span>אין חיובים, SMS או שינוי בחשבון אמיתי. {onCreateDemoAccount ? 'בסיום אפשר לשמור חשבון דמה בדפדפן הזה ולהיכנס אליו.':'הבחירות הן הדמיה בלבד.'} אין להשתמש בסיסמה אמיתית. כל המחירים להמחשה.</span></div>
+    <details className="demo-notice"><summary>נתוני דמה בלבד · ללא חיובים או SMS</summary><p>אין שינוי בחשבון אמיתי. {onCreateDemoAccount ? 'בסיום אפשר לשמור חשבון דמה בדפדפן הזה ולהיכנס אליו.':'הבחירות הן הדמיה בלבד.'} אין להשתמש בסיסמה אמיתית. כל המחירים להמחשה.</p></details>
     <main className="lab-layout">
       {!embedded && <aside className="journey"><span className="eyebrow">פשוט, צעד אחר צעד</span><h1>מתחילים<br/>להרגיש טוב.</h1><p>הרישום החדש של BALY.<br/>שאלה אחת בכל פעם, בקצב שלכם.</p>
         <ol>{['פרטים ואישורים','בחירת מסלולים','סיכום ותשלום'].map((s,i)=><li key={s} className={(i===0 && profileSteps.includes(d.step)) || (i===1 && ['plans','member','previous'].includes(d.step)) || (i===2 && ['summary','payment','done'].includes(d.step)) ? 'active':''}><b>{i+1}</b>{s}</li>)}</ol>

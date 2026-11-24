@@ -58,3 +58,18 @@ test('unknown demo phone stays on login and exposes a seeded demo account withou
   assert.match(branch,/setScreen\('register'\)/);
   assert.match(auth,/מילוי חשבון מתאמן לדוגמה — ללא SMS אמיתי/);
 });
+
+test('embedded mobile uses readable full-width controls, safe areas and restores both page scroll locks',()=>{
+  const css=readFileSync(new URL('mobile.css',import.meta.url),'utf8');
+  assert.match(css,/@media\(max-width:600px\)/);
+  assert.match(css,/\.lab\.embedded \.lab-layout\{margin:0;padding:0\}/);
+  assert.match(css,/\.lab\.embedded \.primary,\.lab\.embedded \.secondary\{font-size:16px;min-height:52px\}/);
+  assert.match(css,/safe-area-inset-bottom/);
+  const frame=readFileSync(new URL('../components/StagingConversationFrame.tsx',import.meta.url),'utf8');
+  assert.match(frame,/document.documentElement.style.overflow='hidden'/);
+  assert.match(frame,/document.documentElement.style.overflow=pageOverflow/);
+  assert.match(frame,/safe-area-inset-top/);
+  assert.match(frame,/flexShrink:0/);
+  const chat=readFileSync(new URL('Conversation.tsx',import.meta.url),'utf8');
+  assert.match(chat,/<details className="demo-notice"><summary>נתוני דמה בלבד · ללא חיובים או SMS<\/summary>/);
+});
