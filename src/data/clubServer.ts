@@ -7,6 +7,7 @@ import { preserveExerciseWorkingValues, updateExerciseWorkingValues } from '../.
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../../shared/club-check-in.js';
 import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoachArrival, recordCoachExceptionScan, redeemCoachArrivalApproval, coachArrivalResult, preserveCoachArrivalAudit } from '../../shared/coach-exception-arrival.js';
 import { validateUsernameChange } from '../../shared/username-change.js';
+import {buildDemoChatAccounts,checkDemoVerifier,validDemoVerifier} from '../prototype/demoAccount';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -214,7 +215,7 @@ export const loginWithPassword = async (login: string, password: string): Promis
     const user = findDemoUser(login);
     const passwords = demoPasswords();
     const expected = passwords[user?.id || ''] || (user?.id === 'user-robi' ? import.meta.env.VITE_DEMO_MANAGER_PASSWORD : '');
-    if (!user || !expected || password !== expected) throw new Error('שם המשתמש או הסיסמה אינם נכונים.');
+    if (!user || !expected || !(validDemoVerifier(expected) ? await checkDemoVerifier(password,expected):password === expected)) throw new Error('שם המשתמש או הסיסמה אינם נכונים.');
     localStorage.setItem(DEMO_SESSION_KEY, user.id);
     return { user };
   }
@@ -319,6 +320,23 @@ export const registerServerUser = async (user: User, payment: Payment | undefine
     body: JSON.stringify({ user, payment, familyUsers, phoneVerificationToken })
   });
 };
+
+export async function createChatDemoAccount(draft:import('../prototype/model').Draft,verifiers:string[],registrationId:string) {
+  if(!(typeof __CONVERSATION_PROTOTYPE__!=='undefined' && __CONVERSATION_PROTOTYPE__ && isPagesDemoMode()) || !['menibl.github.io','localhost','127.0.0.1'].includes(window.location.hostname)) throw new Error('שמירת חשבון זו זמינה בהדגמה המקומית בלבד.');
+  const state=readDemoState();
+  const existing=(state.payload.users || []) as User[];
+  const result=buildDemoChatAccounts(draft,verifiers,registrationId,existing);
+  if(!result.alreadySaved) {
+    const previous=localStorage.getItem(DEMO_PASSWORDS_KEY);
+    const next={...demoPasswords()};
+    result.users.forEach((user,i)=>{next[user.id]=verifiers[i];});
+    localStorage.setItem(DEMO_PASSWORDS_KEY,JSON.stringify(next));
+    try {writeDemoState({payload:{...state.payload,users:[...result.users,...existing]},revision:state.revision+1});}
+    catch(error){if(previous===null) localStorage.removeItem(DEMO_PASSWORDS_KEY);else localStorage.setItem(DEMO_PASSWORDS_KEY,previous);throw error;}
+  }
+  localStorage.setItem(DEMO_SESSION_KEY,result.users[0].id);
+  return result.users[0];
+}
 
 export const registerFamilyMember = async (user: User) => {
   if (isPagesDemoMode()) {

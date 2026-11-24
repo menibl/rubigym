@@ -15,7 +15,21 @@ if (allowed) {
       if(typeof scope!=='string' || scope.length>180 || !scope.startsWith(`${embedded}:`)) return;
       initialized=true;
       void Promise.all([import('./Conversation'),import('./model')]).then(([{Conversation},{readDraft,STORAGE_KEY}])=>{
-        createRoot(document.getElementById('root')!).render(<Conversation embedded initialState={readDraft(JSON.stringify(draft))} storageKey={`${STORAGE_KEY}:embedded:${scope}`} resume />);
+        const storageKey=`${STORAGE_KEY}:embedded:${scope}`;
+        const createAccount=embedded==='registration' ? (draft:import('./model').Draft,verifiers:string[])=>new Promise<void>((resolve,reject)=>{
+          let registrationId=localStorage.getItem(`${storageKey}:registrationId`);
+          if(!registrationId){registrationId=crypto.randomUUID();localStorage.setItem(`${storageKey}:registrationId`,registrationId);}
+          const requestId=crypto.randomUUID();
+          const finish=(event:MessageEvent)=>{
+            if(event.origin!==location.origin || event.source!==window.parent || event.data?.type!=='BALY_CHAT_DEMO_ACCOUNT_RESULT' || event.data.requestId!==requestId) return;
+            clearTimeout(timeout);window.removeEventListener('message',finish);
+            if(event.data.ok) resolve();else reject(new Error(String(event.data.message || 'שמירת חשבון הדמה נכשלה.')));
+          };
+          const timeout=setTimeout(()=>{window.removeEventListener('message',finish);reject(new Error('לא התקבל אישור שמירה. אפשר לנסות שוב; לא ייווצר חשבון כפול.'));},15000);
+          window.addEventListener('message',finish);
+          window.parent.postMessage({type:'BALY_CHAT_DEMO_CREATE_ACCOUNT',requestId,registrationId,draft,verifiers},location.origin);
+        }):undefined;
+        createRoot(document.getElementById('root')!).render(<Conversation embedded initialState={readDraft(JSON.stringify(draft))} storageKey={storageKey} resume onCreateDemoAccount={createAccount} />);
       });
     });
     window.parent.postMessage({type:'BALY_CHAT_DEMO_READY'},location.origin);

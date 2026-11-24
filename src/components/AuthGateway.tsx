@@ -56,6 +56,7 @@ import { CookieConsentBanner, LegalLinks } from './LegalCenter';
 import { unpaidRegistration } from '../../shared/registration-status.js';
 
 interface AuthGatewayProps {
+  onDemoRegistered?: (user:User)=>Promise<void>;
   users: User[];
   discountCodes: DiscountCode[];
   settings: SystemSettings;
@@ -92,7 +93,7 @@ const calculateAge = (birthDate: string) => {
   return Math.max(age, 0);
 };
 
-export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRequestPhoneCode, onVerifyRegistrationPhone, onRegister, initialScreen = 'login', initialPlan, landingUrl, resumeUser }) => {
+export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRequestPhoneCode, onVerifyRegistrationPhone, onRegister, onDemoRegistered, initialScreen = 'login', initialPlan, landingUrl, resumeUser }) => {
   const demoMode = isPagesDemoMode();
   const demoManagerPassword = import.meta.env.VITE_DEMO_MANAGER_PASSWORD || '';
   const [screen, setScreen] = useState<AuthScreen>(resumeUser ? 'register' : initialScreen);
@@ -201,6 +202,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const openScreen = (next: AuthScreen) => {
     resetMessages();
     setScreen(next);
+    if(STAGING_CONVERSATION_ENABLED){const url=new URL(window.location.href);if(next==='register')url.searchParams.set('screen','register');else{url.searchParams.delete('screen');url.searchParams.delete('plan');}window.history.replaceState(window.history.state,'',url);}
   };
 
   useEffect(() => {
@@ -600,7 +602,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   };
 
   if (STAGING_CONVERSATION_ENABLED && screen === 'register') {
-    return <StagingConversationFrame mode="registration" onClose={() => openScreen('login')} />;
+    return <StagingConversationFrame mode="registration" onClose={() => openScreen('login')} onDemoRegistered={onDemoRegistered} />;
   }
   return (
     <main className="auth-gateway" dir="rtl">
