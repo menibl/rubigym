@@ -9,6 +9,8 @@ This is a fictional UX experiment, not an alternative payment implementation.
 - No API requests, accounts, real checkout, SMS, medical files or signatures are used by the prototype. All pricing is explicitly fictional. Fonts may load from Google Fonts.
 - Drafts use only the separate `baly-conversation-fictional-v1` localStorage key, not the application's stores. Enter fictional data only. Browser storage clearing or another device will not recover this draft. Storage errors are surfaced.
 - Try individual registration, family registration, standalone personal + pair services, demo renewal, cancellation preview, coupon `DEMO10`, reload during a family member's birthday step, and leaving/re-entering simulated payment.
+- The expanded prototype adds a registered-account hub, per-member update/addon/renew/cancel/freeze/profile actions, family addition after registration, username/email and ephemeral password fields, OTP simulation, gender, health topic inventory/parent mock fields, and consent/notification choices. See [field coverage](conversation-field-coverage.md) for explicit prototype limitations.
+- Existing local drafts are preserved. To inspect the whole expanded registration, use the reset-draft control and choose a new scenario. Never enter real passwords or identity/medical data.
 - Incomplete real payments and existing mandates are NOT modified by this experiment. Billing grouping is illustrative only, assuming identical periods and terms.
 
 ## Review and release
