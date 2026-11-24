@@ -7,7 +7,16 @@ import {defineConfig} from 'vite';
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(() => {
+  // Only the Pages build emits the isolated, fictional onboarding prototype.
+  const conversationPrototype = process.env.npm_lifecycle_event === 'build:pages';
   return {
+    define: { __CONVERSATION_PROTOTYPE__: JSON.stringify(conversationPrototype) },
+    build: conversationPrototype ? {
+      rollupOptions: { input: {
+        main: path.resolve(projectRoot, 'index.html'),
+        conversation: path.resolve(projectRoot, 'conversation-prototype.html'),
+      } },
+    } : undefined,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

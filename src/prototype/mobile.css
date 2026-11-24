@@ -1,0 +1,11 @@
+/* Scoped to the standalone prototype entry; never loaded by the legacy UI. */
+.lab-layout>*{min-width:0}.lab{overflow-wrap:anywhere;padding-bottom:env(safe-area-inset-bottom)}
+.field-label{margin:18px 0}.field-label input,.field-label select{display:block;margin-top:8px;font-size:16px;min-width:0;max-width:100%}
+select{width:100%;min-height:52px;background:#141720;color:#f0f0f5;border:1px solid #454957;border-radius:12px;padding:12px}
+.health-demo{padding-inline-start:22px;margin:20px 0}.health-demo li{font-size:12px;line-height:1.9;margin-bottom:12px;padding:10px;border-bottom:1px solid #ffffff12}.health-demo b{display:block;color:#d4bd8a;font-size:11px}
+.account-members{display:grid;gap:20px}.account-members>article{border:1px solid #414452;border-radius:16px;padding:18px;background:#151822}.account-members h3{margin-top:0}.account-members p{font-size:13px;line-height:1.8}
+.action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.action-grid .secondary{margin:0;font-size:12px;padding:10px}
+.member-list article>div{min-width:0}.member-list article>.text-button{flex-shrink:0;max-width:85px}input[type=radio]{width:20px;height:20px;accent-color:#b89bff;flex-shrink:0}
+.info summary{cursor:pointer;min-height:44px;display:list-item;align-content:center}.health-demo~.field-label{margin-top:24px}
+@media(max-width:480px){.lab-header{gap:12px;padding:14px 16px}.lab-header .wordmark small{letter-spacing:1px}.lab-layout{margin:16px 12px}.conversation{padding:22px 16px}.conversation h2{font-size:21px}.journey h1{font-size:25px}.journey li{font-size:10px}.journey ol{gap:6px}.journey .save-note{line-height:1.6}.journey>.text-button{padding:8px 0}.demo-notice{margin:12px;font-size:11px}.extra{font-size:12px}.totals .grand{font-size:15px}.coupon>div{gap:8px}.coupon input{min-width:0}.member-list article{gap:8px;padding:13px}.primary,.secondary,.choice,.text-button{touch-action:manipulation;min-height:44px}}
+@media(max-width:350px){.action-grid{grid-template-columns:1fr}.journey li{font-size:9px}.journey li b{width:22px;height:22px}.lab-header>a{font-size:11px}.wordmark small{font-size:8px}}
