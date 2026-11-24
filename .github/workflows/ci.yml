@@ -65,6 +65,9 @@ jobs:
       - name: Type-check
         run: pnpm run lint
 
+      - name: Test isolated conversation prototype
+        run: pnpm exec tsx --test src/prototype/model.test.ts
+
       - name: Build production bundle
         run: pnpm run build
         env:
