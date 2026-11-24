@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {STAGING_CONVERSATION_ENABLED} from '../prototype/integration';
-import {StagingConversationFrame} from './StagingConversationFrame';
+import {StagingChatForm,StagingRegistrationSurface,stagingLogicEnabled} from '../prototype/StagingLogicChat';
+import {readStagingRegistrationDraft,saveStagingRegistrationDraft,clearStagingRegistrationDraft} from '../prototype/registrationDraft';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
 import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { canPurchasePlan } from '../../shared/youth-plan.js';
@@ -95,6 +96,7 @@ const calculateAge = (birthDate: string) => {
 
 export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, settings, onPasswordLogin, onPhoneLogin, onRequestPhoneCode, onVerifyRegistrationPhone, onRegister, onDemoRegistered, initialScreen = 'login', initialPlan, landingUrl, resumeUser }) => {
   const demoMode = isPagesDemoMode();
+  const [stagingDraft]=useState(readStagingRegistrationDraft);
   const demoManagerPassword = import.meta.env.VITE_DEMO_MANAGER_PASSWORD || '';
   const [screen, setScreen] = useState<AuthScreen>(resumeUser ? 'register' : initialScreen);
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('phone');
@@ -104,19 +106,20 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [registerStep, setRegisterStep] = useState<1 | 2 | 3 | 4>(resumeUser ? 3 : 1);
-  const [registerPhone, setRegisterPhone] = useState(resumeUser?.phone || '');
+  const [registerPhone, setRegisterPhone] = useState(resumeUser?.phone || stagingDraft.phone || '');
   const [registerOtp, setRegisterOtp] = useState('');
   const [phoneVerificationToken, setPhoneVerificationToken] = useState('');
   const [registrationUserId, setRegistrationUserId] = useState(resumeUser?.id || '');
   const existingName = splitPersonName(resumeUser?.name === 'הרשמה בתהליך' ? '' : resumeUser?.name || '');
-  const [registerFirstName, setRegisterFirstName] = useState(existingName.firstName);
-  const [registerLastName, setRegisterLastName] = useState(existingName.lastName);
+  const [registerFirstName, setRegisterFirstName] = useState(existingName.firstName || stagingDraft.firstName || '');
+  const [registerLastName, setRegisterLastName] = useState(existingName.lastName || stagingDraft.lastName || '');
   const registerName = `${registerFirstName.trim()} ${registerLastName.trim()}`.trim();
-  const [registerUsername, setRegisterUsername] = useState(resumeUser?.username?.startsWith('registration-') ? '' : resumeUser?.username || '');
-  const [registerEmail, setRegisterEmail] = useState(resumeUser?.email || '');
+  const [registerUsername, setRegisterUsername] = useState(resumeUser?.username?.startsWith('registration-') ? stagingDraft.username || '' : resumeUser?.username || stagingDraft.username || '');
+  const [registerEmail, setRegisterEmail] = useState(resumeUser?.email || stagingDraft.email || '');
   const [registerPassword, setRegisterPassword] = useState('');
-  const [registerBirthDate, setRegisterBirthDate] = useState(resumeUser?.birthDate || '');
-  const [registerGender, setRegisterGender] = useState<Gender>(resumeUser?.gender || Gender.FEMALE);
+  const [registerBirthDate, setRegisterBirthDate] = useState(resumeUser?.birthDate || stagingDraft.birthDate || '');
+  const [registerGender, setRegisterGender] = useState<Gender>(resumeUser?.gender || (stagingDraft.gender===Gender.MALE ? Gender.MALE:Gender.FEMALE));
+  useEffect(()=>{if(screen==='register')saveStagingRegistrationDraft({firstName:registerFirstName,lastName:registerLastName,username:registerUsername,email:registerEmail,phone:registerPhone,birthDate:registerBirthDate,gender:registerGender});},[screen,registerFirstName,registerLastName,registerUsername,registerEmail,registerPhone,registerBirthDate,registerGender]);
   const [healthApproved, setHealthApproved] = useState(false);
   const [healthDeclaration, setHealthDeclaration] = useState<HealthDeclarationResult | null>(null);
   const [showHealthDeclaration, setShowHealthDeclaration] = useState(false);
@@ -595,17 +598,16 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
     try {
       await onRegister(unpaidRegistration(newUser) as User, undefined,
         familyUsers.map(member => unpaidRegistration(member) as User), phoneVerificationToken);
+      clearStagingRegistrationDraft();
     } catch (paymentError) {
       setPaymentStarting(false);
       setError(paymentError instanceof Error ? paymentError.message : 'לא ניתן לשמור את פרטי ההרשמה. נסו שוב.');
     }
   };
 
-  if (STAGING_CONVERSATION_ENABLED && screen === 'register') {
-    return <StagingConversationFrame mode="registration" onClose={() => openScreen('login')} onDemoRegistered={onDemoRegistered} />;
-  }
+  const AuthSurface=stagingLogicEnabled() && screen==='register' ? StagingRegistrationSurface:'main';
   return (
-    <main className="auth-gateway" dir="rtl">
+    <AuthSurface className="auth-gateway" dir="rtl">
       <section className="auth-panel">
         {landingUrl && <a className="auth-back" href={landingUrl}><ArrowLeft size={18} /> חזרה לדף המועדון</a>}
         <RubisLogo size={145} className="auth-panel-logo" />
@@ -649,20 +651,20 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
             <p>{registerStep === 1 ? 'מתחילים באימות מספר הטלפון.' : registerStep === 2 ? 'הזינו את קוד האימות.' : registerStep === 3 ? 'כמה פרטים ונוכל להתחיל.' : 'בוחרים מסלול ומשלימים תשלום בדיקה.'}</p>
 
             {registerStep === 1 && (
-              <form onSubmit={handleRegistrationPhone} className="auth-form">
+              <StagingChatForm flowKey="phone" onSubmit={handleRegistrationPhone} className="auth-form">
                 <label>מספר טלפון<input inputMode="tel" value={registerPhone} onChange={event => { setRegisterPhone(event.target.value); setRegisterOtp(''); setPhoneVerificationToken(''); }} placeholder="05X-XXXXXXX" /></label>
                 <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? 'שולח…' : 'שליחת קוד SMS'}</button>
-              </form>
+              </StagingChatForm>
             )}
             {registerStep === 2 && (
-              <form onSubmit={handleRegistrationOtp} className="auth-form">
+              <StagingChatForm flowKey="otp" onSubmit={handleRegistrationOtp} className="auth-form">
                 <label>קוד אימות<input inputMode="numeric" maxLength={demoMode ? 4 : 6} value={registerOtp} onChange={event => setRegisterOtp(event.target.value.replace(/\D/g, ''))} placeholder={demoMode ? '1111' : '6 ספרות'} /></label>
                 <button className="auth-primary" type="submit" disabled={authPending}>{authPending ? 'מאמת…' : 'אימות מספר הטלפון'}</button>
                 <button className="auth-text-link" type="button" onClick={() => { setRegisterStep(1); setPhoneVerificationToken(''); }}>שינוי מספר טלפון</button>
-              </form>
+              </StagingChatForm>
             )}
             {registerStep === 3 && (
-              <form onSubmit={handleRegistrationDetails} className="auth-form">
+              <StagingChatForm flowKey="profile" onSubmit={handleRegistrationDetails} className="auth-form">
                 <label>שם פרטי *<input required autoComplete="given-name" value={registerFirstName} onChange={event => setRegisterFirstName(event.target.value)} /></label>
                 <label>שם משפחה *<input required autoComplete="family-name" value={registerLastName} onChange={event => setRegisterLastName(event.target.value)} /></label>
                 <label>שם משתמש<input value={registerUsername} onChange={event => setRegisterUsername(event.target.value)} autoComplete="username" /></label>
@@ -675,7 +677,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                     : account));
                 }} autoComplete="email" placeholder="name@example.com" /></label>
                 <label>סיסמה<input type="password" value={registerPassword} onChange={event => setRegisterPassword(event.target.value)} autoComplete="new-password" /></label>
-                <label>תאריך לידה<input type="date" value={registerBirthDate} onChange={event => setRegisterBirthDate(event.target.value)} /></label>
+                <label>תאריך לידה<input type="date" value={registerBirthDate} onInput={event => setRegisterBirthDate(event.currentTarget.value)} onChange={event => setRegisterBirthDate(event.target.value)} /></label>
                 <div className="auth-gender">
                   <button type="button" className={registerGender === Gender.FEMALE ? 'active' : ''} onClick={() => setRegisterGender(Gender.FEMALE)}>אישה</button>
                   <button type="button" className={registerGender === Gender.MALE ? 'active' : ''} onClick={() => setRegisterGender(Gender.MALE)}>גבר</button>
@@ -713,10 +715,10 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                   <small>ניתן לבטל את ההתראות בכל עת דרך הפרופיל.</small>
                 </div>
                 <button className="auth-primary" type="submit" disabled={paymentStarting}><CheckCircle2 size={18} /> {paymentStarting ? 'שומר פרטים…' : 'שמירת הפרטים והמשך לבחירת מסלול'}</button>
-              </form>
+              </StagingChatForm>
             )}
             {registerStep === 4 && (
-              <form onSubmit={handleRegistrationPayment} className="auth-form">
+              <StagingChatForm flowKey="plans" onSubmit={handleRegistrationPayment} className="auth-form">
                 <div className="auth-plan-grid">
                   <button
                     type="button"
@@ -794,7 +796,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
                 {!isRivhitConfigured() && <div className="auth-message error">שירות התשלומים טרם חובר לשרת הציבורי.</div>}
                 <button className="auth-primary" type="submit" disabled={paymentStarting || !isRivhitConfigured()}><CreditCard size={18} /> {paymentStarting ? 'פותח תשלום…' : 'מעבר לתשלום מאובטח'}</button>
                 <button className="auth-text-link" type="button" onClick={() => setRegisterStep(3)}>חזרה לפרטים האישיים</button>
-              </form>
+              </StagingChatForm>
             )}
             {!resumeUser && <button className="auth-text-link auth-mode-switch" onClick={() => openScreen('login')}>כבר רשומים? לכניסה</button>}
           </>
@@ -805,6 +807,6 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
         {notice && <div className="auth-message notice">{notice}</div>}
       </section>
       <CookieConsentBanner />
-    </main>
+    </AuthSurface>
   );
 };

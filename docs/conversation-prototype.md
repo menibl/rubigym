@@ -1,5 +1,7 @@
 # Isolated conversational onboarding prototype
 
+Current integrated flow: see [Staging chat over original logic](staging-chat-original-logic.md). The standalone fictional model, prices and read-only account snapshot described below are retained as historical UX reference; integrated AuthGateway/TraineeDashboard now wrap their original components and use a provider-blocked dry preview.
+
 This is a fictional UX experiment integrated into the existing Pages application, not an alternative payment implementation.
 
 ## Integrated navigation (Pages only)

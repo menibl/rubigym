@@ -850,6 +850,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                                 type="date"
                                 required
                                 value={subBirthDate}
+                                onInput={(e) => setSubBirthDate(e.currentTarget.value)}
                                 onChange={(e) => setSubBirthDate(e.target.value)}
                                 className="mt-1 w-full p-2 border rounded-lg text-xs"
                               />

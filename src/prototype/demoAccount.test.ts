@@ -47,7 +47,7 @@ test('account creation is strictly local/Pages gated and routing returns to the 
   assert.match(app,/onDemoRegistered=\{STAGING_CONVERSATION_ENABLED/);
   assert.match(app,/\['screen','plan','workspace','contact'\]/);
   assert.match(app,/registrationPaymentPending && !STAGING_CONVERSATION_ENABLED/);
-  assert.match(app,/setShowTraineeAccessAlert\(!\(STAGING_CONVERSATION_ENABLED && user.id.startsWith\('demo-chat-'\)\)\)/);
+  assert.match(app,/setShowTraineeAccessAlert\(!STAGING_CONVERSATION_ENABLED\)/);
   const landing=readFileSync(new URL('../data/publicLanding.ts',import.meta.url),'utf8');
   assert.doesNotMatch(landing.slice(landing.indexOf('const surface ='),landing.indexOf('const appUrl =')),/isPagesDemoMode/);
 });

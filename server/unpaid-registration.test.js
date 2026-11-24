@@ -26,6 +26,14 @@ test('unpaid profile can register, log in with password and load the app without
   user.healthDeclarationRequiresMedicalCertificate = true;
   user.healthDeclarationMedicalCertificateApproved = true; // must never trust client review
   user.healthDeclarationAnswers = { heart: 'YES' };
+  Object.assign(user, {
+    birthDate:'2009-01-01',gender:'FEMALE',clubAgreementSigned:true,clubAgreementDate:'2026-11-24',
+    healthDeclarationDate:'2026-11-24',healthDeclarationSignatureName:'Test Trainee',
+    healthDeclarationParentConsent:true,healthDeclarationParentName:'Test Parent',healthDeclarationParentIdNumber:'111111111',
+    healthDeclarationMedicalCertificateFileName:'test-only.txt',healthDeclarationMedicalCertificateDataUrl:'data:text/plain;base64,VGVzdA==',
+    healthDeclarationHistory:[{id:'health-fixture',signed:true,signatureName:'Test Trainee',answers:{heart:'YES'},medicalCertificateApproved:false}],
+    pushNotificationsEnabled:false,workoutRemindersEnabled:false
+  });
   const post = (path, body) => worker.fetch(new Request(`https://club.test/api/auth/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env);
   const response = await post('register', { user, phoneVerificationToken: token });
   assert.equal(response.status, 201);
@@ -41,6 +49,16 @@ test('unpaid profile can register, log in with password and load the app without
   assert.equal(saved.personalTrainingRemaining, 0);
   assert.equal(state.payload.payments.length, 0);
   assert.equal(account.profile.registrationPaymentPending, true);
+  // These are the original AuthGateway field names. Chat presentation must
+  // enter this same route, account profile and canonical club-state record.
+  for(const field of ['name','username','email','phone','birthDate','gender','clubAgreementSigned','clubAgreementDate',
+    'healthDeclarationDate','healthDeclarationAnswers','healthDeclarationSignatureName','healthDeclarationParentConsent',
+    'healthDeclarationParentName','healthDeclarationParentIdNumber','healthDeclarationMedicalCertificateFileName',
+    'healthDeclarationMedicalCertificateDataUrl','healthDeclarationHistory','pushNotificationsEnabled','workoutRemindersEnabled']){
+    assert.deepEqual(saved[field],user[field],field);
+    assert.deepEqual(JSON.parse(JSON.stringify(account.profile[field])),saved[field],`auth profile ${field}`);
+    assert.deepEqual(JSON.parse(JSON.stringify(state.payload.users[0][field])),saved[field],`club state ${field}`);
+  }
   const login = await post('login', { login: 'test-user', password: user.password });
   assert.equal(login.status, 200);
   const cookie = login.headers.get('Set-Cookie').split(';')[0];
