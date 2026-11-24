@@ -7,7 +7,6 @@ import './index.css';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AppErrorBoundary>
-      {__CONVERSATION_PROTOTYPE__ && <a href={`${import.meta.env.BASE_URL}conversation-prototype.html`} style={{display:'block',padding:12,textAlign:'center',background:'#ead298',color:'#151820',fontWeight:700}} dir="rtl">לניסוי ממשק הרישום החדש — נתוני דמה בלבד ←</a>}
       <App />
     </AppErrorBoundary>
   </StrictMode>,

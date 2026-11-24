@@ -31,8 +31,14 @@ const isMinor = (birth: string) => {
   return birth > `${Number(today.slice(0,4))-18}${today.slice(4)}`;
 };
 
-export function Conversation({initialState}: {initialState?: Draft} = {}) {
-  const [d,setD] = useState<Draft>(() => {if(initialState) return readDraft(JSON.stringify(initialState)); try {return readDraft(localStorage.getItem(STORAGE_KEY));} catch {return initialDraft();}});
+export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY,resume=false}: {initialState?: Draft;embedded?:boolean;storageKey?:string;resume?:boolean} = {}) {
+  const [d,setD] = useState<Draft>(() => {
+    if(resume) {try {const saved=localStorage.getItem(storageKey);if(saved) return readDraft(saved);} catch { /* fall through to supplied view-only snapshot */ }}
+    if(initialState) return readDraft(JSON.stringify(initialState));
+    try {return readDraft(localStorage.getItem(storageKey));} catch {return initialDraft();}
+  });
+  const baseline=initialState || initialDraft();
+  const accountState=initialState?.step==='account' ? initialState:demoAccount();
   const [storageError,setStorageError] = useState(false);
   const [error,setError] = useState('');
   const [coupon,setCoupon] = useState(d.discount);
@@ -48,7 +54,7 @@ export function Conversation({initialState}: {initialState?: Draft} = {}) {
   const m=d.members[d.member];
   const total=totals(d);
   const minor=isMinor(m.birth);
-  useEffect(() => {try {localStorage.setItem(STORAGE_KEY,JSON.stringify(readDraft(JSON.stringify(d))));setStorageError(false);} catch {setStorageError(true);}},[d]);
+  useEffect(() => {try {localStorage.setItem(storageKey,JSON.stringify(readDraft(JSON.stringify(d))));setStorageError(false);} catch {setStorageError(true);}},[d,storageKey]);
   useEffect(() => {
     heading.current?.focus();setError('');setPassword('');setConfirmPassword('');setOtp('');
     setHealthSigned(false);setParentApproved(false);setCertificate(false);setCancelTarget('main');
@@ -108,15 +114,15 @@ export function Conversation({initialState}: {initialState?: Draft} = {}) {
       onInput={e=>update({[key]:e.currentTarget.value})} onChange={e=>update({[key]:e.target.value})}/>
   </label>;
 
-  return <div className="lab" dir="rtl">
-    <header className="lab-header"><a href={`${import.meta.env?.BASE_URL || '/rubigym/'}index.html`}>← הממשק הקיים</a><span className="wordmark">BW <small>BALY WELLNESS</small></span><span className="lab-tag">מעבדת חוויית משתמש</span></header>
+  return <div className={`lab ${embedded ? 'embedded':''}`} dir="rtl">
+    {!embedded && <header className="lab-header"><a href={`${import.meta.env?.BASE_URL || '/rubigym/'}index.html`}>← הממשק הקיים</a><span className="wordmark">BW <small>BALY WELLNESS</small></span><span className="lab-tag">מעבדת חוויית משתמש</span></header>}
     <div className="demo-notice"><strong>אב־טיפוס · נתוני דמה בלבד</strong><span>אין חיובים, SMS או שינוי בחשבון אמיתי. אין להזין פרטים, סיסמאות או מסמכים אמיתיים. כל המחירים להמחשה.</span></div>
     <main className="lab-layout">
-      <aside className="journey"><span className="eyebrow">פשוט, צעד אחר צעד</span><h1>מתחילים<br/>להרגיש טוב.</h1><p>הרישום החדש של BALY.<br/>שאלה אחת בכל פעם, בקצב שלכם.</p>
+      {!embedded && <aside className="journey"><span className="eyebrow">פשוט, צעד אחר צעד</span><h1>מתחילים<br/>להרגיש טוב.</h1><p>הרישום החדש של BALY.<br/>שאלה אחת בכל פעם, בקצב שלכם.</p>
         <ol>{['פרטים ואישורים','בחירת מסלולים','סיכום ותשלום'].map((s,i)=><li key={s} className={(i===0 && profileSteps.includes(d.step)) || (i===1 && ['plans','member','previous'].includes(d.step)) || (i===2 && ['summary','payment','done'].includes(d.step)) ? 'active':''}><b>{i+1}</b>{s}</li>)}</ol>
         <div className="save-note">{storageError ? 'השמירה אינה זמינה בדפדפן זה.' : 'טיוטת הדמה נשמרת במכשיר הזה. סיסמאות, קוד אימות, תשובות רפואיות וחתימות אינם נשמרים ויידרשו שוב לפי הצורך.'}</div>
         <button className="text-button" onClick={()=>{if(window.confirm('למחוק את טיוטת הדמה ולהתחיל מחדש?')) {setD(initialDraft());setCoupon('');}}}>מחיקת טיוטת הדמה והתחלה מחדש</button>
-      </aside>
+      </aside>}
       <section className="conversation" aria-label="שאלון רישום מדומה">
         <div className="assistant-label"><span className="assistant-icon">✦</span><div><strong>העוזר של BALY</strong><small>שאלון מודרך · לא צ׳אט AI</small></div></div>
         <h2 ref={heading} tabIndex={-1}>{prompts[d.step]}</h2>
@@ -163,8 +169,8 @@ export function Conversation({initialState}: {initialState?: Draft} = {}) {
             <button className="primary" type="submit">{d.step==='consent' ? (d.flow==='profile' ? 'סיום עדכון הפרטים המדומה':'המשך לבחירת מסלול ←'):'ממשיכים ←'}</button>
           </form>}
           {d.step==='account' && <>
-            <p className="info">חשבון משפחתי לדוגמה לאחר רישום. כל הפעולות כאן מדומות ואינן משנות מנויים או הוראות קבע.</p>
-            <div className="account-members">{d.members.map((person,i)=><article key={i}><h3>{person.name}</h3><p>{selection(person)}</p><p className="muted">מנוי דמה בתוקף עד 01/12/{currentYear} · {i===0 ? 'ראש המשפחה המשלם':'בן משפחה'}</p><div className="action-grid">
+            <p className="info">{embedded ? 'אלה המשתמש ובני המשפחה מתוך החשבון בסביבת הבדיקות. הנתונים מוצגים לקריאה בלבד.':'חשבון משפחתי לדוגמה לאחר רישום.'} כל הפעולות כאן מדומות ואינן משנות מנויים או הוראות קבע.</p>
+            <div className="account-members">{d.members.map((person,i)=><article key={i}><h3>{person.name}</h3><p>{person.currentPlans || selection(person)}</p><p className="muted">{person.currentExpiry ? `תוקף כפי שמופיע בחשבון: ${person.currentExpiry} · סטטוס: ${person.currentStatus}`:`מנוי דמה בתוקף עד 01/12/${currentYear}`}</p><div className="action-grid">
               {([['update','עדכון מסלול'],['extras','רכישת שירות נוסף'],['renew','חידוש'],['cancel','בקשת ביטול'],['freeze','בקשת הקפאה'],['profile','עריכת פרטים']] as const).map(([flow,label])=><button key={flow} className="secondary" onClick={()=>action(flow,i)} aria-label={`${label} — ${person.name}`}>{label}</button>)}
             </div></article>)}</div>
             {d.members.length<6 && <button className="primary" onClick={addMember}>＋ הוספת בן משפחה לאחר הרישום</button>}
@@ -176,7 +182,7 @@ export function Conversation({initialState}: {initialState?: Draft} = {}) {
             <button className="primary" onClick={chooseDone}>אישור הבחירה של {m.name || 'המתאמן'} ←</button>
           </>}
           {d.step==='member' && <><div className="member-list">{d.members.map((p,i)=>memberCard(p,i))}</div>{d.members.length<6 && <button className="secondary" onClick={addMember}>＋ הוספת בן משפחה</button>}<button className="primary" onClick={()=>d.members.some(x=>!hasSelection(x)) ? setError('השלימו מסלול או שירות לכל בן משפחה.'):go('summary')}>כולם מוכנים, לסיכום ←</button></>}
-          {d.step==='previous' && <><div className="member-list">{checkoutMembers(d).map((p,i)=>memberCard(p,d.fromAccount ? d.member:i,false))}</div><button className="primary" onClick={()=>go('summary')}>להשאיר את המסלולים ולהמשיך</button><button className="secondary" onClick={()=>go('plans')}>לעדכן את הבחירה</button></>}
+          {d.step==='previous' && <><div className="member-list">{checkoutMembers(d).map((p,i)=>p.currentPlans ? <article key={i}><div><strong>{p.name}</strong><p>{p.currentPlans}</p><small>תוקף בחשבון: {p.currentExpiry}. אין חישוב חיוב אמיתי בהדמיה.</small></div></article>:memberCard(p,d.fromAccount ? d.member:i,false))}</div><button className="primary" onClick={()=>go(embedded && m.currentPlans ? 'done':'summary')}>להשאיר את המסלולים ולהמשיך</button><button className="secondary" onClick={()=>go('plans')}>לעדכן את הבחירה</button></>}
           {d.step==='summary' && <>
             <div className="member-list">{checkoutMembers(d).map((person,i)=>memberCard(person,d.flow==='register' || (d.flow==='renew' && !d.fromAccount) ? i:d.member))}</div>
             {d.flow==='add' && <p className="info">משלמים רק עבור בן המשפחה החדש. המסלולים וההוראות של בני המשפחה שכבר רשומים נשארים ללא שינוי.</p>}
@@ -190,7 +196,7 @@ export function Conversation({initialState}: {initialState?: Draft} = {}) {
           </>}
           {d.step==='payment' && <><div className="payment-visual"><span>▣</span><h3>{total.monthly>0 ? `הוראת קבע מדומה · ${money(total.monthly)} לחודש`:`תשלום חד־פעמי · ${money(total.once-total.discount)}`}</h3>{total.monthly>0 && total.once>0 && <p>תשלום נוסף מדומה · {money(total.once-total.discount)}</p>}<p>אין להזין אשראי. הכפתור מדמה הצלחה בלבד.</p></div><button className="primary" onClick={()=>go('done')}>הדמיית סיום מוצלח — ללא חיוב</button><button className="secondary" onClick={()=>go('summary')}>יציאה וחזרה לבחירה — ללא חסימה</button></>}
           {d.step==='cancel' && <>
-            <label className="field-label">המסלול לביטול<select value={cancelTarget} onChange={e=>setCancelTarget(e.target.value)}><option value="main">{catalog.find(p=>p.id===m.plan)?.label || 'מסלול ראשי'}</option>{m.extras.map(id=><option key={id} value={id}>{extras.find(e=>e.id===id)?.label}</option>)}</select></label>
+            <label className="field-label">המסלול לביטול<select value={cancelTarget} onChange={e=>setCancelTarget(e.target.value)}><option value="main">{m.currentPlans || catalog.find(p=>p.id===m.plan)?.label || 'מסלול ראשי'}</option>{m.extras.map(id=><option key={id} value={id}>{extras.find(e=>e.id===id)?.label}</option>)}</select></label>
             <label className="field-label">סיבת ביטול — שדה הדגמה לא נשמר<input readOnly value="בקשת מתאמן לדוגמה"/></label>
             <div className="info"><p>הבקשה תתייחס רק למסלול הנבחר של {m.name}, ולא לבני המשפחה האחרים.</p><p>בהליך אמיתי יוצגו מועד סיום הגישה, תקופת ההודעה המוקדמת, תשלום שנותר והשפעה על הגבייה בהתאם למסלול ולתנאים החלים. כאן לא חושב תאריך מחייב.</p></div>
             <label className="extra"><input type="checkbox" checked={d.accepted} onChange={e=>setD(v=>({...v,accepted:e.target.checked}))}/><span>הבנתי שזו הדמיית בקשה בלבד.</span></label><button disabled={!d.accepted} className="primary" onClick={()=>go('done')}>הדמיית בקשת ביטול</button>
@@ -200,11 +206,11 @@ export function Conversation({initialState}: {initialState?: Draft} = {}) {
             <p className="info">הדמיית הקפאה לחודש אחד, פעם בשנה. בממשק אמיתי יוצגו גם מועד החזרה, דחיית התשלום והארכת התקופה, בלי לשנות את הגבייה של בני המשפחה האחרים. כאן אין עדכון של הוראה או תוקף.</p>
             <label className="extra"><input type="checkbox" checked={d.accepted} onChange={e=>setD(v=>({...v,accepted:e.target.checked}))}/><span>הבנתי שזו בקשה מדומה בלבד.</span></label><button className="primary" disabled={!d.accepted} onClick={()=>go('done')}>הדמיית בקשת הקפאה</button>
           </>}
-          {d.step==='done' && <><div className="success-mark">✓</div><p className="muted">לא נוצרו או שונו חשבון, מנוי, הוראה, חיוב, חשבונית או הודעה.</p><button className="primary" onClick={()=>setD(demoAccount())}>לניהול החשבון לדוגמה</button><button className="secondary" onClick={()=>setD(initialDraft())}>תרחיש רישום חדש</button></>}
+          {d.step==='done' && <><div className="success-mark">✓</div><p className="muted">לא נוצרו או שונו חשבון, מנוי, הוראה, חיוב, חשבונית או הודעה.</p>{(!embedded || initialState?.step==='account') && <button className="primary" onClick={()=>setD(readDraft(JSON.stringify(accountState)))}>לניהול החשבון לדוגמה</button>}<button className="secondary" onClick={()=>setD(readDraft(JSON.stringify(embedded ? baseline:initialDraft())))}>התחלת ההדמיה מחדש</button></>}
         </div>
         {error && <p className="error" role="alert">{error}</p>}
-        {!['welcome','done'].includes(d.step) && <button className="text-button back" onClick={back}>→ חזרה לשלב הקודם</button>}
-        <footer>סביבת בדיקות בלבד · הבחירה אינה נשלחת למועדון</footer>
+        {!['welcome','done'].includes(d.step) && !(embedded && ['account','kind'].includes(d.step)) && <button className="text-button back" onClick={back}>→ חזרה לשלב הקודם</button>}
+        <footer>סביבת בדיקות בלבד · הבחירה אינה נשלחת למועדון{embedded && <button className="text-button" onClick={()=>{if(window.confirm('למחוק את טיוטת ההדמיה ולהתחיל מחדש?')) setD(readDraft(JSON.stringify(baseline)));}}>התחלת ההדמיה מחדש</button>}</footer>
       </section>
     </main>
   </div>;
