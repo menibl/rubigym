@@ -7,8 +7,8 @@ Compared with `AuthGateway.tsx`, `UserSettingsModal.tsx`, and `HealthDeclaration
 | First / last name | Separate fields, inherited family surname remains editable |
 | Birth date / gender | Native date picker, gender choice |
 | Phone / OTP | Fake phone and fixed fake code; extra family phone optional |
-| Username / email | Per-member fields; email limited to example.com |
-| Password | Password + repeat fields; ephemeral, never stored; only completion flag in draft |
+| Username / email | Per-member fields; valid email format, fictional data recommended; local duplicate checks at save |
+| Password | Password + repeat; plaintext ephemeral; salted PBKDF2 verifier saved for explicit local demo login |
 | Health questionnaire | All 13 topics displayed with fictional scenario preset; shortened labels |
 | Medical certificate | Simulated PDF selection button, no actual file input/upload |
 | Signature / parent details and consent | Explicit fake acknowledgement and read-only dummy identity, no real signatures/ID |
@@ -22,7 +22,7 @@ Compared with `AuthGateway.tsx`, `UserSettingsModal.tsx`, and `HealthDeclaration
 | Profile editing | Same field sequence in existing-account scenario |
 | Coupon / summary / return from payment | DEMO10, monthly vs one-time totals, no real checkout |
 
-Not implemented: real accounts, uniqueness checks, actual health forms/signing, actual OTP, catalog/admin data, real pricing/credits/proration, mandate grouping/sync, real service delivery, free-form card sizes or quantities, and production actions. Packages are fixed fictional examples. No server or membership change is made. These need a separately approved functional phase after UX review.
+Not implemented: production accounts/server uniqueness checks, actual health forms/signing, actual OTP, catalog/admin data, real pricing/credits/proration, mandate grouping/sync, real service delivery, free-form card sizes or quantities, and production actions. Packages are fixed fictional examples. Explicit registration save creates unpaid local demo identities only; no server or paid entitlement is changed. Functional production parity needs a separately approved phase after UX review.
 
 Mobile: standalone CSS includes one-column layout, wrapping member cards, two-column management actions (one on very narrow screens), 44px touch targets, 16px text inputs to avoid iOS input zoom, native date/email/tel controls, and safe-area padding. Browser checks should cover 320, 390, 430 and desktop widths before claiming device-wide compatibility; real iOS/Android testing remains separate.
 

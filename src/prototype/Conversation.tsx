@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {blankMember, catalog, checkoutMembers, demoAccount, extras, hasSelection, initialDraft, profileSteps, readDraft, selection, STORAGE_KEY, totals, type Draft, type Flow, type Member} from './model';
+import {createDemoVerifier,validDemoVerifier} from './demoAccount';
 
 const money = (n: number) => `₪${n.toLocaleString('he-IL')}`;
 const prompts: Record<string,string> = {
@@ -31,7 +32,7 @@ const isMinor = (birth: string) => {
   return birth > `${Number(today.slice(0,4))-18}${today.slice(4)}`;
 };
 
-export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY,resume=false}: {initialState?: Draft;embedded?:boolean;storageKey?:string;resume?:boolean} = {}) {
+export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY,resume=false,onCreateDemoAccount}: {initialState?: Draft;embedded?:boolean;storageKey?:string;resume?:boolean;onCreateDemoAccount?:(draft:Draft,verifiers:string[])=>Promise<void>} = {}) {
   const [d,setD] = useState<Draft>(() => {
     if(resume) {try {const saved=localStorage.getItem(storageKey);if(saved) return readDraft(saved);} catch { /* fall through to supplied view-only snapshot */ }}
     if(initialState) return readDraft(JSON.stringify(initialState));
@@ -39,6 +40,7 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
   });
   const baseline=initialState || initialDraft();
   const accountState=initialState?.step==='account' ? initialState:demoAccount();
+  const restart=()=>{for(const suffix of [':credentials',':registrationId']){try{localStorage.removeItem(`${storageKey}${suffix}`);}catch{ /* storage warning is shown by draft persistence */ }}setD(readDraft(JSON.stringify(embedded ? baseline:initialDraft())));setCoupon('');};
   const [storageError,setStorageError] = useState(false);
   const [error,setError] = useState('');
   const [coupon,setCoupon] = useState(d.discount);
@@ -46,6 +48,8 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
   const [password,setPassword] = useState('');
   const [confirmPassword,setConfirmPassword] = useState('');
   const [otp,setOtp] = useState('');
+  const [busy,setBusy]=useState(false);
+  const savedVerifiers=():Record<string,string>=>{try{return JSON.parse(localStorage.getItem(`${storageKey}:credentials`) || '{}');}catch{return {};}};
   const [certificate,setCertificate] = useState(false);
   const [healthSigned,setHealthSigned] = useState(false);
   const [parentApproved,setParentApproved] = useState(false);
@@ -76,15 +80,22 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
   const addMember = () => setD(v=>({...v,family:true,flow:v.fromAccount ? 'add':v.flow,
     members:[...v.members,{...blankMember(),lastName:v.members[0].lastName,email:v.members[0].email}],
     member:v.members.length,step:'name',accepted:false}));
-  const nextProfile = () => {
+  const nextProfile = async () => {
+    if(busy) return;
     if (d.step==='name' && (!m.firstName.trim() || !m.lastName.trim())) return setError('יש למלא שם פרטי ושם משפחה לדוגמה.');
     if (d.step==='birth' && (!/^\d{4}-\d{2}-\d{2}$/.test(m.birth) || m.birth>new Date().toISOString().slice(0,10) || m.birth<'1900-01-01')) return setError('בחרו תאריך לידה תקין שאינו בעתיד.');
     if (d.step==='gender' && !m.gender) return setError('בחרו מין להמשך.');
     if (d.step==='phone' && ((!d.member && !/^05\d{8}$/.test(m.phone)) || (m.phone && !/^05\d{8}$/.test(m.phone)))) return setError('יש להזין טלפון דמה בן 10 ספרות שמתחיל ב־05. לבן משפחה נוסף הטלפון אינו חובה.');
     if (d.step==='otp' && otp!=='111111') return setError('קוד הדמה הוא 111111. לא נשלח SMS.');
     if (d.step==='credentials') {
-      if (!m.username.trim() || !/^[^\s@]+@example\.com$/i.test(m.email)) return setError('בחרו שם משתמש ואימייל דמה שמסתיים ב־@example.com.');
-      if ((!m.credentialsReady || password || confirmPassword) && (password.length<8 || password!==confirmPassword)) return setError('סיסמת הדמה צריכה להכיל לפחות 8 תווים ולהתאים לאימות הסיסמה.');
+      if (!m.username.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email)) return setError('בחרו שם משתמש וכתובת אימייל תקינה להדגמה.');
+      if ((!m.credentialsReady || onCreateDemoAccount && !validDemoVerifier(savedVerifiers()[d.member]) || password || confirmPassword) && (password.length<8 || password!==confirmPassword)) return setError('סיסמת הדמה צריכה להכיל לפחות 8 תווים ולהתאים לאימות הסיסמה.');
+      if(onCreateDemoAccount && password) {
+        setBusy(true);
+        try {const verifier=await createDemoVerifier(password);localStorage.setItem(`${storageKey}:credentials`,JSON.stringify({...savedVerifiers(),[d.member]:verifier}));}
+        catch {setError('לא ניתן לשמור אימות סיסמת דמה במכשיר הזה. יש לאפשר אחסון מקומי ולנסות שוב.');return;}
+        finally {setBusy(false);}
+      }
       update({credentialsReady:true});
     }
     if (d.step==='health' && (!m.health || !healthSigned || (minor && !parentApproved))) return setError('בחרו תרחיש דמה ואשרו חתימת דמה; לקטין נדרש גם אישור הורה מדומה.');
@@ -102,6 +113,14 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
     if (!(d.flow==='extras' ? d.purchaseExtras.length : hasSelection(m))) return setError('בחרו לפחות מסלול או שירות נוסף. אפשר שירותים בלבד, ללא מנוי ראשי.');
     go(d.family && !d.fromAccount ? 'member':'summary');
   };
+  const createAccount=async()=>{
+    if(busy || !onCreateDemoAccount) return;
+    const verifiers=d.members.map((_,i)=>savedVerifiers()[i]);
+    const missing=verifiers.findIndex(v=>!validDemoVerifier(v));
+    if(missing>=0){setD(v=>({...v,member:missing,step:'credentials'}));return;}
+    setBusy(true);setError('');
+    try{await onCreateDemoAccount(d,verifiers);}catch(e){setError(e instanceof Error ? e.message:'שמירת חשבון הדמה נכשלה. אפשר לנסות שוב ללא חיוב.');}finally{setBusy(false);}
+  };
   const memberCard = (person: Member,i: number,edit=true) => <article key={i}>
     <div><strong>{person.name || `בן משפחה ${i+1}`}</strong><p>{d.flow==='extras' && d.step==='summary' ? extras.filter(e=>d.purchaseExtras.includes(e.id)).map(e=>e.label).join(' · '):selection(person)}</p>
       <small>{money(d.flow==='extras' && d.step==='summary' ? 0:totals({...initialDraft(),members:[person]}).monthly)} חודשי + {money(d.flow==='extras' && d.step==='summary' ? total.once:totals({...initialDraft(),members:[person]}).once)} חד־פעמי</small></div>
@@ -116,12 +135,12 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
 
   return <div className={`lab ${embedded ? 'embedded':''}`} dir="rtl">
     {!embedded && <header className="lab-header"><a href={`${import.meta.env?.BASE_URL || '/rubigym/'}index.html`}>← הממשק הקיים</a><span className="wordmark">BW <small>BALY WELLNESS</small></span><span className="lab-tag">מעבדת חוויית משתמש</span></header>}
-    <div className="demo-notice"><strong>אב־טיפוס · נתוני דמה בלבד</strong><span>אין חיובים, SMS או שינוי בחשבון אמיתי. אין להזין פרטים, סיסמאות או מסמכים אמיתיים. כל המחירים להמחשה.</span></div>
+    <div className="demo-notice"><strong>אב־טיפוס · נתוני דמה בלבד</strong><span>אין חיובים, SMS או שינוי בחשבון אמיתי. {onCreateDemoAccount ? 'בסיום אפשר לשמור חשבון דמה בדפדפן הזה ולהיכנס אליו.':'הבחירות הן הדמיה בלבד.'} אין להשתמש בסיסמה אמיתית. כל המחירים להמחשה.</span></div>
     <main className="lab-layout">
       {!embedded && <aside className="journey"><span className="eyebrow">פשוט, צעד אחר צעד</span><h1>מתחילים<br/>להרגיש טוב.</h1><p>הרישום החדש של BALY.<br/>שאלה אחת בכל פעם, בקצב שלכם.</p>
         <ol>{['פרטים ואישורים','בחירת מסלולים','סיכום ותשלום'].map((s,i)=><li key={s} className={(i===0 && profileSteps.includes(d.step)) || (i===1 && ['plans','member','previous'].includes(d.step)) || (i===2 && ['summary','payment','done'].includes(d.step)) ? 'active':''}><b>{i+1}</b>{s}</li>)}</ol>
         <div className="save-note">{storageError ? 'השמירה אינה זמינה בדפדפן זה.' : 'טיוטת הדמה נשמרת במכשיר הזה. סיסמאות, קוד אימות, תשובות רפואיות וחתימות אינם נשמרים ויידרשו שוב לפי הצורך.'}</div>
-        <button className="text-button" onClick={()=>{if(window.confirm('למחוק את טיוטת הדמה ולהתחיל מחדש?')) {setD(initialDraft());setCoupon('');}}}>מחיקת טיוטת הדמה והתחלה מחדש</button>
+        <button className="text-button" onClick={()=>{if(window.confirm('למחוק את טיוטת הדמה ולהתחיל מחדש?')) restart();}}>מחיקת טיוטת הדמה והתחלה מחדש</button>
       </aside>}
       <section className="conversation" aria-label="שאלון רישום מדומה">
         <div className="assistant-label"><span className="assistant-icon">✦</span><div><strong>העוזר של BALY</strong><small>שאלון מודרך · לא צ׳אט AI</small></div></div>
@@ -146,8 +165,8 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
             {d.step==='otp' && <><p className="info">זה שלב מדומה בלבד. קוד הדמה הוא <b>111111</b>, גם אם לבן משפחה נוסף לא הוזן טלפון; בחשבון אמיתי האימות יפעל בהתאם לתהליך הקיים.</p><label className="field-label">קוד אימות מדומה<input inputMode="numeric" maxLength={6} value={otp} onChange={e=>setOtp(e.target.value)}/></label></>}
             {d.step==='credentials' && <>
               {textField('username','שם משתמש לדוגמה')}{textField('email','EMAIL לדוגמה','email')}
-              <p className="muted">להשתמש בכתובת דמה כגון dana@example.com. סיסמה אינה נשמרת ואינה נשלחת.</p>
-              {m.credentialsReady && <p className="info">פרטי הכניסה המדומים כבר הושלמו. אפשר להמשיך בלי להזין סיסמה מחדש או להדגים החלפה.</p>}
+              <p className="muted">מומלץ להשתמש בכתובת דמה כגון dana@example.com. סיסמה גלויה אינה נשמרת; לחשבון דמה נשמר רק ערך אימות מקומי שנגזר מהסיסמה.</p>
+              {m.credentialsReady && (!onCreateDemoAccount || validDemoVerifier(savedVerifiers()[d.member])) && <p className="info">פרטי הכניסה המדומים כבר הושלמו. אפשר להמשיך בלי להזין סיסמה מחדש או להדגים החלפה.</p>}
               <label className="field-label">סיסמת דמה — לפחות 8 תווים<input type="password" autoComplete="off" value={password} maxLength={80} onChange={e=>setPassword(e.target.value)}/></label>
               <label className="field-label">אימות סיסמת דמה<input type="password" autoComplete="off" value={confirmPassword} maxLength={80} onChange={e=>setConfirmPassword(e.target.value)}/></label>
             </>}
@@ -166,7 +185,7 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
               <label className="extra"><input type="checkbox" checked={m.push} onChange={e=>update({push:e.target.checked,reminders:e.target.checked ? m.reminders:false})}/><span>הדמיית בחירה בקבלת התראות PUSH</span></label>
               <label className="extra"><input type="checkbox" disabled={!m.push} checked={m.reminders} onChange={e=>update({reminders:e.target.checked})}/><span>תזכורות לפני אימון — ללא התראות אמיתיות</span></label>
             </>}
-            <button className="primary" type="button" onClick={nextProfile}>{d.step==='consent' ? (d.flow==='profile' ? 'סיום עדכון הפרטים המדומה':'המשך לבחירת מסלול ←'):'ממשיכים ←'}</button>
+            <button className="primary" type="button" onClick={nextProfile} disabled={busy}>{busy ? 'שומר אימות מקומי…':d.step==='consent' ? (d.flow==='profile' ? 'סיום עדכון הפרטים המדומה':'המשך לבחירת מסלול ←'):'ממשיכים ←'}</button>
           </div>}
           {d.step==='account' && <>
             <p className="info">{embedded ? 'אלה המשתמש ובני המשפחה מתוך החשבון בסביבת הבדיקות. הנתונים מוצגים לקריאה בלבד.':'חשבון משפחתי לדוגמה לאחר רישום.'} כל הפעולות כאן מדומות ואינן משנות מנויים או הוראות קבע.</p>
@@ -206,11 +225,11 @@ export function Conversation({initialState,embedded=false,storageKey=STORAGE_KEY
             <p className="info">הדמיית הקפאה לחודש אחד, פעם בשנה. בממשק אמיתי יוצגו גם מועד החזרה, דחיית התשלום והארכת התקופה, בלי לשנות את הגבייה של בני המשפחה האחרים. כאן אין עדכון של הוראה או תוקף.</p>
             <label className="extra"><input type="checkbox" checked={d.accepted} onChange={e=>setD(v=>({...v,accepted:e.target.checked}))}/><span>הבנתי שזו בקשה מדומה בלבד.</span></label><button className="primary" disabled={!d.accepted} onClick={()=>go('done')}>הדמיית בקשת הקפאה</button>
           </>}
-          {d.step==='done' && <><div className="success-mark">✓</div><p className="muted">לא נוצרו או שונו חשבון, מנוי, הוראה, חיוב, חשבונית או הודעה.</p>{(!embedded || initialState?.step==='account') && <button className="primary" onClick={()=>setD(readDraft(JSON.stringify(accountState)))}>לניהול החשבון לדוגמה</button>}<button className="secondary" onClick={()=>setD(readDraft(JSON.stringify(embedded ? baseline:initialDraft())))}>התחלת ההדמיה מחדש</button></>}
+          {d.step==='done' && <><div className="success-mark">✓</div><p className="muted">לא בוצעו חיוב, הוראת קבע או SMS. {onCreateDemoAccount && d.flow==='register' ? 'כדי להיכנס עם הפרטים שבחרתם, שמרו כעת חשבון דמה מקומי. הוא יישמר רק בדפדפן ובמכשיר האלה; מנוי יישאר ללא תשלום אמיתי.':'לא שונה חשבון אמיתי.'}</p>{onCreateDemoAccount && d.flow==='register' && <button className="primary" disabled={busy} onClick={createAccount}>{busy ? 'שומר חשבון דמה…':'שמירת חשבון דמה וכניסה לאפליקציה'}</button>}{(!embedded || initialState?.step==='account') && <button className="primary" onClick={()=>setD(readDraft(JSON.stringify(accountState)))}>לניהול החשבון לדוגמה</button>}<button className="secondary" onClick={restart}>התחלת ההדמיה מחדש</button></>}
         </div>
         {error && <p className="error" role="alert">{error}</p>}
         {!['welcome','done'].includes(d.step) && !(embedded && ['account','kind'].includes(d.step)) && <button className="text-button back" onClick={back}>→ חזרה לשלב הקודם</button>}
-        <footer>סביבת בדיקות בלבד · הבחירה אינה נשלחת למועדון{embedded && d.step!=='done' && <button className="text-button" onClick={()=>{if(window.confirm('למחוק את טיוטת ההדמיה ולהתחיל מחדש?')) setD(readDraft(JSON.stringify(baseline)));}}>התחלת ההדמיה מחדש</button>}</footer>
+        <footer>סביבת בדיקות בלבד · אין עדכון באתר הפעיל{embedded && d.step!=='done' && <button className="text-button" onClick={()=>{if(window.confirm('למחוק את טיוטת ההדמיה ולהתחיל מחדש?')) restart();}}>התחלת ההדמיה מחדש</button>}</footer>
       </section>
     </main>
   </div>;

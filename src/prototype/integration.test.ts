@@ -40,7 +40,7 @@ test('frame sandbox and CSP block payments, network requests and form submission
   const entry=readFileSync(new URL('entry.tsx',import.meta.url),'utf8');
   assert.match(entry,/event.source!==window.parent/);assert.match(entry,/event.origin!==location.origin/);
   assert.match(entry,/if\(initialized/);
-  assert.match(entry,/storageKey=\{`\$\{STORAGE_KEY\}:embedded:\$\{scope\}`\}/);
+  assert.match(entry,/const storageKey=`\$\{STORAGE_KEY\}:embedded:\$\{scope\}`/);
 });
 
 test('embedded questions and coupons advance with explicit buttons, never a sandbox-blocked form submit',()=>{
