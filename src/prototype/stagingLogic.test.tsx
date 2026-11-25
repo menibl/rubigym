@@ -26,6 +26,11 @@ test('question shell preserves original field elements and binds original health
   assert.equal(renderToStaticMarkup(<StagingMembershipSurface selected={false} choice="overview" onChoice={()=>{}} onClose={()=>{}} family={false}><p>original</p></StagingMembershipSurface>),'<div class="space-y-6"><p>original</p></div>');
 });
 
+test('phone and OTP retain their original submit on the same question, including the back action',()=>{
+  const groups=chatQuestionGroups([<label key="phone">phone<input /></label>,<button key="submit" type="submit">verify</button>,<button key="back" type="button">back</button>]);
+  assert.equal(groups.length,1);assert.equal(groups[0].length,3);
+});
+
 for(const discount of [undefined,{code:'PERCENT',discountPercent:13},{code:'FIXED',discountAmount:99}] as (DiscountCode|undefined)[]){
   test(`individual and family preview reuse identical server line allocation/grouping (${discount?.code || 'no discount'})`,()=>{
     const members=[{memberId:'payer',memberName:'Test Payer',participation:'INCLUDED',membershipType:MembershipType.OPEN_GYM,additionalPlans:[{membershipType:MembershipType.PERSONAL_TRAINING,trainingSessionsCount:3}]},{memberId:'child',memberName:'Test Child',participation:'INCLUDED',membershipType:MembershipType.OPEN_GYM,additionalPlans:[{membershipType:MembershipType.DUO_TRAINING,trainingSessionsCount:2}]}];

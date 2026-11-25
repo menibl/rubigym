@@ -97,7 +97,10 @@ export function chatQuestionGroups(children:ReactNode){
     else groups.push([node]);
     if(isValidElement<{type?:string}>(node) && node.type==='button' && node.props.type==='submit') foundSubmit=true;
   }
-  return groups;
+  // Phone and OTP are single-question forms: keep their original submit beside
+  // the input instead of introducing a redundant extra confirmation question.
+  return groups.length===2 && isValidElement<{type?:string}>(groups[1][0]) && groups[1][0].type==='button' && groups[1][0].props.type==='submit'
+    ? [[...groups[0],...groups[1]]]:groups;
 }
 
 function firstMissingPassword(groups:ReactNode[][]){
