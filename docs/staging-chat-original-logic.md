@@ -24,6 +24,10 @@ This is NOT a final provider quotation: live server authorization, credits/upgra
 
 ## Color and layout
 
+Registered users' family-add entry point now uses the same staging question shell, including the initial family name/quota setup and individual identity questions. The existing `UserSettingsModal` form fields, family creation/save callbacks, health declaration and consent stay authoritative. Production and admin settings retain their original containers. Nested chat screens share a scroll lock so returning to membership/home restores scrolling correctly.
+
+Local browser verification added a fictional family member through every question, the original health form and original save handler, then returned to the family plan selector where the new member appeared without a paid membership. Responsive checks covered widths 320, 390, 430 and landscape 844; no horizontal document overflow was observed. No provider requests, payments or SMS were performed.
+
 Gold `#c9a867` replaces purple; existing mobile input/button sizes and typography are retained, not the larger illustrative design. Embedded host controls mirror those sizes. Family editor nesting is flattened on narrow screens. Home and login styling remain unchanged. Birth-date inputs additionally forward the native input event into their original controlled state so dates survive question transitions.
 
 ## Evidence and remaining release gate
