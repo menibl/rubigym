@@ -22,13 +22,12 @@ test('integrated account projection is family-scoped, read-only and excludes pri
 });
 test('registration and membership navigation intercept only staging flows, not login or the other tabs',()=>{
   const auth=readFileSync(new URL('../components/AuthGateway.tsx',import.meta.url),'utf8');
-  assert.match(auth,/STAGING_CONVERSATION_ENABLED && screen === 'register'/);
-  assert.match(auth,/mode="registration" onClose=\{\(\) => openScreen\('login'\)\}/);
+  assert.match(auth,/stagingLogicEnabled\(\) && screen==='register' \? StagingRegistrationSurface:'main'/);
+  assert.match(auth,/StagingChatForm flowKey="profile" onSubmit=\{handleRegistrationDetails\}/);
   assert.match(auth,/await onPasswordLogin\(username.trim\(\), password\)/);
   const trainee=readFileSync(new URL('../components/TraineeDashboard.tsx',import.meta.url),'utf8');
-  assert.match(trainee,/STAGING_CONVERSATION_ENABLED && tab==='membership'/);
   assert.match(trainee,/setActiveTabState\(tab\)/);
-  assert.match(trainee,/mode="membership" activeUser=\{activeUser\} users=\{users\}/);
+  assert.match(trainee,/StagingMembershipSurface selected=\{Boolean\(selectedMembershipPurchase\)\}/);
   for(const source of [auth,trainee]) assert.match(source,/if \(STAGING_CONVERSATION_ENABLED\) return;\s*const returnStatus/);
 });
 test('frame sandbox and CSP block payments, network requests and form submission in the new flow',()=>{

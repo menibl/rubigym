@@ -1,8 +1,15 @@
 import { DiscountCode, FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, Payment, PaymentPurchaseVariant } from '../types';
 import { retryPaymentApproval, approvalFetchSignal } from './paymentApprovalRetry';
+import {STAGING_CONVERSATION_ENABLED} from '../prototype/integration';
 
 const PENDING_PAYMENT_KEY = 'baly_rivhit_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_rivhit_processed_transactions_v1';
+// Defense in depth: no reconciliation, provider, admin or checkout request can
+// escape the Pages chat experiment, even through a less visible legacy control.
+const fetch:typeof globalThis.fetch=(input,init)=>{
+  if(STAGING_CONVERSATION_ENABLED) throw new Error('רווחית חסומה בסביבת הבדיקות — לא בוצע חיוב או סנכרון אמיתי.');
+  return globalThis.fetch(input,init);
+};
 
 export interface PendingRivhitPayment {
   resumedAuthenticatedRegistration?: boolean;
@@ -22,7 +29,7 @@ export interface PendingRivhitPayment {
   familySplitItemId?: string;
 }
 
-interface CreatePaymentRequest {
+export interface CreatePaymentRequest {
   individualSelections?: { membershipType: MembershipType; trainingSessionsCount?: number }[];
   familyPaymentGrouping?: 'COMBINED' | 'SEPARATE';
   userId: string;
@@ -92,6 +99,7 @@ export const validateRivhitDiscountCode = async (code: string): Promise<Discount
 };
 
 export const startRivhitPayment = async (request: CreatePaymentRequest) => {
+  if(STAGING_CONVERSATION_ENABLED){await (await import('../prototype/stagingCheckout')).previewStagingCheckout(request);return;}
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות התשלום עדיין לא הוגדר בשרת.');
   let quoteKey: string | undefined;
@@ -259,6 +267,7 @@ export interface RecoverableCheckout {
 }
 
 const checkoutRecovery = async (action: 'status' | 'check' | 'resume' | 'restart', orderId?: string, signal?: AbortSignal) => {
+  if(STAGING_CONVERSATION_ENABLED) throw new Error('בדיקות ספק וסליקה חסומות בסביבת הצ׳אט. לא נוצר חיוב.');
   const response = await fetch(`${paymentApiBase()}/api/payments/rivhit/checkout-recovery`, {
     method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, orderId, confirmUndispatched: action === 'restart' }), signal: approvalFetchSignal(signal)

@@ -196,7 +196,7 @@ export default function App() {
     applyServerPayload(state.payload, state.revision);
     setActiveUser(signedInUser);
     setIsAuthenticated(true);
-    if(STAGING_CONVERSATION_ENABLED && signedInUser.id.startsWith('demo-chat-')) setShowTraineeAccessAlert(false);
+    if(STAGING_CONVERSATION_ENABLED) setShowTraineeAccessAlert(false);
     if (signedInUser.registrationPaymentPending && !STAGING_CONVERSATION_ENABLED) {
       const url = new URL(window.location.href);
       url.searchParams.set('workspace', 'my_membership');
@@ -575,7 +575,7 @@ export default function App() {
   const finishServerLogin = async (user: User) => {
     await loadAuthenticatedState(user);
     setWorkspaceView(null);
-    setShowTraineeAccessAlert(!(STAGING_CONVERSATION_ENABLED && user.id.startsWith('demo-chat-')));
+    setShowTraineeAccessAlert(!STAGING_CONVERSATION_ENABLED);
     if(STAGING_CONVERSATION_ENABLED){const url=new URL(window.location.href);for(const key of ['screen','plan','workspace','contact'])url.searchParams.delete(key);window.history.replaceState(window.history.state,'',url);}
     return user;
   };

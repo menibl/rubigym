@@ -6,7 +6,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
 import {STAGING_CONVERSATION_ENABLED} from '../prototype/integration';
-import {StagingConversationFrame} from './StagingConversationFrame';
+import {StagingChatForm,StagingMembershipSurface,stagingLogicEnabled} from '../prototype/StagingLogicChat';
+import {HomeMembershipSummary} from './HomeMembershipSummary';
 import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { activePlanExpiry, emptyFamilyPurchase } from '../data/membershipRenewal';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
@@ -174,10 +175,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   familyCheckoutRequest = 0
 }) => {
   type TraineeTab = 'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership';
-  const [activeTab, setActiveTabState] = useState<TraineeTab>(STAGING_CONVERSATION_ENABLED && initialTab==='membership' ? 'home':initialTab);
-  const [stagingChatOpen,setStagingChatOpen] = useState(STAGING_CONVERSATION_ENABLED && initialTab==='membership');
+  const [activeTab, setActiveTabState] = useState<TraineeTab>(initialTab);
+  const [chatChoice,setChatChoice] = useState('overview');
   const setActiveTab = (tab:TraineeTab) => {
-    if(STAGING_CONVERSATION_ENABLED && tab==='membership') {setStagingChatOpen(true);return;}
     setActiveTabState(tab);
   };
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
@@ -221,6 +221,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   useEffect(() => {
     if (!familyCheckoutRequest) return;
+    if(stagingLogicEnabled()){setChatChoice('family');if(activeUser.familyName)setFamilyPurchaseName(activeUser.familyName);}
     setSelectedMembershipPurchase(null);
     setActiveTab('membership');
     const timeout = window.setTimeout(() => familyCheckoutRef.current?.scrollIntoView({ block: 'start' }), 0);
@@ -281,6 +282,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const applySelectedDiscount = (amount: number) => appliedDiscount?.discountPercent
     ? Math.round(amount * (1 - appliedDiscount.discountPercent / 100))
     : Math.max(0, amount - (appliedDiscount?.discountAmount || 0));
+  useEffect(()=>{if(stagingLogicEnabled())window.dispatchEvent(new CustomEvent('baly:staging-checkout-preview',{detail:null}));},[selectedMembershipPurchase,trainingCardSize,checkoutAdditions,familyMemberPlans,familyPaymentGrouping,appliedDiscount]);
 
   const applyVerifiedMembershipPayment = (
     purchasedType: MembershipType,
@@ -1421,7 +1423,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   return (
     <div className="space-y-6 trainee-app" id="trainee-dashboard">
-      {STAGING_CONVERSATION_ENABLED && stagingChatOpen && <StagingConversationFrame mode="membership" activeUser={activeUser} users={users} onClose={()=>{setStagingChatOpen(false);if(initialTab==='membership') onHome?.();}} />}
       {/* Toast Feedback */}
       {feedbackMsg && (
         <div className={`p-4 rounded-xl shadow-lg border fixed bottom-6 left-6 z-50 flex items-center gap-2 max-w-sm transition-all duration-300 transform translate-y-0 ${
@@ -2359,11 +2360,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
         {/* MEMBERSHIP MANAGEMENT & RIVHIT CHECKOUT */}
         {activeTab === 'membership' && (
-          <div className="space-y-6">
+          <StagingMembershipSurface selected={Boolean(selectedMembershipPurchase)} choice={chatChoice} onChoice={setChatChoice} onClose={()=>onHome ? onHome():setActiveTab('home')} family={familyUsers.length>1}>
             <RecurringMembershipNotice user={activeUser} plans={membershipPlanConfigs} />
-            <PendingCheckoutRecovery key={`${activeUser.id}-${checkoutReturn}`} userId={activeUser.id} />
+            {stagingLogicEnabled() && chatChoice==='overview' && !selectedMembershipPurchase && familyUsers.map(member=><article key={member.id} className="rounded-xl border border-zinc-700 p-4"><strong>{member.name}</strong><HomeMembershipSummary user={member} payments={payments} plans={membershipPlanConfigs}/></article>)}
+            {!STAGING_CONVERSATION_ENABLED && <PendingCheckoutRecovery key={`${activeUser.id}-${checkoutReturn}`} userId={activeUser.id} />}
             {activeUser.registrationPaymentPending && <p role="alert" className="rounded-xl border border-amber-400/40 bg-zinc-900 p-4 text-amber-200">החשבון שלך נרשם בהצלחה, אך התשלום עדיין לא הושלם. יש לבחור מסלול ולהשלים תשלום כדי להירשם לאימונים.</p>}
-            <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
+            {(!stagingLogicEnabled() || !selectedMembershipPurchase && chatChoice==='overview') && <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
               <button className="text-xs text-amber-300 mb-4" onClick={() => { setSelectedMembershipPurchase(null); setActiveTab('profile'); }}>
                 חזרה לפרופיל
               </button>
@@ -2384,7 +2386,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   </div>
                 </div>
               </div>
-            </section>
+            </section>}
 
             <button type="button" className="w-full rounded-2xl border border-amber-500/30 bg-slate-950 p-4 text-right text-white" onClick={() => onOpenSettings('family-add')}>
               <strong className="block text-base">הוספת בן משפחה</strong>
@@ -2400,9 +2402,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <b className="block text-sm text-slate-900">{selectedMembershipConfig?.label || MEMBERSHIP_TYPE_LABELS[selectedMembershipPurchase]?.label || selectedMembershipPurchase}</b>
                     <span className="text-[11px] text-slate-600">{membershipPurchaseMode === 'PRIMARY' ? 'מסלול ראשי' : 'שירות נוסף'}</span>
                   </div>
-                  <strong className="text-xl text-amber-800">₪{applySelectedDiscount(selectedMembershipAmount)} · {billingPeriodLabel(selectedMembershipConfig)}</strong>
+                  <strong className="text-xl text-amber-800">₪{applySelectedDiscount(selectedMembershipAmount + (stagingLogicEnabled() ? checkoutAdditions.reduce((sum,item)=>sum+(membershipPlanConfigs.find(plan=>plan.id===item.membershipType)?.price || 0)*(item.trainingSessionsCount || 1),0):0))} · {billingPeriodLabel(selectedMembershipConfig)}</strong>
                 </div>
-                <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
+                <StagingChatForm flowKey={`purchase:${selectedMembershipPurchase}`} onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
                   <fieldset className="rounded-xl border border-slate-600 bg-slate-950 p-4 text-slate-100">
                     <legend className="px-2 font-bold">תוספות לאותה רכישה</legend>
                     {membershipPurchaseMode === 'ADDON' && <p className="mb-3 text-sm">אפשר לרכוש אישי וזוגי יחד, עם כמות נפרדת לכל שירות. אין צורך במנוי Open Gym והמנוי הקיים לא ישתנה.</p>}
@@ -2429,7 +2431,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   )}
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
-                    התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
+                    {stagingLogicEnabled() ? 'תצוגת חישוב בלבד — לא נפתח דף סליקה, לא מוזנים פרטי אשראי ולא נוצר חיוב.':'התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.'}
                   </div>
                   {billingPeriodForPlan(selectedMembershipConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
                     הוראת קבע בסך ₪{selectedMembershipPrice} לחודש: 12 חיובים לפי יום פתיחת בקשת התשלום; בקשה ב־29–31 תחויב החל מ־1 בחודש הבא. תוקף המנוי נשאר עד ה־1 בחודש העוקב לחודש ששולם. אין חידוש אוטומטי; חידוש דורש את אישורכם. לפני המעבר לתשלום יוצגו המועדים לאישור.
@@ -2440,13 +2442,13 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     </p>
                   )}
                   <button type="submit" disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
-                    <CreditCard size={17} /> {paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח'}
+                    <CreditCard size={17} /> {stagingLogicEnabled() ? 'בדיקת חישוב ללא חיוב':paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח'}
                   </button>
-                </form>
+                </StagingChatForm>
               </section>
             ) : (
               <>
-                {familyUsers.length > 1 && <section ref={familyCheckoutRef} className="space-y-4 rounded-2xl border border-indigo-200 bg-white p-5">
+                {familyUsers.length > 1 && (!stagingLogicEnabled() || chatChoice==='family') && <section ref={familyCheckoutRef} className="logic-family space-y-4 rounded-2xl border border-indigo-200 bg-white p-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <span className="text-[11px] font-black text-indigo-700">חשבון משפחתי</span>
@@ -2469,12 +2471,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id), membershipPlanConfigs)).toLocaleString('he-IL')}</strong></div>
                     <button type="button" onClick={() => void handleFamilyCheckout()} disabled={familyEditing || paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
-                      {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
+                      {stagingLogicEnabled() ? 'בדיקת חישוב משפחתי ללא חיוב':paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
                     </button>
                   </div>
                 </section>}
 
-                <section>
+                {(!stagingLogicEnabled() || chatChoice==='plans') && <section>
                   <div className="mb-3">
                     <h3 className="font-black text-slate-900">בחירת מסלול ראשי</h3>
                     <p className="text-xs text-slate-500 mt-1">אפשר לחדש, לשדרג או להחליף את המסלול הקיים.</p>
@@ -2497,9 +2499,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       </article>;
                     })}
                   </div>
-                </section>
+                </section>}
 
-                <section>
+                {(!stagingLogicEnabled() || chatChoice==='extras') && <section>
                   <h3 className="font-black text-slate-900 mb-3">רכישת שירותים נוספים</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {membershipAddOns.map(planConfig => {
@@ -2521,9 +2523,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       );
                     })}
                   </div>
-                </section>
+                </section>}
 
-                <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {(!stagingLogicEnabled() || chatChoice==='policy') && <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button disabled={!freezeAvailable || Boolean(activeUser.membershipFreezeRequestedAt)} className={`rounded-2xl border p-4 text-right ${freezeActive ? 'border-sky-200 bg-sky-50' : freezeAvailable ? 'border-slate-200 bg-white' : 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-70'}`} onClick={handleFreezeMembership}>
                     <strong className="block text-sm text-slate-900">{activeUser.membershipFreezeRequestedAt ? 'בקשת הקפאה ממתינה לאישור מנהל' : freezeActive ? 'המנוי מוקפא' : freezeAvailable ? 'בקשת הקפאת מנוי' : 'הקפאת השנה נוצלה'}</strong>
                     <span className="text-[11px] text-slate-600 mt-1 block">{freezeActive ? `הקפאה רצופה עד ${activeUser.membershipFrozenUntil}; לא ניתן לבטל מוקדם.` : freezeAvailable ? 'חודש אחד רצוף, פעם אחת בכל 12 חודשים.' : 'ניתן להקפיא שוב לאחר שיחלפו 12 חודשים ממועד ההקפאה הקודמת.'}</span>
@@ -2534,10 +2536,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       <span className="text-[11px] text-red-700 mt-1 block">{activeUser.cancellationEffectiveDate ? `הביטול נקבע לתאריך ${activeUser.cancellationEffectiveDate}.` : 'הביטול נכנס לתוקף חודש לאחר הגשת הבקשה.'}</span>
                     </button>
                   )}
-                </section>
+                </section>}
               </>
             )}
-          </div>
+          </StagingMembershipSurface>
         )}
 
         {/* PROFILE, MEMBERSHIP & PAYMENT */}

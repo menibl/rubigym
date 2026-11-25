@@ -1,5 +1,7 @@
 # Prototype field / flow coverage
 
+This inventory describes the historical standalone fictional prototype. For the current integrated Pages registration/membership flow, see [original-logic integration and release gates](staging-chat-original-logic.md). That flow reuses the original fields and handlers rather than this simplified model. Live DB parity is not yet certified.
+
 Compared with `AuthGateway.tsx`, `UserSettingsModal.tsx`, and `HealthDeclarationForm.tsx` on staging. This is a UX inventory, NOT functional production parity.
 
 | Existing field or action | Prototype |
