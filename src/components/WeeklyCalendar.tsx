@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { resolveCalendarSelection, type CalendarSelection } from '../utils/calendarSelection';
 import {
   User,
   UserRole,
@@ -128,11 +129,7 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   const [traineeFilter, setTraineeFilter] = useState<'ALL' | 'MY_BOOKINGS' | 'GROUP' | 'PERSONAL' | 'OPEN_GYM'>('ALL');
 
   // Selected session for details modal
-  const [selectedItem, setSelectedItem] = useState<{
-    type: 'SESSION' | 'OPEN_GYM';
-    session?: TrainingSession;
-    openGym?: OpenGymSession;
-  } | null>(null);
+  const [selectedOccurrence, setSelectedItem] = useState<CalendarSelection | null>(null);
 
   // Navigate Weeks
   const handlePrevWeek = () => {
@@ -291,6 +288,10 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
       openGym: dayOpenGym
     };
   };
+
+  const selectedDate = selectedOccurrence?.session?.date || selectedOccurrence?.openGym?.date;
+  const selectedItem = resolveCalendarSelection(selectedOccurrence,
+    selectedDate ? getItemsForDate(selectedDate) : { sessions: [], openGym: [] });
 
   // Helper: Filter items specifically for dateKey AND hour slot
   const getItemsForDateAndHour = (dateKey: string, hourSlot: string) => {
