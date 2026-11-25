@@ -68,7 +68,7 @@ import { isPagesDemoMode } from './data/appMode';
 import { getPublicLandingConfig, PublicLandingConfig } from './data/publicLanding';
 import { syncClubDisplaySchedule } from './data/clubDisplayRemote';
 import { personalPlanToDisplayProgram } from './data/workoutAssignment';
-import { mergeEntityCollectionById } from './data/clubStateMerge.js';
+import { rebaseClubStateAfterConflict } from './data/clubStateMerge.js';
 import { ArrowRight, CreditCard, Dumbbell, HeartPulse, UserCheck, AlertOctagon, HelpCircle, Flame, Sparkles, LogIn, UserPlus, Settings, User as UserIcon, X } from 'lucide-react';
 
 const isClubWorkoutDisplay = () => window.location.hash === '#club-workout-display';
@@ -137,6 +137,9 @@ export default function App() {
   const pendingClubStateRef = useRef<Record<string, unknown> | null>(null);
   const savingClubStateRef = useRef(false);
   const skipNextAutosaveRef = useRef(false);
+  const localClubStateRef = useRef<Record<string, unknown> | null>(null);
+  const localEditVersionRef = useRef(0);
+  const localEditsPendingRef = useRef(false);
 
   // Active signed-in user
   const [activeUser, setActiveUser] = useState<User>(INITIAL_USERS[0]);
@@ -182,6 +185,8 @@ export default function App() {
     setWorkoutAssistantDrafts((payload.workoutAssistantDrafts as WorkoutAssistantDraft[]) || []);
     setGroupWorkoutPrograms((payload.groupWorkoutPrograms as GroupWorkoutProgram[]) || []);
     lastSyncedClubStateRef.current = payload;
+    localClubStateRef.current = payload;
+    localEditsPendingRef.current = false;
     revisionRef.current = revision;
     hydratedRef.current = true;
   };
@@ -211,11 +216,13 @@ export default function App() {
     try {
       while (pendingClubStateRef.current && hydratedRef.current) {
         const payload = pendingClubStateRef.current;
+        const editVersion = localEditVersionRef.current;
         pendingClubStateRef.current = null;
         try {
           const result = await saveClubState(payload, revisionRef.current);
           lastSyncedClubStateRef.current = payload;
           revisionRef.current = result.revision;
+          if (editVersion === localEditVersionRef.current) localEditsPendingRef.current = false;
           if (result.generatedMessages?.length) {
             setMessages(current => {
               const existingIds = new Set(current.map(message => message.id));
@@ -228,17 +235,33 @@ export default function App() {
             // Another device updated the club while this payload was being saved.
             // Rebase locally changed fields onto the newest server entities so a
             // stale browser cannot erase a trainee's photo, gender or age.
-            const retryPayload = pendingClubStateRef.current || payload;
             const latest = await getClubState();
+            // Read AFTER the fetch: include edits still inside the autosave debounce.
+            const retryPayload = localClubStateRef.current || pendingClubStateRef.current || payload;
             const basePayload = lastSyncedClubStateRef.current;
+            let rebased;
+            try {
+              rebased = rebaseClubStateAfterConflict(basePayload, retryPayload, latest.payload);
+            } catch (mergeError) {
+              if (!['BOOKING_CAPACITY_CONFLICT', 'BOOKING_OCCURRENCE_CONFLICT'].includes((mergeError as Error).message)) throw mergeError;
+              // Reject the ENTIRE save, including any coupled punch-card debit.
+              // Never overbook, move accepted users, or debit an unaccepted booking.
+              pendingClubStateRef.current = null;
+              applyServerPayload(latest.payload, latest.revision);
+              window.alert('השינויים בשמירה זו לא נשמרו עקב שינוי בתפוסה או במועד האימון ממכשיר אחר. נתוני השרת נשמרו ללא שינוי. יש לבדוק מחדש את המשבצת ולהירשם או להצטרף להמתנה, ולבצע שוב שינויים נוספים שלא נשמרו.');
+              break;
+            }
             revisionRef.current = latest.revision;
             lastSyncedClubStateRef.current = latest.payload;
-            pendingClubStateRef.current = {
-              ...retryPayload,
-              users: mergeEntityCollectionById(basePayload.users, retryPayload.users, latest.payload.users),
-              payments: mergeEntityCollectionById(basePayload.payments, retryPayload.payments, latest.payload.payments),
-              messages: mergeEntityCollectionById(basePayload.messages, retryPayload.messages, latest.payload.messages)
-            };
+            pendingClubStateRef.current = rebased;
+            localClubStateRef.current = rebased;
+            // Adopt merged bookings too, otherwise a later unrelated local save
+            // would mistake the stale UI's missing users for fresh cancellations.
+            setSessions(rebased.sessions as TrainingSession[]);
+            setOpenGymSessions(rebased.openGymSessions as OpenGymSession[]);
+            setUsers(rebased.users as User[]);
+            setPayments(rebased.payments as Payment[]);
+            setMessages(rebased.messages as Message[]);
           } else {
             console.error('Unable to save club state', saveError);
             if (saveError.status === 413) window.alert(saveError.message);
@@ -269,16 +292,19 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated || !hydratedRef.current) return;
-    if (skipNextAutosaveRef.current) {
-      skipNextAutosaveRef.current = false;
-      return;
-    }
     const payload = {
       settings, users, sessions, openGymSessions, workoutPlans, nutritionPlans, blackPoints,
       announcements, payments, messages, attendanceLogs, discountCodes, traineeProfiles,
       traineeMemoryEntries, gymEquipment, coachPdfDocuments, workoutAssistantMessages,
       workoutAssistantDrafts, groupWorkoutPrograms
     };
+    localClubStateRef.current = payload;
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      return;
+    }
+    localEditVersionRef.current += 1;
+    localEditsPendingRef.current = true;
     const timer = window.setTimeout(() => {
       pendingClubStateRef.current = payload;
       void flushPendingClubState();
@@ -376,6 +402,7 @@ export default function App() {
           !cancelled
           && !savingClubStateRef.current
           && !pendingClubStateRef.current
+          && !localEditsPendingRef.current
           && latest.revision > revisionRef.current
         ) applyServerPayload(latest.payload, latest.revision);
       } catch (error) {
