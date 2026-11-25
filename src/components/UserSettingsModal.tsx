@@ -14,6 +14,7 @@ import { createHealthDeclarationRecord } from '../data/healthDeclarationRecords'
 import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
 
 import { prepareProfileImage } from '../utils/profileImage';
+import {StagingChatForm,StagingFamilySettingsSurface,StagingFamilySetup,stagingLogicEnabled} from '../prototype/StagingLogicChat';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -445,12 +446,13 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     setMsg({ type: 'success', text: `בן המשפחה ${newSubUser.name} נוסף בהצלחה!` });
   };
 
+  const stagingFamily=stagingLogicEnabled() && activeTab==='family' && !isAdminMode;
   return (
-    <div className="user-settings-modal fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/70 p-2 backdrop-blur-sm sm:items-center sm:p-4 dir-rtl">
+    <StagingFamilySettingsSurface enabled={stagingFamily} onExit={onClose} className="user-settings-modal fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/70 p-2 backdrop-blur-sm sm:items-center sm:p-4 dir-rtl">
       <div className="user-settings-dialog my-1 max-h-[calc(100dvh-0.5rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 sm:my-8 sm:max-h-[calc(100dvh-2rem)]">
         
         {/* Header */}
-        <div className="sticky top-0 z-20 bg-slate-900 p-5 text-white relative flex items-center justify-between">
+        <div data-chat-settings-header className="sticky top-0 z-20 bg-slate-900 p-5 text-white relative flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-emerald-500/20 text-emerald-400 p-2 rounded-xl border border-emerald-500/30">
               <UserIcon size={20} />
@@ -473,7 +475,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-200 bg-slate-50 text-xs font-bold">
+        <div data-chat-settings-tabs className="flex border-b border-slate-200 bg-slate-50 text-xs font-bold">
           <button
             onClick={() => setActiveTab('profile')}
             className={`flex-1 py-3 text-center border-b-2 transition flex items-center justify-center gap-2 cursor-pointer ${
@@ -507,7 +509,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           </div>
         )}
 
-        <div className="p-6">
+        <div data-chat-settings-body className="p-6">
           {activeTab === 'profile' && (
             <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
               <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -719,7 +721,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
             <div className="space-y-4 text-xs">
               {/* If user is not yet family or is payer */}
               {currentUser.role === UserRole.TRAINEE || isAdminMode ? (
-                <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 space-y-3">
+                <div data-chat-family-container className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="font-bold text-indigo-900 text-sm flex items-center gap-2">
                       <Users size={18} className="text-indigo-600" />
@@ -732,15 +734,17 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     )}
                   </div>
 
-                  {!currentUser.familyId && (
-                    <div className="space-y-3 pt-2">
-                      <p className="text-slate-600">
+                  {!currentUser.familyId && (!stagingFamily || !showAddSubMember) && (
+                    <StagingFamilySetup enabled={stagingFamily} flowKey={`family-setup:${currentUser.id}`} onSubmit={event=>{event.preventDefault();handleEnableFamilyAccount();}} className="space-y-3 pt-2">
+                      <p data-chat-context className="text-slate-600">
                         הגדרת חשבון משפחתי מאפשרת לשלם במרוכז עבור מספר מתאמנים ולנהל להם משתמשים עם סיסמה אישית:
                       </p>
                       <div>
                         <label className="block font-bold text-slate-800 mb-1">שם המשפחה (למשל: משפחת כהן)</label>
                         <input
                           type="text"
+                          required={stagingFamily}
+                          aria-label="שם המשפחה"
                           placeholder="משפחת כהן"
                           value={familyName}
                           onChange={(e) => setFamilyName(e.target.value)}
@@ -751,6 +755,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                         <label className="block font-bold text-slate-800 mb-1">מספר מנויים בחבילה המשפחתית</label>
                         <select
                           value={familyQuota}
+                          aria-label="מספר בני משפחה"
                           onChange={(e) => setFamilyQuota(Number(e.target.value))}
                           className="w-full px-3 py-2 border rounded-xl bg-white"
                         >
@@ -758,19 +763,19 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                         </select>
                       </div>
                       <button
-                        type="button"
-                        onClick={handleEnableFamilyAccount}
-                        className="bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl hover:bg-indigo-700 transition cursor-pointer"
+                        type={stagingFamily ? 'submit':'button'}
+                        onClick={stagingFamily ? undefined:handleEnableFamilyAccount}
+                        className={`bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl hover:bg-indigo-700 transition cursor-pointer ${stagingFamily ? 'auth-primary':''}`}
                       >
                         הוספת בן משפחה לפני בחירת מסלול ותשלום
                       </button>
-                    </div>
+                    </StagingFamilySetup>
                   )}
 
                   {/* Existing Family Members List */}
                   {(currentUser.familyId || showAddSubMember) && (
                     <div className="space-y-3 pt-2">
-                      <div className="flex justify-between items-center">
+                      <div style={stagingFamily && showAddSubMember ? {display:'none'}:undefined} className="flex justify-between items-center">
                         <span className="font-bold text-slate-800">רשימת משתמשי המשפחה:</span>
                         {canManageFamily && familyMembersList.length < 6 && (
                           <button
@@ -789,9 +794,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
                       {/* Add sub member inline form */}
                       {showAddSubMember && (
-                        <form noValidate onSubmit={handleAddFamilyMember} className="p-3 bg-white border border-indigo-200 rounded-xl space-y-2.5">
-                          <div className="font-bold text-slate-800 text-[11px]">הוספת בן משפחה חדש — המנוי ממתין לתשלום עד לרכישת המסלול:</div>
-                          <div className="grid grid-cols-2 gap-2">
+                        <StagingChatForm flowKey={`family-add:${currentUser.id}`} chatEnabled={stagingFamily} noValidate onSubmit={handleAddFamilyMember} className="p-3 bg-white border border-indigo-200 rounded-xl space-y-2.5">
+                          <div data-chat-context className="font-bold text-slate-800 text-[11px]">הוספת בן משפחה חדש — המנוי ממתין לתשלום עד לרכישת המסלול:</div>
+                          <div data-chat-fields className="grid grid-cols-2 gap-2">
                             <label className="text-xs font-bold">שם פרטי *<input
                               type="text"
                               required
@@ -843,7 +848,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                           </div>
 
 
-                          <div className="grid grid-cols-2 gap-2">
+                          <div data-chat-fields className="grid grid-cols-2 gap-2">
                             <label className="text-[11px] font-bold text-slate-700">
                               תאריך לידה *
                               <input
@@ -868,11 +873,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                             </label>
                           </div>
 
-                          <button type="button" onClick={() => setShowSubHealthForm(current => !current)} className={`w-full rounded-xl border p-3 text-right font-bold ${subHealthApproved ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}>
+                          <button type="button" onClick={() => setShowSubHealthForm(current => !current)} className={`${stagingFamily ? 'auth-health-launch':''} ${stagingFamily && subHealthApproved ? 'complete':''} w-full rounded-xl border p-3 text-right font-bold ${subHealthApproved ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}>
                             {subHealthApproved ? '✓ הצהרת הבריאות של בן המשפחה נחתמה' : 'מילוי הצהרת בריאות עבור בן המשפחה'}
                           </button>
                           {showSubHealthForm && (
-                            <div className="rounded-2xl bg-slate-950 p-4">
+                            <div data-chat-health className="rounded-2xl bg-slate-950 p-4">
                               <HealthDeclarationForm
                                 fullName={subName}
                                 age={subBirthDate ? Math.max(0, new Date().getFullYear() - new Date(subBirthDate).getFullYear()) : 0}
@@ -892,11 +897,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                             </div>
                           )}
                           <label className="flex items-start gap-2 text-[11px] text-slate-700">
-                            <input type="checkbox" checked={subAgreementApproved} onChange={event => setSubAgreementApproved(event.target.checked)} />
+                            <input type="checkbox" required={stagingFamily} checked={subAgreementApproved} onChange={event => setSubAgreementApproved(event.target.checked)} />
                             <span>אני מאשר/ת וחותם/ת על הסכם ההצטרפות והתקנון עבור בן המשפחה.</span>
                           </label>
 
-                          <div className="flex justify-end gap-2 pt-1">
+                          <div data-chat-submit className="flex justify-end gap-2 pt-1">
                             <button
                               type="button"
                               onClick={() => setShowAddSubMember(false)}
@@ -912,11 +917,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                               {subAccountPending ? 'יוצר חשבון…' : 'אישור והוספה'}
                             </button>
                           </div>
-                        </form>
+                        </StagingChatForm>
                       )}
 
                       {/* Family members interactive list with track assignment & deletion */}
-                      <div className="space-y-2.5">
+                      <div style={stagingFamily && showAddSubMember ? {display:'none'}:undefined} className="space-y-2.5">
                         {familyMembersList.map((m) => (
                           <div key={m.id} className="p-3 bg-white border border-slate-200 rounded-xl space-y-2 shadow-xs">
                             <div className="flex justify-between items-center">
@@ -968,6 +973,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
         </div>
 
       </div>
-    </div>
+    </StagingFamilySettingsSurface>
   );
 };
