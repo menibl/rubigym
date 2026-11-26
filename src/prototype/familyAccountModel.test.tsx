@@ -6,7 +6,10 @@ import {readFileSync} from 'node:fs';
 import {familyAccountRows,familyRenewalDraft,familyMemberEditDraft,excludeFamilyRenewalPlans,detachFamilyMemberDemo} from './familyAccountModel';
 import {StagingFamilyAccount} from './StagingFamilyAccount';
 import {stagingCheckoutQuote} from './stagingCheckout';
-import {MembershipType as M,type User,type MembershipPlanConfig,type Payment} from '../types';
+import {familyRenewalSummary} from './familyRenewalSummary';
+import {FamilyRenewalPriceSummary} from './FamilyRenewalPriceSummary';
+import {familySplitLines} from '../../server/family-split.js';
+import {MembershipType as M,type User,type MembershipPlanConfig,type Payment,type DiscountCode} from '../types';
 const now=new Date('2026-11-26T10:00:00Z');
 const plans=[{id:M.OPEN_GYM,label:'Open',price:280,active:true,category:'PRIMARY',paymentMode:'ONE_TIME',billingPeriod:'MONTHLY'},
   {id:M.WORKOUT_COACHING,label:'Program',price:300,active:true,category:'ADD_ON',paymentMode:'ONE_TIME',billingPeriod:'THREE_MONTHS'},
@@ -98,4 +101,78 @@ test('production has no family cards; renewal requires confirmation and uses ori
   const dashboard=readFileSync(new URL('../components/TraineeDashboard.tsx',import.meta.url),'utf8');
   assert.match(dashboard,/const staged = stagingLogicEnabled\(\) && stagingSelections/);
   assert.match(dashboard,/onDetach=\{memberId=>\{if\(!stagingLogicEnabled\(\)\)return/);
+});
+
+test('renewal prices use server-engine cents and distribute percent discount per beneficiary before confirmation',()=>{
+  const catalog=plans.map(plan=>({...plan,price:plan.id===M.OPEN_GYM ? 281:plan.price}));
+  const members=[payer,user('child'),user('active',{membershipExpiry:'2026-12-01'})];
+  const selections=familyRenewalDraft(members,[],catalog,now).selections;
+  const discount={code:'P13',discountPercent:13} as DiscountCode;
+  const before=JSON.stringify({members,selections,discount,catalog});
+  const summary=familyRenewalSummary(selections,members,[],catalog,[discount],discount,now);
+  const reference=familySplitLines(selections,catalog,[],discount,false,now);
+  assert.deepEqual(summary.rows.flatMap(row=>row.lines),reference);
+  assert.equal(summary.total,488.94);assert.equal(summary.discount,73.06);
+  assert.equal(summary.rows[0].total,244.47);assert.equal(summary.rows[1].total,244.47);
+  assert.equal(summary.rows[2].total,0);assert.equal(summary.selections[2].participation,'SKIP');
+  assert.equal(JSON.stringify({members,selections,discount,catalog}),before);
+  const html=renderToStaticMarkup(<FamilyRenewalPriceSummary summary={summary} onEdit={()=>{}}/>);
+  for(const text of ['244.47','36.53','488.94','הנחה לבן המשפחה','סה״כ לבן המשפחה'])assert.ok(html.includes(text));
+});
+
+test('already-paid monthly receipt with stale member expiry is excluded from summary amounts and forwarded selection',()=>{
+  const members=[payer,user('child')];
+  const payments=[{id:'paid',traineeId:'payer',status:'PAID',membershipTypePurchased:M.OPEN_GYM,date:'2026-11-20',isMock:true}] as Payment[];
+  const selections=familyRenewalDraft(members,payments,plans,now).selections;
+  assert.equal(selections[0].participation,'INCLUDED'); // stale date alone is not evidence of debt
+  const summary=familyRenewalSummary(selections,members,payments,plans,[],null,now);
+  assert.equal(summary.rows[0].total,0);assert.equal(summary.rows[0].base,0);
+  assert.equal(summary.rows[0].excluded[0].status,'ALREADY_PAID');
+  assert.equal(summary.selections[0].participation,'SKIP');
+  assert.equal(summary.rows[1].total,280);assert.equal(summary.total,280);
+  assert.match(renderToStaticMarkup(<FamilyRenewalPriceSummary summary={summary} onEdit={()=>{}}/>),/כבר שולם/);
+});
+
+test('existing recurring receipt is excluded without discarding an expired payable add-on',()=>{
+  const members=[{...payer,secondaryMemberships:[M.WORKOUT_COACHING],membershipPlanExpiries:{[M.WORKOUT_COACHING]:'2026-10-01'}}];
+  const payments=[{id:'series',traineeId:'payer',status:'PAID',membershipTypePurchased:M.OPEN_GYM,date:'2026-10-01',isMock:true,providerRecurringSaleId:'fixture-series'}] as Payment[];
+  const selections=familyRenewalDraft(members,payments,plans,now).selections;
+  const summary=familyRenewalSummary(selections,members,payments,plans,[],null,now);
+  assert.equal(summary.rows[0].excluded[0].status,'EXISTING_RECURRING');
+  assert.equal(summary.selections[0].membershipType,M.WORKOUT_COACHING);
+  assert.deepEqual(summary.selections[0].additionalPlans,[]);
+  assert.equal(summary.total,300);
+});
+
+test('fixed discount is allocated exactly once only to payable lines, including multiple plans',()=>{
+  const members=[payer,user('child',{secondaryMemberships:[M.WORKOUT_COACHING],membershipPlanExpiries:{[M.WORKOUT_COACHING]:'2026-10-01'}})];
+  const discount={code:'FIXED',discountAmount:99.99} as DiscountCode;
+  const selections=familyRenewalDraft(members,[],plans,now).selections;
+  const summary=familyRenewalSummary(selections,members,[],plans,[discount],discount,now);
+  const reference=familySplitLines(selections,plans,[],discount,false,now);
+  assert.deepEqual(summary.rows.flatMap(row=>row.lines),reference);
+  assert.equal(summary.base,860);assert.equal(summary.discount,99.99);assert.equal(summary.total,760.01);
+  assert.equal(summary.rows.reduce((sum,row)=>sum+Math.round(row.total*100),0),76001);
+});
+
+test('all active or already-paid members have zero payable renewal; invalid/used discounts fail closed',()=>{
+  const members=[payer];
+  const paid=[{id:'paid',traineeId:'payer',status:'PAID',membershipTypePurchased:M.OPEN_GYM,date:'2026-11-20',isMock:true}] as Payment[];
+  const selected=familyRenewalDraft(members,paid,plans,now).selections;
+  const summary=familyRenewalSummary(selected,members,paid,plans,[],null,now);
+  assert.equal(summary.payable,false);assert.equal(summary.total,0);assert.equal(summary.selections[0].participation,'SKIP');
+  const discount={code:'USED',discountAmount:10,isSingleUse:true,isUsed:true} as DiscountCode;
+  assert.throws(()=>familyRenewalSummary(selected,members,[],plans,[discount],discount,now),/קוד ההנחה/);
+  assert.throws(()=>familyRenewalSummary(selected,members,[],plans,[],{...discount,isUsed:false},now),/קוד ההנחה/);
+});
+
+test('renewal presenter and calculation have no persistence, payment or SMS side effects; confirm uses payable selections',()=>{
+  for(const file of ['familyRenewalSummary.ts','FamilyRenewalPriceSummary.tsx']){
+    const source=readFileSync(new URL(file,import.meta.url),'utf8');
+    assert.doesNotMatch(source,/\bfetch\(|startRivhitPayment|saveClubState|writeDemoState|sendSms/);
+  }
+  const component=readFileSync(new URL('StagingFamilyAccount.tsx',import.meta.url),'utf8');
+  assert.match(component,/props.onContinue\(summary.selections\)/);
+  assert.match(component,/disabled=\{!canManage \|\| !summary\?\.payable \|\| props.busy\}/);
+  assert.doesNotMatch(component,/Math.round|afterDiscount|familyPurchaseAmount/);
 });
