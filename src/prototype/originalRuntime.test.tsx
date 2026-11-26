@@ -6,6 +6,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {ChatInterfaceSwitch} from './ChatInterfaceSwitch';
 import {ConnectedCheckoutReview} from './ConnectedCheckoutReview';
 import {chatUiAvailable,chatUiEnabled,ORIGINAL_CHAT_TEST_ENABLED} from './integration';
+import {completionStyle} from './completionStyle';
 
 test('normal builds do not enable connected test UI or show its switch/review',()=>{
   assert.equal(ORIGINAL_CHAT_TEST_ENABLED,false);assert.equal(chatUiAvailable(),false);assert.equal(chatUiEnabled(),false);
@@ -38,4 +39,17 @@ test('connected review uses server quote-only, blocks stale results and prevents
   assert.match(dashboard,/const connectedChat=ORIGINAL_CHAT_TEST_ENABLED && stagingLogicEnabled\(\)/);
   const family=readFileSync(new URL('StagingFamilyAccount.tsx',import.meta.url),'utf8');
   assert.match(family,/ORIGINAL_CHAT_TEST_ENABLED \? <><p>יש להמשיך למנגנון הביטול המקורי/);
+});
+
+test('completion controls use a distinct accessible green without changing handlers or control sizes',()=>{
+  const channel=(value:number)=>{const c=value/255;return c<=.04045 ? c/12.92:((c+.055)/1.055)**2.4;};
+  const luminance=.2126*channel(23)+.7152*channel(107)+.0722*channel(80);
+  assert.ok(1.05/(luminance+.05)>=4.5,'White labels on completion green meet WCAG AA normal-text contrast');
+  assert.match(completionStyle,/#176b50/);assert.match(completionStyle,/focus-visible/);assert.match(completionStyle,/:disabled/);
+  assert.doesNotMatch(completionStyle,/font-size|padding|height|width|onClick/);
+  const steps=readFileSync(new URL('StagingFamilyPlanSteps.tsx',import.meta.url),'utf8');
+  for(const label of ['סיימתי את הבחירה','אישור ובחירת בן משפחה הבא','אישור והצגת סיכום המשפחה'])assert.ok(steps.includes(`completionTile('${label}'`));
+  assert.match(steps,/className="logic-primary logic-complete" onClick=\{\(\)=>go\('member-summary'\)\}/);
+  const shell=readFileSync(new URL('StagingLogicChat.tsx',import.meta.url),'utf8');
+  assert.match(shell,/data-chat-final-step=\{at===groups.length-1 && !\['phone','otp'\].includes/);
 });
