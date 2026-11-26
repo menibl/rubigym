@@ -1,6 +1,7 @@
 import React,{Children,isValidElement,useEffect,useRef,useState,type ReactNode} from 'react';
 import {ORIGINAL_CHAT_TEST_ENABLED,chatUiEnabled} from './integration';
 import {ChatInterfaceSwitch} from './ChatInterfaceSwitch';
+import {completionStyle} from './completionStyle';
 import {isPagesDemoMode} from '../data/appMode';
 import {HealthDeclarationForm} from '../components/HealthDeclarationForm';
 
@@ -41,6 +42,7 @@ const css=`
 .staging-logic-chat .logic-family-settings .logic-answer>[data-chat-submit]{display:flex;gap:12px;flex-wrap:wrap}
 .staging-logic-chat .logic-family-settings [data-chat-submit] button[type=submit]{min-height:52px;padding:12px 20px;background:#c9a867;color:#171810;border:0;border-radius:12px;font-size:16px}
 .staging-logic-chat .logic-family-settings [data-chat-submit] button[type=button]{min-height:48px;padding:10px 16px;border:1px solid #525564;border-radius:12px;background:transparent;color:#eeeef3;font-size:15px}
+${completionStyle}
 `;
 const scrollLock={count:0,body:'',html:''};
 
@@ -96,7 +98,7 @@ export function StagingChatForm({children,onSubmit,className,flowKey,chatEnabled
     setError('');setStep(at+1);
   };
   if(!enabled) return <form {...rest} className={className} onSubmit={onSubmit}>{children}</form>;
-  return <form {...rest} className="logic-form" onSubmit={event=>{if(at<groups.length-1){event.preventDefault();advance();}else onSubmit?.(event);}}>
+  return <form {...rest} className="logic-form" data-chat-final-step={at===groups.length-1 && !['phone','otp'].includes(flowKey || '')} onSubmit={event=>{if(at<groups.length-1){event.preventDefault();advance();}else onSubmit?.(event);}}>
     {Children.toArray(children).filter(node=>isValidElement<Record<string,unknown>>(node) && node.props['data-chat-context'])}
     <p className="text-sm text-zinc-400">שלב {at+1} מתוך {groups.length}</p>
     <div ref={answer} className="logic-answer">{groups[at]}</div>

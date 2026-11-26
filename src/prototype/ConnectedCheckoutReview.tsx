@@ -39,7 +39,7 @@ export function ConnectedCheckoutReview({request,busy=false,onContinue}:{request
     {undispatched && <button type="button" className="logic-secondary" disabled={confirming || busy} onClick={async()=>{
       setConfirming(true);try{const quote=await refreshOriginalCheckoutQuote(request,current.quote!.batchId);setState({key,quote});}catch(error){setState({key,error:(error as Error).message});}finally{setConfirming(false);}
     }}>עדכון הסיכום לפי הבחירה וקוד ההנחה — ללא חיוב</button>}
-    <button type="button" className="logic-primary" disabled={busy || confirming || !payable.length || !matches} onClick={async()=>{
+    <button type="button" className="logic-primary logic-complete" disabled={busy || confirming || !payable.length || !matches} onClick={async()=>{
       if(!current.quote || busy || confirming || !matches)return;setConfirming(true);
       try{await onContinue(request.familyMemberPlans ? excludeFamilyRenewalPlans(request.familyMemberPlans,lines.filter(line=>line.status!=='READY').map(line=>line.id)):undefined);}
       catch(error){setState({key,error:error instanceof Error ? error.message:'לא ניתן להמשיך.'});}

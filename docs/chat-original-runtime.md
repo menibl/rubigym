@@ -92,3 +92,17 @@ in this chat, so mobile interaction and browser cookie/navigation behavior remai
 an explicit release gate. No MAIN promotion or live chat activation is authorized.
 The public Pages deployment remains the safe local-data demo, not this loopback
 DB runtime. Further production enablement requires a separate approved release.
+
+## Completion action emphasis
+
+Chat completion actions use green `#176b50` with white labels, a mint border and
+a visible keyboard focus ring. Final member-choice tiles also use a check icon.
+Navigation and plan selection keep the original gold/dark treatment. Fonts,
+control dimensions, callbacks, validation and disabled states are unchanged.
+The color's white-text contrast exceeds WCAG AA 4.5:1. Rules are scoped to the
+chat container, and phone/OTP navigation submits are not marked as completion.
+
+The Pages demo still stops at a no-charge preview. The connected isolated runtime
+still completes against its fake provider via the original API. This presentation
+change modifies neither mode's payment path; the normal production build excludes
+the chat completion styles, and does not automatically enable the chat.
