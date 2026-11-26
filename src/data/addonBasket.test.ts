@@ -6,7 +6,7 @@ test('additional-service UI submits a basket in ADDON mode, not a synthetic prim
   const dashboard = readFileSync(new URL('../components/TraineeDashboard.tsx', import.meta.url), 'utf8');
   const handler = dashboard.slice(dashboard.indexOf('const handleMembershipCheckout'), dashboard.indexOf('const handleFamilyCheckout'));
   assert.match(handler, /mode: membershipPurchaseMode/);
-  assert.match(handler, /individualSelections: checkoutAdditions.length \? \[/);
+  assert.match(handler, /individualSelections: checkoutAdditions.length \|\| connectedChat \? \[/);
   assert.match(handler, /trainingSessionsCount: selectedMembershipUsesTrainingCard \? trainingCardSize : undefined/);
   assert.match(handler, /\.\.\.checkoutAdditions/);
   const checkout = dashboard.slice(dashboard.indexOf('<StagingChatForm flowKey={`purchase:'), dashboard.indexOf('{selectedMembershipUsesTrainingCard && ('));

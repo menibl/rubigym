@@ -8,7 +8,7 @@ import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubSca
 import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoachArrival, recordCoachExceptionScan, redeemCoachArrivalApproval, coachArrivalResult, preserveCoachArrivalAudit } from '../../shared/coach-exception-arrival.js';
 import { validateUsernameChange } from '../../shared/username-change.js';
 import {buildDemoChatAccounts,createDemoVerifier,checkDemoVerifier,validDemoVerifier} from '../prototype/demoAccount';
-import {STAGING_CONVERSATION_ENABLED} from '../prototype/integration';
+import {STAGING_CONVERSATION_ENABLED,assertOriginalTestUrl} from '../prototype/integration';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -54,6 +54,7 @@ const apiBase = () => (import.meta.env.VITE_API_URL || import.meta.env.VITE_AI_A
 
 const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   if(STAGING_CONVERSATION_ENABLED) throw new Error('קריאות שרת אמיתיות חסומות בגרסת הצ׳אט הנבדקת.');
+  assertOriginalTestUrl(apiBase()+path);
   const response = await fetch(`${apiBase()}${path}`, {
     ...init,
     credentials: 'include',

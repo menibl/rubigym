@@ -92,7 +92,7 @@ test('family final quote equals original pricing and includes only selected bene
 test('production renders no wizard and tile navigation has no payment, persistence or SMS side effects',()=>{
   assert.equal(renderToStaticMarkup(<StagingFamilyPlanSteps {...{} as React.ComponentProps<typeof StagingFamilyPlanSteps>}/>),'');
   const source=readFileSync(new URL('StagingFamilyPlanSteps.tsx',import.meta.url),'utf8');
-  assert.match(source,/STAGING_CONVERSATION_ENABLED && isPagesDemoMode\(\)/);
+  assert.match(source,/const enabled=stagingLogicEnabled\(\)/);
   assert.match(source,/step==='family-summary' && !validation/);
   for(const step of ['primary','extras','addon','quantity','member-summary','family-summary'])assert.ok(source.includes(`go('${step}')`) || source.includes(`reviewMember('${step}')`));
   assert.doesNotMatch(source,/\bfetch\(|startRivhitPayment|saveClubState|sendSms/);

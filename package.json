@@ -12,6 +12,7 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build && node scripts/prepare-sites-build.mjs",
     "build:pages": "vite build --base=/rubigym/",
+    "build:chat-test": "vite build --mode chat-test",
     "preview": "vite preview",
     "test:ai": "npm run sync:ai-prompt && node scripts/test-workout-ai.mjs",
     "reset:production-data": "node server/scripts/reset-production-data.js",
