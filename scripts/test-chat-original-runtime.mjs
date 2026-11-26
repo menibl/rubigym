@@ -20,7 +20,14 @@ const database=`gymflow_chat_e2e_${Date.now()}`;
 assert.match(database,/^gymflow_chat_e2e_\d+$/);
 const admin=new pg.Client({host:'127.0.0.1',port:dbPort,user:'gymflow_test',database:'postgres',ssl:false});
 await admin.connect();
-try{assert.equal((await admin.query('SELECT host(inet_server_addr()) AS host')).rows[0].host,'127.0.0.1');await admin.query(`CREATE DATABASE "${database}"`);}finally{await admin.end();}
+try{
+  // The client always connects to loopback. In CI Docker's published-loopback
+  // port legitimately reports a private container inet_server_addr() in SQL.
+  assert.equal(admin.connectionParameters.host,'127.0.0.1');
+  const identity=(await admin.query('SELECT current_database() AS db,current_user AS role,version()')).rows[0];
+  assert.equal(identity.db,'postgres');assert.equal(identity.role,'gymflow_test');assert.match(identity.version,/PostgreSQL 17\./);
+  await admin.query(`CREATE DATABASE "${database}"`);
+}finally{await admin.end();}
 const dbUrl=`postgresql://gymflow_test@127.0.0.1:${dbPort}/${database}`;
 const store=await createDatabaseStore(dbUrl,'false');
 const catalog=[{id:'OPEN_GYM',label:'Fixture Open',price:281,active:true,category:'PRIMARY',paymentMode:'RECURRING',billingPeriod:'MONTHLY_ANNUAL_COMMITMENT'},
