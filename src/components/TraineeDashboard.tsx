@@ -8,6 +8,7 @@ import { retryPaymentApproval } from '../data/paymentApprovalRetry';
 import {STAGING_CONVERSATION_ENABLED} from '../prototype/integration';
 import {StagingChatForm,StagingMembershipSurface,stagingLogicEnabled} from '../prototype/StagingLogicChat';
 import {StagingFamilyAccount} from '../prototype/StagingFamilyAccount';
+import {StagingFamilyPlanSteps} from '../prototype/StagingFamilyPlanSteps';
 import {familyMemberEditDraft,detachFamilyMemberDemo} from '../prototype/familyAccountModel';
 import {HomeMembershipSummary} from './HomeMembershipSummary';
 import { onPaymentPageReturn } from '../data/paymentPageReturn';
@@ -180,6 +181,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const [activeTab, setActiveTabState] = useState<TraineeTab>(initialTab);
   const [chatChoice,setChatChoice] = useState('overview');
   const [chatFamilyEditingMember,setChatFamilyEditingMember] = useState<string | undefined>();
+  const [chatFamilyExtrasOnly,setChatFamilyExtrasOnly] = useState(false);
+  const [chatFamilySummaryReady,setChatFamilySummaryReady] = useState(false);
   const setActiveTab = (tab:TraineeTab) => {
     setActiveTabState(tab);
   };
@@ -2370,7 +2373,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             <RecurringMembershipNotice user={activeUser} plans={membershipPlanConfigs} />
             {stagingLogicEnabled() && familyUsers.length>1 && ['overview','family'].includes(chatChoice) && !selectedMembershipPurchase && <StagingFamilyAccount members={familyUsers} payments={payments} plans={membershipPlanConfigs} canManage={Boolean(activeUser.isFamilyPayer)} busy={paymentStarting}
               onAdd={()=>onOpenSettings('family-add')} onFreeze={requestFamilyFreeze}
-              onEdit={(memberId,extrasOnly,draft)=>{setFamilyMemberPlans(draft || familyMemberEditDraft(familyUsers,memberId,membershipPlanConfigs,payments,extrasOnly));setFamilyPurchaseCount(familyUsers.length);setChatFamilyEditingMember(memberId);setChatChoice('family-edit');}}
+              onEdit={(memberId,extrasOnly,draft)=>{setFamilyMemberPlans(draft || familyMemberEditDraft(familyUsers,memberId,membershipPlanConfigs,payments,extrasOnly));setFamilyPurchaseCount(familyUsers.length);setChatFamilyEditingMember(memberId);setChatFamilyExtrasOnly(Boolean(extrasOnly));setChatFamilySummaryReady(false);setChatChoice('family-edit');}}
               onDetach={memberId=>{if(!stagingLogicEnabled())return false;try{onUpdateUsers(detachFamilyMemberDemo(users,activeUser.id,memberId));return true;}catch(error){showFeedback((error as Error).message,'error');return false;}}}
               onContinue={async selections=>{setFamilyMemberPlans(selections);return handleFamilyCheckout(selections);}}
               discountCodes={discountCodes} discountInput={discountInput} onDiscountInput={setDiscountInput} appliedDiscount={appliedDiscount} onDiscount={setAppliedDiscount}
@@ -2471,8 +2474,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
                   </div>
                   <label className="block text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} onEditingChange={setFamilyEditing} initialEditingMemberId={stagingLogicEnabled() ? chatFamilyEditingMember:undefined} />
-                  {familyEditing && <p role="status" className="rounded-lg bg-slate-950 p-3 font-bold text-amber-100">יש ללחוץ על ״אישור הבחירה״ בבן המשפחה הפתוח לפני מעבר לתשלום.</p>}
+                  {stagingLogicEnabled()
+                    ? <StagingFamilyPlanSteps members={familyUsers} plans={familyMemberPlans} catalog={membershipPlanConfigs} onChange={setFamilyMemberPlans} onEditingChange={setFamilyEditing} onSummaryReady={setChatFamilySummaryReady} initialMemberId={chatFamilyEditingMember} extrasOnly={chatFamilyExtrasOnly}/>
+                    : <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} onEditingChange={setFamilyEditing} />}
+                  {familyEditing && <p role="status" className="rounded-lg bg-slate-950 p-3 font-bold text-amber-100">{stagingLogicEnabled() ? 'השלימו את הבחירה בקוביות ועברו לסיכום המשפחה לפני אישור.':'יש ללחוץ על ״אישור הבחירה״ בבן המשפחה הפתוח לפני מעבר לתשלום.'}</p>}
+                  <div hidden={stagingLogicEnabled() && !chatFamilySummaryReady} style={stagingLogicEnabled() && !chatFamilySummaryReady ? {display:'none'}:undefined}>
                   <fieldset className="rounded-xl border border-slate-600 p-3 space-y-2 text-sm">
                     <legend className="px-2 font-bold">אופן התשלום — ראש המשפחה משלם</legend>
                     <label className="flex items-start gap-2"><input type="radio" name="family-payment-grouping" checked={familyPaymentGrouping === 'COMBINED'} onChange={() => setFamilyPaymentGrouping('COMBINED')} />חיוב מאוחד להוראות חדשות באותה תקופה ובאותם תנאי חיוב</label>
@@ -2484,8 +2490,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id), membershipPlanConfigs)).toLocaleString('he-IL')}</strong></div>
                     <button type="button" onClick={() => void handleFamilyCheckout()} disabled={familyEditing || paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
-                      {stagingLogicEnabled() ? 'בדיקת חישוב משפחתי ללא חיוב':paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
+                      {stagingLogicEnabled() ? 'אישור סיכום המשפחה והמשך לבדיקה ללא חיוב':paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
                     </button>
+                  </div>
                   </div>
                 </section>}
 
