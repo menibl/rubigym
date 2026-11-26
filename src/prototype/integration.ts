@@ -6,6 +6,18 @@ export const STAGING_CONVERSATION_ENABLED = typeof __CONVERSATION_PROTOTYPE__ !=
   && __CONVERSATION_PROTOTYPE__ && typeof window !== 'undefined'
   && (window.location.hostname==='menibl.github.io' || ['localhost','127.0.0.1'].includes(window.location.hostname));
 
+// The connected test runtime is separate from Pages demo safety fences. Normal
+// production builds never emit it; both browser and API must remain loopback-only.
+export const ORIGINAL_CHAT_TEST_ENABLED = typeof __CHAT_ORIGINAL_TEST__!=='undefined' && __CHAT_ORIGINAL_TEST__
+  && typeof window!=='undefined' && ['localhost','127.0.0.1'].includes(window.location.hostname);
+export const chatUiAvailable=()=>STAGING_CONVERSATION_ENABLED || ORIGINAL_CHAT_TEST_ENABLED;
+export const chatUiEnabled=()=>chatUiAvailable() && new URLSearchParams(window.location.search).get('ui')!=='legacy';
+export function assertOriginalTestUrl(value:string){
+  if(!ORIGINAL_CHAT_TEST_ENABLED)return;
+  const url=new URL(value,window.location.origin);
+  if(url.origin!==window.location.origin || url.protocol!=='http:' || !['localhost','127.0.0.1'].includes(url.hostname))throw new Error('Connected chat tests may contact only their isolated same-origin loopback server.');
+}
+
 // Minimal read-only projection. Never pass user objects, credentials, phone, health,
 // signatures, provider tokens or payment references to the isolated prototype.
 export function accountChatSnapshot(activeUser: User,users: User[]): Draft {

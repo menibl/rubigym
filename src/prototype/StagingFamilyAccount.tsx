@@ -1,12 +1,14 @@
 import React,{useState} from 'react';
 import {Users,RefreshCw,UserPlus,Settings,PauseCircle,XCircle,Trash2,ChevronLeft} from 'lucide-react';
-import {STAGING_CONVERSATION_ENABLED} from './integration';
-import {isPagesDemoMode} from '../data/appMode';
+import {ORIGINAL_CHAT_TEST_ENABLED} from './integration';
+import {stagingLogicEnabled} from './StagingLogicChat';
+import {ChatInterfaceSwitch} from './ChatInterfaceSwitch';
+import {ConnectedCheckoutReview} from './ConnectedCheckoutReview';
 import {familyAccountRows,familyRenewalDraft,excludeFamilyRenewalPlans} from './familyAccountModel';
 import {familyRenewalSummary,type FamilyRenewalSummary} from './familyRenewalSummary';
 import {FamilyRenewalPriceSummary} from './FamilyRenewalPriceSummary';
 import {DiscountCodeField} from '../components/DiscountCodeField';
-import {MEMBERSHIP_TYPE_LABELS,type User,type Payment,type MembershipPlanConfig,type FamilyMemberPlanSelection,type DiscountCode} from '../types';
+import {MEMBERSHIP_TYPE_LABELS,MembershipType,type User,type Payment,type MembershipPlanConfig,type FamilyMemberPlanSelection,type DiscountCode} from '../types';
 
 const style=`
 .staging-family-account .family-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}
@@ -32,14 +34,14 @@ export function StagingFamilyAccount(props:Props){
   const [screen,setScreen]=useState<'cards'|'renew'|'freeze'|'cancel'|'remove-plan'|'remove-member'>('cards');
   const [excluded,setExcluded]=useState<string[]>([]);
   const [notice,setNotice]=useState('');
-  if(!STAGING_CONVERSATION_ENABLED || !isPagesDemoMode())return null;
+  if(!stagingLogicEnabled())return null;
   const {members,payments,plans,canManage}=props;
   const member=members.find(item=>item.id===selected);
   const initial=familyRenewalDraft(members,payments,plans);
   const draft={...initial,selections:excludeFamilyRenewalPlans(initial.selections,excluded)};
   let summary:FamilyRenewalSummary|undefined;
   let summaryError='';
-  if(screen==='renew')try{summary=familyRenewalSummary(draft.selections,members,payments,plans,props.discountCodes,props.appliedDiscount);}catch(error){summaryError=error instanceof Error ? error.message:'לא ניתן לחשב את סיכום החידוש.';}
+  if(screen==='renew' && !ORIGINAL_CHAT_TEST_ENABLED)try{summary=familyRenewalSummary(draft.selections,members,payments,plans,props.discountCodes,props.appliedDiscount);}catch(error){summaryError=error instanceof Error ? error.message:'לא ניתן לחשב את סיכום החידוש.';}
   const label=(type:string)=>plans.find(plan=>plan.id===type)?.label || MEMBERSHIP_TYPE_LABELS[type]?.label || type;
   const tile=(title:string,description:string,icon:React.ReactNode,action:()=>void,disabled=false)=><button type="button" className="family-tile" onClick={action} disabled={disabled}><span className="family-icon">{icon}</span><strong>{title}</strong><small>{description}</small><ChevronLeft size={19} className="family-arrow"/></button>;
   const choose=(next:typeof screen)=>{setScreen(next);setNotice('');};
@@ -68,11 +70,11 @@ export function StagingFamilyAccount(props:Props){
       {summary && !summary.payable && <p role="status">אין מסלולים שניתן לחדש אוטומטית. ניתן להיכנס לקוביית בן המשפחה ולבחור מסלול ידנית.</p>}
       {excluded.length>0 && <button type="button" className="logic-secondary" onClick={()=>setExcluded([])}>שחזור בחירת המסלולים שפגו</button>}
       <DiscountCodeField discountCodes={props.discountCodes} value={props.discountInput} onChange={props.onDiscountInput} applied={props.appliedDiscount} onApplied={props.onDiscount} onMessage={props.onMessage}/>
-      <button type="button" className="logic-primary" disabled={!canManage || !summary?.payable || props.busy} onClick={async()=>{if(!summary?.payable)return;setNotice('');const ok=await props.onContinue(summary.selections);if(ok)setNotice('החישוב הושלם — הפירוט מופיע בהמשך המסך. לא בוצע חיוב ולא חודש מנוי.');}}>אישור הסיכום והמשך לבדיקה ללא חיוב</button>
+      {ORIGINAL_CHAT_TEST_ENABLED ? <ConnectedCheckoutReview request={{userId:members[0].id,userName:members[0].name,email:members[0].email,phone:members[0].phone,membershipType:MembershipType.FAMILY_MEMBERSHIP,mode:'PRIMARY',familyMembersCount:members.length,familyName:members[0].familyName,familyBillingMode:'CUSTOM_COMBINED',familyMemberPlans:draft.selections,discountCode:props.appliedDiscount?.code}} busy={!canManage || props.busy} onContinue={async selections=>props.onContinue(selections || draft.selections)}/>:<button type="button" className="logic-primary" disabled={!canManage || !summary?.payable || props.busy} onClick={async()=>{if(!summary?.payable)return;setNotice('');const ok=await props.onContinue(summary.selections);if(ok)setNotice('החישוב הושלם — הפירוט מופיע בהמשך המסך. לא בוצע חיוב ולא חודש מנוי.');}}>אישור הסיכום והמשך לבדיקה ללא חיוב</button>}
     </>}
     {member && screen==='freeze' && <div className="family-summary"><h3>הקפאת המנוי של {member.name}</h3><p>חודש אחד רצוף, פעם בשנה, בכפוף לאישור המנהל ולתנאי המנוי. הוראה משפחתית משותפת דורשת התאמת גבייה בידי המנהל.</p><button type="button" className="logic-primary" onClick={()=>props.onFreeze(member.id)}>המשך לבקשת ההקפאה הקיימת</button></div>}
     {member && screen==='remove-plan' && <><h3>הסרת מסלול מחידוש — {member.name}</h3><p>הפעולה משנה רק את בחירת החידוש הבאה. אין ביטול מנוי קיים או הוראת קבע.</p><div className="family-tiles">{familyAccountRows(member,payments).map(row=>tile(label(row.type),excluded.includes(`${member.id}:${row.type}`) ? 'לא ייכלל בחידוש':'לחצו כדי לא לכלול בחידוש הבא',<Trash2 size={25}/>,()=>{setExcluded(previous=>[...new Set([...previous,`${member.id}:${row.type}`])]);setNotice(`${label(row.type)} הוסר מבחירת החידוש בלבד.`);},excluded.includes(`${member.id}:${row.type}`)))}</div><button type="button" className="logic-primary" onClick={()=>choose('renew')}>המשך לסיכום החידוש</button></>}
-    {member && screen==='remove-member' && <div className="family-summary"><h3>הסרת {member.name} מהמשפחה</h3><p>בסביבת הבדיקות תופרד הזיקה המשפחתית בלבד. החשבון, הצהרת הבריאות, תשלומים, תוקף ומסלולים לא יימחקו. זו אינה הפסקת גבייה.</p><p>כאשר קיימת הוראת קבע משותפת, נדרשת התאמת מנהל וההסרה לא תבוצע כאן.</p><button type="button" className="logic-primary" onClick={()=>{if(props.onDetach(member.id)){setSelected(null);choose('cards');}else setNotice('ההסרה לא בוצעה. נדרשת בדיקת מנהל של השיוך והגבייה המשפחתית.');}}>אישור הסרה מנתוני הדמה בלבד</button></div>}
-    {member && screen==='cancel' && <div className="family-summary"><h3>ביטול מסלול — {member.name}</h3><p>במנוי שנתי נדרשת הודעה מוקדמת וחודש קדימה לפי תנאי המועדון. אין ביטול של הוראת קבע או פגיעה במנויים של שאר בני המשפחה מהמסך הזה.</p><p role="status">תצוגת בדיקה בלבד — הבקשה עדיין לא נשלחה ולא בוצע שינוי.</p><button type="button" className="logic-primary" onClick={()=>setNotice('בקשת הביטול הודגמה בלבד. לא נשלחה הודעה למנהל או SMS ולא השתנה מנוי.')}>הדגמת אישור בקשת ביטול ללא שינוי</button></div>}
+    {member && screen==='remove-member' && <div className="family-summary"><h3>הסרת {member.name} מהמשפחה</h3>{ORIGINAL_CHAT_TEST_ENABLED ? <><p>הפרדת בן משפחה עם תשלומים קיימים אינה מבוצעת מהצ׳אט. יש להשתמש במנגנון המקורי ובבדיקת מנהל, ללא שינוי אוטומטי בגבייה.</p><ChatInterfaceSwitch/></>:<><p>בסביבת הבדיקות תופרד הזיקה המשפחתית בלבד. החשבון, הצהרת הבריאות, תשלומים, תוקף ומסלולים לא יימחקו. זו אינה הפסקת גבייה.</p><p>כאשר קיימת הוראת קבע משותפת, נדרשת התאמת מנהל וההסרה לא תבוצע כאן.</p><button type="button" className="logic-primary" onClick={()=>{if(props.onDetach(member.id)){setSelected(null);choose('cards');}else setNotice('ההסרה לא בוצעה. נדרשת בדיקת מנהל של השיוך והגבייה המשפחתית.');}}>אישור הסרה מנתוני הדמה בלבד</button></>}</div>}
+    {member && screen==='cancel' && <div className="family-summary"><h3>ביטול מסלול — {member.name}</h3><p>במנוי שנתי נדרשת הודעה מוקדמת וחודש קדימה לפי תנאי המועדון. אין ביטול של הוראת קבע או פגיעה במנויים של שאר בני המשפחה מהמסך הזה.</p>{ORIGINAL_CHAT_TEST_ENABLED ? <><p>יש להמשיך למנגנון הביטול המקורי. לא נשלחה בקשה מהצ׳אט.</p><ChatInterfaceSwitch/></>:<><p role="status">תצוגת בדיקה בלבד — הבקשה עדיין לא נשלחה ולא בוצע שינוי.</p><button type="button" className="logic-primary" onClick={()=>setNotice('בקשת הביטול הודגמה בלבד. לא נשלחה הודעה למנהל או SMS ולא השתנה מנוי.')}>הדגמת אישור בקשת ביטול ללא שינוי</button></>}</div>}
   </section>;
 }

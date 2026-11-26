@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {ChevronLeft,Check,Users,ArrowRight} from 'lucide-react';
-import {STAGING_CONVERSATION_ENABLED} from './integration';
-import {isPagesDemoMode} from '../data/appMode';
+import {ORIGINAL_CHAT_TEST_ENABLED} from './integration';
+import {stagingLogicEnabled} from './StagingLogicChat';
 import {familyPlanCatalog,familyMemberPlanPrice,familyPurchaseAmount} from '../data/familyMembership';
 import {billingPeriodLabel} from '../data/membershipBilling';
 import {isMembershipFreezeActive} from '../data/membershipPolicy';
@@ -25,7 +25,7 @@ export function StagingFamilyPlanSteps(props:Props){
   const [pending,setPending]=useState<{config:MembershipPlanConfig;additional:boolean}|null>(null);
   const [quantity,setQuantity]=useState('');
   const [error,setError]=useState('');
-  const enabled=STAGING_CONVERSATION_ENABLED && isPagesDemoMode();
+  const enabled=stagingLogicEnabled();
   const catalog=enabled ? familyPlanCatalog(props.catalog):[];
   const member=props.members?.find(user=>user.id===memberId);
   const plan=props.plans?.find(item=>item.memberId===memberId);
@@ -51,7 +51,7 @@ export function StagingFamilyPlanSteps(props:Props){
   const details=(selection:FamilyMemberPlanSelection)=>selection.participation==='INCLUDED'
     ? [selection,...(selection.additionalPlans || [])].filter(item=>item.membershipType).map(item=>`${catalog.find(config=>config.id===item.membershipType)?.label || item.membershipType}${needsSessionQuantity(item.membershipType) ? ` × ${item.trainingSessionsCount || '?'}`:''}`).join(' + ') || 'טרם נבחר מסלול'
     : 'ללא חיוב ברכישה זו — המנוי הקיים לא משתנה';
-  const priceLines=(selection:FamilyMemberPlanSelection)=>selection.participation==='INCLUDED' && <ul>{[selection,...(selection.additionalPlans || [])].filter(item=>item.membershipType).map(item=><li key={item.membershipType}>{catalog.find(config=>config.id===item.membershipType)?.label || item.membershipType}{needsSessionQuantity(item.membershipType) ? ` × ${item.trainingSessionsCount || '?'}`:''} — ₪{familyMemberPlanPrice({...selection,...item,additionalPlans:[]},catalog)}</li>)}</ul>;
+  const priceLines=(selection:FamilyMemberPlanSelection)=>!ORIGINAL_CHAT_TEST_ENABLED && selection.participation==='INCLUDED' && <ul>{[selection,...(selection.additionalPlans || [])].filter(item=>item.membershipType).map(item=><li key={item.membershipType}>{catalog.find(config=>config.id===item.membershipType)?.label || item.membershipType}{needsSessionQuantity(item.membershipType) ? ` × ${item.trainingSessionsCount || '?'}`:''} — ₪{familyMemberPlanPrice({...selection,...item,additionalPlans:[]},catalog)}</li>)}</ul>;
   const reviewMember=(next:Step)=>{
     if(plan?.participation==='INCLUDED'){
       const check=validateFamilyStepDraft([plan],member ? [member]:[],catalog);if(check){setError(check);return;}
@@ -70,7 +70,7 @@ export function StagingFamilyPlanSteps(props:Props){
     {step==='addon' && <><h3>בחירת תוספת</h3><div className="step-grid">{available.filter(config=>config.category==='ADD_ON' && !selected.includes(config.id as MembershipType)).map(config=>tile(config.label,`₪${config.price} · ${billingPeriodLabel(config)}`,()=>pick(config,true)))}</div>{!available.some(config=>config.category==='ADD_ON' && !selected.includes(config.id as MembershipType)) && <p>כל התוספות הזמינות כבר נבחרו.</p>}<button type="button" className="logic-secondary" onClick={()=>go('member-summary')}>סיום בחירת התוספות</button></>}
     {step==='quantity' && pending && <><h3>כמה אימונים — {pending.config.label}?</h3><div className="step-grid">{TRAINING_CARD_SIZES.map(count=>tile(`${count} אימונים`,`₪${pending.config.price*count}`,()=>pickQuantity(count)))}{tile('כמות אחרת','בחירה בין 1 ל־50 אימונים',()=>{setQuantity('');go('custom');})}</div></>}
     {step==='custom' && <><h3>כמות האימונים</h3><label>מספר אימונים<input type="number" min={1} max={50} step={1} value={quantity} onChange={event=>setQuantity(event.target.value)}/></label><button type="button" className="logic-primary" onClick={()=>pickQuantity(Number(quantity))}>אישור הכמות והמשך</button></>}
-    {step==='member-summary' && plan && <><h3>סיכום הבחירה — {member?.name}</h3><article className="step-summary"><p>{details(plan)}</p>{priceLines(plan)}<strong>₪{familyMemberPlanPrice(plan,catalog)}</strong></article><div className="step-grid">{tile('אישור ובחירת בן משפחה הבא','חזרה לקוביות בני המשפחה',()=>reviewMember('members'))}{tile('אישור והצגת סיכום המשפחה','כל בני המשפחה לפני אישור סופי',()=>reviewMember('family-summary'))}{tile('עריכת הבחירה','חזרה למסלול הראשי והתוספות',()=>go('primary'))}</div></>}
-    {step==='family-summary' && <><h3><Users size={22}/> סיכום לכל המשפחה לפני אישור</h3>{props.plans.map(selection=><article className="step-summary" key={selection.memberId}><strong>{selection.memberName}</strong><p>{details(selection)}</p>{priceLines(selection)}<p>₪{familyMemberPlanPrice(selection,catalog)}</p><button type="button" className="logic-secondary" onClick={()=>{setMemberId(selection.memberId!);go('participation');}}>עריכה — {selection.memberName}</button></article>)}<p className="step-summary"><strong>סה״כ בחירה לפי הקטלוג: ₪{familyPurchaseAmount('CUSTOM_COMBINED',props.members.length,props.plans,catalog)}</strong><br/>הנחה, אופן התשלום ופירוט החישוב יופיעו לפני האישור. אין חיוב ואין שינוי במנויים מבדיקת החישוב.</p>{validation && <p role="alert" className="logic-error">{validation}</p>}{ready && <p role="status"><Check size={18}/> הסיכום מוכן — ניתן לאשר ולהמשיך לבדיקה ללא חיוב.</p>}</>}
+    {step==='member-summary' && plan && <><h3>סיכום הבחירה — {member?.name}</h3><article className="step-summary"><p>{details(plan)}</p>{priceLines(plan)}{!ORIGINAL_CHAT_TEST_ENABLED && <strong>₪{familyMemberPlanPrice(plan,catalog)}</strong>}</article><div className="step-grid">{tile('אישור ובחירת בן משפחה הבא','חזרה לקוביות בני המשפחה',()=>reviewMember('members'))}{tile('אישור והצגת סיכום המשפחה','כל בני המשפחה לפני אישור סופי',()=>reviewMember('family-summary'))}{tile('עריכת הבחירה','חזרה למסלול הראשי והתוספות',()=>go('primary'))}</div></>}
+    {step==='family-summary' && <><h3><Users size={22}/> סיכום לכל המשפחה לפני אישור</h3>{props.plans.map(selection=><article className="step-summary" key={selection.memberId}><strong>{selection.memberName}</strong><p>{details(selection)}</p>{priceLines(selection)}{!ORIGINAL_CHAT_TEST_ENABLED && <p>₪{familyMemberPlanPrice(selection,catalog)}</p>}<button type="button" className="logic-secondary" onClick={()=>{setMemberId(selection.memberId!);go('participation');}}>עריכה — {selection.memberName}</button></article>)}{!ORIGINAL_CHAT_TEST_ENABLED && <p className="step-summary"><strong>סה״כ בחירה לפי הקטלוג: ₪{familyPurchaseAmount('CUSTOM_COMBINED',props.members.length,props.plans,catalog)}</strong><br/>הנחה, אופן התשלום ופירוט החישוב יופיעו לפני האישור. אין חיוב ואין שינוי במנויים מבדיקת החישוב.</p>}{validation && <p role="alert" className="logic-error">{validation}</p>}{ready && <p role="status"><Check size={18}/>{ORIGINAL_CHAT_TEST_ENABLED ? 'הבחירה מוכנה. יש לבדוק ולאשר את המחירים וההנחות בסיכום השרת שבהמשך.':'הסיכום מוכן — ניתן לאשר ולהמשיך לבדיקה ללא חיוב.'}</p>}</>}
   </section>;
 }

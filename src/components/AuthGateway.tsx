@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {STAGING_CONVERSATION_ENABLED} from '../prototype/integration';
+import {ChatInterfaceSwitch} from '../prototype/ChatInterfaceSwitch';
 import {StagingChatForm,StagingRegistrationSurface,stagingLogicEnabled} from '../prototype/StagingLogicChat';
 import {readStagingRegistrationDraft,saveStagingRegistrationDraft,clearStagingRegistrationDraft} from '../prototype/registrationDraft';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
@@ -611,6 +612,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ users, discountCodes, 
       <section className="auth-panel">
         {landingUrl && <a className="auth-back" href={landingUrl}><ArrowLeft size={18} /> חזרה לדף המועדון</a>}
         <RubisLogo size={145} className="auth-panel-logo" />
+        {!stagingLogicEnabled() && <ChatInterfaceSwitch/>}
 
         {screen === 'login' && (
           <>
