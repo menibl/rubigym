@@ -90,7 +90,8 @@ test('registered field/health DTO and checkout callbacks remain the original pat
   assert.match(auth,/onInput=\{event => setRegisterBirthDate\(event.currentTarget.value\)\}/);
   const dashboard=readFileSync(new URL('../components/TraineeDashboard.tsx',import.meta.url),'utf8');
   const membership=dashboard.slice(dashboard.indexOf("{activeTab === 'membership' && ("),dashboard.indexOf('{/* PROFILE, MEMBERSHIP & PAYMENT */}'));
-  assert.match(membership,/<HomeMembershipSummary user=\{member\} payments=\{payments\} plans=\{membershipPlanConfigs\}/);
+  assert.match(membership,/<StagingFamilyAccount members=\{familyUsers\} payments=\{payments\} plans=\{membershipPlanConfigs\}/);
+  assert.match(membership,/<HomeMembershipSummary user=\{activeUser\} payments=\{payments\} plans=\{membershipPlanConfigs\}/);
   const payments=readFileSync(new URL('../data/rivhitPayments.ts',import.meta.url),'utf8');
   assert.match(payments,/if\(STAGING_CONVERSATION_ENABLED\)\{await \(await import\('\.\.\/prototype\/stagingCheckout'\)\)\.previewStagingCheckout\(request\);return;\}/);
   assert.match(payments,/if\(STAGING_CONVERSATION_ENABLED\) throw[\s\S]*?return globalThis.fetch/);
