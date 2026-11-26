@@ -7,6 +7,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
 import {STAGING_CONVERSATION_ENABLED} from '../prototype/integration';
 import {StagingChatForm,StagingMembershipSurface,stagingLogicEnabled} from '../prototype/StagingLogicChat';
+import {StagingFamilyAccount} from '../prototype/StagingFamilyAccount';
+import {familyMemberEditDraft,detachFamilyMemberDemo} from '../prototype/familyAccountModel';
 import {HomeMembershipSummary} from './HomeMembershipSummary';
 import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { activePlanExpiry, emptyFamilyPurchase } from '../data/membershipRenewal';
@@ -177,6 +179,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   type TraineeTab = 'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership';
   const [activeTab, setActiveTabState] = useState<TraineeTab>(initialTab);
   const [chatChoice,setChatChoice] = useState('overview');
+  const [chatFamilyEditingMember,setChatFamilyEditingMember] = useState<string | undefined>();
   const setActiveTab = (tab:TraineeTab) => {
     setActiveTabState(tab);
   };
@@ -846,9 +849,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     } finally { setPaymentStarting(false); }
   };
 
-  const handleFamilyCheckout = async () => {
+  const handleFamilyCheckout = async (stagingSelections?: FamilyMemberPlanSelection[]) => {
     if (familyEditing) return showFeedback('יש לאשר את בחירת בן המשפחה לפני מעבר לתשלום.', 'error');
-    const selected = resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id);
+    const staged = stagingLogicEnabled() && stagingSelections;
+    const selected = staged || resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id);
     const includedPlans = selected.filter(plan => !plan.participation || plan.participation === 'INCLUDED');
     if (includedPlans.some(plan => [plan, ...(plan.additionalPlans || [])].some(selection => !canPurchasePlan(membershipPlanConfigs.find(config => config.id === selection.membershipType) || selection.membershipType, familyUsers.find(member => member.id === plan.memberId))))) return showFeedback('נבחר מסלול נוער שאינו מתאים לגיל של אחד מבני המשפחה. יש לעדכן את הבחירה או את תאריך הלידה.', 'error');
     if (includedPlans.some(plan => !membershipPlanConfigs.some(config => config.id === plan.membershipType && config.active))) return showFeedback('יש להשלים בחירת מסלול פעיל לכל בן משפחה שכלול בתשלום.', 'error');
@@ -876,16 +880,18 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         phone: activeUser.phone,
         membershipType: MembershipType.FAMILY_MEMBERSHIP,
         mode: 'PRIMARY',
-        familyMembersCount: familyPurchaseCount,
+        familyMembersCount: staged ? staged.length : familyPurchaseCount,
         familyName: familyPurchaseName.trim(),
         familyBillingMode,
         familyPaymentGrouping,
-        familyMemberPlans: familyBillingMode === 'CUSTOM_COMBINED' ? resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id) : undefined,
+        familyMemberPlans: familyBillingMode === 'CUSTOM_COMBINED' ? selected : undefined,
         discountCode: appliedDiscount?.code
       });
+      return true;
     } catch (error) {
       setPaymentStarting(false);
       showFeedback(error instanceof Error ? error.message : 'לא ניתן לפתוח את דף התשלום המשפחתי.', 'error');
+      return false;
     } finally { setPaymentStarting(false); }
   };
 
@@ -2360,12 +2366,19 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
         {/* MEMBERSHIP MANAGEMENT & RIVHIT CHECKOUT */}
         {activeTab === 'membership' && (
-          <StagingMembershipSurface selected={Boolean(selectedMembershipPurchase)} choice={chatChoice} onChoice={setChatChoice} onClose={()=>onHome ? onHome():setActiveTab('home')} family={familyUsers.length>1}>
+          <StagingMembershipSurface selected={Boolean(selectedMembershipPurchase)} choice={chatChoice} onChoice={choice=>{setFamilyEditing(false);setChatChoice(choice);}} onClose={()=>onHome ? onHome():setActiveTab('home')} family={familyUsers.length>1}>
             <RecurringMembershipNotice user={activeUser} plans={membershipPlanConfigs} />
-            {stagingLogicEnabled() && chatChoice==='overview' && !selectedMembershipPurchase && familyUsers.map(member=><article key={member.id} className="rounded-xl border border-zinc-700 p-4"><strong>{member.name}</strong><HomeMembershipSummary user={member} payments={payments} plans={membershipPlanConfigs}/></article>)}
+            {stagingLogicEnabled() && familyUsers.length>1 && ['overview','family'].includes(chatChoice) && !selectedMembershipPurchase && <StagingFamilyAccount members={familyUsers} payments={payments} plans={membershipPlanConfigs} canManage={Boolean(activeUser.isFamilyPayer)} busy={paymentStarting}
+              onAdd={()=>onOpenSettings('family-add')} onFreeze={requestFamilyFreeze}
+              onEdit={(memberId,extrasOnly,draft)=>{setFamilyMemberPlans(draft || familyMemberEditDraft(familyUsers,memberId,membershipPlanConfigs,payments,extrasOnly));setFamilyPurchaseCount(familyUsers.length);setChatFamilyEditingMember(memberId);setChatChoice('family-edit');}}
+              onDetach={memberId=>{if(!stagingLogicEnabled())return false;try{onUpdateUsers(detachFamilyMemberDemo(users,activeUser.id,memberId));return true;}catch(error){showFeedback((error as Error).message,'error');return false;}}}
+              onContinue={async selections=>{setFamilyMemberPlans(selections);return handleFamilyCheckout(selections);}}
+              discountCodes={discountCodes} discountInput={discountInput} onDiscountInput={setDiscountInput} appliedDiscount={appliedDiscount} onDiscount={setAppliedDiscount}
+              onMessage={(message,isError)=>showFeedback(message,isError ? 'error':'success')}/>}
+            {stagingLogicEnabled() && familyUsers.length===1 && chatChoice==='overview' && !selectedMembershipPurchase && <article className="rounded-xl border border-zinc-700 p-4"><strong>{activeUser.name}</strong><HomeMembershipSummary user={activeUser} payments={payments} plans={membershipPlanConfigs}/></article>}
             {!STAGING_CONVERSATION_ENABLED && <PendingCheckoutRecovery key={`${activeUser.id}-${checkoutReturn}`} userId={activeUser.id} />}
             {activeUser.registrationPaymentPending && <p role="alert" className="rounded-xl border border-amber-400/40 bg-zinc-900 p-4 text-amber-200">החשבון שלך נרשם בהצלחה, אך התשלום עדיין לא הושלם. יש לבחור מסלול ולהשלים תשלום כדי להירשם לאימונים.</p>}
-            {(!stagingLogicEnabled() || !selectedMembershipPurchase && chatChoice==='overview') && <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
+            {(!stagingLogicEnabled() || familyUsers.length===1 && !selectedMembershipPurchase && chatChoice==='overview') && <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
               <button className="text-xs text-amber-300 mb-4" onClick={() => { setSelectedMembershipPurchase(null); setActiveTab('profile'); }}>
                 חזרה לפרופיל
               </button>
@@ -2388,10 +2401,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </div>
             </section>}
 
-            <button type="button" className="w-full rounded-2xl border border-amber-500/30 bg-slate-950 p-4 text-right text-white" onClick={() => onOpenSettings('family-add')}>
+            {(!stagingLogicEnabled() || familyUsers.length===1 || chatChoice==='family-edit') && <button type="button" className="w-full rounded-2xl border border-amber-500/30 bg-slate-950 p-4 text-right text-white" onClick={() => onOpenSettings('family-add')}>
               <strong className="block text-base">הוספת בן משפחה</strong>
               <span className="mt-1 block text-sm text-slate-300">הוסיפו בני משפחה, ואז חזרו לתשלום לבחירת מסלול לכל אחד.</span>
-            </button>
+            </button>}
 
             {selectedMembershipPurchase ? (
               <section id="membership-checkout" tabIndex={-1} aria-label="תשלום והפעלת מסלול" className="scroll-mt-32 rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 shadow-sm max-w-2xl mx-auto">
@@ -2448,7 +2461,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
               </section>
             ) : (
               <>
-                {familyUsers.length > 1 && (!stagingLogicEnabled() || chatChoice==='family') && <section ref={familyCheckoutRef} className="logic-family space-y-4 rounded-2xl border border-indigo-200 bg-white p-5">
+                {familyUsers.length > 1 && (!stagingLogicEnabled() || chatChoice==='family-edit') && <section ref={familyCheckoutRef} className="logic-family space-y-4 rounded-2xl border border-indigo-200 bg-white p-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <span className="text-[11px] font-black text-indigo-700">חשבון משפחתי</span>
@@ -2458,7 +2471,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
                   </div>
                   <label className="block text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} onEditingChange={setFamilyEditing} />
+                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} onEditingChange={setFamilyEditing} initialEditingMemberId={stagingLogicEnabled() ? chatFamilyEditingMember:undefined} />
                   {familyEditing && <p role="status" className="rounded-lg bg-slate-950 p-3 font-bold text-amber-100">יש ללחוץ על ״אישור הבחירה״ בבן המשפחה הפתוח לפני מעבר לתשלום.</p>}
                   <fieldset className="rounded-xl border border-slate-600 p-3 space-y-2 text-sm">
                     <legend className="px-2 font-bold">אופן התשלום — ראש המשפחה משלם</legend>
