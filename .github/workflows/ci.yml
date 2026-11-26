@@ -66,7 +66,7 @@ jobs:
         run: pnpm run lint
 
       - name: Test isolated conversation prototype
-        run: pnpm exec tsx --test src/prototype/model.test.ts src/prototype/Conversation.test.tsx src/prototype/integration.test.ts src/prototype/demoAccount.test.ts src/prototype/stagingLogic.test.tsx src/prototype/familyAccountModel.test.tsx
+        run: pnpm exec tsx --test src/prototype/model.test.ts src/prototype/Conversation.test.tsx src/prototype/integration.test.ts src/prototype/demoAccount.test.ts src/prototype/stagingLogic.test.tsx src/prototype/familyAccountModel.test.tsx src/prototype/familyPlanSteps.test.tsx
 
       - name: Build production bundle
         run: pnpm run build
