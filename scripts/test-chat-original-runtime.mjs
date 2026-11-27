@@ -17,6 +17,8 @@ const serve=process.argv.includes('--serve');
 const strict=process.argv.includes('--strict-provider');
 const individual=process.argv.includes('--individual');
 const productionClient=process.argv.includes('--production-client');
+const productionChat=process.argv.includes('--production-chat');
+assert.ok(!productionChat || productionClient,'Production chat matrix must use production client flags');
 assert.ok(!serve || !strict,'Strict matrix is automated and cannot serve a browser');
 assert.equal(optIn,'--isolated-postgres');
 const dbPort=Number(portArg);assert.ok(Number.isInteger(dbPort) && dbPort>1024);
@@ -106,11 +108,11 @@ globalThis.fetch=async(input,init={})=>{
 };
 try{
   const bundle=await build({stdin:{contents:`export {requestPhoneCode,verifyRegistrationPhone,registerServerUser,registerFamilyMember,getClubState,loginWithPassword} from './src/data/clubServer.ts'; export {requestOriginalCheckoutQuote,refreshOriginalCheckoutQuote,originalQuoteMatchesSelections,startRivhitPayment,continueFamilySplitPayment,getPendingRivhitPayment,clearPendingRivhitPayment} from './src/data/rivhitPayments.ts'; export {chatUiEnabled,chatUiAvailable} from './src/prototype/integration.ts';`,resolveDir:root},bundle:true,write:false,format:'esm',platform:'browser',
-    define:{'__CONVERSATION_PROTOTYPE__':'false','__CHAT_ORIGINAL_TEST__':String(!productionClient),'import.meta.env':JSON.stringify({VITE_APP_MODE:'server',VITE_API_URL:origin,VITE_PAYMENT_API_URL:origin})}});
+    define:{'__CONVERSATION_PROTOTYPE__':'false','__CHAT_ORIGINAL_TEST__':String(!productionClient),'__PRODUCTION_CHAT__':String(productionChat),'import.meta.env':JSON.stringify({VITE_APP_MODE:'server',VITE_API_URL:origin,VITE_PAYMENT_API_URL:origin})}});
   const client=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].contents).toString('base64'));
-  assert.equal(client.chatUiEnabled(),!productionClient);
+  assert.equal(client.chatUiEnabled(),!productionClient || productionChat);
   window.location.href=origin+'/?ui=legacy';window.location.search='?ui=legacy';assert.equal(client.chatUiEnabled(),false);
-  window.location.search='?ui=chat';assert.equal(client.chatUiEnabled(),!productionClient);
+  window.location.search='?ui=chat';assert.equal(client.chatUiEnabled(),!productionClient || productionChat);
   await client.requestPhoneCode('0500000201','REGISTER');
   const phone=await client.verifyRegistrationPhone('0500000201','1111');
   const payer={id:phone.registrationUserId,name:'Fixture Parent',username:'fixture-parent',email:'parent@example.invalid',phone:'0500000201',password:'Fixture-Password-123!',role:'TRAINEE',birthDate:'1990-01-01',gender:'FEMALE',
@@ -134,18 +136,18 @@ try{
   // Production intentionally excludes the connected-test review helper. Exercise
   // its original public quote API and real startRivhitPayment path instead.
   const review=async request=>{
-    if(!productionClient)return client.requestOriginalCheckoutQuote(request);
+    if(!productionClient || productionChat)return client.requestOriginalCheckoutQuote(request);
     const response=await fetch(origin+'/api/payments/rivhit/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...request,quoteOnly:true,unifiedCheckout:true})});
     const result=await response.json();assert.equal(response.ok,true);assert.equal(result.split,true);return result;
   };
-  if(productionClient)await assert.rejects(client.requestOriginalCheckoutQuote(request),/isolated runtime/);
+  if(productionClient && !productionChat)await assert.rejects(client.requestOriginalCheckoutQuote(request),/connected chat build/);
   const quote=await review(request);assert.equal(providerCreates,0);
   assert.equal(quote.items.filter(item=>item.recurring).length,1);assert.equal(quote.items.filter(item=>!item.recurring).length,1);
   assert.equal(quote.items.reduce((sum,item)=>sum+Math.round(item.amount*100),0),66816);
   assert.equal(client.originalQuoteMatchesSelections(request,quote),true);
   const changed=structuredClone(request);if(individual)changed.individualSelections[1].trainingSessionsCount=3;else changed.familyMemberPlans[1].trainingSessionsCount=3;
   assert.equal(client.originalQuoteMatchesSelections(changed,quote),false);
-  if(!productionClient){
+  if(!productionClient || productionChat){
     const revised=await client.refreshOriginalCheckoutQuote(changed,quote.batchId);
     assert.equal(client.originalQuoteMatchesSelections(changed,revised),true);assert.equal(providerCreates,0);
     await client.refreshOriginalCheckoutQuote(request,revised.batchId);

@@ -1,6 +1,6 @@
 import { DiscountCode, FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, Payment, PaymentPurchaseVariant } from '../types';
 import { retryPaymentApproval, approvalFetchSignal } from './paymentApprovalRetry';
-import {STAGING_CONVERSATION_ENABLED,ORIGINAL_CHAT_TEST_ENABLED,assertOriginalTestUrl} from '../prototype/integration';
+import {STAGING_CONVERSATION_ENABLED,ORIGINAL_CHAT_TEST_ENABLED,CONNECTED_CHAT_ENABLED,assertOriginalTestUrl} from '../prototype/integration';
 
 const PENDING_PAYMENT_KEY = 'baly_rivhit_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_rivhit_processed_transactions_v1';
@@ -55,7 +55,7 @@ export interface OriginalCheckoutQuote {batchId:string;items:OriginalQuoteLine[]
 // Only the connected isolated runtime uses this adapter. The original server
 // owns authorization, quotes, existing orders and all monetary calculations.
 export async function requestOriginalCheckoutQuote(request:CreatePaymentRequest,signal?:AbortSignal):Promise<OriginalCheckoutQuote>{
-  if(!ORIGINAL_CHAT_TEST_ENABLED)throw new Error('Connected checkout review is available only in the isolated runtime.');
+  if(!CONNECTED_CHAT_ENABLED)throw new Error('Connected checkout review requires an enabled connected chat build.');
   if(!['PRIMARY','ADDON'].includes(request.mode))throw new Error('Complete registration before reviewing a purchase.');
   const individualSelections=request.membershipType===MembershipType.FAMILY_MEMBERSHIP ? undefined:request.individualSelections?.length ? request.individualSelections:
     [{membershipType:request.membershipType,trainingSessionsCount:request.purchaseVariant ? Number(request.purchaseVariant.split('_').pop()):undefined}];
@@ -67,7 +67,7 @@ export async function requestOriginalCheckoutQuote(request:CreatePaymentRequest,
 }
 
 export async function refreshOriginalCheckoutQuote(request:CreatePaymentRequest,batchId:string,signal?:AbortSignal){
-  if(!ORIGINAL_CHAT_TEST_ENABLED)throw new Error('Isolated runtime only.');
+  if(!CONNECTED_CHAT_ENABLED)throw new Error('Connected chat build required.');
   const cancelled=await familySplitAction('cancel',batchId,{},signal);
   if(!cancelled.cancelled)throw new Error('הבקשה כבר נשלחה או השתנתה. יש להמשיך בבקשה המקורית — לא נוצר חיוב נוסף.');
   return requestOriginalCheckoutQuote(request,signal);

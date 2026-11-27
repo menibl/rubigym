@@ -100,7 +100,7 @@ test('production has no family cards; renewal requires confirmation and uses ori
   for(const action of ['עריכת מסלולים','רכישת מסלול נוסף','הקפאה','ביטול מסלול','הסרת מסלול מחידוש','הסרת בן משפחה'])assert.ok(component.includes(action));
   const dashboard=readFileSync(new URL('../components/TraineeDashboard.tsx',import.meta.url),'utf8');
   assert.match(dashboard,/const staged = stagingLogicEnabled\(\) && stagingSelections/);
-  assert.match(dashboard,/onDetach=\{memberId=>\{if\(!stagingLogicEnabled\(\) \|\| ORIGINAL_CHAT_TEST_ENABLED\)return/);
+  assert.match(dashboard,/onDetach=\{memberId=>\{if\(!stagingLogicEnabled\(\) \|\| CONNECTED_CHAT_ENABLED\)return/);
 });
 
 test('renewal prices use server-engine cents and distribute percent discount per beneficiary before confirmation',()=>{

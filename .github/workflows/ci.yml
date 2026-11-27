@@ -80,7 +80,7 @@ jobs:
         run: pnpm run lint
 
       - name: Test isolated conversation prototype
-        run: pnpm exec tsx --test src/prototype/model.test.ts src/prototype/Conversation.test.tsx src/prototype/integration.test.ts src/prototype/demoAccount.test.ts src/prototype/stagingLogic.test.tsx src/prototype/familyAccountModel.test.tsx src/prototype/familyPlanSteps.test.tsx src/prototype/originalRuntime.test.tsx
+        run: pnpm exec tsx --test src/prototype/model.test.ts src/prototype/Conversation.test.tsx src/prototype/integration.test.ts src/prototype/demoAccount.test.ts src/prototype/stagingLogic.test.tsx src/prototype/familyAccountModel.test.tsx src/prototype/familyPlanSteps.test.tsx src/prototype/originalRuntime.test.tsx src/prototype/productionChat.test.ts
 
       - name: Test original chat client over isolated HTTP and PostgreSQL with fake providers
         run: node scripts/test-chat-original-runtime.mjs 55439 --isolated-postgres
@@ -91,10 +91,19 @@ jobs:
           node scripts/test-chat-original-runtime.mjs 55439 --isolated-postgres --strict-provider --individual
           node scripts/test-chat-original-runtime.mjs 55439 --isolated-postgres --strict-provider --production-client
           node scripts/test-chat-original-runtime.mjs 55439 --isolated-postgres --strict-provider --production-client --individual
+          node scripts/test-chat-original-runtime.mjs 55439 --isolated-postgres --strict-provider --production-client --production-chat
+          node scripts/test-chat-original-runtime.mjs 55439 --isolated-postgres --strict-provider --production-client --production-chat --individual
 
       - name: Build production bundle
         run: pnpm run build
         env:
+          VITE_AI_API_URL: https://staging.invalid
+          VITE_PAYMENT_API_URL: https://staging.invalid
+
+      - name: Build opt-in production chat without contacting providers
+        run: pnpm run build
+        env:
+          VITE_CHAT_UI_ENABLED: 'true'
           VITE_AI_API_URL: https://staging.invalid
           VITE_PAYMENT_API_URL: https://staging.invalid
 
