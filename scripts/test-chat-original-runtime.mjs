@@ -14,6 +14,10 @@ import {extname,sep} from 'node:path';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const [portArg,optIn]=process.argv.slice(2);
 const serve=process.argv.includes('--serve');
+const strict=process.argv.includes('--strict-provider');
+const individual=process.argv.includes('--individual');
+const productionClient=process.argv.includes('--production-client');
+assert.ok(!serve || !strict,'Strict matrix is automated and cannot serve a browser');
 assert.equal(optIn,'--isolated-postgres');
 const dbPort=Number(portArg);assert.ok(Number.isInteger(dbPort) && dbPort>1024);
 const database=`gymflow_chat_e2e_${Date.now()}`;
@@ -50,7 +54,8 @@ const env={STATE_STORE:store,CLUB_ID:'isolated-chat',SMS_TEST_MODE:'true',SMS_OT
       return Response.json({Status:0,URL:`https://testicredit.rivhit.co.il/payment/${id}`,PrivateSaleToken:id});
     }
     providerReads++;
-    if(url.endsWith('/SaleDetails')){const id=body.SalePrivateToken || body.SaleId;return Response.json({Status:0,data:serve && !finished.has(id) ? []:[signed.get(id)]});}
+    if(url.endsWith('/RecurringSaleList'))return Response.json({RecurringSales:[]});
+    if(url.endsWith('/SaleDetails')){const id=body.SalePrivateToken || body.SaleId;return Response.json({Status:0,data:(serve || strict) && !finished.has(id) ? []:[signed.get(id)]});}
     if(url.endsWith('/Verify'))return Response.json({Status:'VERIFIED'});
     throw new Error('Unrecognized fake-provider operation');
   }};
@@ -89,7 +94,7 @@ if(serve){
 }
 const fakeStorage=()=>{const values=new Map();return{getItem:key=>values.get(key) ?? null,setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)};};
 globalThis.localStorage=fakeStorage();globalThis.sessionStorage=fakeStorage();
-globalThis.window={location:{origin,hostname:'127.0.0.1',href:origin+'/',assign(url){assert.equal(new URL(url).origin,origin);assigned=url;},reload(){}},
+globalThis.window={location:{origin,hostname:'127.0.0.1',href:origin+'/',assign(url){assert.equal(new URL(url).origin,productionClient ? 'https://testicredit.rivhit.co.il':origin);assigned=url;},reload(){}},
   history:{replaceState(_state,_title,url){window.location.href=new URL(url,origin).href;}},confirm:()=>true,alert:()=>{},dispatchEvent:()=>{}};
 globalThis.fetch=async(input,init={})=>{
   const url=new URL(typeof input==='string' ? input:input.url || input.href);
@@ -100,12 +105,12 @@ globalThis.fetch=async(input,init={})=>{
   return response;
 };
 try{
-  const bundle=await build({stdin:{contents:`export {requestPhoneCode,verifyRegistrationPhone,registerServerUser,registerFamilyMember,getClubState,loginWithPassword} from './src/data/clubServer.ts'; export {requestOriginalCheckoutQuote,refreshOriginalCheckoutQuote,originalQuoteMatchesSelections,startRivhitPayment,continueFamilySplitPayment,getPendingRivhitPayment} from './src/data/rivhitPayments.ts'; export {chatUiEnabled,chatUiAvailable} from './src/prototype/integration.ts';`,resolveDir:root},bundle:true,write:false,format:'esm',platform:'browser',
-    define:{'__CONVERSATION_PROTOTYPE__':'false','__CHAT_ORIGINAL_TEST__':'true','import.meta.env':JSON.stringify({VITE_APP_MODE:'server',VITE_API_URL:origin,VITE_PAYMENT_API_URL:origin})}});
+  const bundle=await build({stdin:{contents:`export {requestPhoneCode,verifyRegistrationPhone,registerServerUser,registerFamilyMember,getClubState,loginWithPassword} from './src/data/clubServer.ts'; export {requestOriginalCheckoutQuote,refreshOriginalCheckoutQuote,originalQuoteMatchesSelections,startRivhitPayment,continueFamilySplitPayment,getPendingRivhitPayment,clearPendingRivhitPayment} from './src/data/rivhitPayments.ts'; export {chatUiEnabled,chatUiAvailable} from './src/prototype/integration.ts';`,resolveDir:root},bundle:true,write:false,format:'esm',platform:'browser',
+    define:{'__CONVERSATION_PROTOTYPE__':'false','__CHAT_ORIGINAL_TEST__':String(!productionClient),'import.meta.env':JSON.stringify({VITE_APP_MODE:'server',VITE_API_URL:origin,VITE_PAYMENT_API_URL:origin})}});
   const client=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].contents).toString('base64'));
-  assert.equal(client.chatUiEnabled(),true);
+  assert.equal(client.chatUiEnabled(),!productionClient);
   window.location.href=origin+'/?ui=legacy';window.location.search='?ui=legacy';assert.equal(client.chatUiEnabled(),false);
-  window.location.search='?ui=chat';assert.equal(client.chatUiEnabled(),true);
+  window.location.search='?ui=chat';assert.equal(client.chatUiEnabled(),!productionClient);
   await client.requestPhoneCode('0500000201','REGISTER');
   const phone=await client.verifyRegistrationPhone('0500000201','1111');
   const payer={id:phone.registrationUserId,name:'Fixture Parent',username:'fixture-parent',email:'parent@example.invalid',phone:'0500000201',password:'Fixture-Password-123!',role:'TRAINEE',birthDate:'1990-01-01',gender:'FEMALE',
@@ -114,43 +119,82 @@ try{
   await client.loginWithPassword('fixture-parent',payer.password);
   const child={id:'fixture-child',name:'Fixture Child',username:'fixture-child',email:payer.email,phone:'',password:'Fixture-Child-123!',role:'TRAINEE',birthDate:'2012-01-01',gender:'FEMALE',healthDeclarationSigned:true,clubAgreementSigned:true,
     familyId:`fam-${payer.id}`,familyName:'Fixture Family',familyPayerId:payer.id,healthDeclarationParentConsent:true,healthDeclarationParentName:payer.name};
-  await client.registerFamilyMember(child);
-  const loaded=await client.getClubState();assert.equal(loaded.payload.users.length,2);
-  assert.equal(loaded.payload.users.find(user=>user.id===child.id).familyPayerId,payer.id);
+  if(!individual)await client.registerFamilyMember(child);
+  const loaded=await client.getClubState();assert.equal(loaded.payload.users.length,individual ? 1:2);
+  if(!individual)assert.equal(loaded.payload.users.find(user=>user.id===child.id).familyPayerId,payer.id);
+  assert.equal(loaded.payload.users.find(user=>user.id===payer.id).birthDate,payer.birthDate);
+  if(!individual)assert.equal(loaded.payload.users.find(user=>user.id===child.id).birthDate,child.birthDate);
   const selection=[{memberId:payer.id,memberName:payer.name,participation:'INCLUDED',membershipType:'OPEN_GYM'},
     {memberId:child.id,memberName:child.name,participation:'INCLUDED',membershipType:'PERSONAL_TRAINING',trainingSessionsCount:2,additionalPlans:[{membershipType:'DUO_TRAINING',trainingSessionsCount:1}]}];
   const request={userId:payer.id,userName:payer.name,email:payer.email,phone:payer.phone,membershipType:'FAMILY_MEMBERSHIP',mode:'PRIMARY',familyBillingMode:'CUSTOM_COMBINED',familyMembersCount:2,familyMemberPlans:selection,discountCode:'SAVE13'};
-  const quote=await client.requestOriginalCheckoutQuote(request);assert.equal(providerCreates,0);
+  if(individual){
+    request.membershipType='OPEN_GYM';delete request.familyBillingMode;delete request.familyMembersCount;delete request.familyMemberPlans;
+    request.individualSelections=[{membershipType:'OPEN_GYM'},{membershipType:'PERSONAL_TRAINING',trainingSessionsCount:2},{membershipType:'DUO_TRAINING',trainingSessionsCount:1}];
+  }
+  // Production intentionally excludes the connected-test review helper. Exercise
+  // its original public quote API and real startRivhitPayment path instead.
+  const review=async request=>{
+    if(!productionClient)return client.requestOriginalCheckoutQuote(request);
+    const response=await fetch(origin+'/api/payments/rivhit/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...request,quoteOnly:true,unifiedCheckout:true})});
+    const result=await response.json();assert.equal(response.ok,true);assert.equal(result.split,true);return result;
+  };
+  if(productionClient)await assert.rejects(client.requestOriginalCheckoutQuote(request),/isolated runtime/);
+  const quote=await review(request);assert.equal(providerCreates,0);
   assert.equal(quote.items.filter(item=>item.recurring).length,1);assert.equal(quote.items.filter(item=>!item.recurring).length,1);
   assert.equal(quote.items.reduce((sum,item)=>sum+Math.round(item.amount*100),0),66816);
   assert.equal(client.originalQuoteMatchesSelections(request,quote),true);
-  const changed=structuredClone(request);changed.familyMemberPlans[1].trainingSessionsCount=3;
+  const changed=structuredClone(request);if(individual)changed.individualSelections[1].trainingSessionsCount=3;else changed.familyMemberPlans[1].trainingSessionsCount=3;
   assert.equal(client.originalQuoteMatchesSelections(changed,quote),false);
-  const revised=await client.refreshOriginalCheckoutQuote(changed,quote.batchId);
-  assert.equal(client.originalQuoteMatchesSelections(changed,revised),true);assert.equal(providerCreates,0);
-  await client.refreshOriginalCheckoutQuote(request,revised.batchId);
-  await client.startRivhitPayment(request);assert.equal(providerCreates,1);assert.match(assigned,/__mock_checkout/);
+  if(!productionClient){
+    const revised=await client.refreshOriginalCheckoutQuote(changed,quote.batchId);
+    assert.equal(client.originalQuoteMatchesSelections(changed,revised),true);assert.equal(providerCreates,0);
+    await client.refreshOriginalCheckoutQuote(request,revised.batchId);
+  }
+  await client.startRivhitPayment(request);assert.equal(providerCreates,1);assert.match(assigned,productionClient ? /^https:\/\/testicredit\.rivhit\.co\.il\//:/__mock_checkout/);
   const pending=client.getPendingRivhitPayment();assert.ok(pending.familySplitBatchId);
+  const originalAssigned=assigned;
+  const beforeCompletion=await store.getClubState('isolated-chat');
+  assert.equal(beforeCompletion.payload.payments.length,0);
   // Back/resume the original saved page: no duplicate provider dispatch.
   await client.startRivhitPayment(request);assert.equal(providerCreates,1);
+  assert.equal(assigned,originalAssigned,'Back/resume must navigate to the identical saved page');
+  if(strict){
+    const abandoned=await store.getClubState('isolated-chat');
+    assert.deepEqual(abandoned.payload.users,beforeCompletion.payload.users,'An abandoned page must not grant benefits');
+    assert.equal(abandoned.payload.payments.length,0);
+    // Also resume after losing the browser's pending reference: persisted server
+    // state, rather than a sessionStorage lock, must recover the same checkout.
+    const savedPending=JSON.parse(JSON.stringify(client.getPendingRivhitPayment()));
+    client.clearPendingRivhitPayment();assert.equal(client.getPendingRivhitPayment(),null);
+    await client.startRivhitPayment(request);assert.equal(providerCreates,1);assert.equal(assigned,originalAssigned);
+    assert.equal(client.getPendingRivhitPayment().familySplitBatchId,savedPending.familySplitBatchId);
+    finished.add('fixture-sale-1'); // Explicit simulated provider completion, not creation of its page.
+  }
   await client.continueFamilySplitPayment(pending.familySplitBatchId,payer.id,pending.familySplitItemId);
   assert.equal(providerCreates,2); // the distinct one-time group, not a duplicate series
   const second=client.getPendingRivhitPayment();assert.notEqual(second.familySplitItemId,pending.familySplitItemId);
+  if(strict){
+    const secondAssigned=assigned;
+    await client.startRivhitPayment(request);assert.equal(providerCreates,2);assert.equal(assigned,secondAssigned);
+    finished.add('fixture-sale-2');
+  }
   await client.continueFamilySplitPayment(second.familySplitBatchId,payer.id,second.familySplitItemId);
   const complete=await store.getClubState('isolated-chat');
-  assert.equal(complete.payload.users.find(user=>user.id===child.id).personalTrainingRemaining,2);
-  assert.equal(complete.payload.users.find(user=>user.id===child.id).duoTrainingRemaining,1);
+  const beneficiary=individual ? payer:child;
+  assert.equal(complete.payload.users.find(user=>user.id===beneficiary.id).personalTrainingRemaining,2);
+  assert.equal(complete.payload.users.find(user=>user.id===beneficiary.id).duoTrainingRemaining,1);
+  if(!individual)assert.equal(complete.payload.users.find(user=>user.id===payer.id).personalTrainingRemaining || 0,0);
   assert.equal(complete.payload.users.find(user=>user.id===payer.id).recurringMemberships.OPEN_GYM.status,'PENDING_FIRST_CHARGE');
   assert.ok(complete.payload.payments.every(payment=>payment.isMock));
   const paymentCount=complete.payload.payments.length;
   await client.continueFamilySplitPayment(second.familySplitBatchId,payer.id,second.familySplitItemId);
   assert.equal((await store.getClubState('isolated-chat')).payload.payments.length,paymentCount);
   assert.equal(providerCreates,2);assert.equal(externalAttempts,0);
-  const nextReview=await client.requestOriginalCheckoutQuote({...request,discountCode:undefined});
+  const nextReview=await review({...request,discountCode:undefined});
   assert.equal(nextReview.items.find(item=>item.recurring).status,'EXISTING_RECURRING');
   assert.equal(providerCreates,2);assert.equal(externalAttempts,0);
-  console.log(JSON.stringify({ok:true,database,httpRequests,fakeProviderCreates:providerCreates,fakeProviderReads:providerReads,externalAttempts,
-    checks:['client registration and fake OTP over HTTP','family addition persisted in PostgreSQL','old/chat interface switch','original server cents and discounts','mixed recurring/one-off continuation','abandoned checkout resumes without duplicate','pending-first-charge vs paid semantics','personal/duo beneficiary balances','duplicate verification idempotent']},null,2));
+  console.log(JSON.stringify({ok:true,database,scenario:individual ? 'individual mixed':'family mixed',strictProvider:strict,clientBuild:productionClient ? 'production flags':'isolated chat',productionChatEnabled:productionClient ? client.chatUiEnabled():undefined,httpRequests,fakeProviderCreates:providerCreates,fakeProviderReads:providerReads,externalAttempts,
+    checks:['client registration and fake OTP over HTTP',individual ? 'individual account and birth date persisted in PostgreSQL':'birth dates and family addition persisted in PostgreSQL',productionClient ? 'production demo fences off; external URL recorded only, never visited':'old/chat interface flags','original server cents and discounts','mixed recurring/one-off continuation','abandoned checkout resumes the identical URL without duplicate',...(strict ? ['no benefits before explicit fake completion','resume after lost pending reference']:[]),'pending-first-charge vs paid semantics','personal/duo beneficiary balances','duplicate verification idempotent']},null,2));
 }catch(error){console.error('Connected runtime test failed:',error.message);process.exitCode=1;}finally{
   globalThis.fetch=originalFetch;await new Promise(resolve=>server.close(resolve));await store.close();
 }
