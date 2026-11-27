@@ -52,6 +52,7 @@ import { TraineeDashboard } from './components/TraineeDashboard';
 import { resolveSessionProgram } from './data/sessionProgram';
 import { homeGroupSessions } from '../shared/group-program-access.js';
 import { AuthGateway } from './components/AuthGateway';
+import {STAGING_CONVERSATION_ENABLED} from './prototype/integration';
 import { PublicLandingPage } from './components/PublicLandingPage';
 import { RubisLogo } from './components/RubisLogo';
 import { UserSettingsModal } from './components/UserSettingsModal';
@@ -200,7 +201,8 @@ export default function App() {
     applyServerPayload(state.payload, state.revision);
     setActiveUser(signedInUser);
     setIsAuthenticated(true);
-    if (signedInUser.registrationPaymentPending) {
+    if(STAGING_CONVERSATION_ENABLED) setShowTraineeAccessAlert(false);
+    if (signedInUser.registrationPaymentPending && !STAGING_CONVERSATION_ENABLED) {
       const url = new URL(window.location.href);
       url.searchParams.set('workspace', 'my_membership');
       window.history.replaceState({ balyApp: true, workspace: 'MY_MEMBERSHIP' }, '', url);
@@ -521,6 +523,7 @@ export default function App() {
     setIsAuthenticated(false);
     setWorkspaceView(null);
     setShowTraineeAccessAlert(true);
+    if(STAGING_CONVERSATION_ENABLED){const url=new URL(window.location.href);for(const key of ['screen','plan','workspace','contact'])url.searchParams.delete(key);window.history.replaceState(window.history.state,'',url);}
   };
 
   const navigateToWorkspace = (view: WorkspaceView, contactId = '') => {
@@ -599,7 +602,8 @@ export default function App() {
   const finishServerLogin = async (user: User) => {
     await loadAuthenticatedState(user);
     setWorkspaceView(null);
-    setShowTraineeAccessAlert(true);
+    setShowTraineeAccessAlert(!STAGING_CONVERSATION_ENABLED);
+    if(STAGING_CONVERSATION_ENABLED){const url=new URL(window.location.href);for(const key of ['screen','plan','workspace','contact'])url.searchParams.delete(key);window.history.replaceState(window.history.state,'',url);}
     return user;
   };
 
@@ -693,6 +697,7 @@ export default function App() {
         onRequestPhoneCode={requestPhoneCode}
         onVerifyRegistrationPhone={verifyRegistrationPhone}
         onRegister={handleGatewayRegistration}
+        onDemoRegistered={STAGING_CONVERSATION_ENABLED ? async user=>{const url=new URL(window.location.href);for(const key of ['screen','plan','workspace','contact'])url.searchParams.delete(key);window.history.replaceState(window.history.state,'',url);setWorkspaceView(null);await loadAuthenticatedState(user);}:undefined}
         initialScreen={authParams.get('screen') === 'register' ? 'register' : 'login'}
         initialPlan={initialPlan}
         landingUrl={publicLandingConfig?.landingUrl || undefined}

@@ -6,10 +6,10 @@ test('additional-service UI submits a basket in ADDON mode, not a synthetic prim
   const dashboard = readFileSync(new URL('../components/TraineeDashboard.tsx', import.meta.url), 'utf8');
   const handler = dashboard.slice(dashboard.indexOf('const handleMembershipCheckout'), dashboard.indexOf('const handleFamilyCheckout'));
   assert.match(handler, /mode: membershipPurchaseMode/);
-  assert.match(handler, /individualSelections: checkoutAdditions.length \? \[/);
+  assert.match(handler, /individualSelections: checkoutAdditions.length \|\| connectedChat \? \[/);
   assert.match(handler, /trainingSessionsCount: selectedMembershipUsesTrainingCard \? trainingCardSize : undefined/);
   assert.match(handler, /\.\.\.checkoutAdditions/);
-  const checkout = dashboard.slice(dashboard.indexOf('<form onSubmit={handleMembershipCheckout}'), dashboard.indexOf('{selectedMembershipUsesTrainingCard && ('));
+  const checkout = dashboard.slice(dashboard.indexOf('<StagingChatForm flowKey={`purchase:'), dashboard.indexOf('{selectedMembershipUsesTrainingCard && ('));
   assert.doesNotMatch(checkout, /membershipPurchaseMode === 'PRIMARY' && <fieldset/);
   assert.match(checkout, /membershipAddOns.filter\(plan => plan.id !== selectedMembershipPurchase\)/);
   assert.match(checkout, /trainingSessionsCount: Math.max\(1, Math.min\(50/);

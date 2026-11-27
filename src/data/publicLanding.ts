@@ -20,7 +20,7 @@ const apiBase = () => (import.meta.env.VITE_API_URL || import.meta.env.VITE_AI_A
 const localConfig = (): PublicLandingConfig => {
   const url = new URL(window.location.href);
   const explicitSurface = url.searchParams.get('surface');
-  const surface = explicitSurface === 'landing' || (explicitSurface !== 'app' && (isPagesDemoMode() || /\/landing\/?$/.test(url.pathname)))
+  const surface = explicitSurface === 'landing' || (explicitSurface !== 'app' && /\/landing\/?$/.test(url.pathname))
     ? 'landing'
     : 'app';
   const appUrl = new URL(import.meta.env.BASE_URL, window.location.origin);

@@ -5,6 +5,13 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
+import {STAGING_CONVERSATION_ENABLED,ORIGINAL_CHAT_TEST_ENABLED,CONNECTED_CHAT_ENABLED} from '../prototype/integration';
+import {ConnectedCheckoutReview} from '../prototype/ConnectedCheckoutReview';
+import {StagingChatForm,StagingMembershipSurface,stagingLogicEnabled} from '../prototype/StagingLogicChat';
+import {StagingFamilyAccount} from '../prototype/StagingFamilyAccount';
+import {StagingFamilyPlanSteps} from '../prototype/StagingFamilyPlanSteps';
+import {familyMemberEditDraft,detachFamilyMemberDemo} from '../prototype/familyAccountModel';
+import {HomeMembershipSummary} from './HomeMembershipSummary';
 import { onPaymentPageReturn } from '../data/paymentPageReturn';
 import { activePlanExpiry, emptyFamilyPurchase } from '../data/membershipRenewal';
 import { hasIncludedOpenGymAccess } from '../../shared/open-gym-access.js';
@@ -171,7 +178,16 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   onHome,
   familyCheckoutRequest = 0
 }) => {
-  const [activeTab, setActiveTab] = useState<'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership'>(initialTab);
+  type TraineeTab = 'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership';
+  const [activeTab, setActiveTabState] = useState<TraineeTab>(initialTab);
+  const [chatChoice,setChatChoice] = useState('overview');
+  const connectedChat=CONNECTED_CHAT_ENABLED && stagingLogicEnabled();
+  const [chatFamilyEditingMember,setChatFamilyEditingMember] = useState<string | undefined>();
+  const [chatFamilyExtrasOnly,setChatFamilyExtrasOnly] = useState(false);
+  const [chatFamilySummaryReady,setChatFamilySummaryReady] = useState(false);
+  const setActiveTab = (tab:TraineeTab) => {
+    setActiveTabState(tab);
+  };
   const [selectedMembershipPurchase, setSelectedMembershipPurchase] = useState<MembershipType | null>(null);
   const [checkoutAdditions, setCheckoutAdditions] = useState<{ membershipType: MembershipType; trainingSessionsCount?: number }[]>([]);
   useEffect(() => { setCheckoutAdditions([]); }, [selectedMembershipPurchase]);
@@ -213,6 +229,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
   useEffect(() => {
     if (!familyCheckoutRequest) return;
+    if(stagingLogicEnabled()){setChatChoice('family');if(activeUser.familyName)setFamilyPurchaseName(activeUser.familyName);}
     setSelectedMembershipPurchase(null);
     setActiveTab('membership');
     const timeout = window.setTimeout(() => familyCheckoutRef.current?.scrollIntoView({ block: 'start' }), 0);
@@ -273,6 +290,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   const applySelectedDiscount = (amount: number) => appliedDiscount?.discountPercent
     ? Math.round(amount * (1 - appliedDiscount.discountPercent / 100))
     : Math.max(0, amount - (appliedDiscount?.discountAmount || 0));
+  useEffect(()=>{if(stagingLogicEnabled())window.dispatchEvent(new CustomEvent('baly:staging-checkout-preview',{detail:null}));},[selectedMembershipPurchase,trainingCardSize,checkoutAdditions,familyMemberPlans,familyPaymentGrouping,appliedDiscount]);
 
   const applyVerifiedMembershipPayment = (
     purchasedType: MembershipType,
@@ -414,6 +432,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   };
 
   useEffect(() => {
+    if (STAGING_CONVERSATION_ENABLED) return;
     const returnStatus = new URLSearchParams(window.location.search).get('rivhit');
     if (!returnStatus) return;
     const pending = getPendingRivhitPayment();
@@ -798,8 +817,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     setMembershipPurchaseMode(activeUser.registrationPaymentPending ? 'PRIMARY' : mode);
   };
 
-  const handleMembershipCheckout = async (event: React.FormEvent) => {
+  const handleMembershipCheckout = async (event: React.FormEvent, reviewed = false) => {
     event.preventDefault();
+    if(connectedChat && !reviewed)return showFeedback('יש לאשר את סיכום השרת לפני מעבר לתשלום המדומה.','error');
     if (!selectedMembershipPurchase) return;
     if (!canPurchasePlan(selectedMembershipConfig || selectedMembershipPurchase, activeUser)) return showFeedback('מסלול נוער מיועד עד גיל 18 כולל. יש לבחור מסלול המתאים לגיל ולעדכן תאריך לידה במידת הצורך.', 'error');
     const existingExpiry = activePlanExpiry(activeUser, selectedMembershipPurchase);
@@ -818,7 +838,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         phone: activeUser.phone,
         membershipType: selectedMembershipPurchase,
         mode: membershipPurchaseMode,
-        individualSelections: checkoutAdditions.length ? [
+        individualSelections: checkoutAdditions.length || connectedChat ? [
           { membershipType: selectedMembershipPurchase, trainingSessionsCount: selectedMembershipUsesTrainingCard ? trainingCardSize : undefined },
           ...checkoutAdditions
         ] : undefined,
@@ -835,9 +855,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     } finally { setPaymentStarting(false); }
   };
 
-  const handleFamilyCheckout = async () => {
+  const handleFamilyCheckout = async (stagingSelections?: FamilyMemberPlanSelection[]) => {
     if (familyEditing) return showFeedback('יש לאשר את בחירת בן המשפחה לפני מעבר לתשלום.', 'error');
-    const selected = resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id);
+    const staged = stagingLogicEnabled() && stagingSelections;
+    const selected = staged || resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id);
     const includedPlans = selected.filter(plan => !plan.participation || plan.participation === 'INCLUDED');
     if (includedPlans.some(plan => [plan, ...(plan.additionalPlans || [])].some(selection => !canPurchasePlan(membershipPlanConfigs.find(config => config.id === selection.membershipType) || selection.membershipType, familyUsers.find(member => member.id === plan.memberId))))) return showFeedback('נבחר מסלול נוער שאינו מתאים לגיל של אחד מבני המשפחה. יש לעדכן את הבחירה או את תאריך הלידה.', 'error');
     if (includedPlans.some(plan => !membershipPlanConfigs.some(config => config.id === plan.membershipType && config.active))) return showFeedback('יש להשלים בחירת מסלול פעיל לכל בן משפחה שכלול בתשלום.', 'error');
@@ -865,16 +886,18 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         phone: activeUser.phone,
         membershipType: MembershipType.FAMILY_MEMBERSHIP,
         mode: 'PRIMARY',
-        familyMembersCount: familyPurchaseCount,
+        familyMembersCount: staged ? staged.length : familyPurchaseCount,
         familyName: familyPurchaseName.trim(),
         familyBillingMode,
         familyPaymentGrouping,
-        familyMemberPlans: familyBillingMode === 'CUSTOM_COMBINED' ? resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id) : undefined,
+        familyMemberPlans: familyBillingMode === 'CUSTOM_COMBINED' ? selected : undefined,
         discountCode: appliedDiscount?.code
       });
+      return true;
     } catch (error) {
       setPaymentStarting(false);
       showFeedback(error instanceof Error ? error.message : 'לא ניתן לפתוח את דף התשלום המשפחתי.', 'error');
+      return false;
     } finally { setPaymentStarting(false); }
   };
 
@@ -2349,11 +2372,19 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
 
         {/* MEMBERSHIP MANAGEMENT & RIVHIT CHECKOUT */}
         {activeTab === 'membership' && (
-          <div className="space-y-6">
+          <StagingMembershipSurface selected={Boolean(selectedMembershipPurchase)} choice={chatChoice} onChoice={choice=>{setFamilyEditing(false);setChatChoice(choice);}} onClose={()=>onHome ? onHome():setActiveTab('home')} family={familyUsers.length>1}>
             <RecurringMembershipNotice user={activeUser} plans={membershipPlanConfigs} />
-            <PendingCheckoutRecovery key={`${activeUser.id}-${checkoutReturn}`} userId={activeUser.id} />
+            {stagingLogicEnabled() && familyUsers.length>1 && ['overview','family'].includes(chatChoice) && !selectedMembershipPurchase && <StagingFamilyAccount members={familyUsers} payments={payments} plans={membershipPlanConfigs} canManage={Boolean(activeUser.isFamilyPayer)} busy={paymentStarting}
+              onAdd={()=>onOpenSettings('family-add')} onFreeze={requestFamilyFreeze}
+              onEdit={(memberId,extrasOnly,draft)=>{setFamilyMemberPlans(draft || familyMemberEditDraft(familyUsers,memberId,membershipPlanConfigs,payments,extrasOnly));setFamilyPurchaseCount(familyUsers.length);setChatFamilyEditingMember(memberId);setChatFamilyExtrasOnly(Boolean(extrasOnly));setChatFamilySummaryReady(false);setChatChoice('family-edit');}}
+              onDetach={memberId=>{if(!stagingLogicEnabled() || CONNECTED_CHAT_ENABLED)return false;try{onUpdateUsers(detachFamilyMemberDemo(users,activeUser.id,memberId));return true;}catch(error){showFeedback((error as Error).message,'error');return false;}}}
+              onContinue={async selections=>{setFamilyMemberPlans(selections);return handleFamilyCheckout(selections);}}
+              discountCodes={discountCodes} discountInput={discountInput} onDiscountInput={setDiscountInput} appliedDiscount={appliedDiscount} onDiscount={setAppliedDiscount}
+              onMessage={(message,isError)=>showFeedback(message,isError ? 'error':'success')}/>}
+            {stagingLogicEnabled() && familyUsers.length===1 && chatChoice==='overview' && !selectedMembershipPurchase && <article className="rounded-xl border border-zinc-700 p-4"><strong>{activeUser.name}</strong><HomeMembershipSummary user={activeUser} payments={payments} plans={membershipPlanConfigs}/></article>}
+            {!STAGING_CONVERSATION_ENABLED && <PendingCheckoutRecovery key={`${activeUser.id}-${checkoutReturn}`} userId={activeUser.id} />}
             {activeUser.registrationPaymentPending && <p role="alert" className="rounded-xl border border-amber-400/40 bg-zinc-900 p-4 text-amber-200">החשבון שלך נרשם בהצלחה, אך התשלום עדיין לא הושלם. יש לבחור מסלול ולהשלים תשלום כדי להירשם לאימונים.</p>}
-            <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
+            {(!stagingLogicEnabled() || familyUsers.length===1 && !selectedMembershipPurchase && chatChoice==='overview') && <section className="rounded-2xl bg-slate-950 text-white p-5 sm:p-7 border border-amber-500/25">
               <button className="text-xs text-amber-300 mb-4" onClick={() => { setSelectedMembershipPurchase(null); setActiveTab('profile'); }}>
                 חזרה לפרופיל
               </button>
@@ -2374,12 +2405,12 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   </div>
                 </div>
               </div>
-            </section>
+            </section>}
 
-            <button type="button" className="w-full rounded-2xl border border-amber-500/30 bg-slate-950 p-4 text-right text-white" onClick={() => onOpenSettings('family-add')}>
+            {(!stagingLogicEnabled() || familyUsers.length===1 || chatChoice==='family-edit') && <button type="button" className="w-full rounded-2xl border border-amber-500/30 bg-slate-950 p-4 text-right text-white" onClick={() => onOpenSettings('family-add')}>
               <strong className="block text-base">הוספת בן משפחה</strong>
               <span className="mt-1 block text-sm text-slate-300">הוסיפו בני משפחה, ואז חזרו לתשלום לבחירת מסלול לכל אחד.</span>
-            </button>
+            </button>}
 
             {selectedMembershipPurchase ? (
               <section id="membership-checkout" tabIndex={-1} aria-label="תשלום והפעלת מסלול" className="scroll-mt-32 rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 shadow-sm max-w-2xl mx-auto">
@@ -2390,9 +2421,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <b className="block text-sm text-slate-900">{selectedMembershipConfig?.label || MEMBERSHIP_TYPE_LABELS[selectedMembershipPurchase]?.label || selectedMembershipPurchase}</b>
                     <span className="text-[11px] text-slate-600">{membershipPurchaseMode === 'PRIMARY' ? 'מסלול ראשי' : 'שירות נוסף'}</span>
                   </div>
-                  <strong className="text-xl text-amber-800">₪{applySelectedDiscount(selectedMembershipAmount)} · {billingPeriodLabel(selectedMembershipConfig)}</strong>
+                  <strong className="text-xl text-amber-800">{connectedChat ? 'מחיר סופי והנחות בסיכום השרת בהמשך':<>₪{applySelectedDiscount(selectedMembershipAmount + (stagingLogicEnabled() ? checkoutAdditions.reduce((sum,item)=>sum+(membershipPlanConfigs.find(plan=>plan.id===item.membershipType)?.price || 0)*(item.trainingSessionsCount || 1),0):0))} · {billingPeriodLabel(selectedMembershipConfig)}</>}</strong>
                 </div>
-                <form onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
+                <StagingChatForm flowKey={`purchase:${selectedMembershipPurchase}`} onSubmit={handleMembershipCheckout} className="grid gap-4 mt-5">
                   <fieldset className="rounded-xl border border-slate-600 bg-slate-950 p-4 text-slate-100">
                     <legend className="px-2 font-bold">תוספות לאותה רכישה</legend>
                     {membershipPurchaseMode === 'ADDON' && <p className="mb-3 text-sm">אפשר לרכוש אישי וזוגי יחד, עם כמות נפרדת לכל שירות. אין צורך במנוי Open Gym והמנוי הקיים לא ישתנה.</p>}
@@ -2419,7 +2450,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   )}
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
-                    התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.
+                    {ORIGINAL_CHAT_TEST_ENABLED ? 'שרת ו־DB מבודדים: המשך לספק תשלום מדומה בלבד. אין להזין פרטי אשראי אמיתיים.':STAGING_CONVERSATION_ENABLED ? 'תצוגת חישוב בלבד — לא נפתח דף סליקה, לא מוזנים פרטי אשראי ולא נוצר חיוב.':'התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.'}
                   </div>
                   {billingPeriodForPlan(selectedMembershipConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
                     הוראת קבע בסך ₪{selectedMembershipPrice} לחודש: 12 חיובים לפי יום פתיחת בקשת התשלום; בקשה ב־29–31 תחויב החל מ־1 בחודש הבא. תוקף המנוי נשאר עד ה־1 בחודש העוקב לחודש ששולם. אין חידוש אוטומטי; חידוש דורש את אישורכם. לפני המעבר לתשלום יוצגו המועדים לאישור.
@@ -2429,14 +2460,15 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       שירות התשלומים עדיין אינו מחובר לשרת הציבורי. לא יתבצע חיוב עד להשלמת הגדרת השרת.
                     </p>
                   )}
-                  <button type="submit" disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
-                    <CreditCard size={17} /> {paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח'}
+                  {connectedChat && <ConnectedCheckoutReview request={{userId:activeUser.id,userName:activeUser.name,email:activeUser.email,phone:activeUser.phone,membershipType:selectedMembershipPurchase,mode:membershipPurchaseMode,individualSelections:[{membershipType:selectedMembershipPurchase,trainingSessionsCount:selectedMembershipUsesTrainingCard ? trainingCardSize:undefined},...checkoutAdditions],discountCode:appliedDiscount?.code}} busy={paymentStarting} onContinue={async()=>handleMembershipCheckout({preventDefault(){}} as React.FormEvent,true)}/>}
+                  <button hidden={connectedChat} style={connectedChat ? {display:'none'}:undefined} type="submit" disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
+                    <CreditCard size={17} /> {STAGING_CONVERSATION_ENABLED ? 'בדיקת חישוב ללא חיוב':paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח'}
                   </button>
-                </form>
+                </StagingChatForm>
               </section>
             ) : (
               <>
-                {familyUsers.length > 1 && <section ref={familyCheckoutRef} className="space-y-4 rounded-2xl border border-indigo-200 bg-white p-5">
+                {familyUsers.length > 1 && (!stagingLogicEnabled() || chatChoice==='family-edit') && <section ref={familyCheckoutRef} className="logic-family space-y-4 rounded-2xl border border-indigo-200 bg-white p-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <span className="text-[11px] font-black text-indigo-700">חשבון משפחתי</span>
@@ -2446,8 +2478,11 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     {activeUser.isFamilyPayer && <span className="rounded-full bg-indigo-200 px-3 py-1 text-[11px] font-bold text-indigo-900">מסלול משפחתי פעיל</span>}
                   </div>
                   <label className="block text-xs font-bold text-slate-700">שם המשפחה<input value={familyPurchaseName} onChange={event => setFamilyPurchaseName(event.target.value)} className="mt-1 w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5" /></label>
-                  <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} onEditingChange={setFamilyEditing} />
-                  {familyEditing && <p role="status" className="rounded-lg bg-slate-950 p-3 font-bold text-amber-100">יש ללחוץ על ״אישור הבחירה״ בבן המשפחה הפתוח לפני מעבר לתשלום.</p>}
+                  {stagingLogicEnabled()
+                    ? <StagingFamilyPlanSteps members={familyUsers} plans={familyMemberPlans} catalog={membershipPlanConfigs} onChange={setFamilyMemberPlans} onEditingChange={setFamilyEditing} onSummaryReady={setChatFamilySummaryReady} initialMemberId={chatFamilyEditingMember} extrasOnly={chatFamilyExtrasOnly}/>
+                    : <FamilyPlanConfigurator mode={familyBillingMode} onModeChange={setFamilyBillingMode} count={familyPurchaseCount} onCountChange={setFamilyPurchaseCount} plans={familyMemberPlans} onPlansChange={setFamilyMemberPlans} payerName={activeUser.name} payerId={activeUser.id} membershipPlans={membershipPlanConfigs} familyMembers={familyUsers} onRequestFreeze={requestFamilyFreeze} onEditingChange={setFamilyEditing} />}
+                  {familyEditing && <p role="status" className="rounded-lg bg-slate-950 p-3 font-bold text-amber-100">{stagingLogicEnabled() ? 'השלימו את הבחירה בקוביות ועברו לסיכום המשפחה לפני אישור.':'יש ללחוץ על ״אישור הבחירה״ בבן המשפחה הפתוח לפני מעבר לתשלום.'}</p>}
+                  <div hidden={stagingLogicEnabled() && !chatFamilySummaryReady} style={stagingLogicEnabled() && !chatFamilySummaryReady ? {display:'none'}:undefined}>
                   <fieldset className="rounded-xl border border-slate-600 p-3 space-y-2 text-sm">
                     <legend className="px-2 font-bold">אופן התשלום — ראש המשפחה משלם</legend>
                     <label className="flex items-start gap-2"><input type="radio" name="family-payment-grouping" checked={familyPaymentGrouping === 'COMBINED'} onChange={() => setFamilyPaymentGrouping('COMBINED')} />חיוב מאוחד להוראות חדשות באותה תקופה ובאותם תנאי חיוב</label>
@@ -2456,15 +2491,17 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                     <p className="text-xs">בהוראה מאוחדת, הקפאה או הוצאת בן משפחה מחייבת פנייה למנהל להתאמת החיוב ברווחית. הקפאה באפליקציה אינה מפחיתה את החיוב אוטומטית.</p>
                   </fieldset>
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
-                  <div className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
+                  {connectedChat && chatFamilySummaryReady && <ConnectedCheckoutReview request={{userId:activeUser.id,userName:activeUser.name,email:activeUser.email,phone:activeUser.phone,membershipType:MembershipType.FAMILY_MEMBERSHIP,mode:'PRIMARY',familyMembersCount:familyPurchaseCount,familyName:familyPurchaseName,familyBillingMode,familyPaymentGrouping,familyMemberPlans,discountCode:appliedDiscount?.code}} busy={familyEditing || paymentStarting} onContinue={async selections=>handleFamilyCheckout(selections)}/>}
+                  <div hidden={connectedChat} style={connectedChat ? {display:'none'}:undefined} className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id), membershipPlanConfigs)).toLocaleString('he-IL')}</strong></div>
-                    <button type="button" onClick={() => void handleFamilyCheckout()} disabled={familyEditing || paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
-                      {paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
+                    <button type="button" onClick={() => void handleFamilyCheckout()} disabled={familyEditing || paymentStarting || !isRivhitConfigured()} className={`${stagingLogicEnabled() ? 'logic-complete ':''}rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50`}>
+                      {connectedChat ? (paymentStarting ? 'פותח תשלום…':'אישור סיכום המשפחה והמשך לתשלום מאובטח'):stagingLogicEnabled() ? 'אישור סיכום המשפחה והמשך לבדיקה ללא חיוב':paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
                     </button>
+                  </div>
                   </div>
                 </section>}
 
-                <section>
+                {(!stagingLogicEnabled() || chatChoice==='plans') && <section>
                   <div className="mb-3">
                     <h3 className="font-black text-slate-900">בחירת מסלול ראשי</h3>
                     <p className="text-xs text-slate-500 mt-1">אפשר לחדש, לשדרג או להחליף את המסלול הקיים.</p>
@@ -2487,9 +2524,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       </article>;
                     })}
                   </div>
-                </section>
+                </section>}
 
-                <section>
+                {(!stagingLogicEnabled() || chatChoice==='extras') && <section>
                   <h3 className="font-black text-slate-900 mb-3">רכישת שירותים נוספים</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {membershipAddOns.map(planConfig => {
@@ -2511,9 +2548,9 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       );
                     })}
                   </div>
-                </section>
+                </section>}
 
-                <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {(!stagingLogicEnabled() || chatChoice==='policy') && <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button disabled={!freezeAvailable || Boolean(activeUser.membershipFreezeRequestedAt)} className={`rounded-2xl border p-4 text-right ${freezeActive ? 'border-sky-200 bg-sky-50' : freezeAvailable ? 'border-slate-200 bg-white' : 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-70'}`} onClick={handleFreezeMembership}>
                     <strong className="block text-sm text-slate-900">{activeUser.membershipFreezeRequestedAt ? 'בקשת הקפאה ממתינה לאישור מנהל' : freezeActive ? 'המנוי מוקפא' : freezeAvailable ? 'בקשת הקפאת מנוי' : 'הקפאת השנה נוצלה'}</strong>
                     <span className="text-[11px] text-slate-600 mt-1 block">{freezeActive ? `הקפאה רצופה עד ${activeUser.membershipFrozenUntil}; לא ניתן לבטל מוקדם.` : freezeAvailable ? 'חודש אחד רצוף, פעם אחת בכל 12 חודשים.' : 'ניתן להקפיא שוב לאחר שיחלפו 12 חודשים ממועד ההקפאה הקודמת.'}</span>
@@ -2524,10 +2561,10 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                       <span className="text-[11px] text-red-700 mt-1 block">{activeUser.cancellationEffectiveDate ? `הביטול נקבע לתאריך ${activeUser.cancellationEffectiveDate}.` : 'הביטול נכנס לתוקף חודש לאחר הגשת הבקשה.'}</span>
                     </button>
                   )}
-                </section>
+                </section>}
               </>
             )}
-          </div>
+          </StagingMembershipSurface>
         )}
 
         {/* PROFILE, MEMBERSHIP & PAYMENT */}

@@ -34,11 +34,17 @@ interface FamilyPlanConfiguratorProps {
   onRequestFreeze?: (memberId: string) => void;
   registrationMemberNames?: string[];
   onEditingChange?: (editing: boolean) => void;
+  initialEditingMemberId?: string;
 }
 
-export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ count, onCountChange, plans, onPlansChange, payerName, payerId, membershipPlans = [], familyMembers = [], registrationMemberNames, registrationMemberBirthDates, onRequestFreeze, onEditingChange }) => {
+export const FamilyPlanConfigurator: React.FC<FamilyPlanConfiguratorProps> = ({ count, onCountChange, plans, onPlansChange, payerName, payerId, membershipPlans = [], familyMembers = [], registrationMemberNames, registrationMemberBirthDates, onRequestFreeze, onEditingChange, initialEditingMemberId }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [validation, setValidation] = useState('');
+  useEffect(() => {
+    if (!initialEditingMemberId) return;
+    const index = plans.findIndex(plan => plan.memberId === initialEditingMemberId);
+    if (index >= 0) setEditingIndex(index);
+  }, [initialEditingMemberId]);
   useEffect(() => { onEditingChange?.(editingIndex !== null); }, [editingIndex, onEditingChange]);
   const normalizedPlans = resizeFamilyPlans(plans, count, payerName, payerId);
   const catalog = familyPlanCatalog(membershipPlans);

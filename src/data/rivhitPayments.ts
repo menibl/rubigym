@@ -1,8 +1,16 @@
 import { DiscountCode, FamilyBillingMode, FamilyMemberPlanSelection, MembershipType, Payment, PaymentPurchaseVariant } from '../types';
 import { retryPaymentApproval, approvalFetchSignal } from './paymentApprovalRetry';
+import {STAGING_CONVERSATION_ENABLED,ORIGINAL_CHAT_TEST_ENABLED,CONNECTED_CHAT_ENABLED,assertOriginalTestUrl} from '../prototype/integration';
 
 const PENDING_PAYMENT_KEY = 'baly_rivhit_pending_payment_v1';
 const PROCESSED_TRANSACTIONS_KEY = 'baly_rivhit_processed_transactions_v1';
+// Defense in depth: no reconciliation, provider, admin or checkout request can
+// escape the Pages chat experiment, even through a less visible legacy control.
+const fetch:typeof globalThis.fetch=(input,init)=>{
+  if(STAGING_CONVERSATION_ENABLED) throw new Error('רווחית חסומה בסביבת הבדיקות — לא בוצע חיוב או סנכרון אמיתי.');
+  assertOriginalTestUrl(typeof input==='string' ? input:input instanceof URL ? input.href:input.url);
+  return globalThis.fetch(input,init);
+};
 
 export interface PendingRivhitPayment {
   resumedAuthenticatedRegistration?: boolean;
@@ -22,7 +30,7 @@ export interface PendingRivhitPayment {
   familySplitItemId?: string;
 }
 
-interface CreatePaymentRequest {
+export interface CreatePaymentRequest {
   individualSelections?: { membershipType: MembershipType; trainingSessionsCount?: number }[];
   familyPaymentGrouping?: 'COMBINED' | 'SEPARATE';
   userId: string;
@@ -40,6 +48,39 @@ interface CreatePaymentRequest {
   discountCode?: string;
   planAmount?: number;
   planLabel?: string;
+}
+
+export interface OriginalQuoteLine {id:string;memberId:string;memberName:string;membershipType:string;label:string;baseAmount:number;amount:number;discountAmount?:number;status:string;includedSessions?:number;groupLines?:OriginalQuoteLine[]}
+export interface OriginalCheckoutQuote {batchId:string;items:OriginalQuoteLine[];split:true;message?:string}
+// Only the connected isolated runtime uses this adapter. The original server
+// owns authorization, quotes, existing orders and all monetary calculations.
+export async function requestOriginalCheckoutQuote(request:CreatePaymentRequest,signal?:AbortSignal):Promise<OriginalCheckoutQuote>{
+  if(!CONNECTED_CHAT_ENABLED)throw new Error('Connected checkout review requires an enabled connected chat build.');
+  if(!['PRIMARY','ADDON'].includes(request.mode))throw new Error('Complete registration before reviewing a purchase.');
+  const individualSelections=request.membershipType===MembershipType.FAMILY_MEMBERSHIP ? undefined:request.individualSelections?.length ? request.individualSelections:
+    [{membershipType:request.membershipType,trainingSessionsCount:request.purchaseVariant ? Number(request.purchaseVariant.split('_').pop()):undefined}];
+  const response=await fetch(`${paymentApiBase()}/api/payments/rivhit/create`,{method:'POST',credentials:'include',signal,headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({...request,registrationDraft:undefined,individualSelections,quoteOnly:true,unifiedCheckout:true})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok || !result.split || !result.batchId || !Array.isArray(result.items))throw new Error(result.message || 'לא ניתן לקבל סיכום מאומת מהשרת. ניתן לחזור לממשק הישן.');
+  return result;
+}
+
+export async function refreshOriginalCheckoutQuote(request:CreatePaymentRequest,batchId:string,signal?:AbortSignal){
+  if(!CONNECTED_CHAT_ENABLED)throw new Error('Connected chat build required.');
+  const cancelled=await familySplitAction('cancel',batchId,{},signal);
+  if(!cancelled.cancelled)throw new Error('הבקשה כבר נשלחה או השתנתה. יש להמשיך בבקשה המקורית — לא נוצר חיוב נוסף.');
+  return requestOriginalCheckoutQuote(request,signal);
+}
+
+export function originalQuoteMatchesSelections(request:CreatePaymentRequest,quote:OriginalCheckoutQuote){
+  const members=request.familyMemberPlans || [{memberId:request.userId,participation:'INCLUDED',membershipType:request.membershipType,
+    trainingSessionsCount:request.individualSelections?.[0]?.trainingSessionsCount,additionalPlans:request.individualSelections?.slice(1)}];
+  const expected=new Map<string,number>(members.filter(member=>!member.participation || member.participation==='INCLUDED').flatMap(member=>[member,...(member.additionalPlans || [])].map(plan=>[`${member.memberId}:${plan.membershipType}`,plan.trainingSessionsCount || 1] as const)));
+  const lines=quote.items.flatMap(item=>item.groupLines || [item]);
+  lines.filter(line=>line.status!=='READY').forEach(line=>expected.delete(line.id));
+  const ready=lines.filter(line=>line.status==='READY');
+  return ready.length===expected.size && ready.every(line=>expected.get(line.id)===(line.includedSessions || 1));
 }
 
 export interface VerifiedRivhitPayment {
@@ -75,6 +116,15 @@ const paymentApiBase = () => (import.meta.env.VITE_PAYMENT_API_URL || (typeof wi
 
 export const isRivhitConfigured = () => Boolean(paymentApiBase());
 
+const navigateCheckout=(url:string)=>{
+  if(ORIGINAL_CHAT_TEST_ENABLED){
+    const gateway=new URL(url);
+    if(gateway.origin!=='https://testicredit.rivhit.co.il')throw new Error('Isolated chat checkout rejected a non-test provider URL.');
+    // Never navigate to any external payment page from the connected fixture UI.
+    window.location.assign(`${window.location.origin}/__mock_checkout?reference=${encodeURIComponent(gateway.href)}`);
+  }else window.location.assign(url);
+};
+
 export const validateRivhitDiscountCode = async (code: string): Promise<DiscountCode> => {
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות קודי ההנחה אינו זמין.');
@@ -92,6 +142,7 @@ export const validateRivhitDiscountCode = async (code: string): Promise<Discount
 };
 
 export const startRivhitPayment = async (request: CreatePaymentRequest) => {
+  if(STAGING_CONVERSATION_ENABLED){await (await import('../prototype/stagingCheckout')).previewStagingCheckout(request);return;}
   const apiBase = paymentApiBase();
   if (!apiBase) throw new Error('שירות התשלום עדיין לא הוגדר בשרת.');
   let quoteKey: string | undefined;
@@ -177,7 +228,7 @@ export const startRivhitPayment = async (request: CreatePaymentRequest) => {
     discountCode: result.resumeSummary ? result.resumeSummary.discountCode : request.discountCode
   };
   sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
-  window.location.assign(result.url);
+  navigateCheckout(result.url);
 };
 
 interface FamilySplitItem {
@@ -234,7 +285,7 @@ export const continueFamilySplitPayment = async (batchId: string, userId: string
     membershipType: MembershipType.FAMILY_MEMBERSHIP, mode: 'PRIMARY', createdAt: new Date().toISOString(),
     familySplitBatchId: batchId, familySplitItemId: next.id };
   sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
-  window.location.assign(checkout.url);
+  navigateCheckout(checkout.url);
 };
 
 export const getPendingRivhitPayment = (): PendingRivhitPayment | null => {
@@ -259,6 +310,7 @@ export interface RecoverableCheckout {
 }
 
 const checkoutRecovery = async (action: 'status' | 'check' | 'resume' | 'restart', orderId?: string, signal?: AbortSignal) => {
+  if(STAGING_CONVERSATION_ENABLED) throw new Error('בדיקות ספק וסליקה חסומות בסביבת הצ׳אט. לא נוצר חיוב.');
   const response = await fetch(`${paymentApiBase()}/api/payments/rivhit/checkout-recovery`, {
     method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, orderId, confirmUndispatched: action === 'restart' }), signal: approvalFetchSignal(signal)
@@ -319,7 +371,7 @@ export const resumeSavedCheckout = async (orderId: string, userId: string, optio
     familyName: summary.familyName, familyBillingMode: summary.familyBillingMode,
     familyMemberPlans: result.familyMemberPlans, discountCode: summary.discountCode };
   sessionStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(pending));
-  window.location.assign(result.url);
+  navigateCheckout(result.url);
 };
 
 export const verifyPendingRivhitPayment = async (pending: PendingRivhitPayment, signal?: AbortSignal): Promise<VerifiedRivhitPayment> => {

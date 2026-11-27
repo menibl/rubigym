@@ -7,6 +7,8 @@ import { preserveExerciseWorkingValues, updateExerciseWorkingValues } from '../.
 import { clubArrivalChoices, recordClubArrival, clubArrivalResult, recordClubScan } from '../../shared/club-check-in.js';
 import { COACH_EXCEPTION_PREFIX, createCoachArrivalApproval, recordHistoricalCoachArrival, recordCoachExceptionScan, redeemCoachArrivalApproval, coachArrivalResult, preserveCoachArrivalAudit } from '../../shared/coach-exception-arrival.js';
 import { validateUsernameChange } from '../../shared/username-change.js';
+import {buildDemoChatAccounts,createDemoVerifier,checkDemoVerifier,validDemoVerifier} from '../prototype/demoAccount';
+import {STAGING_CONVERSATION_ENABLED,assertOriginalTestUrl} from '../prototype/integration';
 
 const DEMO_STATE_KEY = 'baly_pages_demo_state_v1';
 const DEMO_SESSION_KEY = 'baly_pages_demo_session_v1';
@@ -51,6 +53,8 @@ const currentDemoUser = () => {
 const apiBase = () => (import.meta.env.VITE_API_URL || import.meta.env.VITE_AI_API_URL || import.meta.env.VITE_PAYMENT_API_URL || '').replace(/\/$/, '');
 
 const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+  if(STAGING_CONVERSATION_ENABLED) throw new Error('קריאות שרת אמיתיות חסומות בגרסת הצ׳אט הנבדקת.');
+  assertOriginalTestUrl(apiBase()+path);
   const response = await fetch(`${apiBase()}${path}`, {
     ...init,
     credentials: 'include',
@@ -214,7 +218,7 @@ export const loginWithPassword = async (login: string, password: string): Promis
     const user = findDemoUser(login);
     const passwords = demoPasswords();
     const expected = passwords[user?.id || ''] || (user?.id === 'user-robi' ? import.meta.env.VITE_DEMO_MANAGER_PASSWORD : '');
-    if (!user || !expected || password !== expected) throw new Error('שם המשתמש או הסיסמה אינם נכונים.');
+    if (!user || !expected || !(validDemoVerifier(expected) ? await checkDemoVerifier(password,expected):password === expected)) throw new Error('שם המשתמש או הסיסמה אינם נכונים.');
     localStorage.setItem(DEMO_SESSION_KEY, user.id);
     return { user };
   }
@@ -303,7 +307,7 @@ export const registerServerUser = async (user: User, payment: Payment | undefine
       throw new Error('שם המשתמש, האימייל או הטלפון כבר רשומים.');
     }
     const passwords = demoPasswords();
-    registrations.forEach(candidate => { passwords[candidate.id] = candidate.password || ''; });
+    for(const candidate of registrations) passwords[candidate.id] = candidate.password ? await createDemoVerifier(candidate.password):'';
     localStorage.setItem(DEMO_PASSWORDS_KEY, JSON.stringify(passwords));
     const { password: _password, ...safeUser } = user;
     const safeFamilyUsers = familyUsers.map(({ password: _familyPassword, ...candidate }) => candidate as User);
@@ -320,6 +324,23 @@ export const registerServerUser = async (user: User, payment: Payment | undefine
   });
 };
 
+export async function createChatDemoAccount(draft:import('../prototype/model').Draft,verifiers:string[],registrationId:string) {
+  if(!(typeof __CONVERSATION_PROTOTYPE__!=='undefined' && __CONVERSATION_PROTOTYPE__ && isPagesDemoMode()) || !['menibl.github.io','localhost','127.0.0.1'].includes(window.location.hostname)) throw new Error('שמירת חשבון זו זמינה בהדגמה המקומית בלבד.');
+  const state=readDemoState();
+  const existing=(state.payload.users || []) as User[];
+  const result=buildDemoChatAccounts(draft,verifiers,registrationId,existing);
+  if(!result.alreadySaved) {
+    const previous=localStorage.getItem(DEMO_PASSWORDS_KEY);
+    const next={...demoPasswords()};
+    result.users.forEach((user,i)=>{next[user.id]=verifiers[i];});
+    localStorage.setItem(DEMO_PASSWORDS_KEY,JSON.stringify(next));
+    try {writeDemoState({payload:{...state.payload,users:[...result.users,...existing]},revision:state.revision+1});}
+    catch(error){if(previous===null) localStorage.removeItem(DEMO_PASSWORDS_KEY);else localStorage.setItem(DEMO_PASSWORDS_KEY,previous);throw error;}
+  }
+  localStorage.setItem(DEMO_SESSION_KEY,result.users[0].id);
+  return result.users[0];
+}
+
 export const registerFamilyMember = async (user: User) => {
   if (isPagesDemoMode()) {
     const state = readDemoState();
@@ -331,7 +352,7 @@ export const registerFamilyMember = async (user: User) => {
       throw new Error('שם המשתמש, האימייל או הטלפון כבר רשומים.');
     }
     const passwords = demoPasswords();
-    passwords[user.id] = user.password || '';
+    passwords[user.id] = user.password ? await createDemoVerifier(user.password):'';
     localStorage.setItem(DEMO_PASSWORDS_KEY, JSON.stringify(passwords));
     const { password: _password, ...safeUser } = user;
     const next = writeDemoState({ payload: { ...state.payload, users: [{ ...safeUser, membershipStatus: 'DEBT', familyPaymentPending: true }, ...users.map(candidate => candidate.id === payer.id ? { ...candidate, familyId: user.familyId, familyName: user.familyName, isFamilyPayer: true } : candidate)] }, revision: state.revision + 1 });
