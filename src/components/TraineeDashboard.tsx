@@ -5,7 +5,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { retryPaymentApproval } from '../data/paymentApprovalRetry';
-import {STAGING_CONVERSATION_ENABLED,ORIGINAL_CHAT_TEST_ENABLED} from '../prototype/integration';
+import {STAGING_CONVERSATION_ENABLED,ORIGINAL_CHAT_TEST_ENABLED,CONNECTED_CHAT_ENABLED} from '../prototype/integration';
 import {ConnectedCheckoutReview} from '../prototype/ConnectedCheckoutReview';
 import {StagingChatForm,StagingMembershipSurface,stagingLogicEnabled} from '../prototype/StagingLogicChat';
 import {StagingFamilyAccount} from '../prototype/StagingFamilyAccount';
@@ -181,7 +181,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
   type TraineeTab = 'home' | 'classes' | 'opengym' | 'workout' | 'nutrition' | 'messages' | 'notices' | 'card' | 'profile' | 'membership';
   const [activeTab, setActiveTabState] = useState<TraineeTab>(initialTab);
   const [chatChoice,setChatChoice] = useState('overview');
-  const connectedChat=ORIGINAL_CHAT_TEST_ENABLED && stagingLogicEnabled();
+  const connectedChat=CONNECTED_CHAT_ENABLED && stagingLogicEnabled();
   const [chatFamilyEditingMember,setChatFamilyEditingMember] = useState<string | undefined>();
   const [chatFamilyExtrasOnly,setChatFamilyExtrasOnly] = useState(false);
   const [chatFamilySummaryReady,setChatFamilySummaryReady] = useState(false);
@@ -2377,7 +2377,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             {stagingLogicEnabled() && familyUsers.length>1 && ['overview','family'].includes(chatChoice) && !selectedMembershipPurchase && <StagingFamilyAccount members={familyUsers} payments={payments} plans={membershipPlanConfigs} canManage={Boolean(activeUser.isFamilyPayer)} busy={paymentStarting}
               onAdd={()=>onOpenSettings('family-add')} onFreeze={requestFamilyFreeze}
               onEdit={(memberId,extrasOnly,draft)=>{setFamilyMemberPlans(draft || familyMemberEditDraft(familyUsers,memberId,membershipPlanConfigs,payments,extrasOnly));setFamilyPurchaseCount(familyUsers.length);setChatFamilyEditingMember(memberId);setChatFamilyExtrasOnly(Boolean(extrasOnly));setChatFamilySummaryReady(false);setChatChoice('family-edit');}}
-              onDetach={memberId=>{if(!stagingLogicEnabled() || ORIGINAL_CHAT_TEST_ENABLED)return false;try{onUpdateUsers(detachFamilyMemberDemo(users,activeUser.id,memberId));return true;}catch(error){showFeedback((error as Error).message,'error');return false;}}}
+              onDetach={memberId=>{if(!stagingLogicEnabled() || CONNECTED_CHAT_ENABLED)return false;try{onUpdateUsers(detachFamilyMemberDemo(users,activeUser.id,memberId));return true;}catch(error){showFeedback((error as Error).message,'error');return false;}}}
               onContinue={async selections=>{setFamilyMemberPlans(selections);return handleFamilyCheckout(selections);}}
               discountCodes={discountCodes} discountInput={discountInput} onDiscountInput={setDiscountInput} appliedDiscount={appliedDiscount} onDiscount={setAppliedDiscount}
               onMessage={(message,isError)=>showFeedback(message,isError ? 'error':'success')}/>}
@@ -2450,7 +2450,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   )}
                   <DiscountCodeField discountCodes={discountCodes} value={discountInput} onChange={setDiscountInput} applied={appliedDiscount} onApplied={setAppliedDiscount} onMessage={(message, isError) => showFeedback(message, isError ? 'error' : 'success')} />
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
-                    {ORIGINAL_CHAT_TEST_ENABLED ? 'שרת ו־DB מבודדים: המשך לספק תשלום מדומה בלבד. אין להזין פרטי אשראי אמיתיים.':stagingLogicEnabled() ? 'תצוגת חישוב בלבד — לא נפתח דף סליקה, לא מוזנים פרטי אשראי ולא נוצר חיוב.':'התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.'}
+                    {ORIGINAL_CHAT_TEST_ENABLED ? 'שרת ו־DB מבודדים: המשך לספק תשלום מדומה בלבד. אין להזין פרטי אשראי אמיתיים.':STAGING_CONVERSATION_ENABLED ? 'תצוגת חישוב בלבד — לא נפתח דף סליקה, לא מוזנים פרטי אשראי ולא נוצר חיוב.':'התשלום מתבצע בעמוד המאובטח של RIVHIT iCredit. פרטי האשראי אינם מוזנים ואינם נשמרים באתר BALY.'}
                   </div>
                   {billingPeriodForPlan(selectedMembershipConfig) === 'MONTHLY_ANNUAL_COMMITMENT' && <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-900">
                     הוראת קבע בסך ₪{selectedMembershipPrice} לחודש: 12 חיובים לפי יום פתיחת בקשת התשלום; בקשה ב־29–31 תחויב החל מ־1 בחודש הבא. תוקף המנוי נשאר עד ה־1 בחודש העוקב לחודש ששולם. אין חידוש אוטומטי; חידוש דורש את אישורכם. לפני המעבר לתשלום יוצגו המועדים לאישור.
@@ -2462,7 +2462,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   )}
                   {connectedChat && <ConnectedCheckoutReview request={{userId:activeUser.id,userName:activeUser.name,email:activeUser.email,phone:activeUser.phone,membershipType:selectedMembershipPurchase,mode:membershipPurchaseMode,individualSelections:[{membershipType:selectedMembershipPurchase,trainingSessionsCount:selectedMembershipUsesTrainingCard ? trainingCardSize:undefined},...checkoutAdditions],discountCode:appliedDiscount?.code}} busy={paymentStarting} onContinue={async()=>handleMembershipCheckout({preventDefault(){}} as React.FormEvent,true)}/>}
                   <button hidden={connectedChat} style={connectedChat ? {display:'none'}:undefined} type="submit" disabled={paymentStarting || !isRivhitConfigured()} className="rounded-xl bg-slate-950 text-white py-3.5 font-bold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
-                    <CreditCard size={17} /> {stagingLogicEnabled() ? 'בדיקת חישוב ללא חיוב':paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח'}
+                    <CreditCard size={17} /> {STAGING_CONVERSATION_ENABLED ? 'בדיקת חישוב ללא חיוב':paymentStarting ? 'פותח דף תשלום…' : 'מעבר לתשלום מאובטח'}
                   </button>
                 </StagingChatForm>
               </section>
@@ -2495,7 +2495,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
                   <div hidden={connectedChat} style={connectedChat ? {display:'none'}:undefined} className="flex flex-col gap-3 rounded-xl bg-slate-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-[11px] text-slate-400">{appliedDiscount ? `לתשלום לאחר קוד ${appliedDiscount.code}` : 'סכום לתשלום'}</span><strong className="text-xl">₪{applySelectedDiscount(familyPurchaseAmount(familyBillingMode, familyPurchaseCount, resizeFamilyPlans(familyMemberPlans, familyPurchaseCount, activeUser.name, activeUser.id), membershipPlanConfigs)).toLocaleString('he-IL')}</strong></div>
                     <button type="button" onClick={() => void handleFamilyCheckout()} disabled={familyEditing || paymentStarting || !isRivhitConfigured()} className={`${stagingLogicEnabled() ? 'logic-complete ':''}rounded-xl bg-indigo-600 px-5 py-3 text-xs font-black text-white disabled:opacity-50`}>
-                      {stagingLogicEnabled() ? 'אישור סיכום המשפחה והמשך לבדיקה ללא חיוב':paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
+                      {connectedChat ? (paymentStarting ? 'פותח תשלום…':'אישור סיכום המשפחה והמשך לתשלום מאובטח'):stagingLogicEnabled() ? 'אישור סיכום המשפחה והמשך לבדיקה ללא חיוב':paymentStarting ? 'פותח תשלום…' : activeUser.isFamilyPayer ? 'עדכון חבילה ומעבר לתשלום' : 'רכישה ומעבר לתשלום'}
                     </button>
                   </div>
                   </div>

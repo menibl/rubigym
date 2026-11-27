@@ -10,8 +10,23 @@ export const STAGING_CONVERSATION_ENABLED = typeof __CONVERSATION_PROTOTYPE__ !=
 // production builds never emit it; both browser and API must remain loopback-only.
 export const ORIGINAL_CHAT_TEST_ENABLED = typeof __CHAT_ORIGINAL_TEST__!=='undefined' && __CHAT_ORIGINAL_TEST__
   && typeof window!=='undefined' && ['localhost','127.0.0.1'].includes(window.location.hostname);
-export const chatUiAvailable=()=>STAGING_CONVERSATION_ENABLED || ORIGINAL_CHAT_TEST_ENABLED;
-export const chatUiEnabled=()=>chatUiAvailable() && new URLSearchParams(window.location.search).get('ui')!=='legacy';
+export const PRODUCTION_CHAT_ENABLED=typeof __PRODUCTION_CHAT__!=='undefined' && __PRODUCTION_CHAT__
+  && !STAGING_CONVERSATION_ENABLED && !ORIGINAL_CHAT_TEST_ENABLED && typeof window!=='undefined';
+// Connected review and original handlers are shared; only the isolated flag may
+// rewrite provider URLs or enforce loopback transport.
+export const CONNECTED_CHAT_ENABLED=ORIGINAL_CHAT_TEST_ENABLED || PRODUCTION_CHAT_ENABLED;
+export const chatUiAvailable=()=>STAGING_CONVERSATION_ENABLED || CONNECTED_CHAT_ENABLED;
+const PREFERENCE_KEY='baly-chat-interface-v1';
+export const chatUiEnabled=()=>{
+  if(!chatUiAvailable())return false;
+  const requested=new URLSearchParams(window.location.search).get('ui');
+  if(requested==='legacy' || requested==='chat')return requested==='chat';
+  try{return sessionStorage.getItem(PREFERENCE_KEY)!=='legacy';}catch{return true;}
+};
+export function rememberChatInterface(value:'legacy'|'chat'){
+  if(!chatUiAvailable())return;
+  try{sessionStorage.setItem(PREFERENCE_KEY,value);}catch{/* Explicit URL remains a fallback. */}
+}
 export function assertOriginalTestUrl(value:string){
   if(!ORIGINAL_CHAT_TEST_ENABLED)return;
   const url=new URL(value,window.location.origin);

@@ -1,5 +1,5 @@
 import React,{Children,isValidElement,useEffect,useRef,useState,type ReactNode} from 'react';
-import {ORIGINAL_CHAT_TEST_ENABLED,chatUiEnabled} from './integration';
+import {ORIGINAL_CHAT_TEST_ENABLED,CONNECTED_CHAT_ENABLED,PRODUCTION_CHAT_ENABLED,chatUiEnabled} from './integration';
 import {ChatInterfaceSwitch} from './ChatInterfaceSwitch';
 import {completionStyle} from './completionStyle';
 import {isPagesDemoMode} from '../data/appMode';
@@ -7,7 +7,7 @@ import {HealthDeclarationForm} from '../components/HealthDeclarationForm';
 
 // The shell owns presentation only. Field values, validation, submit handlers,
 // registration DTOs and membership mutations remain in the original components.
-export const stagingLogicEnabled=()=>chatUiEnabled() && (ORIGINAL_CHAT_TEST_ENABLED || isPagesDemoMode());
+export const stagingLogicEnabled=()=>chatUiEnabled() && (CONNECTED_CHAT_ENABLED || isPagesDemoMode());
 const css=`
 .staging-logic-chat{--chat-gold:#c9a867;--chat-bg:#101218;--chat-surface:#1b1e27;--chat-text:#eeeef3;color:var(--chat-text);background:var(--chat-bg);font-family:Heebo,Arial,sans-serif;overflow-wrap:anywhere;position:fixed;inset:0;z-index:45;height:100dvh;display:flex;flex-direction:column}
 .staging-logic-chat .logic-header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #45404e;flex-shrink:0;background:#171923}
@@ -48,7 +48,7 @@ const scrollLock={count:0,body:'',html:''};
 
 export function StagingLogicScreen({title,onClose,children}:{title:string;onClose?:()=>void;children:ReactNode}){
   useEffect(()=>{if(scrollLock.count++===0){scrollLock.body=document.body.style.overflow;scrollLock.html=document.documentElement.style.overflow;document.body.style.overflow='hidden';document.documentElement.style.overflow='hidden';}return()=>{if(--scrollLock.count===0){document.body.style.overflow=scrollLock.body;document.documentElement.style.overflow=scrollLock.html;}};},[]);
-  return <section role="dialog" aria-modal="true" aria-label={title} className="staging-logic-chat" dir="rtl"><style>{css}</style><header className="logic-header"><div><strong>{title}</strong><small>staging · הלוגיקה המקורית</small></div><ChatInterfaceSwitch/>{onClose && <button type="button" className="logic-back" onClick={onClose}>חזרה לאפליקציה</button>}</header><details className="logic-notice"><summary>{ORIGINAL_CHAT_TEST_ENABLED ? 'DB מבודד · תשלום ו־SMS מדומים':'נתוני בדיקה בלבד · ללא חיובים או SMS'}</summary><p>סביבת בדיקות בלבד. השתמשו בנתוני בדיקה, לא במידע אישי אמיתי.</p></details><div className="logic-content">{children}</div></section>;
+  return <section role="dialog" aria-modal="true" aria-label={title} className="staging-logic-chat" dir="rtl"><style>{css}</style><header className="logic-header"><div><strong>{title}</strong><small>{PRODUCTION_CHAT_ENABLED ? 'BALY WELLNESS':'staging · הלוגיקה המקורית'}</small></div><ChatInterfaceSwitch/>{onClose && <button type="button" className="logic-back" onClick={onClose}>חזרה לאפליקציה</button>}</header>{!PRODUCTION_CHAT_ENABLED && <details className="logic-notice"><summary>{ORIGINAL_CHAT_TEST_ENABLED ? 'DB מבודד · תשלום ו־SMS מדומים':'נתוני בדיקה בלבד · ללא חיובים או SMS'}</summary><p>סביבת בדיקות בלבד. השתמשו בנתוני בדיקה, לא במידע אישי אמיתי.</p></details>}<div className="logic-content">{children}</div></section>;
 }
 
 export function StagingRegistrationSurface({children,...rest}:React.HTMLAttributes<HTMLElement>){
