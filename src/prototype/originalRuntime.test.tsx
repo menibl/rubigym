@@ -6,7 +6,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {ChatInterfaceSwitch} from './ChatInterfaceSwitch';
 import {ConnectedCheckoutReview} from './ConnectedCheckoutReview';
 import {chatUiAvailable,chatUiEnabled,ORIGINAL_CHAT_TEST_ENABLED} from './integration';
-import {completionStyle} from './completionStyle';
+const completionStyle=readFileSync(new URL('connected-chat.css',import.meta.url),'utf8').split('/* Completion actions:')[1].split('/* Family account cards. */')[0];
 
 test('normal builds do not enable connected test UI or show its switch/review',()=>{
   assert.equal(ORIGINAL_CHAT_TEST_ENABLED,false);assert.equal(chatUiAvailable(),false);assert.equal(chatUiEnabled(),false);

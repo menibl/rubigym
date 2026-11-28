@@ -13,7 +13,7 @@ test('production chat is opt-in; Pages and isolated builds cannot inherit its fl
   const docker=readFileSync(new URL('../../Dockerfile',import.meta.url),'utf8');
   const compose=readFileSync(new URL('../../deploy/compose.yaml',import.meta.url),'utf8');
   assert.match(docker,/ARG VITE_CHAT_UI_ENABLED=false/);
-  assert.match(compose,/VITE_CHAT_UI_ENABLED: \$\{VITE_CHAT_UI_ENABLED:-false\}/);
+  assert.match(compose,/VITE_CHAT_UI_ENABLED: \$\{VITE_CHAT_UI_ENABLED:-true\}/);
 });
 
 test('production chat renders original fields, never demo notices, and legacy preference survives navigation without changing storage',async()=>{
@@ -35,6 +35,7 @@ test('production chat renders original fields, never demo notices, and legacy pr
       assert.equal(module.ORIGINAL_CHAT_TEST_ENABLED,false);assert.equal(module.STAGING_CONVERSATION_ENABLED,false);
       assert.equal(module.CONNECTED_CHAT_ENABLED,enabled);
       const html=module.markup();assert.match(html,/name="original-birth"/);assert.match(html,/value="1990-01-01"/);
+      assert.doesNotMatch(html,/<style\b|\sstyle=/,'connected chat must not require inline styles');
       if(enabled){
         assert.match(html,/הרשמה בצ׳אט/);assert.doesNotMatch(html,/נתוני בדיקה בלבד|DB מבודד|staging ·/);
         module.rememberChatInterface('legacy');win.location.search='';assert.equal(module.chatUiEnabled(),false);
@@ -44,4 +45,23 @@ test('production chat renders original fields, never demo notices, and legacy pr
       assert.equal(values.get('baly_rivhit_pending_payment_v1'),'unchanged-pending-fixture');
     }
   }finally{globals.window=previous.window;globals.sessionStorage=previous.sessionStorage;}
+});
+
+test('all chat presentation ships as scoped static CSS under the unchanged production CSP',()=>{
+  const css=readFileSync(new URL('connected-chat.css',import.meta.url),'utf8');
+  for(const selector of ['.staging-logic-chat','.staging-family-account','.staging-family-steps'])assert.ok(css.includes(selector));
+  assert.match(css,/@media\(max-width:600px\)/);
+  assert.match(css,/safe-area-inset-bottom/);
+  assert.match(css,/font-size:16px/);
+  const entry=readFileSync(new URL('../main.tsx',import.meta.url),'utf8');
+  assert.match(entry,/import '\.\/prototype\/connected-chat\.css'/);
+  for(const file of ['StagingLogicChat.tsx','StagingFamilyAccount.tsx','StagingFamilyPlanSteps.tsx']){
+    assert.doesNotMatch(readFileSync(new URL(file,import.meta.url),'utf8'),/<style\b|style=\{/);
+  }
+  const caddy=readFileSync(new URL('../../deploy/Caddyfile',import.meta.url),'utf8');
+  const policy=caddy.match(/Content-Security-Policy "([^"]+)"/)![1];
+  assert.match(policy,/style-src 'self' https:\/\/fonts.googleapis.com;/);
+  assert.doesNotMatch(policy,/unsafe-inline|unsafe-eval/);
+  const fixture=readFileSync(new URL('../../scripts/test-chat-original-runtime.mjs',import.meta.url),'utf8');
+  assert.match(fixture,/res.setHeader\('Content-Security-Policy',csp\)/);
 });

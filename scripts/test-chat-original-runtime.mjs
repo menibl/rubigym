@@ -18,6 +18,11 @@ const strict=process.argv.includes('--strict-provider');
 const individual=process.argv.includes('--individual');
 const productionClient=process.argv.includes('--production-client');
 const productionChat=process.argv.includes('--production-chat');
+const productionCsp=process.argv.includes('--production-csp');
+// Reuse the exact production policy, including its prohibition on inline CSS.
+// This affects only the isolated fixture server, never production configuration.
+const caddySource=await readFile(resolve(root,'deploy/Caddyfile'),'utf8');
+const csp=caddySource.match(/Content-Security-Policy "([^"]+)"/)[1];
 assert.ok(!productionChat || productionClient,'Production chat matrix must use production client flags');
 assert.ok(!serve || !strict,'Strict matrix is automated and cannot serve a browser');
 assert.equal(optIn,'--isolated-postgres');
@@ -63,6 +68,7 @@ const env={STATE_STORE:store,CLUB_ID:'isolated-chat',SMS_TEST_MODE:'true',SMS_OT
   }};
 const originalFetch=globalThis.fetch;
 const server=createServer(async(req,res)=>{
+  if(productionCsp)res.setHeader('Content-Security-Policy',csp);
   try{
     const url=new URL(req.url,origin);
     if(serve && url.pathname==='/__mock_checkout'){
@@ -88,6 +94,7 @@ const server=createServer(async(req,res)=>{
 });
 await new Promise(resolve=>server.listen(serve ? 55440:0,'127.0.0.1',resolve));
 origin=`http://127.0.0.1:${server.address().port}`;env.PUBLIC_APP_URL=origin+'/';
+if(productionCsp)assert.equal((await originalFetch(origin+'/healthz')).headers.get('Content-Security-Policy'),csp);
 if(serve){
   globalThis.fetch=async()=>{externalAttempts++;throw new Error('External HTTP forbidden in the fixture server');};
   console.log(`Isolated chat UI: ${origin}/?screen=register — fictional data only; OTP 1111; no real provider/SMS.`);
