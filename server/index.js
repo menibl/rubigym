@@ -1170,6 +1170,8 @@ const prepareFamilySplit = async (request, env, body, purchase, state) => {
   const fingerprint = JSON.stringify({ members, discountCode: discount?.code || null, lines, grouping });
   const batch = await changeFamilySplit(env.STATE_STORE, env.CLUB_ID || 'baly-wellness', body.userId, previous => {
     if (previous && !publicFamilySplit(previous).completed && previous.items.some(item => !['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status))) return null;
+    if (previous && !previous.cancelled && previous.fingerprint === fingerprint
+      && previous.items.every(item => ['READY', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status))) return null;
     return { id: crypto.randomUUID(), fingerprint, payerId: body.userId, discountCode: discount?.code,
       createdAt: new Date().toISOString(), grouping, items: lines };
   });
@@ -1512,8 +1514,10 @@ const handleCreatePayment = async (request, env, splitLine) => {
     const previous = (await env.STATE_STORE.getFamilySplitCheckout(env.CLUB_ID || 'baly-wellness', body.userId)).payload;
     const releasedUndispatched = previous?.items.some(item => item.status === 'CANCELLED')
       && previous.items.every(item => ['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status));
-    if (previous && !releasedUndispatched && !publicFamilySplit(previous).completed && (previous.grouping === (body.familyPaymentGrouping === 'SEPARATE' ? 'SEPARATE' : 'COMBINED')
-      || previous.items.some(item => !['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status)))) return json(publicFamilySplit(previous), 200, corsHeaders(request, env));
+    // Undispatched quotes must be recomputed from today's receipts, selection
+    // and coupon. Only an already dispatched batch remains immutable/resumable.
+    if (previous && !releasedUndispatched && !publicFamilySplit(previous).completed
+      && previous.items.some(item => !['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status))) return json(publicFamilySplit(previous), 200, corsHeaders(request, env));
   }
   if (body.mode !== 'REGISTRATION' && !body.quoteOnly && !body.individualSelections && body.membershipType !== 'FAMILY_MEMBERSHIP' && env.STATE_STORE?.getClubState) {
     const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');

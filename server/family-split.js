@@ -83,7 +83,7 @@ export function groupedReceiptPlans(lines) {
   return [...members.values()];
 }
 
-export const publicFamilySplit = batch => ({ split: true, batchId: batch.id, items: batch.items.map(({ checkout, ...line }) => line),
+export const publicFamilySplit = batch => ({ split: true, batchId: batch.id, discountCode: batch.discountCode || null, grouping: batch.grouping, items: batch.items.map(({ checkout, ...line }) => line),
   completed: Boolean(batch.cancelled) || batch.items.every(line => ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(line.status)),
   message: 'התשלום מבוצע על ידי בעל החשבון המשלם. הוראות חדשות בעלות אותה תקופה ותנאי חיוב מאוחדות לפי הבחירה, והתשלומים החד־פעמיים מאוחדים בנפרד; מסלולים שכבר שולמו והוראות קיימות אינם מחויבים שוב. הוראת קבע: 12 חיובים במחיר הקבוע לאחר ההנחה. מסלול חד־פעמי אינו מצטרף לחיובים החודשיים. ביטול הוראה מאוחדת משפיע על כל המשתתפים בה; הקפאה באפליקציה אינה משנה את החיוב ברווחית.' });
 

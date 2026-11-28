@@ -634,6 +634,49 @@ test('family split activation is a separate default-off switch, including existi
   assert.equal((await response.json()).code, 'FAMILY_SPLIT_DISABLED');
 });
 
+test('quote refresh applies or removes a coupon immediately without cancellation or provider calls', async () => {
+  const f=fixture();
+  const initial=await (await f.quote({discountCode:undefined})).json();
+  assert.equal(initial.discountCode,null);
+  const repeat=await (await f.quote({discountCode:undefined})).json();
+  assert.equal(repeat.batchId,initial.batchId);
+  const discounted=await (await f.quote()).json();
+  assert.equal(discounted.discountCode,'SAVE10');
+  assert.notEqual(discounted.batchId,initial.batchId);
+  assert.equal(discounted.items.reduce((sum,line)=>sum+line.amount,0),initial.items.reduce((sum,line)=>sum+line.amount,0)*.9);
+  const cleared=await (await f.quote({discountCode:undefined})).json();
+  assert.equal(cleared.discountCode,null);
+  assert.equal(cleared.items.reduce((sum,line)=>sum+line.amount,0),initial.items.reduce((sum,line)=>sum+line.amount,0));
+  assert.equal(f.calls.length,0);
+});
+
+test('skipping the payer updates the ready quote to charge only the included child', async () => {
+  const f=fixture();const initial=await (await f.quote()).json();
+  const response=await f.quote({familyMemberPlans:[{...members[0],participation:'SKIP'},members[1]]});
+  assert.equal(response.status,200,await response.clone().text());
+  const next=await response.json();assert.notEqual(next.batchId,initial.batchId);
+  const lines=next.items.flatMap(item=>item.groupLines || [item]);
+  assert.ok(lines.length>0);assert.ok(lines.every(line=>line.memberId==='child'));
+  assert.equal(f.calls.length,0);
+});
+
+test('a receipt arriving after the first quote is labelled paid before confirming checkout', async () => {
+  const f=fixture();const initial=await (await f.quote()).json();
+  f.state().payload.payments.push({id:'new-paid',traineeId:'payer',membershipTypePurchased:'OPEN_GYM',status:'PAID',amount:280,date:new Date().toISOString(),isMock:false});
+  const next=await (await f.quote()).json();assert.notEqual(next.batchId,initial.batchId);
+  const paid=next.items.find(line=>line.memberId==='payer');assert.equal(paid.status,'ALREADY_PAID');
+  assert.equal(next.items.filter(line=>line.status==='READY').length,1);
+  assert.equal(f.calls.length,0);
+});
+
+test('a changed coupon or skipped payer never replaces a dispatched family checkout', async () => {
+  const f=fixture(true);const initial=await (await f.quote()).json();
+  assert.equal((await f.post('family-split/create',{batchId:initial.batchId,itemId:initial.items[0].id,acknowledged:true})).status,200);
+  const next=await (await f.quote({discountCode:undefined,familyMemberPlans:[{...members[0],participation:'SKIP'},members[1]]})).json();
+  assert.equal(next.batchId,initial.batchId);assert.equal(next.discountCode,'SAVE10');
+  assert.equal(f.calls.filter(call=>call.url.endsWith('/GetUrl')).length,1);
+});
+
 test('an undispatched quote can be cancelled, but not after creating a hosted payment page', async () => {
   const f = fixture(); const quote = await (await f.quote()).json();
   assert.equal((await (await f.post('family-split/cancel', { batchId: quote.batchId })).json()).cancelled, true);
