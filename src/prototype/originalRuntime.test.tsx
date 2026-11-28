@@ -6,7 +6,38 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {ChatInterfaceSwitch} from './ChatInterfaceSwitch';
 import {ConnectedCheckoutReview} from './ConnectedCheckoutReview';
 import {chatUiAvailable,chatUiEnabled,ORIGINAL_CHAT_TEST_ENABLED} from './integration';
+import {originalQuoteMatchesSelections,originalQuoteLines,type CreatePaymentRequest,type OriginalCheckoutQuote} from '../data/rivhitPayments';
 const completionStyle=readFileSync(new URL('connected-chat.css',import.meta.url),'utf8').split('/* Completion actions:')[1].split('/* Family account cards. */')[0];
+
+const reviewRequest={mode:'PRIMARY',userId:'payer',membershipType:'FAMILY_MEMBERSHIP',familyMemberPlans:[
+  {memberId:'payer',participation:'SKIP',membershipType:'OPEN_GYM'},
+  {memberId:'child',participation:'INCLUDED',membershipType:'OPEN_GYM'}
+]} as CreatePaymentRequest;
+const reviewQuote={split:true,batchId:'batch',discountCode:null,grouping:'COMBINED',items:[
+  {id:'child:OPEN_GYM',memberId:'child',membershipType:'OPEN_GYM',status:'READY',amount:280}
+]} as OriginalCheckoutQuote;
+
+test('review permits a skipped payer while charging only the selected family member',()=>{
+  assert.equal(originalQuoteMatchesSelections(reviewRequest,reviewQuote),true);
+  assert.equal(originalQuoteMatchesSelections(reviewRequest,{...reviewQuote,items:[...reviewQuote.items,
+    {...reviewQuote.items[0],id:'payer:OPEN_GYM',memberId:'payer'}]}),false);
+});
+
+test('review rejects stale coupon and grouping quotes before confirmation',()=>{
+  assert.equal(originalQuoteMatchesSelections({...reviewRequest,discountCode:'SAVE10'},reviewQuote),false);
+  assert.equal(originalQuoteMatchesSelections({...reviewRequest,discountCode:' save10 '},{...reviewQuote,discountCode:'SAVE10'}),true);
+  assert.equal(originalQuoteMatchesSelections({...reviewRequest,familyPaymentGrouping:'SEPARATE'},reviewQuote),false);
+});
+
+test('completed grouped payments cannot leave chargeable child lines, but pending pages remain resumable',()=>{
+  for(const status of ['PAID','SETUP','ALREADY_PAID','EXISTING_RECURRING','CANCELLED']){
+    const quote={...reviewQuote,items:[{...reviewQuote.items[0],status,groupLines:reviewQuote.items}]} as OriginalCheckoutQuote;
+    assert.equal(originalQuoteLines(quote)[0].status,status);
+    assert.equal(originalQuoteMatchesSelections(reviewRequest,quote),true);
+    assert.equal(originalQuoteLines(quote).filter(line=>line.status==='READY').length,0);
+  }
+  assert.equal(originalQuoteLines({...reviewQuote,items:[{...reviewQuote.items[0],status:'PENDING',groupLines:reviewQuote.items}]} as OriginalCheckoutQuote)[0].status,'READY');
+});
 
 test('normal builds do not enable connected test UI or show its switch/review',()=>{
   assert.equal(ORIGINAL_CHAT_TEST_ENABLED,false);assert.equal(chatUiAvailable(),false);assert.equal(chatUiEnabled(),false);
