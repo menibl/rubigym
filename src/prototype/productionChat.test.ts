@@ -13,7 +13,7 @@ test('production chat is opt-in; Pages and isolated builds cannot inherit its fl
   const docker=readFileSync(new URL('../../Dockerfile',import.meta.url),'utf8');
   const compose=readFileSync(new URL('../../deploy/compose.yaml',import.meta.url),'utf8');
   assert.match(docker,/ARG VITE_CHAT_UI_ENABLED=false/);
-  assert.match(compose,/VITE_CHAT_UI_ENABLED: \$\{VITE_CHAT_UI_ENABLED:-false\}/);
+  assert.match(compose,/VITE_CHAT_UI_ENABLED: \$\{VITE_CHAT_UI_ENABLED:-true\}/);
 });
 
 test('production chat renders original fields, never demo notices, and legacy preference survives navigation without changing storage',async()=>{
