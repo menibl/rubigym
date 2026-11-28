@@ -2,8 +2,15 @@
 
 ## Scope / activation
 
-The chat UI and Pages/demo operation are now separate concepts. Normal production
-builds still disable chat. `build:pages` keeps its existing provider/server fences
+The chat UI and Pages/demo operation are separate concepts. Plain local production
+builds disable chat unless explicitly enabled. The production Compose build now
+defaults `VITE_CHAT_UI_ENABLED` to `true`, activating the original connected chat
+on the next newly built release image. An explicit `false` build override keeps
+the legacy interface. This is a build-time setting: restarting or redeploying an
+already cached image does not change its UI. Promote through staging/main and
+verify the new release SHA and served assets before declaring activation.
+
+`build:pages` keeps its existing provider/server fences
 and fictional local data. The additional **build:chat-test** target enables chat
 over the original API only for a loopback browser, a same-origin HTTP API and
 non-demo app mode. It is not a production activation switch.
@@ -41,13 +48,15 @@ payment requests remain intact.
   to the original interface/manager workflow. No new cancellation or recurring
   billing implementation is introduced.
 
-## Isolation
+## Isolated test runtime
 
 No production DB, credentials or environment file is used. The native disposable
 PostgreSQL cluster is local; HTTP binds to 127.0.0.1. Provider operations are
 injected fixture responses and OTP is `SMS_TEST_MODE` 1111. Browser checkout
 navigation is rewritten to a same-origin `__mock_checkout` page; external provider
-navigation is never performed in the connected runtime. The test server blocks
+navigation is never performed in the isolated test runtime. Production connected
+chat keeps the original real provider navigation; it does not use these fixtures.
+The test server blocks
 outbound fetch. No schedulers from node-entry are started.
 
 ## Reproduce

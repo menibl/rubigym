@@ -13,7 +13,7 @@ test('production chat is opt-in; Pages and isolated builds cannot inherit its fl
   const docker=readFileSync(new URL('../../Dockerfile',import.meta.url),'utf8');
   const compose=readFileSync(new URL('../../deploy/compose.yaml',import.meta.url),'utf8');
   assert.match(docker,/ARG VITE_CHAT_UI_ENABLED=false/);
-  assert.match(compose,/VITE_CHAT_UI_ENABLED: \$\{VITE_CHAT_UI_ENABLED:-false\}/);
+  assert.match(compose,/VITE_CHAT_UI_ENABLED: \$\{VITE_CHAT_UI_ENABLED:-true\}/);
 });
 
 test('production chat renders original fields, never demo notices, and legacy preference survives navigation without changing storage',async()=>{
@@ -28,7 +28,9 @@ test('production chat renders original fields, never demo notices, and legacy pr
       // Bundle React too, so the in-memory module has no external resolution.
       const selfContained=await build({stdin:{contents:source,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',banner:{js:`import {createRequire} from 'node:module';const require=createRequire(${JSON.stringify(resolve('package.json'))});`},define:{__CONVERSATION_PROTOTYPE__:'false',__CHAT_ORIGINAL_TEST__:'false',__PRODUCTION_CHAT__:String(enabled),'import.meta.env':JSON.stringify({VITE_APP_MODE:'server'}),'process.env.NODE_ENV':'"production"'}});
       const module=await import('data:text/javascript;base64,'+Buffer.from(selfContained.outputFiles[0].contents).toString('base64'));
-      const win=globals.window as {location:{search:string}};win.location.search='?ui=chat';
+      const win=globals.window as {location:{search:string}};win.location.search='';
+      assert.equal(module.chatUiEnabled(),enabled,'production activation defaults to chat without a query parameter');
+      win.location.search='?ui=chat';
       assert.equal(module.chatUiAvailable(),enabled);assert.equal(module.chatUiEnabled(),enabled);
       assert.equal(module.ORIGINAL_CHAT_TEST_ENABLED,false);assert.equal(module.STAGING_CONVERSATION_ENABLED,false);
       assert.equal(module.CONNECTED_CHAT_ENABLED,enabled);
