@@ -51,7 +51,13 @@ export interface CreatePaymentRequest {
 }
 
 export interface OriginalQuoteLine {id:string;memberId:string;memberName:string;membershipType:string;label:string;baseAmount:number;amount:number;discountAmount?:number;status:string;includedSessions?:number;groupLines?:OriginalQuoteLine[]}
-export interface OriginalCheckoutQuote {batchId:string;items:OriginalQuoteLine[];split:true;message?:string}
+export interface OriginalCheckoutQuote {batchId:string;items:OriginalQuoteLine[];split:true;message?:string;discountCode?:string|null;grouping?:string}
+export function originalQuoteLines(quote:OriginalCheckoutQuote):OriginalQuoteLine[]{
+  const completed=['PAID','SETUP','ALREADY_PAID','EXISTING_RECURRING','CANCELLED'];
+  return quote.items.flatMap(item=>item.groupLines
+    ? item.groupLines.map(line=>completed.includes(item.status) ? {...line,status:item.status}:line)
+    : [item]);
+}
 // Only the connected isolated runtime uses this adapter. The original server
 // owns authorization, quotes, existing orders and all monetary calculations.
 export async function requestOriginalCheckoutQuote(request:CreatePaymentRequest,signal?:AbortSignal):Promise<OriginalCheckoutQuote>{
@@ -74,10 +80,13 @@ export async function refreshOriginalCheckoutQuote(request:CreatePaymentRequest,
 }
 
 export function originalQuoteMatchesSelections(request:CreatePaymentRequest,quote:OriginalCheckoutQuote){
+  const normalized=(code:string|null|undefined)=>(code || '').trim().toUpperCase();
+  if(normalized(request.discountCode)!==normalized(quote.discountCode))return false;
+  if(quote.grouping && request.familyMemberPlans && quote.grouping!==(request.familyPaymentGrouping || 'COMBINED'))return false;
   const members=request.familyMemberPlans || [{memberId:request.userId,participation:'INCLUDED',membershipType:request.membershipType,
     trainingSessionsCount:request.individualSelections?.[0]?.trainingSessionsCount,additionalPlans:request.individualSelections?.slice(1)}];
   const expected=new Map<string,number>(members.filter(member=>!member.participation || member.participation==='INCLUDED').flatMap(member=>[member,...(member.additionalPlans || [])].map(plan=>[`${member.memberId}:${plan.membershipType}`,plan.trainingSessionsCount || 1] as const)));
-  const lines=quote.items.flatMap(item=>item.groupLines || [item]);
+  const lines=originalQuoteLines(quote);
   lines.filter(line=>line.status!=='READY').forEach(line=>expected.delete(line.id));
   const ready=lines.filter(line=>line.status==='READY');
   return ready.length===expected.size && ready.every(line=>expected.get(line.id)===(line.includedSessions || 1));
