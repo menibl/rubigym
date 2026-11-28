@@ -10,15 +10,6 @@ import {FamilyRenewalPriceSummary} from './FamilyRenewalPriceSummary';
 import {DiscountCodeField} from '../components/DiscountCodeField';
 import {MEMBERSHIP_TYPE_LABELS,MembershipType,type User,type Payment,type MembershipPlanConfig,type FamilyMemberPlanSelection,type DiscountCode} from '../types';
 
-const style=`
-.staging-family-account .family-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}
-.staging-family-account .family-tile{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-width:0;min-height:150px;padding:18px;text-align:right;border:1px solid #383c48;border-radius:22px;background:#1b1e27;color:#eeeef3;cursor:pointer}
-.staging-family-account .family-tile strong{font-size:17px;line-height:1.5}.staging-family-account .family-tile small{display:block;font-size:13px;color:#b6b7c6;line-height:1.6}
-.staging-family-account .family-icon{padding:12px;border-radius:15px;background:#c9a86718;color:#c9a867}.staging-family-account .family-tile .family-arrow{margin-top:auto;color:#c9a867}
-.staging-family-account .family-summary{padding:16px;border:1px solid #454957;border-radius:18px;margin:12px 0;background:#1b1e27}.staging-family-account .family-summary p{font-size:14px;line-height:1.7;margin:8px 0}
-.staging-family-account h3{font-size:20px;line-height:1.5;margin:16px 0}.staging-family-account .family-tile:disabled{opacity:.45;cursor:not-allowed}
-@media(max-width:360px){.staging-family-account .family-tiles{grid-template-columns:1fr}.staging-family-account .family-tile{min-height:120px}}
-`;
 interface Props {
   members:User[];payments:Payment[];plans:MembershipPlanConfig[];canManage:boolean;busy:boolean;
   onEdit:(memberId:string,extrasOnly?:boolean,draft?:FamilyMemberPlanSelection[])=>void;onAdd:()=>void;onFreeze:(memberId:string)=>void;
@@ -45,7 +36,7 @@ export function StagingFamilyAccount(props:Props){
   const label=(type:string)=>plans.find(plan=>plan.id===type)?.label || MEMBERSHIP_TYPE_LABELS[type]?.label || type;
   const tile=(title:string,description:string,icon:React.ReactNode,action:()=>void,disabled=false)=><button type="button" className="family-tile" onClick={action} disabled={disabled}><span className="family-icon">{icon}</span><strong>{title}</strong><small>{description}</small><ChevronLeft size={19} className="family-arrow"/></button>;
   const choose=(next:typeof screen)=>{setScreen(next);setNotice('');};
-  return <section className="staging-family-account" aria-label="החשבון המשפחתי בקוביות"><style>{style}</style>
+  return <section className="staging-family-account" aria-label="החשבון המשפחתי בקוביות">
     {(member || screen!=='cards') && <button type="button" className="logic-secondary" onClick={()=>{setSelected(null);choose('cards');}}>חזרה לחשבון המשפחתי</button>}
     {notice && <p role="status" className="family-summary">{notice}</p>}
     {screen==='cards' && !member && <>

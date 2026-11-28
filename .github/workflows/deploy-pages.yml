@@ -46,6 +46,10 @@ jobs:
           # The static test UI opens the RIVHIT TEST checkout through the GCP API.
           VITE_PAYMENT_API_URL: https://balywellness.com
 
+      - name: Validate static chat styles
+        # Check the actual public bundle before publishing, not just TS sources.
+        run: node scripts/check-chat-styles.mjs
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
