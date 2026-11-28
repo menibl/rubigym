@@ -15,7 +15,6 @@ interface Props {
   onChange:(plans:FamilyMemberPlanSelection[])=>void;onEditingChange:(editing:boolean)=>void;onSummaryReady:(ready:boolean)=>void;
   initialMemberId?:string;extrasOnly?:boolean;
 }
-const css=`.staging-family-steps .step-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}.staging-family-steps .step-tile{display:flex;flex-direction:column;align-items:flex-start;gap:10px;text-align:right;min-height:140px;min-width:0;padding:18px;border-radius:20px;border:1px solid #454957;background:#1b1e27;color:#eeeef3}.staging-family-steps .step-tile strong{font-size:17px}.staging-family-steps .step-tile small{font-size:13px;line-height:1.6;color:#b6b7c6}.staging-family-steps .step-tile svg{color:#c9a867}.staging-family-steps .step-tile[aria-pressed=true]{border-color:#c9a867;background:#302b21}.staging-family-steps .step-tile:disabled{opacity:.4}.staging-family-steps .step-summary{padding:16px;border:1px solid #454957;border-radius:18px;background:#1b1e27;margin:12px 0}.staging-family-steps .step-summary p{margin:8px 0;line-height:1.7}.staging-family-steps h3{font-size:20px;margin:16px 0;line-height:1.5}@media(max-width:360px){.staging-family-steps .step-grid{grid-template-columns:1fr}.staging-family-steps .step-tile{min-height:110px}}`;
 
 // Navigation only: existing controlled selection DTOs and pricing remain authoritative.
 export function StagingFamilyPlanSteps(props:Props){
@@ -59,7 +58,7 @@ export function StagingFamilyPlanSteps(props:Props){
     }
     go(next);
   };
-  return <section className="staging-family-steps" aria-label="בחירת מסלולים למשפחה בקוביות"><style>{css}</style>
+  return <section className="staging-family-steps" aria-label="בחירת מסלולים למשפחה בקוביות">
     <button type="button" className="logic-secondary" onClick={()=>{setStep(history.at(-1) || 'members');setHistory(previous=>previous.slice(0,-1));setError('');}}><ArrowRight size={16}/> חזרה לשלב הקודם</button>
     {step!=='members' && step!=='family-summary' && <p>בחירת מסלולים עבור <strong>{member?.name}</strong></p>}
     {error && <p role="alert" className="logic-error">{error}</p>}

@@ -83,7 +83,7 @@ jobs:
         run: pnpm exec tsx --test src/prototype/model.test.ts src/prototype/Conversation.test.tsx src/prototype/integration.test.ts src/prototype/demoAccount.test.ts src/prototype/stagingLogic.test.tsx src/prototype/familyAccountModel.test.tsx src/prototype/familyPlanSteps.test.tsx src/prototype/originalRuntime.test.tsx src/prototype/productionChat.test.ts
 
       - name: Test original chat client over isolated HTTP and PostgreSQL with fake providers
-        run: node scripts/test-chat-original-runtime.mjs 55439 --isolated-postgres
+        run: node scripts/test-chat-original-runtime.mjs 55439 --isolated-postgres --production-csp
 
       - name: Test unfinished checkout recovery and production fences with fake providers only
         run: |
@@ -108,7 +108,9 @@ jobs:
           VITE_PAYMENT_API_URL: https://staging.invalid
 
       - name: Validate server entrypoint
-        run: node --check server/node-entry.js
+        run: |
+          node scripts/check-chat-styles.mjs
+          node --check server/node-entry.js
 
       - name: Test server behavior
         run: node --test server/*.test.js

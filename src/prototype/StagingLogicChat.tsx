@@ -1,54 +1,17 @@
 import React,{Children,isValidElement,useEffect,useRef,useState,type ReactNode} from 'react';
 import {ORIGINAL_CHAT_TEST_ENABLED,CONNECTED_CHAT_ENABLED,PRODUCTION_CHAT_ENABLED,chatUiEnabled} from './integration';
 import {ChatInterfaceSwitch} from './ChatInterfaceSwitch';
-import {completionStyle} from './completionStyle';
 import {isPagesDemoMode} from '../data/appMode';
 import {HealthDeclarationForm} from '../components/HealthDeclarationForm';
 
 // The shell owns presentation only. Field values, validation, submit handlers,
 // registration DTOs and membership mutations remain in the original components.
 export const stagingLogicEnabled=()=>chatUiEnabled() && (CONNECTED_CHAT_ENABLED || isPagesDemoMode());
-const css=`
-.staging-logic-chat{--chat-gold:#c9a867;--chat-bg:#101218;--chat-surface:#1b1e27;--chat-text:#eeeef3;color:var(--chat-text);background:var(--chat-bg);font-family:Heebo,Arial,sans-serif;overflow-wrap:anywhere;position:fixed;inset:0;z-index:45;height:100dvh;display:flex;flex-direction:column}
-.staging-logic-chat .logic-header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #45404e;flex-shrink:0;background:#171923}
-.staging-logic-chat .logic-header strong{font-size:16px;line-height:1.4}.staging-logic-chat .logic-header small{display:block;font-size:12px;color:#b6b7c6}
-.staging-logic-chat button{touch-action:manipulation}.staging-logic-chat .logic-back{min-height:44px;padding:8px 12px;border:1px solid #83745c;border-radius:10px;background:#242735;color:var(--chat-text);font-size:14px}
-.staging-logic-chat .logic-notice{font-size:13px;padding:10px 16px;color:#ead298;border-bottom:1px solid #665735}
-.staging-logic-chat .logic-notice summary{cursor:pointer;min-height:24px}.staging-logic-chat .logic-notice p{margin-top:8px}
-.staging-logic-chat .logic-content{max-width:760px;width:100%;margin:0 auto;padding:20px 16px 24px;overflow-y:auto;overscroll-behavior:contain;flex:1;min-height:0}
-.staging-logic-chat .logic-question{font-size:24px;line-height:1.4;margin:20px 0 12px;color:var(--chat-text);font-weight:600}
-.staging-logic-chat .logic-answer{display:grid;gap:18px;padding:0;margin:18px 0}
-.staging-logic-chat .logic-answer>label{display:block;font-size:16px;color:#b6b7c6;line-height:1.6}
-.staging-logic-chat input:not([type=checkbox]):not([type=radio]),.staging-logic-chat select{width:100%;min-height:52px;padding:12px 16px;background:#141720;color:#fff;border:1px solid #454957;border-radius:12px;font-size:16px;margin-top:8px;min-width:0;max-width:100%}
-.staging-logic-chat input[type=checkbox],.staging-logic-chat input[type=radio]{width:20px;height:20px;accent-color:var(--chat-gold);flex-shrink:0}
-.staging-logic-chat .logic-primary,.staging-logic-chat .auth-primary{width:100%;min-height:52px;padding:12px 20px;border:0;border-radius:12px;background:var(--chat-gold);color:#171810;font-size:16px;font-weight:600;margin-top:12px}
-.staging-logic-chat .logic-primary:disabled{opacity:.45}.staging-logic-chat .logic-secondary{min-height:48px;padding:10px;border:1px solid #525564;border-radius:12px;background:transparent;color:var(--chat-text);font-size:15px}
-.staging-logic-chat .logic-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0}
-.staging-logic-chat .logic-actions button{font-size:15px;min-height:48px;padding:10px 8px;border:1px solid #525564;border-radius:12px;background:#151822;color:var(--chat-text)}
-.staging-logic-chat .logic-actions button[aria-pressed=true]{border-color:var(--chat-gold);background:#302b21}
-.staging-logic-chat .logic-error{font-size:15px;color:#ffb9be;padding:12px;background:#c23c4a12;border-radius:10px}
-.staging-logic-chat button:focus-visible,.staging-logic-chat input:focus-visible{outline:3px solid var(--chat-gold);outline-offset:4px}
-.staging-logic-chat .auth-gender button.active{background:var(--chat-gold);color:#171810}
-.staging-logic-chat .auth-panel{width:100%;max-width:none;border:0;border-radius:0;background:transparent;box-shadow:none;padding:0}
-.staging-logic-chat .auth-panel-logo,.staging-logic-chat .auth-progress{display:none}
-.staging-logic-chat [class*="bg-indigo-"],.staging-logic-chat [class*="bg-purple-"]{background-color:#302b21!important;color:#ead298!important}
-.staging-logic-chat [class*="text-indigo-"],.staging-logic-chat [class*="text-purple-"]{color:#ead298!important}
-@media(max-width:600px){.staging-logic-chat .logic-content{margin:0;padding:18px 16px 24px}.staging-logic-chat .logic-header{padding-top:max(8px,env(safe-area-inset-top))}.staging-logic-chat{padding-bottom:env(safe-area-inset-bottom)}.staging-logic-chat .logic-content>section{min-width:0;max-width:100%}}
-@media(max-width:600px){.staging-logic-chat .logic-family,.staging-logic-chat .logic-family>section{padding:0!important;border:0!important;background:transparent!important}.staging-logic-chat .logic-family article{padding:14px!important}.staging-logic-chat #membership-checkout{padding:0!important;border:0;background:transparent!important}.staging-logic-chat .auth-panel>h1{font-size:24px;line-height:1.4}}
-.staging-logic-chat .logic-family-settings .user-settings-dialog{margin:0;max-height:none;max-width:none;overflow:visible;border:0;border-radius:0;background:transparent!important;box-shadow:none;animation:none}
-.staging-logic-chat .logic-family-settings [data-chat-settings-header],.staging-logic-chat .logic-family-settings [data-chat-settings-tabs]{display:none}
-.staging-logic-chat .logic-family-settings [data-chat-settings-body],.staging-logic-chat .logic-family-settings [data-chat-family-container]{padding:0;border:0;background:transparent!important}
-.staging-logic-chat .logic-family-settings .logic-answer>label{font-size:16px;font-weight:400}
-.staging-logic-chat .logic-family-settings .logic-answer>[data-chat-submit]{display:flex;gap:12px;flex-wrap:wrap}
-.staging-logic-chat .logic-family-settings [data-chat-submit] button[type=submit]{min-height:52px;padding:12px 20px;background:#c9a867;color:#171810;border:0;border-radius:12px;font-size:16px}
-.staging-logic-chat .logic-family-settings [data-chat-submit] button[type=button]{min-height:48px;padding:10px 16px;border:1px solid #525564;border-radius:12px;background:transparent;color:#eeeef3;font-size:15px}
-${completionStyle}
-`;
 const scrollLock={count:0,body:'',html:''};
 
 export function StagingLogicScreen({title,onClose,children}:{title:string;onClose?:()=>void;children:ReactNode}){
   useEffect(()=>{if(scrollLock.count++===0){scrollLock.body=document.body.style.overflow;scrollLock.html=document.documentElement.style.overflow;document.body.style.overflow='hidden';document.documentElement.style.overflow='hidden';}return()=>{if(--scrollLock.count===0){document.body.style.overflow=scrollLock.body;document.documentElement.style.overflow=scrollLock.html;}};},[]);
-  return <section role="dialog" aria-modal="true" aria-label={title} className="staging-logic-chat" dir="rtl"><style>{css}</style><header className="logic-header"><div><strong>{title}</strong><small>{PRODUCTION_CHAT_ENABLED ? 'BALY WELLNESS':'staging · הלוגיקה המקורית'}</small></div><ChatInterfaceSwitch/>{onClose && <button type="button" className="logic-back" onClick={onClose}>חזרה לאפליקציה</button>}</header>{!PRODUCTION_CHAT_ENABLED && <details className="logic-notice"><summary>{ORIGINAL_CHAT_TEST_ENABLED ? 'DB מבודד · תשלום ו־SMS מדומים':'נתוני בדיקה בלבד · ללא חיובים או SMS'}</summary><p>סביבת בדיקות בלבד. השתמשו בנתוני בדיקה, לא במידע אישי אמיתי.</p></details>}<div className="logic-content">{children}</div></section>;
+  return <section role="dialog" aria-modal="true" aria-label={title} className="staging-logic-chat" dir="rtl"><header className="logic-header"><div><strong>{title}</strong><small>{PRODUCTION_CHAT_ENABLED ? 'BALY WELLNESS':'staging · הלוגיקה המקורית'}</small></div><ChatInterfaceSwitch/>{onClose && <button type="button" className="logic-back" onClick={onClose}>חזרה לאפליקציה</button>}</header>{!PRODUCTION_CHAT_ENABLED && <details className="logic-notice"><summary>{ORIGINAL_CHAT_TEST_ENABLED ? 'DB מבודד · תשלום ו־SMS מדומים':'נתוני בדיקה בלבד · ללא חיובים או SMS'}</summary><p>סביבת בדיקות בלבד. השתמשו בנתוני בדיקה, לא במידע אישי אמיתי.</p></details>}<div className="logic-content">{children}</div></section>;
 }
 
 export function StagingRegistrationSurface({children,...rest}:React.HTMLAttributes<HTMLElement>){

@@ -48,6 +48,27 @@ payment requests remain intact.
   to the original interface/manager workflow. No new cancellation or recurring
   billing implementation is introduced.
 
+## Production security and mobile presentation
+
+Connected chat styles are imported by `src/main.tsx` as static, scoped CSS in
+`src/prototype/connected-chat.css`. The shell, family cards, plan tiles and final
+actions must not inject `<style>` elements: production's unchanged `style-src`
+policy intentionally forbids them. Do not add `unsafe-inline` to work around a
+presentation regression. The production Compose chat flag stays disabled.
+
+For mobile browser QA against the original handlers with fake providers, first
+build `pnpm run build:chat-test`, then run the isolated server below with the
+additional `--production-csp` argument. It copies the exact policy from
+`deploy/Caddyfile` into response headers; this includes the original script,
+style, font and form restrictions. Use browser mobile emulation (including 320px
+and 400px widths) and check Console for CSP violations. No real accounts,
+provider operations or SMS should be used. A 401 session probe before login is
+expected and is not a stylesheet failure.
+
+```powershell
+node scripts/test-chat-original-runtime.mjs 55439 --isolated-postgres --serve --production-csp
+```
+
 ## Isolated test runtime
 
 No production DB, credentials or environment file is used. The native disposable
