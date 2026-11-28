@@ -3,12 +3,12 @@
 ## Scope / activation
 
 The chat UI and Pages/demo operation are separate concepts. Plain local production
-builds disable chat unless explicitly enabled. The production Compose build now
-defaults `VITE_CHAT_UI_ENABLED` to `true`, activating the original connected chat
-on the next newly built release image. An explicit `false` build override keeps
-the legacy interface. This is a build-time setting: restarting or redeploying an
-already cached image does not change its UI. Promote through staging/main and
-verify the new release SHA and served assets before declaring activation.
+builds disable chat unless explicitly enabled. The production Compose build
+defaults `VITE_CHAT_UI_ENABLED` to `false`, keeping the original legacy interface.
+Pages staging chat remains enabled independently for continued development.
+This is a build-time setting: restarting or redeploying an already cached image
+does not change its UI. Promote through staging/main and verify the new release
+SHA and served assets before declaring the legacy interface restored.
 
 `build:pages` keeps its existing provider/server fences
 and fictional local data. The additional **build:chat-test** target enables chat

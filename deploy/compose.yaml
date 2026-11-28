@@ -9,8 +9,8 @@ services:
       args:
         VITE_PAYMENT_API_URL: ${VITE_PAYMENT_API_URL}
         VITE_AI_API_URL: ${VITE_AI_API_URL}
-        # Production activation; false remains an explicit build-time opt-out.
-        VITE_CHAT_UI_ENABLED: ${VITE_CHAT_UI_ENABLED:-true}
+        # Keep production on the legacy UI; Pages staging chat remains separate.
+        VITE_CHAT_UI_ENABLED: ${VITE_CHAT_UI_ENABLED:-false}
     restart: unless-stopped
     depends_on:
       postgres:
