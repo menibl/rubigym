@@ -51,7 +51,7 @@ export interface CreatePaymentRequest {
 }
 
 export interface OriginalQuoteLine {id:string;memberId:string;memberName:string;membershipType:string;label:string;baseAmount:number;amount:number;discountAmount?:number;status:string;includedSessions?:number;groupLines?:OriginalQuoteLine[]}
-export interface OriginalCheckoutQuote {batchId:string;items:OriginalQuoteLine[];split:true;message?:string;discountCode?:string|null;grouping?:string}
+export interface OriginalCheckoutQuote {batchId:string;items:OriginalQuoteLine[];split:true;message?:string;discountCode?:string|null;grouping?:string;previewOnly?:boolean;blockedByPreviousCheckout?:boolean;previousCheckout?:{batchId:string;message:string}}
 export function originalQuoteLines(quote:OriginalCheckoutQuote):OriginalQuoteLine[]{
   const completed=['PAID','SETUP','ALREADY_PAID','EXISTING_RECURRING','CANCELLED'];
   return quote.items.flatMap(item=>item.groupLines
@@ -66,7 +66,7 @@ export async function requestOriginalCheckoutQuote(request:CreatePaymentRequest,
   const individualSelections=request.membershipType===MembershipType.FAMILY_MEMBERSHIP ? undefined:request.individualSelections?.length ? request.individualSelections:
     [{membershipType:request.membershipType,trainingSessionsCount:request.purchaseVariant ? Number(request.purchaseVariant.split('_').pop()):undefined}];
   const response=await fetch(`${paymentApiBase()}/api/payments/rivhit/create`,{method:'POST',credentials:'include',signal,headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({...request,registrationDraft:undefined,individualSelections,quoteOnly:true,unifiedCheckout:true})});
+    body:JSON.stringify({...request,registrationDraft:undefined,individualSelections,quoteOnly:true,unifiedCheckout:true,reviewCurrentSelection:true})});
   const result=await response.json().catch(()=>({}));
   if(!response.ok || !result.split || !result.batchId || !Array.isArray(result.items))throw new Error(result.message || 'לא ניתן לקבל סיכום מאומת מהשרת. ניתן לחזור לממשק הישן.');
   return result;

@@ -25,6 +25,7 @@ export function ConnectedCheckoutReview({request,busy=false,onContinue}:{request
   const payable=lines.filter(line=>line.status==='READY');
   const total=payable.reduce((sum,line)=>sum+Math.round(line.amount*100),0)/100;
   const matches=Boolean(current?.quote && originalQuoteMatchesSelections(request,current.quote));
+  const blocked=Boolean(current?.quote?.previewOnly || current?.quote?.blockedByPreviousCheckout);
   return <section aria-label="סיכום מהשרת המקורי לפני אישור" className="family-summary">
     <h3>סיכום מהשרת המקורי לפני אישור</h3>
     {!current?.quote && !current?.error && <p role="status">מחשב מול {ORIGINAL_CHAT_TEST_ENABLED ? 'השרת המבודד':'השרת'}…</p>}
@@ -33,11 +34,12 @@ export function ConnectedCheckoutReview({request,busy=false,onContinue}:{request
       const memberLines=lines.filter(line=>line.memberId===memberId);
       const due=memberLines.filter(line=>line.status==='READY');
       return <article key={memberId} className="family-summary"><strong>{name}</strong>{!memberLines.length && <p>אין צורך בתשלום עבור בן משפחה זה בבחירה הנוכחית.</p>}{memberLines.map(line=><p key={line.id}>{line.label}{line.includedSessions ? ` × ${line.includedSessions}`:''} — {line.status==='READY' ? `מחיר ₪${money(line.baseAmount)}, הנחה ₪${money(line.discountAmount || 0)}, לתשלום ₪${money(line.amount)}`:`${['ALREADY_PAID','PAID'].includes(line.status) ? 'מסלול זה כבר שולם':['EXISTING_RECURRING','SETUP'].includes(line.status) ? 'הוראת קבע קיימת — אינה אישור לחיוב בפועל':line.status==='CANCELLED' ? 'לא נכלל בבחירה':line.status} — לא נכלל בחיוב חדש`}</p>)}<p>סה״כ לבן המשפחה: ₪{money(due.reduce((sum,line)=>sum+Math.round(line.amount*100),0)/100)}</p></article>;
-    })}<strong>סה״כ לתשלום: ₪{money(total)}</strong><p>לפי הבקשה הקיימת שהשרת החזיר. לא נוצר חיוב מחישוב הסיכום; המשך דרך מנגנון התשלום המקורי.{ORIGINAL_CHAT_TEST_ENABLED && ' ספק מדומה בלבד בסביבה זו.'}</p>
+    })}<strong>סה״כ לתשלום: ₪{money(total)}</strong><p>לפי הבחירה הנוכחית והחישוב העדכני בשרת. הצגת הסיכום אינה יוצרת חיוב.{ORIGINAL_CHAT_TEST_ENABLED && ' ספק מדומה בלבד בסביבה זו.'}</p>
+    {current.quote.previousCheckout && <p role="alert">{current.quote.previousCheckout.message}</p>}
     {!matches && <p role="alert">קיימת בקשת תשלום קודמת שאינה תואמת לבחירה או לקוד ההנחה הנוכחיים. בקשה שכבר נשלחה לסליקה לא מוחלפת אוטומטית. יש להמשיך בבחירה המקורית או לפנות למנהל — לא נפתח חיוב נוסף.</p>}
     {!payable.length && <p role="status">אין מסלולים לתשלום בבחירה זו. מסלולים שכבר שולמו או הוראות קיימות אינם מחויבים שוב. ניתן לחזור ולבחור מסלול אחר או בן משפחה אחר.</p>}
-    <button type="button" className="logic-primary logic-complete" disabled={busy || confirming || !payable.length || !matches} onClick={async()=>{
-      if(!current.quote || busy || confirming || !matches)return;setConfirming(true);
+    <button type="button" className="logic-primary logic-complete" disabled={busy || confirming || !payable.length || !matches || blocked} onClick={async()=>{
+      if(!current.quote || busy || confirming || !matches || blocked)return;setConfirming(true);
       try{await onContinue(request.familyMemberPlans ? excludeFamilyRenewalPlans(request.familyMemberPlans,lines.filter(line=>line.status!=='READY').map(line=>line.id)):undefined);}
       catch(error){setState({key,error:error instanceof Error ? error.message:'לא ניתן להמשיך.'});}
       finally{setConfirming(false);}

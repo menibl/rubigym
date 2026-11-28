@@ -59,7 +59,10 @@ test('test build is separate from Pages fences and requires loopback browser and
 test('connected review uses server quote-only, blocks stale results and prevents duplicate confirmation',()=>{
   const review=readFileSync(new URL('ConnectedCheckoutReview.tsx',import.meta.url),'utf8');
   assert.match(review,/AbortController/);assert.match(review,/state.key===key/);
-  assert.match(review,/disabled=\{busy \|\| confirming \|\| !payable.length \|\| !matches\}/);
+  assert.match(review,/disabled=\{busy \|\| confirming \|\| !payable.length \|\| !matches \|\| blocked\}/);
+  assert.match(review,/quote\?\.previewOnly \|\| current\?\.quote\?\.blockedByPreviousCheckout/);
+  assert.match(review,/current.quote.previousCheckout.message/);
+  assert.doesNotMatch(review,/לפי הבקשה הקיימת שהשרת החזיר/);
   assert.match(review,/excludeFamilyRenewalPlans/);
   assert.doesNotMatch(review,/familyPurchaseAmount|discountPercent|Math.round\([^)]*discount/);
   const api=readFileSync(new URL('../data/rivhitPayments.ts',import.meta.url),'utf8');

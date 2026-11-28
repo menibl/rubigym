@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './index.js';
-import { familySplitLines, groupFamilyRecurringLines } from './family-split.js';
+import { familySplitLines, groupFamilyRecurringLines, publicFamilySplit, rebaseFamilySplitSelection } from './family-split.js';
 import { recurringSchedule } from '../shared/recurring-billing.js';
 
 const catalog = [
@@ -685,4 +685,105 @@ test('an undispatched quote can be cancelled, but not after creating a hosted pa
   assert.equal((await f.post('family-split/create', { batchId: next.batchId, itemId: next.items[0].id, acknowledged: true })).status, 200);
   assert.equal((await (await f.post('family-split/cancel', { batchId: next.batchId })).json()).cancelled, false);
   assert.equal(f.calls.filter(call => call.url.endsWith('/GetUrl')).length, 1);
+});
+
+test('current chat summary does not reuse sent basket prices or coupon, and cannot dispatch a preview', async () => {
+  const f=fixture(true);f.state().payload.discountCodes[0].isSingleUse=false;
+  const initial=await (await f.quote()).json();
+  await f.post('family-split/create',{batchId:initial.batchId,itemId:initial.items[0].id,acknowledged:true});
+  const before=structuredClone(f.journal());
+  const response=await f.quote({reviewCurrentSelection:true,discountCode:undefined,
+    familyMemberPlans:[{...members[0],participation:'SKIP'},members[1]]});
+  assert.equal(response.status,200,await response.clone().text());
+  const next=await response.json();
+  assert.equal(next.discountCode,null);assert.equal(next.previewOnly,true);assert.equal(next.blockedByPreviousCheckout,true);
+  assert.ok(next.items.every(line=>line.memberId==='child'));assert.equal(next.items[0].amount,500);
+  assert.deepEqual(f.journal(),before,'preview does not replace or cancel sent journal');
+  assert.equal((await f.post('family-split/create',{batchId:next.batchId,itemId:next.items[0].id,acknowledged:true})).status,404);
+  assert.equal(f.calls.filter(call=>call.url.endsWith('/GetUrl')).length,1);
+  const discounted=await (await f.quote({reviewCurrentSelection:true,familyMemberPlans:[{...members[0],participation:'SKIP'},members[1]]})).json();
+  assert.equal(discounted.items[0].amount,450);assert.equal(discounted.discountCode,'SAVE10');
+  assert.equal(f.calls.filter(call=>call.url.endsWith('/GetUrl')).length,1);
+});
+
+test('a skipped payer can buy an unrelated child service while retaining the original sent page', async () => {
+  const f=fixture(true);f.state().payload.discountCodes[0].isSingleUse=false;
+  const initial=await (await f.quote()).json();
+  const original=await (await f.post('family-split/create',{batchId:initial.batchId,itemId:initial.items[0].id,acknowledged:true})).json();
+  const oldLine=structuredClone(f.journal().payload.items[0]);
+  const selection={reviewCurrentSelection:true,unifiedCheckout:true,discountCode:undefined,
+    familyMemberPlans:[{...members[0],participation:'SKIP'},{...members[1],membershipType:'NUTRITION_PLAN'}]};
+  const response=await f.quote(selection);assert.equal(response.status,200,await response.clone().text());
+  const next=await response.json();assert.equal(next.previewOnly,undefined);assert.equal(next.items.length,1);
+  assert.equal(next.items[0].memberId,'child');assert.equal(next.items[0].amount,300);
+  assert.deepEqual(f.journal().payload.items.find(item=>item.id===oldLine.id),oldLine);
+  assert.equal(f.calls.filter(call=>call.url.endsWith('/GetUrl')).length,1);
+  const status=await (await f.post('family-split/status',{batchId:next.batchId})).json();
+  assert.deepEqual(status.items,next.items,'automatic continuation sees only the current selection');
+  const discounted=await (await f.quote({...selection,discountCode:'SAVE10'})).json();
+  assert.equal(discounted.items[0].amount,270);
+  assert.deepEqual(f.journal().payload.items.find(item=>item.id===oldLine.id),oldLine);
+  const dispatch=await f.post('family-split/create',{batchId:next.batchId,itemId:next.items[0].id,acknowledged:true});
+  assert.equal(dispatch.status,200,await dispatch.clone().text());
+  const created=f.calls.filter(call=>call.url.endsWith('/GetUrl'));
+  assert.equal(created.length,2);assert.equal(created[1].body.Items[0].UnitPrice,270);
+  assert.ok(original.url);assert.equal(f.state().payload.payments.length,0,'no fake payment completion or benefits granted');
+  assert.equal((await (await f.post('family-split/cancel',{batchId:next.batchId})).json()).cancelled,false);
+  const childPayment={batchId:next.batchId,itemId:next.items[0].id};
+  assert.equal((await f.post('family-split/verify',childPayment)).status,200);
+  const paymentCount=f.state().payload.payments.length;
+  assert.equal((await f.post('family-split/verify',childPayment)).status,200);
+  assert.equal(f.state().payload.payments.length,paymentCount,'new child receipt remains idempotent');
+  const overlap=await (await f.quote({...selection,familyMemberPlans:[{...members[0],participation:'SKIP'},members[1]]})).json();
+  assert.equal(overlap.previewOnly,true,'completing the new selection cannot hide an unresolved older page from duplicate checks');
+  assert.deepEqual(f.journal().payload.items.find(item=>item.id===oldLine.id),oldLine);
+  assert.equal((await f.post('family-split/verify',{batchId:initial.batchId,itemId:oldLine.id})).status,200,
+    'the original return link still verifies after changing the visible selection');
+  assert.equal(f.journal().payload.items.find(item=>item.id===oldLine.id).status,'SETUP');
+  assert.equal(f.calls.filter(call=>call.url.endsWith('/GetUrl')).length,2);
+});
+
+test('Meni/Noam regression: paid family group coverage removes Open Gym from the fresh summary of an old page',async()=>{
+  const f=fixture(true), initial=await (await f.quote({discountCode:undefined})).json();
+  await f.post('family-split/create',{batchId:initial.batchId,itemId:initial.items[0].id,acknowledged:true});
+  const original=structuredClone(f.journal().payload.items[0]);
+  f.state().payload.payments.push({id:'family-paid',membershipTypePurchased:'FAMILY_MEMBERSHIP',status:'PAID',
+    timestamp:new Date().toISOString(),familyMemberPlans:members.map(member=>({...member,membershipType:'GROUP_ANNUAL'}))});
+  const response=await f.quote({reviewCurrentSelection:true,discountCode:undefined,
+    familyMemberPlans:[{...members[0],participation:'SKIP'},{...members[1],membershipType:'OPEN_GYM'}]});
+  assert.equal(response.status,200,await response.clone().text());
+  const next=await response.json();assert.equal(next.items.length,1);assert.equal(next.items[0].memberId,'child');
+  assert.equal(next.items[0].status,'ALREADY_PAID');assert.equal(next.items.filter(item=>item.status==='READY').length,0);
+  assert.equal(next.previewOnly,undefined);assert.equal(next.completed,true);
+  assert.deepEqual(f.journal().payload.items.find(item=>item.id===original.id),original);
+  assert.equal(f.calls.filter(call=>call.url.endsWith('/GetUrl')).length,1);
+});
+
+test('paid group coverage excludes Open Gym before grouping and discount allocation',()=>{
+  const now=new Date(), receipts=[{traineeId:'payer',membershipTypePurchased:'GROUP_ANNUAL',status:'PAID',timestamp:now.toISOString()}];
+  const lines=familySplitLines(members,catalog,receipts,{discountAmount:20},true,now);
+  assert.equal(lines[0].status,'ALREADY_PAID');assert.equal(lines[0].discountAmount,undefined);
+  assert.equal(lines[1].amount,480);
+  for(const patch of [{isMock:true},{refundedAt:now.toISOString()},{status:'PENDING'}]){
+    assert.equal(familySplitLines(members,catalog,[{...receipts[0],...patch}],null,true,now)[0].status,'READY');
+  }
+  const grouped=[{...receipts[0],traineeId:'other',membershipTypePurchased:'FAMILY_MEMBERSHIP',familyMemberPlans:[
+    {memberId:'payer',membershipType:'GROUP_ANNUAL',participation:'INCLUDED'}]}];
+  assert.equal(familySplitLines(members,catalog,grouped,null,true,now)[0].status,'ALREADY_PAID');
+  grouped[0].familyMemberPlans[0].memberId='unrelated';
+  assert.equal(familySplitLines(members,catalog,grouped,null,true,now)[0].status,'READY');
+});
+
+test('a sent combined page covers every beneficiary and survives hidden completed selections',()=>{
+  const sent={id:'combined:old',status:'PAGE',checkout:{url:'original'},groupLines:[
+    {memberId:'payer',membershipType:'OPEN_GYM'},{memberId:'child',membershipType:'OPEN_GYM'}]};
+  const previous={id:'batch',items:[sent],fingerprint:'old'};
+  for(const memberId of ['payer','child'])assert.equal(rebaseFamilySplitSelection(previous,{items:[
+    {id:`${memberId}:OPEN_GYM`,memberId,membershipType:'OPEN_GYM',status:'READY'}]}),null);
+  const next=rebaseFamilySplitSelection(previous,{fingerprint:'new',items:[
+    {id:'child:GROUP_ANNUAL',memberId:'child',membershipType:'GROUP_ANNUAL',status:'ALREADY_PAID'}]});
+  assert.deepEqual(next.items[0],sent);assert.equal(publicFamilySplit(next).completed,true);
+  const later=rebaseFamilySplitSelection(next,{fingerprint:'later',items:[
+    {id:'child:OPEN_GYM',memberId:'child',membershipType:'OPEN_GYM',status:'READY'}]});
+  assert.equal(later,null,'hidden unresolved page still blocks overlapping purchases');
 });
