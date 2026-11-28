@@ -4,11 +4,13 @@
 
 The chat UI and Pages/demo operation are separate concepts. Plain local production
 builds disable chat unless explicitly enabled. The production Compose build
-defaults `VITE_CHAT_UI_ENABLED` to `false`, keeping the original legacy interface.
-Pages staging chat remains enabled independently for continued development.
+defaults `VITE_CHAT_UI_ENABLED` to `true` after approval of the CSP-safe chat and
+mobile/family completion fixes. An explicit `false` build override keeps the
+legacy interface; the user-facing `ui=legacy` switch remains available when chat
+is enabled. Pages staging chat remains independent for continued development.
 This is a build-time setting: restarting or redeploying an already cached image
 does not change its UI. Promote through staging/main and verify the new release
-SHA and served assets before declaring the legacy interface restored.
+SHA and served assets before declaring chat activated.
 
 `build:pages` keeps its existing provider/server fences
 and fictional local data. The additional **build:chat-test** target enables chat
@@ -54,7 +56,7 @@ Connected chat styles are imported by `src/main.tsx` as static, scoped CSS in
 `src/prototype/connected-chat.css`. The shell, family cards, plan tiles and final
 actions must not inject `<style>` elements: production's unchanged `style-src`
 policy intentionally forbids them. Do not add `unsafe-inline` to work around a
-presentation regression. The production Compose chat flag stays disabled.
+presentation regression. Enabling chat never requires weakening the policy.
 
 For mobile browser QA against the original handlers with fake providers, first
 build `pnpm run build:chat-test`, then run the isolated server below with the
