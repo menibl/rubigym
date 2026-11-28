@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { familyMemberSurname, missingFamilyMemberFields } from '../utils/familyMemberForm';
 import { User, UserRole, MembershipType, MembershipStatus, Gender, DiscountCode } from '../types';
 import { X, Check, Lock, User as UserIcon, Phone, Calendar, Users, Plus, Key, ShieldCheck, Trash2, Edit3, Tag, DollarSign, Percent, Bell, BellRing, Camera } from 'lucide-react';
@@ -15,6 +15,7 @@ import { sendPushTest, syncServerPushSubscription } from '../data/clubServer';
 
 import { prepareProfileImage } from '../utils/profileImage';
 import {StagingChatForm,StagingFamilySettingsSurface,StagingFamilySetup,stagingLogicEnabled} from '../prototype/StagingLogicChat';
+import {FamilyMemberAdded} from '../prototype/FamilyMemberAdded';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -91,6 +92,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [showSubHealthForm, setShowSubHealthForm] = useState(false);
   const [subAgreementApproved, setSubAgreementApproved] = useState(false);
   const [subAccountPending, setSubAccountPending] = useState(false);
+  const [addedFamilyMember, setAddedFamilyMember] = useState<{id:string;name:string}|null>(null);
+  const [familyAddSequence, setFamilyAddSequence] = useState(0);
+  const familyChatOpening = useRef('');
 
   useEffect(() => {
     if (isOpen) {
@@ -114,7 +118,16 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setFamilyName(currentUser.familyName || '');
       setFamilyQuota(currentUser.familyMembersCount || 3);
       setMsg(null);
-      setShowAddSubMember(initialSection === 'family-add' && Boolean(currentUser.familyId) && Boolean(currentUser.isFamilyPayer || isAdminMode));
+      // A server refresh after creation is not a new request to open question 1.
+      const openingKey=JSON.stringify([currentUser.id,initialSection,isAdminMode]);
+      if (!stagingLogicEnabled() || isAdminMode || familyChatOpening.current!==openingKey) {
+        familyChatOpening.current=openingKey;
+        setAddedFamilyMember(null);
+        setFamilyAddSequence(0);
+        setShowAddSubMember(initialSection === 'family-add' && Boolean(currentUser.familyId) && Boolean(currentUser.isFamilyPayer || isAdminMode));
+      }
+    } else {
+      familyChatOpening.current='';
     }
   }, [isOpen, currentUser, initialSection, isAdminMode]);
 
@@ -329,6 +342,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
   const handleAddFamilyMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (subAccountPending) return;
     const normalizedEmail = subEmail.trim().toLowerCase();
     const missing = missingFamilyMemberFields({ firstName: subFirstName, lastName: subLastName,
       username: subUsername, email: subEmail, password: subPassword, birthDate: subBirthDate,
@@ -444,6 +458,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     setSubAgreementApproved(false);
     setSubAccountPending(false);
     setMsg({ type: 'success', text: `בן המשפחה ${newSubUser.name} נוסף בהצלחה!` });
+    if (stagingLogicEnabled() && !isAdminMode) {
+      try { sessionStorage.removeItem(`baly-staging-question:family-add:${currentUser.id}:${familyAddSequence}`); } catch { /* UI progress is optional. */ }
+      setAddedFamilyMember({id:newSubUser.id,name:newSubUser.name});
+    }
   };
 
   const stagingFamily=stagingLogicEnabled() && activeTab==='family' && !isAdminMode;
@@ -720,7 +738,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           {activeTab === 'family' && (
             <div className="space-y-4 text-xs">
               {/* If user is not yet family or is payer */}
-              {currentUser.role === UserRole.TRAINEE || isAdminMode ? (
+              {stagingFamily && addedFamilyMember ? (
+                <FamilyMemberAdded name={addedFamilyMember.name} canAddMore={familyMembersList.length<6}
+                  onAddAnother={()=>{setAddedFamilyMember(null);setFamilyAddSequence(value=>value+1);setSubEmail(currentUser.email || '');setMsg(null);setShowAddSubMember(true);}}
+                  onChoosePlans={()=>{onClose();onOpenFamilyPurchase?.();}} />
+              ) : currentUser.role === UserRole.TRAINEE || isAdminMode ? (
                 <div data-chat-family-container className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="font-bold text-indigo-900 text-sm flex items-center gap-2">
@@ -794,7 +816,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
                       {/* Add sub member inline form */}
                       {showAddSubMember && (
-                        <StagingChatForm flowKey={`family-add:${currentUser.id}`} chatEnabled={stagingFamily} noValidate onSubmit={handleAddFamilyMember} className="p-3 bg-white border border-indigo-200 rounded-xl space-y-2.5">
+                        <StagingChatForm flowKey={`family-add:${currentUser.id}:${familyAddSequence}`} chatEnabled={stagingFamily} noValidate onSubmit={handleAddFamilyMember} className="p-3 bg-white border border-indigo-200 rounded-xl space-y-2.5">
                           <div data-chat-context className="font-bold text-slate-800 text-[11px]">הוספת בן משפחה חדש — המנוי ממתין לתשלום עד לרכישת המסלול:</div>
                           <div data-chat-fields className="grid grid-cols-2 gap-2">
                             <label className="text-xs font-bold">שם פרטי *<input

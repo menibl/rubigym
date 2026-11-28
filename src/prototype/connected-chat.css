@@ -1,6 +1,16 @@
 /* Static, scoped chat styles: permitted by the production style-src policy. */
 .staging-logic-chat{--chat-gold:#c9a867;--chat-bg:#101218;--chat-surface:#1b1e27;--chat-text:#eeeef3;color:var(--chat-text);background:var(--chat-bg);font-family:Heebo,Arial,sans-serif;overflow-wrap:anywhere;position:fixed;inset:0;z-index:45;height:100dvh;display:flex;flex-direction:column}
 .staging-logic-chat .logic-header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #45404e;flex-shrink:0;background:#171923}
+.staging-logic-chat .logic-heading{min-width:0;flex:1}
+.staging-logic-chat .logic-header,.staging-logic-chat .logic-header *{overflow-wrap:normal;word-break:normal}
+.staging-logic-chat .logic-header-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.staging-logic-chat .logic-header-actions button{white-space:nowrap}
+@media(max-width:600px){.staging-logic-chat .logic-header{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.staging-logic-chat .logic-header-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.staging-logic-chat .logic-header-actions button{min-width:0;width:100%;min-height:44px;padding:8px;font-size:14px}.staging-logic-chat .logic-header-actions button:only-child{grid-column:1/-1}}
+.staging-logic-chat .logic-family-added{padding:20px 16px;border:1px solid #454957;border-radius:18px;background:#1b1e27;overflow-wrap:normal;word-break:normal}
+.staging-logic-chat .logic-family-added h2{font-size:22px;line-height:1.5;margin:0 0 12px;color:#eeeef3}
+.staging-logic-chat .logic-family-added p{margin:12px 0;line-height:1.7;font-size:16px;color:#b6b7c6}
+.staging-logic-chat .logic-success-actions{display:grid;gap:12px;margin-top:20px}
+.staging-logic-chat .logic-success-actions button{width:100%;margin:0}
 .staging-logic-chat .logic-header strong{font-size:16px;line-height:1.4}.staging-logic-chat .logic-header small{display:block;font-size:12px;color:#b6b7c6}
 .staging-logic-chat button{touch-action:manipulation}.staging-logic-chat .logic-back{min-height:44px;padding:8px 12px;border:1px solid #83745c;border-radius:10px;background:#242735;color:var(--chat-text);font-size:14px}
 .staging-logic-chat .logic-notice{font-size:13px;padding:10px 16px;color:#ead298;border-bottom:1px solid #665735}

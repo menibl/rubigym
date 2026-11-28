@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {FamilyMemberAdded} from './FamilyMemberAdded';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
@@ -56,10 +57,46 @@ test('family chat wrappers preserve original production containers when disabled
 test('registered family addition is staging-only question presentation over the original save and health fields',()=>{
   const settings=readFileSync(new URL('../components/UserSettingsModal.tsx',import.meta.url),'utf8');
   assert.match(settings,/stagingLogicEnabled\(\) && activeTab==='family' && !isAdminMode/);
-  assert.match(settings,/StagingChatForm flowKey=\{`family-add:\$\{currentUser.id\}`\} chatEnabled=\{stagingFamily\} noValidate onSubmit=\{handleAddFamilyMember\}/);
+  assert.match(settings,/StagingChatForm flowKey=\{`family-add:\$\{currentUser.id\}:\$\{familyAddSequence\}`\} chatEnabled=\{stagingFamily\} noValidate onSubmit=\{handleAddFamilyMember\}/);
   for(const field of ['subFirstName','subLastName','subUsername','subEmail','subPassword','subPhone','subBirthDate','subGender','subHealthDeclaration','subAgreementApproved'])assert.ok(settings.includes(field));
   assert.match(settings,/<div data-chat-health/);
   assert.match(settings,/const handleAddFamilyMember = async/);
+});
+
+test('family addition ends with explicit next choices, not another form or automatic payment',()=>{
+  let add=0,plans=0;
+  const props={name:'יעל בדיקה',canAddMore:true,onAddAnother:()=>{add++;},onChoosePlans:()=>{plans++;}};
+  const html=renderToStaticMarkup(<FamilyMemberAdded {...props}/>);
+  for(const label of ['בן המשפחה התווסף בהצלחה','יעל בדיקה','הוספת בן משפחה נוסף','חזרה לבחירת מסלול','עדיין לא בוצע תשלום'])assert.ok(html.includes(label));
+  assert.doesNotMatch(html,/<form\b|type="submit"|<style\b/);
+  assert.deepEqual([add,plans],[0,0]);
+  const actions:React.ReactElement<{onClick:()=>void;type:string}>[]=[];
+  const visit=(nodes:React.ReactNode)=>React.Children.forEach(nodes,node=>{
+    if(!React.isValidElement<{children?:React.ReactNode;onClick:()=>void;type:string}>(node))return;
+    if(node.type==='button')actions.push(node);
+    visit(node.props.children);
+  });
+  visit(FamilyMemberAdded(props));
+  assert.equal(actions.length,2);assert.ok(actions.every(action=>action.props.type==='button'));
+  actions[0].props.onClick();assert.deepEqual([add,plans],[1,0]);
+  actions[1].props.onClick();assert.deepEqual([add,plans],[1,1]);
+  assert.match(renderToStaticMarkup(<FamilyMemberAdded {...props} canAddMore={false}/>),/disabled=""/);
+});
+
+test('chat completion survives refreshed family props and resets only a deliberately started next form',()=>{
+  const source=readFileSync(new URL('../components/UserSettingsModal.tsx',import.meta.url),'utf8');
+  assert.match(source,/familyChatOpening.current!==openingKey/);
+  assert.match(source,/familyChatOpening.current=''/);
+  assert.match(source,/stagingFamily && addedFamilyMember \?/);
+  assert.ok(source.indexOf('setAddedFamilyMember({id:newSubUser.id')>source.indexOf('await onCreateFamilyMember(newSubUser)'));
+  assert.match(source,/setFamilyAddSequence\(value=>value\+1\)/);
+  assert.match(source,/sessionStorage.removeItem\(`baly-staging-question:family-add:/);
+  assert.match(source,/onChoosePlans=\{\(\)=>\{onClose\(\);onOpenFamilyPurchase\?\.\(\);\}\}/);
+  const css=readFileSync(new URL('connected-chat.css',import.meta.url),'utf8');
+  assert.match(css,/logic-header \*\{overflow-wrap:normal;word-break:normal\}/);
+  assert.match(css,/logic-header-actions\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css,/logic-header-actions button:only-child\{grid-column:1\/-1\}/);
+  assert.doesNotMatch(readFileSync(new URL('FamilyMemberAdded.tsx',import.meta.url),'utf8'),/fetch\(|startRivhitPayment|registerFamilyMember|sendSms/);
 });
 
 for(const discount of [undefined,{code:'PERCENT',discountPercent:13},{code:'FIXED',discountAmount:99}] as (DiscountCode|undefined)[]){
