@@ -14,7 +14,7 @@ import { checkoutPreflightTarget, publicCheckoutPreflight } from './checkout-pre
 import { autoReleaseUndispatched, canRestartUndispatched, ownedRecoveryCheckouts, recoveryItems } from './checkout-recovery.js';
 import { checkStuckCheckout, releaseStuckCheckout } from './stuck-checkout-release.js';
 import { openRecurringCheckout, readRecurringContinuation, saveRecurringContinuation, updateRecurringCheckout, releaseUndispatchedRecurringCheckout } from './recurring-checkout.js';
-import { familySplitLines, groupFamilyRecurringLines, groupedReceiptPlans, publicFamilySplit, changeFamilySplit } from './family-split.js';
+import { familySplitLines, groupFamilyRecurringLines, groupedReceiptPlans, publicFamilySplit, changeFamilySplit, hasUnresolvedSplitDispatch, rebaseFamilySplitSelection } from './family-split.js';
 import { familyCreditQuote, validateFamilySelection } from './family-credit.js';
 import { openGroupUpgradeQuote } from './open-group-upgrade.js';
 import { recoverFamilyCredit } from './family-credit-recovery.js';
@@ -1156,7 +1156,8 @@ const prepareFamilySplit = async (request, env, body, purchase, state) => {
     : validateFamilySelection(state.payload, body.userId, purchase.familyMemberPlans);
   const discount = findAvailableDiscount(state.payload.discountCodes || [], body.discountCode);
   let lines;
-  const pendingSeries = (state.payload.recurringCheckouts || []).filter(item => !item.cancelledAt && item.endsAt > clubDate())
+  const pendingSeries = (state.payload.recurringCheckouts || []).filter(item => !item.cancelledAt && item.endsAt > clubDate()
+    && (!(body.quoteOnly && body.reviewCurrentSelection === true) || item.recurringSaleId))
     .flatMap(item => (item.orderSnapshot?.gp || [{ memberId: item.userId, membershipType: item.membershipType }]).map(line =>
       ({ traineeId: line.memberId, membershipTypePurchased: line.membershipType, status: 'PAID', providerRecurringSaleId: item.recurringSaleId || item.orderId,
         timestamp: item.dispatchedAt, isMock: rivhitEnvironment(env) !== 'production' })));
@@ -1169,12 +1170,28 @@ const prepareFamilySplit = async (request, env, body, purchase, state) => {
   if (body.unifiedCheckout === true || purchase.individual) lines.sort((a, b) => Number(b.recurring) - Number(a.recurring));
   const fingerprint = JSON.stringify({ members, discountCode: discount?.code || null, lines, grouping });
   const batch = await changeFamilySplit(env.STATE_STORE, env.CLUB_ID || 'baly-wellness', body.userId, previous => {
-    if (previous && !publicFamilySplit(previous).completed && previous.items.some(item => !['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status))) return null;
+    const next = { id: crypto.randomUUID(), fingerprint, payerId: body.userId, discountCode: discount?.code,
+      createdAt: new Date().toISOString(), grouping, items: lines };
+    const locked = hasUnresolvedSplitDispatch(previous) || (previous && !publicFamilySplit(previous).completed
+      && previous.items.some(item => !['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status)));
+    if (locked) {
+      if (previous.fingerprint === fingerprint) return null;
+      return body.quoteOnly && body.reviewCurrentSelection === true && hasUnresolvedSplitDispatch(previous)
+        ? rebaseFamilySplitSelection(previous, next) : null;
+    }
     if (previous && !previous.cancelled && previous.fingerprint === fingerprint
       && previous.items.every(item => ['READY', 'EXISTING_RECURRING', 'ALREADY_PAID'].includes(item.status))) return null;
-    return { id: crypto.randomUUID(), fingerprint, payerId: body.userId, discountCode: discount?.code,
-      createdAt: new Date().toISOString(), grouping, items: lines };
+    return next;
   });
+  if (body.quoteOnly && body.reviewCurrentSelection === true && batch.fingerprint !== fingerprint) {
+    // Display the current basket, NEVER the old hosted-page prices. This is
+    // deliberately not a dispatchable replacement: an unresolved sent page
+    // may still charge. Keep its journal, signed amounts and resume path intact.
+    return json({ ...publicFamilySplit({ ...batch, selectedItemIds: undefined, items: lines, discountCode: discount?.code, grouping }),
+      previewOnly: true, blockedByPreviousCheckout: lines.some(line => line.status === 'READY'),
+      previousCheckout: { batchId: batch.id,
+        message: 'קיימת בקשת סליקה קודמת שטרם הושלמה או אומתה. הסיכום מציג את הבחירה החדשה בלבד, ולא את הבקשה הקודמת. לפני תשלום חדש יש לאמת או לסגור בבטחה את הבקשה הקודמת, כדי למנוע חיוב כפול.' } }, 200, corsHeaders(request, env));
+  }
   return json(publicFamilySplit(batch), 200, corsHeaders(request, env));
 };
 
@@ -1517,7 +1534,8 @@ const handleCreatePayment = async (request, env, splitLine) => {
     // Undispatched quotes must be recomputed from today's receipts, selection
     // and coupon. Only an already dispatched batch remains immutable/resumable.
     if (previous && !releasedUndispatched && !publicFamilySplit(previous).completed
-      && previous.items.some(item => !['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status))) return json(publicFamilySplit(previous), 200, corsHeaders(request, env));
+      && previous.items.some(item => !['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status))
+      && body.reviewCurrentSelection !== true) return json(publicFamilySplit(previous), 200, corsHeaders(request, env));
   }
   if (body.mode !== 'REGISTRATION' && !body.quoteOnly && !body.individualSelections && body.membershipType !== 'FAMILY_MEMBERSHIP' && env.STATE_STORE?.getClubState) {
     const state = await env.STATE_STORE.getClubState(env.CLUB_ID || 'baly-wellness');
@@ -1560,6 +1578,7 @@ const handleCreatePayment = async (request, env, splitLine) => {
   }
   if (!splitLine && body.membershipType === 'FAMILY_MEMBERSHIP' && purchase.familyBillingMode === 'CUSTOM_COMBINED'
     && (familyRecurringSelections(purchase.familyMemberPlans, checkoutState?.payload?.settings?.membershipPlans || []).length
+      || body.unifiedCheckout === true
       || body.familyPaymentGrouping === 'SEPARATE'
       || new Set(purchase.familyMemberPlans.filter(member => member.participation === 'INCLUDED').flatMap(member => familySelectedPlans(member).map(selection =>
         normalizedBillingPeriod((checkoutState?.payload?.settings?.membershipPlans || []).find(plan => plan.id === selection.membershipType))))).size > 1)

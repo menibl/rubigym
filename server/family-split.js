@@ -1,5 +1,6 @@
 import { recurringPlan, recurringSchedule } from '../shared/recurring-billing.js';
 import { familySelectedPlans } from '../shared/family-multiple-plans.js';
+import { hasIncludedOpenGymAccess } from '../shared/open-gym-access.js';
 
 const cents = value => Math.round(Number(value) * 100);
 const currentMonth = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit' }).format(new Date(value));
@@ -14,10 +15,14 @@ export function familySplitLines(members, catalog, payments, discount, productio
       if (!config) throw new Error('INVALID_MEMBERSHIP');
       const period = config.billingPeriod || (config.priceUnit === 'MONTH' ? 'MONTHLY' : 'ONE_TIME');
       const baseAmount = Number(config.price) * (selected.trainingSessionsCount || 1);
+      // A paid group membership includes Open Gym. Use the same entitlement
+      // rule as bookings, without treating a profile flag as payment evidence.
+      const covers = type => type === selected.membershipType
+        || (selected.membershipType === 'OPEN_GYM' && type !== 'FAMILY_MEMBERSHIP' && hasIncludedOpenGymAccess([type]));
       const receipts = payments.filter(p => p.status === 'PAID' && !p.refundedAt && Boolean(p.isMock) !== production
-        && ((p.traineeId === member.memberId && p.membershipTypePurchased === selected.membershipType)
+        && ((p.traineeId === member.memberId && covers(p.membershipTypePurchased))
           || (p.membershipTypePurchased === 'FAMILY_MEMBERSHIP' && (p.familyMemberPlans || []).some(item => item.memberId === member.memberId
-            && (!item.participation || item.participation === 'INCLUDED') && familySelectedPlans(item).some(plan => plan.membershipType === selected.membershipType)))));
+            && (!item.participation || item.participation === 'INCLUDED') && familySelectedPlans(item).some(plan => covers(plan.membershipType))))));
       const active = receipts.some(p => p.providerRecurringSaleId && !cancelled.has(p.providerRecurringSaleId)
         && Date.parse(p.timestamp || p.date) > now.getTime() - 366 * 86400000);
       const monthly = ['MONTHLY', 'MONTHLY_ANNUAL_COMMITMENT'].includes(period);
@@ -83,8 +88,27 @@ export function groupedReceiptPlans(lines) {
   return [...members.values()];
 }
 
-export const publicFamilySplit = batch => ({ split: true, batchId: batch.id, discountCode: batch.discountCode || null, grouping: batch.grouping, items: batch.items.map(({ checkout, ...line }) => line),
-  completed: Boolean(batch.cancelled) || batch.items.every(line => ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(line.status)),
+const selectedSplitItems = batch => batch.selectedItemIds ? batch.items.filter(item => batch.selectedItemIds.includes(item.id)) : batch.items;
+export const hasUnresolvedSplitDispatch = batch => batch?.items.some(item => !['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED', 'PAID', 'SETUP'].includes(item.status));
+
+// Keep sent items in the SAME journal so old return links and webhooks retain
+// their original identity. Only unsubmitted selections may be replaced. A new
+// payable selection must never overlap an unresolved hosted page, even when
+// that page groups several relatives. Hidden sent items are not cancelled.
+export function rebaseFamilySplitSelection(previous, next) {
+  if (!hasUnresolvedSplitDispatch(previous)) return next;
+  const retained = previous.items.filter(item => !['READY', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(item.status));
+  const unresolvedTargets = new Set(retained.filter(item => !['PAID','SETUP'].includes(item.status))
+    .flatMap(item => (item.groupLines || [item]).map(line => `${line.memberId}:${line.membershipType}`)));
+  const overlaps = next.items.some(item => (item.groupLines || [item]).some(line => line.status === 'READY'
+    && unresolvedTargets.has(`${line.memberId}:${line.membershipType}`)));
+  if (overlaps || next.items.some(item => retained.some(old => old.id === item.id))) return null;
+  return { ...previous, fingerprint: next.fingerprint, discountCode: next.discountCode, grouping: next.grouping,
+    selectedItemIds: next.items.map(item => item.id), items: [...retained, ...next.items] };
+}
+
+export const publicFamilySplit = batch => ({ split: true, batchId: batch.id, discountCode: batch.discountCode || null, grouping: batch.grouping, items: selectedSplitItems(batch).map(({ checkout, ...line }) => line),
+  completed: Boolean(batch.cancelled) || selectedSplitItems(batch).every(line => ['PAID', 'SETUP', 'EXISTING_RECURRING', 'ALREADY_PAID', 'CANCELLED'].includes(line.status)),
   message: 'התשלום מבוצע על ידי בעל החשבון המשלם. הוראות חדשות בעלות אותה תקופה ותנאי חיוב מאוחדות לפי הבחירה, והתשלומים החד־פעמיים מאוחדים בנפרד; מסלולים שכבר שולמו והוראות קיימות אינם מחויבים שוב. הוראת קבע: 12 חיובים במחיר הקבוע לאחר ההנחה. מסלול חד־פעמי אינו מצטרף לחיובים החודשיים. ביטול הוראה מאוחדת משפיע על כל המשתתפים בה; הקפאה באפליקציה אינה משנה את החיוב ברווחית.' });
 
 export async function changeFamilySplit(store, clubId, payerId, mutate) {
